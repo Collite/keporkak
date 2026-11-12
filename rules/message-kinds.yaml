@@ -1,0 +1,77 @@
+# Keporkak — the message catalogue (P-6b). Every kind a seat may send; anything not here is refused (default deny).
+# Fields: from/to (roles; `cc` are informational copies), fires (a transition of stage-lifecycle.yaml or a companion
+# machine, or `-`), guard (checked by the mailroom; `observed`/`attested` per RV-13), class (A auto · C runs, Bora cc'd ·
+# B Bora must act; while Bora is absent, B is *held*, D-28), max_fires (per stage unless noted), deadline (reply or
+# expiry), on_expiry (what the mailroom does), reply (the kind expected back).
+# Roles: bora, principal, teamlead, pool (Pool Manager), coder, reviewer, retro, scout, daemon (guarded operations),
+# mailroom (the mechanism: it emits only what is listed under from: mailroom).
+version: 1
+kinds:
+  # ---- the start gate
+  assignment-proposal: {from: teamlead, to: bora, fires: "planned→proposed", guard: "R4.8 predecessors exited · seat free · slots open · fence has SC ids + touches: (all observed)", class: B, max_fires: 2, deadline: 24h, on_expiry: "back to planned; principal pinged", reply: "approval | decline", note: "never graduates to C (D-27 d)"}
+  queue-approval:      {from: bora, to: teamlead, fires: "-", guard: "stages are in the current wave (R4.8) · signed by Bora's CLI", class: B, max_fires: "1/day", deadline: "-", on_expiry: "-", reply: "-", note: "U-2: tonight's pre-approved queue; the only 'yes' while absent (D-28)"}
+  approval:            {from: bora, to: teamlead, fires: "proposed→assigned | phase exit_pending→exited", guard: "signed by Bora's CLI, or in the queue", class: B, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-"}
+  decline:             {from: bora, to: teamlead, fires: "proposed→planned", guard: "signed by Bora's CLI", class: B, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-"}
+  assign:              {from: teamlead, to: coder, fires: "seat ready→busy", guard: "stage assigned (approval or queue)", class: A, max_fires: 1, deadline: 15m, on_expiry: "seat-gone check by the Pool Manager", reply: started}
+  started:             {from: coder, to: teamlead, fires: "assigned→building", guard: "branch off master exists (observed)", class: A, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-"}
+  # ---- building
+  stop:                {from: coder, to: principal, cc: [teamlead], fires: "building|fix_round*→stopped", guard: "names a stop-condition id (SC-n) from the fence", class: C, max_fires: 2, deadline: 4h, on_expiry: "escalate to Bora (B)", reply: triage, note: "replaces `question` (D-27 i); the 3rd stop per stage needs Bora"}
+  found-batch:         {from: mailroom, to: principal, fires: "found items: created", guard: "fan-out of the Found lines carried by review-request", class: A, max_fires: 3, deadline: "-", on_expiry: "-", reply: triage}
+  triage:              {from: principal, to: coder, cc: [teamlead], fires: "stopped→building | stopped→recut | found→triaged", guard: "outcome ∈ {resume, recut, issue, stage, drop} · task-count diff within R4.11 · no edit outside the Found section (observed) · resumes ≤ 2 then Bora", class: "A (resume, issue, drop) / C (stage) / B (recut)", max_fires: 6, deadline: "-", on_expiry: "-", reply: "-", note: "the brief's scope: add · delete · split · merge tasks, never re-design"}
+  candidate-deploy:    {from: coder, to: daemon, fires: "building→candidate_deployed", guard: "stage live: ≠ none · CI green on head (observed)", class: A, max_fires: 2, deadline: 30m, on_expiry: "stop with SC-9", reply: "-", note: "U-1: certification stages roll the candidate before review"}
+  review-request:      {from: coder, to: teamlead, cc: [principal], fires: "building|candidate_deployed→ready_for_review", guard: "PR ready · CI green on head · every task done <sha> · DONE lines ticked · Found lines carried (fan-out found-batch)", class: A, max_fires: 3, deadline: 1h, on_expiry: "nudge teamlead; 2nd expiry → Bora (C)", reply: review-bind}
+  review-bind:         {from: teamlead, to: reviewer, cc: [coder], fires: "ready_for_review→in_review", guard: "reviewer seat ≠ coder seat · rank(reviewer) ≥ rank(coder) (roster) · vendor ≠ coder's preferred", class: A, max_fires: 2, deadline: 8h, on_expiry: "re-bind once, then Bora (C)", reply: verdict}
+  verdict:             {from: reviewer, to: coder, cc: [teamlead], fires: "in_review→passed | fix_round", guard: "R5.2 shape · GitHub PR review on the same head sha (observed, R6.2) · FIX FIRST lists blockers with ids", class: A, max_fires: 1, deadline: "-", on_expiry: "-", reply: "repair-done (if FIX FIRST)"}
+  repair-done:         {from: coder, to: reviewer, fires: "fix_round|fix_round_3|fix_round_4→re_review", guard: "new commits since the verdict · CI green · one response line per blocker id (all observed)", class: A, max_fires: 4, deadline: 8h, on_expiry: "nudge reviewer; 2nd → teamlead", reply: re-verdict}
+  re-verdict:          {from: reviewer, to: coder, cc: [teamlead, principal], fires: "re_review→passed | fix_round | grant_pending | ruling_pending | recut", guard: "per open blocker only · a new finding only with introduced_by_fix (attested, logged)", class: "A (pass, round 2) / C (ladder, recut)", max_fires: 4, deadline: "-", on_expiry: "-", reply: "-"}
+  grant-request:       {from: mailroom, to: principal, cc: [reviewer, coder], fires: "-", guard: "emitted on the 3rd FIX FIRST (fix_rounds = 2)", class: C, max_fires: 1, deadline: 4h, on_expiry: "recut", reply: grant}
+  grant:               {from: principal, to: reviewer, cc: [coder, teamlead], fires: "grant_pending→fix_round_3 | recut", guard: "outcome ∈ {grant, refuse} · within deadline", class: C, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-"}
+  contract-flag:       {from: reviewer, to: principal, fires: "flag thread: asked", guard: "cites contracts.md § or a D-n", class: C, max_fires: 2, deadline: "-", on_expiry: "-", reply: "-", note: "RV-10; a contract change is never executed in the stage (R5.4)"}
+  classify-request:    {from: reviewer, to: bora, fires: "flag thread: asked", guard: "blocker-vs-follow-up question only (R5.4)", class: B, max_fires: 3, deadline: 24h, on_expiry: "held while absent; expired → reported", reply: ruling}
+  # ---- the tail (through the daemon)
+  merge:               {from: teamlead, to: daemon, cc: [bora], fires: "passed→merged | frozen | tail_failed", guard: "Bora present (deadman) · second key (reviewer vendor ≠ coder vendor) else B · audit: evidence lines · list ticked · no proof files · Found all triaged · no stray changes (observed)", class: C, max_fires: 2, deadline: 15m, on_expiry: "tail_failed", reply: "-", note: "D-27 a, n; master protected by GitHub branch protection"}
+  release:             {from: teamlead, to: daemon, cc: [bora], fires: "merged→released | tail_failed", guard: "stage rolls: ≠ none · build green · tag", class: C, max_fires: 2, deadline: 1h, on_expiry: "tail_failed", reply: "-"}
+  deploy:              {from: teamlead, to: daemon, cc: [bora], fires: "released→deployed | tail_failed", guard: "stage live: target · Bora present · roll succeeded (observed)", class: C, max_fires: 2, deadline: 30m, on_expiry: "tail_failed (D-27 f)", reply: "-"}
+  stage-exit:          {from: teamlead, to: principal, cc: [coder, reviewer, board], fires: "merged|released|deployed→exited", guard: "STATUS per R4.9 · REGISTER rebuilt · project committed and pushed (D-27 m) · Found all triaged", class: A, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-"}
+  close:               {from: teamlead, to: daemon, fires: "recut→closed", guard: "PR closed · worktree freed", class: A, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-"}
+  recut-notice:        {from: teamlead, to: bora, fires: "-", guard: "stage in recut", class: B, max_fires: 1, deadline: "-", on_expiry: "held while absent", reply: "-", note: "Bora starts the Planner session (D-7/D-8)"}
+  # ---- Principal ↔ TeamLead (RV-10)
+  parallelism:         {from: principal, to: teamlead, fires: "-", guard: "names stages and a desired wave", class: A, max_fires: "4/day", deadline: "-", on_expiry: "-", reply: "-"}
+  pin-stage:           {from: principal, to: teamlead, cc: [bora], fires: "-", guard: "a new stage list in the owning plan (R4.7)", class: C, max_fires: "2/day", deadline: "-", on_expiry: "-", reply: "-", note: "never Deputy-approvable (RV-19)"}
+  unplanned-stage-ahead: {from: teamlead, to: bora, fires: "-", guard: "the next wave has a stage without a list", class: C, max_fires: "1/day", deadline: "-", on_expiry: "-", reply: "-"}
+  # ---- rulings and Bora's own kinds
+  ruling-request:      {from: "principal | teamlead | pool | mailroom", to: bora, fires: "flag thread: asked | ruling_pending", guard: "carries a stated default and a deadline · cites D-n / contract / border", class: B, max_fires: 3, deadline: 24h, on_expiry: "held while absent; expired → reported", reply: ruling}
+  ruling:              {from: bora, to: "the asker", fires: "flag thread: ruled | ruling_pending→fix_round_4 | recut | tail_failed→merged | recut | frozen→passed | recut", guard: "signed by Bora's CLI", class: B, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
+  reverse:             {from: bora, to: "the asker", cc: [mailroom], fires: "-", guard: "signed by Bora's CLI · names a digest item · severity ∈ {minor, serious}", class: B, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-", note: "feeds the shadow ledger (D-28); serious pauses the absent-mode policy"}
+  away:                {from: bora, to: mailroom, fires: "presence present→absent", guard: "signed by Bora's CLI (or N hours idle)", class: B, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
+  # ---- absent mode (the Deputy, D-28)
+  hold:                {from: mailroom, to: "the asker", fires: "flag thread: asked→held", guard: "Bora absent · the kind is class B", class: A, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
+  digest:              {from: mailroom, to: bora, fires: "-", guard: "on presence absent→present, and on demand", class: C, max_fires: "1 per return", deadline: "-", on_expiry: "-", reply: "reverse (optional)", note: "held items · anomaly stops · shadow-ledger entries"}
+  anomaly-stop:        {from: mailroom, to: "teamlead | pool", cc: [bora], fires: "-", guard: "an anomaly rule fired (two FIX FIRST in a row · flapping seat · budget jump · stray change)", class: C, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-", note: "U-3: the Deputy that can only say no"}
+  shadow-ruling:       {from: mailroom, to: ledger, fires: "-", guard: "log only: what a judging Deputy would have ruled on a held item", class: A, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-", note: "U-4; graduation only from recorded agreement with Bora's later ruling"}
+  # ---- seats and offices
+  session-request:     {from: teamlead, to: pool, fires: "-", guard: "within Bora's constraints (slots, budget)", class: A, max_fires: "10/day", deadline: 30m, on_expiry: "nudge", reply: session-report}
+  session-report:      {from: pool, to: teamlead, cc: [board], fires: "seat provisioned→ready", guard: "-", class: A, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
+  seat-gone:           {from: pool, to: teamlead, cc: [board], fires: "*active→paused | seat *→gone", guard: "pid/pty gone or protocol closed (observed) · an open in_progress tool call is busy, not gone", class: A, max_fires: 3, deadline: "-", on_expiry: "-", reply: "-"}
+  re-seated:           {from: pool, to: teamlead, cc: [coder], fires: "paused→*previous | gone→ready", guard: "inbox replayed · ≤ 3 events per stage", class: "A / C after the 2nd", max_fires: 3, deadline: "-", on_expiry: "-", reply: "-"}
+  pause:               {from: pool, to: "a seat", cc: [teamlead], fires: "-", guard: "anomaly-stop, 3rd refusal, or frozen stage", class: C, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-", note: "driver action as a row (D-27 k)"}
+  resume:              {from: pool, to: "a seat", cc: [teamlead], fires: "-", guard: "a ruling cleared the cause", class: C, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
+  compact:             {from: pool, to: "a seat", fires: "-", guard: "context above the health threshold", class: A, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
+  kill:                {from: pool, to: "a seat", cc: [teamlead], fires: "seat *→gone", guard: "stall (no update, no in_progress call) past the watchdog · or retire", class: C, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
+  retire:              {from: pool, to: "a seat", cc: [teamlead], fires: "seat *→retired", guard: "session-request remove, or budget cap", class: C, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
+  budget-warning:      {from: pool, to: bora, cc: [teamlead], fires: "-", guard: "threshold in budgets.yaml", class: C, max_fires: "3/day", deadline: "-", on_expiry: "-", reply: "-"}
+  # ---- reporting and the read-only seats
+  status-report:       {from: "principal | teamlead | pool", to: bora, fires: "-", guard: "the three-part shape (AGENTS.md)", class: A, max_fires: "6/day each", deadline: "-", on_expiry: "-", reply: "-", note: "managers only (D-27 h)"}
+  attack-plan:         {from: scout, to: bora, fires: "-", guard: "Bora's attention-budget shape", class: C, max_fires: "1/day", deadline: "-", on_expiry: "-", reply: "-", note: "the Planner is reached through Bora"}
+  retro-trigger:       {from: mailroom, to: retro, fires: "-", guard: "phase exit, or a stage exit with FIX FIRST/stop, or every Nth exit", class: A, max_fires: "-", deadline: "-", on_expiry: "-", reply: retro-report}
+  retro-report:        {from: retro, to: principal, cc: [bora], fires: "-", guard: "candidates classified by where the fix lives", class: C, max_fires: "1 per trigger", deadline: "-", on_expiry: "-", reply: triage}
+  phase-exit-request:  {from: teamlead, to: bora, fires: "phase open→exit_pending", guard: "chart refreshed · STATUS rolled · reader floor checked · retro-report delivered", class: B, max_fires: 1, deadline: "-", on_expiry: "held while absent", reply: approval}
+  # ---- the mailroom's own
+  nudge:               {from: mailroom, to: "the sender", cc: [board], fires: "-", guard: "a refusal: rule id + the failed guard", class: "A / C on the 3rd refusal per seat per day (then pause)", max_fires: "-", deadline: "-", on_expiry: "-", reply: "-", note: "F5 δ; counted per seat, not per arrow (RV)"}
+refused_by_construction:
+  - "coder → coder: anything"
+  - "reviewer → coder: anything but verdict / re-verdict (R5.6: no steering, no next work)"
+  - "reviewer → bora: anything but classify-request"
+  - "principal → reviewer: anything but grant (Q-11)"
+  - "anyone → anyone: 'approve' / 'approved' as a relay — a message never carries authority"
+  - "any kind not in this file"
