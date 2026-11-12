@@ -28,6 +28,10 @@
   which tool call was expensive. The Retro seat reads them. `D-15`
 - **EX-9 Live steps happen when the list says so.** A certification stage is a stage. Never defer a live check to "the
   end of implementation"; a deferral needs a D-n. `R4.6`
+- **EX-16 Only QA touches the live target and opens a browser.** A live task is marked `[QA]` in the list; the executor
+  sends a `qa-request` naming the task and the DONE item and continues or ends its turn; QA's report carries the fixture
+  and the command. No other seat runs commands against the live target, launches a headed browser or uses computer use.
+  Headless browsers inside a test suite are fine. `D-30, D-31`
 - **EX-10 A phase exits when its DONE line is attempted,** where and when the plan says. If the live step fails for an
   external reason, the phase exits *as built* with the gate named in STATUS, and the gate becomes a stage. `R4.6`
 - **EX-11 Read in this order:** `30` (this chapter), the plan's `tasks-overview.md`, then the one stage list. Nothing

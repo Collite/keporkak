@@ -1,0 +1,10 @@
+# QA's robot half: the order of its jobs (D-31, D-35). The verifying, deploying and browsing are the LLM half.
+role: qa
+active_when: always
+intercepts: []
+rules:
+  - {id: QA-1, when: "several requests wait", then: "take one at a time: deploy-request before qa-request, then first come first served"}
+  - {id: QA-2, when: "a job ends", then: "the next job starts only after the temp pods and namespace of the last one are dropped"}
+  - {id: QA-3, when: "a job can be done with a scripted browser (Playwright, QA's own profile)", then: "do it that way; no session is needed, on any office"}
+  - {id: QA-4, when: "a job needs computer use and the office's class is B", then: "send computer-use-session and wait for the approval"}
+  - {id: QA-5, when: "a job needs computer use and the office's class is off", then: "answer qa-report fail: 'computer use is not available in this office'"}

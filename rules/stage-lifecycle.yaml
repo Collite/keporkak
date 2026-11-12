@@ -9,7 +9,7 @@ states:
   assigned:           {desc: "approved; seat bound; coder not yet started"}
   building:           {desc: "the coder executes the list"}
   stopped:            {desc: "a fence stop condition was named; Principal triages"}
-  candidate_deployed: {desc: "U-1: the candidate rolled on the live target before review (stages with a live DONE only)"}
+  candidate_deployed: {desc: "U-1: QA verified the candidate on the live target before review (stages with a live DONE only)"}
   ready_for_review:   {desc: "PR ready, CI green; waiting for the reviewer binding"}
   in_review:          {desc: "full review (R5.1)"}
   fix_round:          {desc: "autonomous fix round 1 or 2 (counter in context)"}
@@ -21,7 +21,7 @@ states:
   passed:             {desc: "PASS or PASS — follow-ups filed"}
   merged:             {desc: "on master (merge through the daemon, D-27 n)"}
   released:           {desc: "image built / version tagged (skip if rolls: none)"}
-  deployed:           {desc: "rolled on the live target (skip if live: none)"}
+  deployed:           {desc: "rolled and smoke-tested on the live target by QA (skip if live: none)"}
   tail_failed:        {desc: "merge, build or roll failed after the retry; Bora's gate (D-27 f)", bora_gate: true}
   frozen:             {desc: "stray change at the merge audit; this stage only, seat paused (D-27 g)", bora_gate: true}
   exited:             {desc: "STATUS, REGISTER, project committed+pushed; Found all triaged", terminal: true}
@@ -34,7 +34,8 @@ counters: [proposals, stops, resumes, review_requests, fix_rounds, seat_gone_eve
 
 transitions:
   - {from: planned,            to: proposed,           kind: assignment-proposal, guard: "R4.8 predecessors exited (observed) · seat free (roster) · slots open (budgets) · fence has SC ids and a touches: line (observed)"}
-  - {from: proposed,           to: assigned,           kind: approval,            guard: "signed by Bora's CLI, or the stage is in the pre-approved queue (D-27 c, D-28)"}
+  - {from: proposed,           to: assigned,           kind: approval,            guard: "signed by Bora's CLI"}
+  - {from: proposed,           to: assigned,           kind: queued-approval,     guard: "from the Deputy while Bora is absent: the stage is in his signed queue for the current wave (robots/deputy.yaml DEP-2)"}
   - {from: proposed,           to: planned,            kind: decline,             guard: "signed by Bora's CLI; or deadline expired (counter proposals ≤ 2, then Principal ping)"}
   - {from: assigned,           to: building,           kind: started,             guard: "branch off master exists (observed)"}
   - {from: building,           to: stopped,            kind: stop,                guard: "names a stop-condition id from the fence (SC-n) · counter stops"}
@@ -43,7 +44,7 @@ transitions:
   - {from: fix_round_4,        to: stopped,            kind: stop,                guard: "as above"}
   - {from: stopped,            to: building,           kind: triage,              guard: "outcome=resume · task-count diff within R4.11 · no edit outside the Found section (observed) · counter resumes ≤ 2, the 3rd needs Bora"}
   - {from: stopped,            to: recut,              kind: triage,              guard: "outcome=recut (class B: Bora is the gate, D-27 b)"}
-  - {from: building,           to: candidate_deployed, kind: candidate-deploy,    guard: "stage live: ≠ none (plan line) · CI green on head (observed) · run by the daemon (U-1)"}
+  - {from: building,           to: candidate_deployed, kind: qa-report,           guard: "outcome=pass on a qa-request for a live task · stage live: ≠ none · fixture saved · temp pods dropped (observed) (U-1, D-31)"}
   - {from: candidate_deployed, to: ready_for_review,   kind: review-request,      guard: "see below"}
   - {from: building,           to: ready_for_review,   kind: review-request,      guard: "PR ready (observed) · CI green on head (observed) · every task ticked with done <sha> (observed) · DONE lines ticked (attested) · fans out found-batch · counter review_requests ≤ 3"}
   - {from: ready_for_review,   to: in_review,          kind: review-bind,         guard: "reviewer seat ≠ coder seat · roster rank(reviewer) ≥ rank(coder) · vendor ≠ coder's vendor preferred (required later for autonomous merge, U-6)"}
@@ -61,15 +62,15 @@ transitions:
   - {from: ruling_pending,     to: recut,              kind: ruling,              guard: "outcome=recut, or deadline expired (held while absent, D-28)"}
   - {from: fix_round_4,        to: re_review,          kind: repair-done,         guard: "as above"}
   - {from: re_review,          to: recut,              kind: re-verdict,          guard: "blockers remain after round 4"}
-  - {from: passed,             to: merged,             kind: merge,               guard: "Bora present (deadman, U-5/D-28) · second key: reviewer vendor ≠ coder vendor else class B (U-6) · audit (observed): evidence lines present · list fully ticked · no proof files · every Found line triaged · no stray changes in main checkouts/sibling repos (D-19 c) · counter tail_retries ≤ 1"}
+  - {from: passed,             to: merged,             kind: merge,               guard: "while Bora is absent the Deputy holds it (DEP-3) · second key: reviewer vendor ≠ coder vendor else class B (U-6) · audit (observed): evidence lines present · list fully ticked · no proof files · every Found line triaged · no stray changes in main checkouts/sibling repos (D-19 c) · counter tail_retries ≤ 1"}
   - {from: passed,             to: frozen,             kind: merge,               guard: "audit found a stray change → this stage frozen, coder seat paused (D-27 g)"}
   - {from: passed,             to: tail_failed,        kind: merge,               guard: "merge failed twice (conflict, stale CI)"}
   - {from: merged,             to: released,           kind: release,             guard: "stage rolls: ≠ none · image built, version tagged · counter tail_retries ≤ 1"}
   - {from: merged,             to: exited,             kind: stage-exit,          guard: "stage rolls: none and live: none · exit guard below"}
   - {from: merged,             to: tail_failed,        kind: release,             guard: "build failed twice"}
-  - {from: released,           to: deployed,           kind: deploy,              guard: "stage live: target named · Bora present · olymp roll succeeded (observed)"}
+  - {from: released,           to: deployed,           kind: deploy-done,         guard: "QA: rollout complete (observed) · smoke passed · on the TeamLead's deploy-request · Bora present"}
   - {from: released,           to: exited,             kind: stage-exit,          guard: "stage live: none · exit guard below"}
-  - {from: released,           to: tail_failed,        kind: deploy,              guard: "roll failed twice (D-27 f: Bora, no autonomous rollback)"}
+  - {from: released,           to: tail_failed,        kind: deploy-failed,       guard: "QA: roll or smoke failed · rolled back to the previous pin by QA (D-31)"}
   - {from: deployed,           to: exited,             kind: stage-exit,          guard: "STATUS per R4.9 (observed) · REGISTER rebuilt · project committed and pushed (D-27 m) · every Found line triaged (RV-29)"}
   - {from: tail_failed,        to: merged,             kind: ruling,              guard: "Bora: retry (after a fix)"}
   - {from: tail_failed,        to: recut,              kind: ruling,              guard: "Bora: recut"}
@@ -86,7 +87,7 @@ active_states: [assigned, building, stopped, candidate_deployed, ready_for_revie
 found_item:
   states: [found, triaged]
   transitions:
-    - {from: found, to: triaged, kind: triage, guard: "outcome ∈ {resume, issue, stage, drop}; `issue` → Scout (D-14), `stage` → Planner via Bora"}
+    - {from: found, to: triaged, kind: triage, guard: "outcome ∈ {resume, issue, stage, drop}; `issue` → Gardener (D-14), `stage` → Planner via Bora"}
 flag_thread:
   states: [asked, held, ruled, expired]
   transitions:

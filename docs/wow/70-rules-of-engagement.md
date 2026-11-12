@@ -3,11 +3,11 @@
 > Who may say what to whom, when, and what happens otherwise. The executable form is `rules/stage-lifecycle.yaml`
 > (the statechart), `rules/message-kinds.yaml` (the catalogue) and `rules/engagement.yaml` (roles, caps, presence);
 > `scripts/check-rules.py` keeps the three consistent. This prose explains them; where they differ, the YAML wins and
-> this file is wrong. Converged 2026-11-12 (KP D-9, D-20…D-28); amendments go through a D-n and `CHANGELOG.md`.
+> this file is wrong. Converged 2026-11-12 (KP D-9, D-20…D-28; QA D-30, D-31); amendments go through a D-n and `CHANGELOG.md`.
 
 ## EN-1 The rules are a statechart; the mailroom is its guard
-Every stage has a lifecycle. A message is an attempt to fire one of its transitions. The mailroom — a mechanism, never a
-decider (D-21) — delivers a message only if (a) the kind exists in the catalogue, (b) the sender's role owns that kind,
+Every stage has a lifecycle. A message is an attempt to fire one of its transitions. The mailroom — a mechanism that holds no rule of
+its own (D-21, P-10) — delivers a message only if (a) the kind exists in the catalogue, (b) the sender's role owns that kind,
 (c) the stage is in the transition's source state, (d) the guard holds, and (e) no cap is exhausted. Everything else is
 **refused**, and a refusal is itself a message: a `nudge` back to the sender with the rule id and the failed guard.
 Whatever is not explicitly allowed is forbidden; there is no other switch.
@@ -48,10 +48,10 @@ no stray change in the main checkouts, the pin files untouched — is **checked 
 Since the TeamLead is both actor and auditor at the exit (D-25), the merge audit is the daemon's, not the TeamLead's.
 
 ## EN-7 The tail
-`passed → merged → released → deployed → exited`, through the daemon's guarded operations (merge, release, deploy),
+`passed → merged → released → deployed → exited` — merge and release through the daemon's guarded operations, the deploy by QA (EN-11) —
 with skip edges for stages that roll nothing. Autonomous merge needs the **second key**: the reviewer's vendor differs
 from the coder's; otherwise the merge is class B. Certification stages roll the **candidate before review** (U-1), so a
-live DONE line is attemptable when the reviewer reads it. A failed merge, build or roll after one retry is Bora's
+live DONE line is attemptable when the reviewer reads it. A failed merge or build after one retry, or a roll QA had to roll back, is Bora's
 (`tail_failed`); a stray change at the audit freezes that stage only and pauses its seat. Seats push branches; master is
 unreachable except through the daemon's identity (GitHub branch protection) — in the code repos and in `project`.
 
@@ -63,16 +63,29 @@ office keeps its own roster; `project` is the channel between offices: any Kepor
 
 ## EN-9 Presence, and the Deputy
 The daemon tracks Bora's **presence**: `present` → `absent` after N idle hours or on `kp away`; back on any action.
-*The Deputy is the policy that applies while he is absent* (D-28): B requests are **held**; the autonomous tail
+*The Deputy takes over while he is absent* (D-28, D-33) — one entity with two halves: a **robot** that acts by its written rules (`robots/deputy.yaml`) and a seat that only shadows.
+The daemon merely reports that he is absent; everything that follows is the Deputy's: B requests are **held**; the autonomous tail
 **pauses** (the deadman switch); the **anomaly rules** may stop or pause (two FIX FIRST in a row, a flapping seat, a
-budget jump, a stray change) but never approve; the only "yes" is for stages in the **pre-approved queue** Bora set
-before leaving (U-2). On return, one **digest**: held items, stops, and the **shadow ledger** — what a judging Deputy
-*would* have ruled, graded against what Bora then rules. Kinds graduate from recorded agreement, never from silence.
+budget jump, a stray change) but never approve; the only "yes" is a `queued-approval` for stages in the **queue** Bora signed
+before leaving (U-2). On return, one **digest**: held items, stops, and the **shadow ledger** — for every held item the
+Deputy seat wrote what it *would* have ruled, graded against what Bora then rules. Kinds graduate from recorded agreement, never from silence.
 A judging Deputy that acts is a later decision, gated on that ledger.
+
+## EN-11 QA and the live target
+**QA is the only seat that touches the live target and the only seat that opens a browser or uses computer use** — one
+QA per office, vendor per office. Other seats ask: a `qa-request` names the stage, the task and the DONE item to verify,
+never a command; QA decides how, runs one job at a time (tail jobs first), and answers `qa-report pass|fail` with
+pointers. Candidates run as temp pods in a `qa-<stage>` namespace outside GitOps and are dropped at the end of the job.
+After a merge the TeamLead sends `deploy-request`; QA has the daemon make the GitOps change, smoke-tests it, and
+reports `deploy-done` — or rolls back to the previous pin by itself and reports `deploy-failed`, after which the stage
+is Bora's. QA's browser work is scripted (Playwright, its own profile) and needs no approval. Only **computer use** has a class per
+office (`A | B | C | off`); on Bora's own machine it is **B**: every `computer-use-session` waits for him. QA never edits code, plans or lists, and never echoes a credential. This exclusivity is
+a rule of the way of working, not a fence (D-31): it is held by the role borders, by deny lists where a vendor makes
+them cheap, and by the retro.
 
 ## EN-10 What no guard holds
 Say it rather than assume it: R5.6 (no steering) inside a verdict body; the Design-Roles borders inside a triage body;
-read-exfiltration by a seat (every vendor mode reads everything); the retro's and the scout's judgment. These are held
+read-exfiltration by a seat (every vendor mode reads everything); the retro's and the gardener's judgment. These are held
 by personas, reviews and retros — the rulebook's other chapters — not by the mailroom.
 
 ## Amendments this chapter makes to earlier rules

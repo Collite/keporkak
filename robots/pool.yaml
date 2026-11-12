@@ -1,0 +1,14 @@
+# The Pool Manager's robot half (D-20, D-27 k, D-35). Its LLM half provisions, reports and explains.
+role: pool
+active_when: always
+intercepts: []
+rules:
+  - {id: POOL-1, when: "the driver reports a seat's process or protocol gone, and no tool call is in progress", then: "send seat-gone · if this is the stage's 1st–3rd event: start a fresh seat, replay list, STATUS and unread inbox, send re-seated · otherwise send pause for the stage (Bora cc'd)"}
+  - {id: POOL-2, when: "a seat is silent past the watchdog and has no tool call in progress", then: "send kill, then POOL-1"}
+  - {id: POOL-3, when: "a seat's context passes the health threshold", then: "send compact"}
+  - {id: POOL-4, when: "a seat's third refusal of the day", then: "send pause to that seat (Bora cc'd)"}
+  - {id: POOL-5, when: "an anomaly-stop names a seat or provisioning", then: "send pause accordingly"}
+  - {id: POOL-6, when: "a ruling clears the cause of a pause", then: "send resume"}
+  - {id: POOL-7, when: "a budget threshold in pool/budgets.yaml is crossed", then: "send budget-warning (text by the LLM half)"}
+  - {id: POOL-8, when: "a session-request asks to remove a seat, or a slot cap is exceeded", then: "send retire to an idle seat"}
+open: ["the watchdog's silence limit", "the context health threshold", "budget thresholds"]   # rulebook 80/90, to be ruled in planning

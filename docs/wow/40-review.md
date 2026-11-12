@@ -6,6 +6,8 @@
   earlier stages, not the whole branch. A certification stage's review checks the recorded numbers and fixtures against
   the DONE line — no code review beyond the fixture spec. `R5.1`
 - **RW-2 Three verdicts.** `PASS` · `PASS — follow-ups filed` · `FIX FIRST`. `R5.2`
+- **RW-14 Acceptance specs are read first.** Each DONE item needs a spec that reads as that behaviour and would fail
+  without it; a missing one, or one that would stay green, is a blocker (a test that does not test what it claims). `D-38`
 - **RW-3 A blocker** violates `contracts.md`, a D-n, the DONE line or a security invariant, or is a test that does not
   test what it claims. Everything else — minors, cleanups, style, wishes — is a **follow-up** and becomes a GitHub
   issue (one issue may collect several), never a task in the stage. `R5.2`

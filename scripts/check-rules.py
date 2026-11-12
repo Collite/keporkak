@@ -6,8 +6,9 @@ Checks (each a line of output; exit 1 if any FAIL):
   - every kind whose `fires` names a stage transition has that transition in the lifecycle (by from→to)
   - every kind's `from` roles exist in engagement.yaml:roles (or are 'mailroom'/'the asker' forms)
   - every state referenced by a transition exists; every non-terminal state has an exit; every active state is reachable
-  - cycles in the stage chart: each cycle must touch a counter-capped transition (we check the known cycles list)
-  - graduation.never kinds exist; presence.pause kinds exist
+  - cycles in the stage chart: with the capped edges and the Bora-gate states removed, the graph must be acyclic
+  - graduation.never kinds exist
+  - P-10: the mailroom sends only declared effects, the daemon sends nothing; every robot rule sends a kind its role may send
 Usage: python3 scripts/check-rules.py [--render out.md]
 """
 import sys, re, yaml, pathlib, itertools
@@ -70,31 +71,51 @@ capped = {("building","stopped"):"stops/resumes", ("stopped","building"):"resume
           ("fix_round","re_review"):"fix_rounds", ("re_review","fix_round"):"fix_rounds", ("*active","paused"):"seat_gone_events",
           ("paused","*previous"):"seat_gone_events", ("tail_failed","merged"):"ruling (B)", ("frozen","passed"):"ruling (B)",
           ("re_review","grant_pending"):"fix_rounds (once: at round 2)", ("re_review","ruling_pending"):"fix_rounds (once: at round 3)"}
-# simple cycle detection on the explicit graph
+# sound and deterministic: remove every capped edge and every Bora-gate state; what remains must be acyclic
+gate = {n for n, d in L["states"].items() if d.get("bora_gate")}
 g = {}
 for t in trans:
-    if t["from"].startswith("*") or t["to"].startswith("*"): continue
-    g.setdefault(t["from"], set()).add(t["to"])
-def cycles():
-    found = []
-    def dfs(n, path, seen):
-        for m in g.get(n, ()):
-            if m in path: found.append(path[path.index(m):] + [m])
-            elif m not in seen: seen.add(m); dfs(m, path + [m], seen)
-    dfs("planned", ["planned"], {"planned"}); return found
-cyc = cycles()
-for c in cyc:
-    edges = list(zip(c, c[1:]))
-    if not any(e in capped for e in edges) and not any(L["states"][n].get("bora_gate") for n in c):
-        fail(f"uncapped cycle without a Bora gate: {' → '.join(c)}")
-ok(f"{len(cyc)} cycles found; each is capped by a counter or passes a Bora gate")
+    a, b = t["from"], t["to"]
+    if a.startswith("*") or b.startswith("*") or (a, b) in capped or a in gate or b in gate: continue
+    g.setdefault(a, set()).add(b)
+WHITE, GREY, BLACK = 0, 1, 2
+colour = {}; loops = []
+def visit(n, path):
+    colour[n] = GREY
+    for m in sorted(g.get(n, ())):
+        if colour.get(m, WHITE) == GREY: loops.append(path[path.index(m):] + [m])
+        elif colour.get(m, WHITE) == WHITE: visit(m, path + [m])
+    colour[n] = BLACK
+for n in sorted(states):
+    if colour.get(n, WHITE) == WHITE: visit(n, [n])
+for c in loops: fail(f"uncapped cycle without a Bora gate: {' → '.join(c)}")
+ok(f"no cycle survives once the {len(capped)} capped edges and {len(gate)} Bora-gate states are removed")
 
 # 6. engagement references
 for kname in E["graduation"]["never"]:
     if kname not in K: fail(f"graduation.never names unknown kind '{kname}'")
-for kname in E["presence"]["while_absent"]["pause"]:
-    if kname not in K: fail(f"presence.pause names unknown kind '{kname}'")
 ok("engagement.yaml references resolve")
+
+# 7. P-10: the mailroom sends only declared effects; robots are entities in the matrix
+declared = set(E["mailroom_declared_effects"])
+for name, k in K.items():
+    senders = {x.strip() for x in str(k["from"]).split("|")}
+    if "mailroom" in senders and name not in declared: fail(f"kind '{name}' is sent by the mailroom but is not a declared effect (P-10)")
+    if "daemon" in senders: fail(f"kind '{name}' is sent by the daemon — the daemon decides nothing (P-10)")
+for d in declared:
+    if d not in K: fail(f"declared effect '{d}' is not a kind")
+robots = sorted((ROOT / "robots").glob("*.yaml"))
+for f in robots:
+    R = yaml.safe_load(f.read_text()); role = R["role"]
+    if role not in roles: fail(f"{f.name}: role '{role}' not in engagement.yaml"); continue
+    may = {n for n, k in K.items() if role in {x.strip() for x in str(k["from"]).split("|")}}
+    for i in R.get("intercepts") or []:
+        if " " not in i and i not in K: fail(f"{f.name}: intercepts unknown kind '{i}'")
+    for rule in R["rules"]:
+        for kind in re.findall(r"\bsend ([a-z][a-z-]+)", rule["then"]):
+            if kind not in K: fail(f"{f.name} {rule['id']}: sends unknown kind '{kind}'")
+            elif kind not in may: fail(f"{f.name} {rule['id']}: role '{role}' may not send '{kind}'")
+ok(f"mailroom sends only its {len(declared)} declared effects; {len(robots)} robots checked against the matrix")
 
 # render
 if "--render" in sys.argv:

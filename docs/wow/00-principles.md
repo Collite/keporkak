@@ -20,6 +20,10 @@
 - **P-6 Observed, not attested.** A guard about the world is checked by the daemon; a guard about intent is attested by
   the sender and logged as such.
 - **P-7 No endless loops.** Every arrow has a fire count, every thread a hop cap, every wait a deadline.
+- **P-10 The daemon holds no rule.** It reports facts, checks declared guards, carries out declared effects and
+  requested operations. Whatever *decides* — blocks, permits or changes someone's work — is a named entity: a
+  **persona** (decides by judgement), a **robot** (decides by its written rules in `robots/`), or one entity with both
+  halves. Not every `if` is a robot: checking a declared guard or doing what was asked is mechanism.
 - **P-8 Whatever is not explicitly allowed is forbidden.** Everything autonomous is whitelisted (`70`).
 - **P-9 Diverge before converging.** Options before decisions; leans are not decisions; "deferred" is a tracked outcome.
 
@@ -28,8 +32,9 @@ A decision in the control room (D-n) › `contracts.md` › `architecture.md` �
 `rules/*.yaml` › this rulebook's prose › a profile › a skill's wording. A text that loses is wrong and gets fixed.
 
 ## Who is who
-Bora · Principal · TeamLead · Pool Manager · Coder · Reviewer · Retro · Scout · the daemon and its mailroom. Their
-borders are in `rules/engagement.yaml:roles` and explained in `70`. The **design squad** (Cowork) designs and plans; the
+Bora · Principal · TeamLead · Pool Manager · Coder · Reviewer · QA · Deputy · Retro · Gardener · the daemon and its mailroom. Their
+borders are in `rules/engagement.yaml:roles` and explained in `70`; their personas are in `agents/`, their robot halves in `robots/` (both rendered to
+`renders/`, with the borders and the allowed messages generated from the rules). The **design squad** (Cowork) designs and plans; the
 **coding squad** (CLI seats) builds. A squad is a family of roles; the host is a property of the seat (D-14).
 
 ## Changing a rule

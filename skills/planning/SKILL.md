@@ -24,8 +24,10 @@ ticks boxes, appends `done <sha>`, writes Found lines and Retro notes, and stops
 - **Specific about the result and its test — not the implementation.** Name interfaces, behaviours and acceptance;
   do not pre-decide detail the executor can read from the code; avoid file paths and line numbers that go stale. A
   specs task names ≤ 5 behaviours.
-- **Tests first.** T1 is specs. Build stages verify with mocked unit and component tests. Anything that needs a real
-  dependency is a **certification stage** with a live DONE line, placed where the plan needs it.
+- **Tests first.** T1 is specs: write each behaviour as the sentence that will become the spec's name — Bora reads
+  those specs to see that the stage was done, so name behaviours a person would recognise, at most five. Build stages verify with mocked unit and component tests. Anything that needs a real
+  dependency is a **certification stage** with a live DONE line, placed where the plan needs it. Mark each live task `[QA]`: only the QA seat
+  touches the live target or a browser — say what to verify and which fixture to save.
 - **The three lines.** `rolls:` what the stage releases · `live:` where its DONE is observed · `touches:` which design
   border it crosses by plan (normally `none`). They decide what happens after PASS.
 - **The fence.** In scope (one sentence) · out of scope (neighbouring stages by name) · stop conditions with ids

@@ -1,0 +1,21 @@
+# The Deputy's robot half (D-28, D-33, D-35). Its LLM half only writes shadow rulings (agents/deputy/AGENT.md).
+role: deputy
+active_when: "presence = absent"
+intercepts:            # while absent the mailroom routes these here instead of to their addressee (a declared effect)
+  - "every class-B kind addressed to bora"
+  - merge
+  - release
+  - deploy-request
+rules:
+  - {id: DEP-1, when: "a class-B kind addressed to Bora arrives", then: "send hold to the asker · wake the LLM half for a shadow-ruling"}
+  - {id: DEP-2, when: "an assignment-proposal arrives and the stage is named in a queue-approval signed by Bora for the current wave", then: "send queued-approval to the TeamLead (the only yes the Deputy has)"}
+  - {id: DEP-3, when: "a merge, release or deploy-request arrives", then: "send hold to the TeamLead — the tail waits for Bora's return"}
+  - {id: DEP-4, when: "two FIX FIRST in a row on one stage", then: "send anomaly-stop to the TeamLead (the stage pauses)"}
+  - {id: DEP-5, when: "two seat-gone events within an hour", then: "send anomaly-stop to the Pool Manager (the seat pauses)"}
+  - {id: DEP-6, when: "consumption above twice the daily median", then: "send anomaly-stop to the Pool Manager (provisioning pauses)"}
+  - {id: DEP-7, when: "a stray change is observed in a main checkout", then: "send anomaly-stop to the TeamLead (the stage freezes)"}
+  - {id: DEP-8, when: "presence turns present", then: "send digest to Bora: held items · anomaly stops · shadow rulings · ledger proposals; release what was held"}
+limits:
+  - "never a queued-approval for a stage cut after Bora left (pin stages included)"
+  - "never anything but hold for approval, ruling, reverse, phase-exit-request"
+  - "a 'serious' reverse from Bora switches DEP-2 off until he switches it on again"

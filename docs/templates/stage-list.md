@@ -16,6 +16,7 @@ rolls: none | <image or artefact>  ·  live: none | <target>  ·  touches: none 
 ## Tasks (tick right after landing; append one line `done <sha>` per task; edit nothing else)
 - [ ] T1 — Specs: <≤ 5 behaviours, one line each>
 - [ ] T2 — …                                     (6–8 tasks)
+- [ ] T<n> — [QA] <a live check: what to verify, the fixture to save> (send `qa-request`; only QA touches the live target)
 
 ## DONE (observable, all required)
 - <behaviour visible from outside> · <test command + expected green> · <fixture saved at …> (if live)

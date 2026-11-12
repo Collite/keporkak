@@ -1,0 +1,8 @@
+# The Retro's robot half: when a retro runs (D-13, D-35). The retro itself is the LLM half.
+role: retro
+active_when: always
+intercepts: []
+rules:
+  - {id: RET-1, when: "a stage-exit arrives for a stage that had a FIX FIRST or a stop", then: "start a stage-retro"}
+  - {id: RET-2, when: "a stage-exit arrives and it is the 5th exit since the last stage-retro", then: "start a stage-retro"}
+  - {id: RET-3, when: "the last stage of a phase exits", then: "start a phase-retro (always; the phase cannot exit without its retro-report)"}

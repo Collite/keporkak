@@ -14,7 +14,10 @@ against the DONE line — no code review beyond the fixture spec.
 
 ## Steps
 1. Pin the range (`base..head`) and confirm the head on GitHub. Read CI on that head: run ids and counts.
-2. Read the diff for the DONE line: does each DONE item hold, within the contract? If the repo documents coding
+2. Read the **acceptance specs first** — the ones the PR lists against the DONE line. For each DONE item: is there a
+   spec that reads as that behaviour, and would it go red if the behaviour were removed? (Break it locally if you
+   doubt it.) A DONE item with no such spec, or a spec that would stay green, is a blocker. Then read the diff: does
+   each DONE item hold, within the contract? If the repo documents coding
    standards, read them as a second axis; skip what tooling already enforces.
 3. Classify every finding. A **blocker** violates the contract, a D-n, the DONE line or a security invariant, or is a
    test that does not test what it claims. Everything else is a **follow-up** → a GitHub issue (group them).

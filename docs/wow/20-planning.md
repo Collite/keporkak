@@ -25,14 +25,17 @@
   `Realizes · Contract · Pins`, the three lines `rolls: · live: · touches:`, scope fence with stop-condition ids,
   pre-flight, tasks, DONE, exit, Found while doing, Retro notes. Any executor finds the fences in the same place. `R4.12, D-15, D-27 l`
 - **PL-9 The three lines.** `rolls:` what the stage releases (`none` or the image/artefact); `live:` where its DONE is
-  observed (`none` or the target); `touches:` which Design-Roles border it crosses by plan (`none` · `contracts` ·
+  observed (`none` or the target — its live tasks are marked `[QA]`, EX-16); `touches:` which Design-Roles border it crosses by plan (`none` · `contracts` ·
   `architecture` · `UX` · `infra`). Bora sees them when he approves the assignment; they select the tail (`70` EN-7). `D-27`
 - **PL-10 Specific about the result, not the implementation.** Be specific about the result and its test; do not
   pre-decide detail the executor can read from the code. Describe interfaces and behaviours rather than file paths and
   line numbers, which go stale. Acceptance is testable; out-of-scope is explicit. `R4 paste-in, D-11`
-- **PL-11 Tests first, and which tests.** A stage that lands code starts with a specs task. Build stages are verified
+- **PL-11 Tests first, and which tests.** A stage that lands code starts with a specs task: at most five behaviours,
+  each a sentence that becomes a spec's name. **These acceptance specs are written to be read** — by Bora and the
+  reviewer — and there are enough of them when (a) breaking any DONE item turns one red and (b) the DONE line can be
+  ticked from reading them. Finer tests are the executor's, one slice at a time; not every test must be written. Build stages are verified
   by mocked unit and component tests (all external collaborators mocked). Behaviour that needs a real dependency is a
-  **certification stage** with a live DONE line — a stage like any other, planned where the plan needs it. `conv §4, R4.6`
+  **certification stage** with a live DONE line — a stage like any other, planned where the plan needs it. `conv §4, R4.6, D-38`
 - **PL-12 Library references.** Where a task touches a complex library, the list points at current documentation
   (context7), a locally cloned source, or a named example — the profile lists them. `planning skill`
 - **PL-13 Cross-repo needs are stages in the owning plan.** The consumer waits for the pin. A pin changes only in a

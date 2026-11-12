@@ -9,7 +9,7 @@
   `Collite/ttr-demo` · `tatrman-platform` → `Collite/ttr-platform` · `kantheon` · `olymp` (GitOps) · `modeler` (frozen).
 - **Streams and lanes (PL-7):** `stream: dev | project`; lanes `coding` · `junior` · `bora-unblock` (dev) and
   `bora-legal` · `bora-support` · `claude-support` (project). Historical `senior1`/`senior2` values stay until touched.
-- **Live target (PL-9 `live:`):** every certification stage, live golden, smoke or drill runs on **`bp-dsk`**
+- **Live target (PL-9 `live:`; only QA touches it, EX-16):** every certification stage, live golden, smoke or drill runs on **`bp-dsk`**
   (kube-context `bp-dsk`, always pass `--context`; olymp `clusters/bp-dsk/`). **`hartland` is the demo cluster**; its
   olymp tree changes only for a demo release Bora calls. "hartland" the content (repo, world, bundles, data) keeps its
   name; a plan written before 2026-10-31 that says "on hartland" reads "on bp-dsk". `R7`
