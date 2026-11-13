@@ -6,7 +6,7 @@ import java.time.LocalDate
 
 internal typealias Check = (JsonElement) -> Boolean
 internal val text: Check = { it is JsonPrimitive && it.isString }
-internal fun pattern(regex: String): Check = { text(it) && Regex(regex).containsMatchIn(it.jsonPrimitive.content) }
+internal fun pattern(regex: String): Check = { text(it) && Regex(regex).matches(it.jsonPrimitive.content) }
 internal fun integer(min: Int? = null): Check = { value ->
     value is JsonPrimitive && !value.isString && runCatching {
         val number = value.content.toBigDecimal().toBigIntegerExact()
@@ -26,7 +26,7 @@ internal val party = pattern("^(bora|daemon|mailroom|ledger|board|[a-z]+(-[a-z0-
 internal val stageId = pattern("^[A-Z][A-Z0-9-]*/P[0-9]+/S[0-9]+\\.[0-9]+$")
 internal val timestamp: Check = { value ->
     if (!text(value)) false else {
-        val match = Regex("^(\\d{4})-(0[1-9]|1[0-2])-(\\d{2})[Tt](?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:[Zz]|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$").find(value.jsonPrimitive.content)
+        val match = Regex("^(\\d{4})-(0[1-9]|1[0-2])-(\\d{2})[Tt](?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:[Zz]|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$").matchEntire(value.jsonPrimitive.content)
         match != null && runCatching {
             val (year, month, day) = match.destructured
             require(year.toInt() > 0)

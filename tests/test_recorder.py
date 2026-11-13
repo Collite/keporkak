@@ -37,6 +37,10 @@ class RecorderTests(unittest.TestCase):
         result = self.record({**MESSAGE, "id": "m-panda-1"})
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.project / "mail").exists())
+    def test_just_record_refuses_a_trailing_newline_in_a_message_id(self):
+        result = self.record({**MESSAGE, "id": "m-panda-000001\n"}, via_just=True)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertFalse((self.project / "mail").exists())
     def test_non_hand_producer_is_refused(self):
         self.assertNotEqual(self.record({**MESSAGE, "by": "seat:coder-1"}).returncode, 0)
         self.assertFalse((self.project / "mail").exists())

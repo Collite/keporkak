@@ -7,8 +7,9 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import sys
-from jsonschema import Draft202012Validator, FormatChecker, validators
+from jsonschema import validators
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -48,7 +49,7 @@ def destination(project, message, effort):
         raise ValueError("project checkout must be an existing directory")
     stage = message.get("stage")
     if stage:
-        match = re.match(r"^([A-Z][A-Z0-9-]*)/P([0-9]+)/S([0-9]+\.[0-9]+)$", stage)
+        match = re.fullmatch(r"^([A-Z][A-Z0-9-]*)/P([0-9]+)/S([0-9]+\.[0-9]+)$", stage)
         inferred, phase, number = match.groups()
         if effort and effort != inferred:
             raise ValueError("explicit effort differs from message stage")
@@ -72,8 +73,10 @@ def main():
     try:
         message = json.loads(sys.stdin.read(), parse_int=Decimal, parse_float=Decimal, parse_constant=reject_constant, object_pairs_hook=unique_object)
         schema = json.loads((ROOT / "schemas/message.schema.json").read_text())
-        checker = Draft202012Validator.TYPE_CHECKER.redefine("integer", integer)
-        validator = validators.extend(Draft202012Validator, type_checker=checker)(schema, format_checker=FormatChecker())
+        schema_tools = runpy.run_path(str(ROOT / "build-support/check_schemas.py"))
+        contract_validator = schema_tools["ContractValidator"]
+        checker = contract_validator.TYPE_CHECKER.redefine("integer", integer)
+        validator = validators.extend(contract_validator, type_checker=checker)(schema, format_checker=schema_tools["contract_format_checker"]())
         if not validator.is_valid(message):
             raise ValueError("message does not validate against kp:message/1")
         if not message["by"].startswith("hand:"):

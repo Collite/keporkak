@@ -3725,5 +3725,743 @@
     "schema": "record",
     "accepted": false,
     "value": "text"
+  },
+  {
+    "name": "id trailing LF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001\n",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "id trailing CRLF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001\r\n",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "id trailing line separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001 ",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "id trailing paragraph separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001 ",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "thread trailing LF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001\n",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "thread trailing CRLF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001\r\n",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "thread trailing line separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001 ",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "thread trailing paragraph separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001 ",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "re trailing LF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "re": "m-panda-000001\n"
+    }
+  },
+  {
+    "name": "re trailing CRLF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "re": "m-panda-000001\r\n"
+    }
+  },
+  {
+    "name": "re trailing line separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "re": "m-panda-000001 "
+    }
+  },
+  {
+    "name": "re trailing paragraph separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "re": "m-panda-000001 "
+    }
+  },
+  {
+    "name": "from trailing LF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1\n",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "from trailing CRLF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1\r\n",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "from trailing line separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1 ",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "from trailing paragraph separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1 ",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "to trailing LF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead\n",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "to trailing CRLF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead\r\n",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "to trailing line separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead ",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "to trailing paragraph separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead ",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "cc trailing LF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "cc": [
+        "bora\n"
+      ]
+    }
+  },
+  {
+    "name": "cc trailing CRLF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "cc": [
+        "bora\r\n"
+      ]
+    }
+  },
+  {
+    "name": "cc trailing line separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "cc": [
+        "bora "
+      ]
+    }
+  },
+  {
+    "name": "cc trailing paragraph separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "cc": [
+        "bora "
+      ]
+    }
+  },
+  {
+    "name": "kind trailing LF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started\n",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "kind trailing CRLF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started\r\n",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "kind trailing line separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started ",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "kind trailing paragraph separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started ",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder"
+    }
+  },
+  {
+    "name": "stage trailing LF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "stage": "KP/P0/S0.2\n"
+    }
+  },
+  {
+    "name": "stage trailing CRLF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "stage": "KP/P0/S0.2\r\n"
+    }
+  },
+  {
+    "name": "stage trailing line separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "stage": "KP/P0/S0.2 "
+    }
+  },
+  {
+    "name": "stage trailing paragraph separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "stage": "KP/P0/S0.2 "
+    }
+  },
+  {
+    "name": "by trailing LF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder\n"
+    }
+  },
+  {
+    "name": "by trailing CRLF rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder\r\n"
+    }
+  },
+  {
+    "name": "by trailing line separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder "
+    }
+  },
+  {
+    "name": "by trailing paragraph separator rejected",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder "
+    }
+  },
+  {
+    "name": "record event trailing LF rejected",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "expired\n",
+      "id": "m-panda-000001"
+    }
+  },
+  {
+    "name": "record class trailing LF rejected",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "delivered",
+      "id": "m-panda-000001",
+      "to": [
+        "teamlead"
+      ],
+      "class": "A\n"
+    }
+  },
+  {
+    "name": "record machine trailing LF rejected",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "transition",
+      "machine": "stage\n",
+      "subject": "KP/P0/S0.2",
+      "from": "planned",
+      "to": "building",
+      "cause": "m-panda-000001"
+    }
+  },
+  {
+    "name": "record phase trailing LF rejected",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "op",
+      "op": "worktree",
+      "phase": "ok\n",
+      "cause": "m-panda-000001"
+    }
+  },
+  {
+    "name": "record timestamp trailing LF rejected",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z\n",
+      "event": "expired",
+      "id": "m-panda-000001"
+    }
   }
 ]

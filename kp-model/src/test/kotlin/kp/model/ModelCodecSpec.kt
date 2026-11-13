@@ -21,6 +21,10 @@ class ModelCodecSpec : StringSpec({
     "model validation agrees with all independently labelled examples" {
         sharedExamples().forEach { modelAccepts(it) shouldBe it.accepted }
     }
+    "a record timestamp with a trailing newline is rejected" {
+        val source = Json.parseToJsonElement("""{"v":1,"seq":2,"at":"2026-11-13T12:00:01Z\n","event":"expired","id":"m-panda-000001"}""").jsonObject
+        shouldThrowAny { Record.read(source) }
+    }
     "ids reject malformed values at construction" {
         shouldThrowAny { MessageId("m-panda-1") }
         shouldThrowAny { StageId("KP/S0.2") }
