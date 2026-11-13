@@ -56,7 +56,7 @@ E = yaml.safe_load((ROOT / "rules/engagement.yaml").read_text())
 
 FIXTURE = "--fixture" in sys.argv
 W = []
-V = {"facts": {}, "operations": {}}
+V = yaml.safe_load((ROOT / "rules/vocabulary.yaml").read_text()) if not FIXTURE else {"facts": {}, "operations": {}}
 if FIXTURE:
     spec = yaml.safe_load(pathlib.Path(sys.argv[sys.argv.index("--fixture") + 1]).read_text())
     scenario = spec["scenarios"][int(sys.argv[sys.argv.index("--scenario") + 1])]
@@ -82,6 +82,50 @@ def ok(m): print("ok  ", m)
 states = set(L["states"])
 trans = L["transitions"]
 roles = set(E["roles"])
+
+# All executable names are resolved against the closed vocabulary and rule owners.
+def check_references(value, owner):
+    if isinstance(value, dict):
+        namespaces = {"fact": V["facts"], "op": V["operations"],
+                      "do": V["operations"], "cap": E.get("caps", {}),
+                      "kind": K, "emit": K}
+        labels = {"fact": "fact", "op": "operation", "do": "operation",
+                  "cap": "cap", "kind": "kind", "emit": "kind"}
+        for key, item in value.items():
+            if key in namespaces and isinstance(item, str) and item not in namespaces[key]:
+                fail(f"{owner}: unknown {labels[key]} '{item}'")
+            check_references(item, owner)
+    elif isinstance(value, list):
+        for item in value:
+            check_references(item, owner)
+
+def contains_number(value):
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return True
+    if isinstance(value, dict):
+        return any(contains_number(item) for item in value.values())
+    if isinstance(value, list):
+        return any(contains_number(item) for item in value)
+    return False
+
+def check_requirements(requirements, owner):
+    check_references(requirements, owner)
+    if contains_number(requirements):
+        fail(f"{owner}: literal number inside a requirement")
+
+for transition in trans:
+    owner = transition.get("id", f"{transition['from']}→{transition['to']}")
+    check_requirements(transition.get("require", []), owner)
+    check_references(transition.get("effects", []), owner)
+for name, kind in K.items():
+    check_requirements(kind.get("require", []), name)
+    for case in (kind.get("class", {}).get("cases", []) if isinstance(kind.get("class"), dict) else []):
+        check_requirements([case["if"]], name)
+ok(f"closed vocabulary loaded: {len(V['facts'])} facts, {len(V['operations'])} operations")
+if not fails:
+    ok("no unknown fact, operation, kind or cap; no literal number inside a requirement")
 
 # 1. transitions → kinds
 for t in trans:
