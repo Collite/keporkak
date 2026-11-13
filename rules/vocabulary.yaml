@@ -1,341 +1,311 @@
-# Closed vocabulary, first edition — contracts.md §4.4 (D-41).
+# Closed vocabulary — contracts.md §4.4, Amendment 1 (§4.6, D-49).
 # O: observed · L: log · P: project · C: pool configuration.
 version: 1
 facts:
   plan.predecessors_exited:
-    params:
-    - stage
+    params: stage
     returns: bool
     source: P+L
   plan.stage_has_list:
-    params:
-    - stage
+    params: stage
     returns: bool
     source: P
   plan.last_stage_exited:
-    params:
-    - phase
+    params: phase
     returns: bool
     source: P+L
+  plan.in_current_wave:
+    params: stage, or a list of stages
+    returns: bool — all of them
+    source: P+L
+  plan.chart_fresh:
+    params: phase
+    returns: bool — `plan.md`'s chart changed after the phase's last stage exited
+    source: P+L
   list.fence_complete:
-    params:
-    - stage
+    params: stage
     returns: bool — SC ids, `rolls:`, `live:`, `touches:` present
     source: P
   list.stop_conditions:
-    params:
-    - stage
+    params: stage
     returns: set of SC ids
     source: P
   list.tasks_open:
-    params:
-    - stage
+    params: stage
     returns: int — a task is closed when ticked with `done <sha>`
     source: P
   list.tasks_total:
-    params:
-    - stage
+    params: stage
     returns: int — a task is closed when ticked with `done <sha>`
     source: P
   list.task_exists:
-    params:
-    - stage
-    - id
+    params: stage, id
     returns: bool
     source: P
   list.done_item_exists:
-    params:
-    - stage
-    - id
+    params: stage, id
     returns: bool
     source: P
   list.found_untriaged:
-    params:
-    - stage
+    params: stage
     returns: int
     source: P+L
   list.sections_changed:
-    params:
-    - stage
-    - since
+    params: stage, since
     returns: set of section names
     source: P
   list.lines:
-    params:
-    - stage
+    params: stage
     returns: int
     source: P
   stage.rolls:
-    params:
-    - stage
+    params: stage
     returns: the header's value
     source: P
   stage.live:
-    params:
-    - stage
+    params: stage
     returns: the header's value
     source: P
   stage.touches:
-    params:
-    - stage
+    params: stage
     returns: the header's value
     source: P
   stage.cut_at:
-    params:
-    - stage
+    params: stage
     returns: time the list first appeared
     source: P
+  stage.state:
+    params: stage
+    returns: the machine's current state
+    source: L
+  phase.state:
+    params: phase
+    returns: the machine's current state
+    source: L
   status.entry_present:
-    params:
-    - stage
+    params: stage
     returns: bool
     source: P
+  status.entries:
+    params: effort
+    returns: int — dated entries in STATUS
+    source: P
   register.fresh:
-    params: []
+    params: —
     returns: bool — rebuilt after the last STATUS change
     source: P
   project.clean_and_pushed:
-    params: []
+    params: —
     returns: bool
     source: O
   project.proof_files:
-    params:
-    - stage
+    params: stage
     returns: int — files the evidence rules forbid (R6)
     source: P
   git.branch_exists:
-    params:
-    - repo
-    - stage
+    params: repo, stage
     returns: bool
     source: O
   git.stray_changes:
-    params:
-    - office
+    params: office
     returns: int — changes in main checkouts and sibling repos
     source: O
   git.pin_files_touched:
-    params:
-    - pr
+    params: pr
     returns: int
     source: O
   pr.ready:
-    params:
-    - stage
+    params: stage
     returns: bool
     source: O
   pr.closed:
-    params:
-    - stage
+    params: stage
     returns: bool
     source: O
   pr.merged:
-    params:
-    - stage
+    params: stage
     returns: bool
     source: O
   pr.head:
-    params:
-    - stage
+    params: stage
     returns: sha
     source: O
   pr.commits_since:
-    params:
-    - stage
-    - message
+    params: stage, message
     returns: int
     source: O
   pr.review_on:
-    params:
-    - stage
-    - sha
+    params: stage, sha
     returns: none · approved · changes_requested · commented
     source: O
   pr.blocker_responses:
-    params:
-    - stage
-    - ids
+    params: stage, ids
     returns: set of ids answered by one line each
     source: O
   pr.evidence_present:
-    params:
-    - stage
+    params: stage
     returns: bool — the hand-off's evidence section is filled
     source: O
+  review.open_blockers:
+    params: stage
+    returns: set of blocker ids open after the last verdict or re-verdict
+    source: L
   ci.state:
-    params:
-    - sha
+    params: sha
     returns: green · red · pending · none
     source: O
   release.state:
-    params:
-    - stage
+    params: stage
     returns: none · built · failed
     source: O
   live.namespace_absent:
-    params:
-    - name
+    params: name, or a stage (its `qa-<stage>` namespace)
     returns: bool
     source: O
   live.rollout_complete:
-    params:
-    - target
-    - pin
+    params: target, pin
     returns: bool
     source: O
   fixture.exists:
-    params:
-    - pointer
+    params: pointer
     returns: bool
     source: O
   seat.name:
-    params:
-    - seat or role-in-stage
+    params: seat or role-in-stage
     returns: string
     source: L+C
   seat.role:
-    params:
-    - seat or role-in-stage
+    params: seat or role-in-stage
     returns: string
     source: L+C
   seat.model:
-    params:
-    - seat or role-in-stage
+    params: seat or role-in-stage
     returns: string
     source: L+C
   seat.effort:
-    params:
-    - seat or role-in-stage
+    params: seat or role-in-stage
     returns: string
     source: L+C
   seat.state:
-    params:
-    - seat
+    params: seat
     returns: provisioned · ready · busy · idle · gone · retired
     source: L
   seat.process_gone:
-    params:
-    - seat
+    params: seat
     returns: bool
     source: O
   seat.protocol_closed:
-    params:
-    - seat
+    params: seat
     returns: bool
     source: O
   seat.silent_for:
-    params:
-    - seat
+    params: seat
     returns: duration (zero if none)
     source: O
   seat.tool_call_open_for:
-    params:
-    - seat
+    params: seat
     returns: duration (zero if none)
     source: O
   seat.context_used:
-    params:
-    - seat
+    params: seat
     returns: fraction
     source: O
   seat.usage:
-    params:
-    - seat
-    - window
+    params: seat, window
     returns: tokens
     source: O
   seat.inbox_replayed:
-    params:
-    - seat
+    params: seat
     returns: bool
     source: L
   pool.seat_available:
-    params:
-    - role
-    - level
+    params: role, level
     returns: bool
     source: L+C
   roster.rank:
-    params:
-    - seat
+    params: seat
     returns: int — position in the roster's order
     source: C
   roster.model_rank:
-    params:
-    - seat
+    params: seat
     returns: int — position in the roster's order
     source: C
+  roster.floor_rank:
+    params: —
+    returns: int — the model rank of the roster's review floor
+    source: C
   budget.slot_open:
-    params:
-    - dimension
+    params: dimension
     returns: bool
     source: L+C
   budget.consumption:
-    params:
-    - subscription
-    - window
+    params: subscription, window
     returns: fraction of the limit
     source: O
+  budget.vs_daily_median:
+    params: subscription
+    returns: ratio — today's consumption over the daily median
+    source: O+L
   office.computer_use:
-    params:
-    - office
+    params: office
     returns: A · B · C · off
     source: C
-  bora.present:
-    params: []
-    returns: bool
-    source: L
+  bora.acted:
+    params: —
+    returns: event — a signed command arrived
+    source: O
   bora.idle_for:
-    params: []
-    returns: duration
+    params: —
+    returns: duration since the last signed command
+    source: O
+  bora.present:
+    params: —
+    returns: bool — read from the presence machine
     source: L
   bora.absent_since:
-    params: []
-    returns: time
+    params: —
+    returns: time — read from the presence machine
     source: L
   queue.names:
-    params:
-    - stage
+    params: stage
     returns: bool — in a signed queue of the current wave
     source: L
   thread.hops:
-    params:
-    - thread
+    params: thread or (stage, topic)
     returns: int
     source: L
-    alternative_params:
-    - - stage
-      - topic
   thread.open:
-    params:
-    - thread
+    params: thread or (stage, topic)
     returns: bool
     source: L
-    alternative_params:
-    - - stage
-      - topic
+  thread.state:
+    params: thread or (stage, topic)
+    returns: asked, held, ruled or expired
+    source: L
+  log.count:
+    params: kind, scope (stage, seat, phase, effort or office); optional `where` (args to match), `window` (a duration),
+      `since` (a kind)
+    returns: int — deliveries of that kind
+    source: L
   request.open:
-    params:
-    - stage
-    - kind
+    params: stage, kind
     returns: bool — an unanswered request of that kind
     source: L
   refusals.today:
-    params:
-    - seat
+    params: seat
     returns: int
     source: L
   now:
-    params: []
+    params: —
     returns: time
     source: —
 operations:
   worktree.create:
-    requested_by: effect of approval/queued-approval (proposed → assigned)
+    requested_by: effect of `approval`/`queued-approval` · of `stage-exit`/`close` (§4.5)
     identity: office user
     results: ok · failed
   worktree.remove:
-    requested_by: effect of stage-exit/close (transitions into exited/closed)
+    requested_by: effect of `approval`/`queued-approval` · of `stage-exit`/`close` (§4.5)
     identity: office user
     results: ok · failed
   seat.start:
@@ -414,3 +384,7 @@ operations:
     requested_by: effect of any class-B delivery or hold
     identity: —
     results: ok
+attestations:
+  done_lines_hold: DONE lines ticked (attested), review-request
+  introduced_by_fix: a new finding only with introduced_by_fix (attested, logged), re-verdict
+  floors_checked: phase-exit reader-floor check; Amendment 1 explicitly permits this judgement
