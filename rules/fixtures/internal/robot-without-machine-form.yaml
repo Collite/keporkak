@@ -1,0 +1,13 @@
+name: a robot guard without a machine form fails the check
+scenarios:
+  - name: prose alone on a robot
+    given:
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, on: message, guard: always, require: [], effects: []}
+      robots:
+        - role: coder
+          active_when: {always: true}
+          intercepts: []
+          rules: [{id: ROBOT-missing, when: prose only}]
+    expect:
+      failures: ["ROBOT-missing: guard has no machine form"]

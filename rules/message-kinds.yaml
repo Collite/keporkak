@@ -150,6 +150,13 @@ kinds:
     - fact: stage.cut_at
       lte:
         fact: bora.absent_since
+    - fact: log.count
+      kind: reverse
+      scope: office
+      where:
+        severity: serious
+      since: queue-approval
+      eq: 0
     expiry: []
   decline:
     from: bora

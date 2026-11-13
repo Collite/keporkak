@@ -86,6 +86,9 @@ if FIXTURE:
          "mailroom_declared_effects": [], "caps": given.get("caps", {})}
     V = given.get("vocabulary", V)
     W = given.get("walks", [])
+ROBOTS = ([(f"fixture-{index}.yaml", robot) for index, robot in enumerate(given.get("robots", []))]
+          if FIXTURE else [(path.name, load_yaml(path.read_text())) for path in sorted((ROOT / "robots").glob("*.yaml"))])
+ROBOT_THRESHOLDS = {name:value for _,robot in ROBOTS for name,value in robot.get("thresholds",{}).items()}
 fails = []
 def fail(m): fails.append(m); print("FAIL", m)
 def ok(m): print("ok  ", m)
@@ -95,20 +98,20 @@ trans = L["transitions"]
 roles = set(E["roles"])
 
 # All executable names are resolved against the closed vocabulary and rule owners.
-def check_references(value, owner):
+def check_references(value, owner, robot=None):
     if isinstance(value, dict):
         namespaces = {"fact": V["facts"], "op": V["operations"],
                       "do": V["operations"], "cap": E.get("caps", {}),
-                      "kind": K, "emit": K, "attest": V.get("attestations", {}), "counter": L.get("counters", {}), "count": L.get("counters", {})}
+                      "kind": K, "emit": K, "attest": V.get("attestations", {}), "counter": L.get("counters", {}), "count": L.get("counters", {}), "robot": robot.get("thresholds",{}) if robot is not None else ROBOT_THRESHOLDS}
         labels = {"fact": "fact", "op": "operation", "do": "operation",
-                  "cap": "cap", "kind": "kind", "emit": "kind", "attest": "attestation", "counter": "counter", "count": "counter"}
+                  "cap": "cap", "kind": "kind", "emit": "kind", "attest": "attestation", "counter": "counter", "count": "counter", "robot": "robot threshold"}
         for key, item in value.items():
             if key in namespaces and isinstance(item, str) and item not in namespaces[key]:
                 fail(f"{owner}: unknown {labels[key]} '{item}'")
-            check_references(item, owner)
+            check_references(item, owner, robot)
     elif isinstance(value, list):
         for item in value:
-            check_references(item, owner)
+            check_references(item, owner, robot)
 
 def contains_number(value):
     if isinstance(value, bool):
@@ -121,8 +124,8 @@ def contains_number(value):
         return any(contains_number(item) for item in value)
     return False
 
-def check_requirements(requirements, owner):
-    check_references(requirements, owner)
+def check_requirements(requirements, owner, robot=None):
+    check_references(requirements, owner, robot)
     if contains_number(requirements):
         fail(f"{owner}: literal number inside a requirement")
 
@@ -387,18 +390,67 @@ for name, k in K.items():
     if "daemon" in senders: fail(f"kind '{name}' is sent by the daemon — the daemon decides nothing (P-10)")
 for d in declared:
     if d not in K: fail(f"declared effect '{d}' is not a kind")
-robots = [] if FIXTURE else sorted((ROOT / "robots").glob("*.yaml"))
-for f in robots:
-    R = load_yaml(f.read_text()); role = R["role"]
-    if role not in roles: fail(f"{f.name}: role '{role}' not in engagement.yaml"); continue
-    may = {n for n, k in K.items() if role in {x.strip() for x in str(k["from"]).split("|")}}
-    for i in R.get("intercepts") or []:
-        if " " not in i and i not in K: fail(f"{f.name}: intercepts unknown kind '{i}'")
-    for rule in R["rules"]:
-        for kind in re.findall(r"\bsend ([a-z][a-z-]+)", rule["then"]):
-            if kind not in K: fail(f"{f.name} {rule['id']}: sends unknown kind '{kind}'")
-            elif kind not in may: fail(f"{f.name} {rule['id']}: role '{role}' may not send '{kind}'")
-ok(f"mailroom sends only its {len(declared)} declared effects; {len(robots)} robots checked against the matrix")
+executed = persona = 0
+robot_ids = set()
+for filename, robot in ROBOTS:
+    role = robot["role"]
+    if role not in roles:
+        fail(f"{filename}: unknown role '{role}'")
+        continue
+    may = {name for name,kind in K.items() if role in {part.strip() for part in kind["from"].split("|")}}
+    check_requirements([robot.get("active_when",{})],filename,robot)
+    for intercepted in robot.get("intercepts",[]):
+        if isinstance(intercepted,str):
+            if intercepted not in K: fail(f"{filename}: unknown intercepted kind '{intercepted}'")
+        elif not isinstance(intercepted,dict) or intercepted.get("class") not in E.get("classes", {"A":{},"B":{},"C":{}}) or intercepted.get("to") not in roles:
+            fail(f"{filename}: invalid class intercept")
+    if "queue" in robot:
+        queue=robot["queue"]
+        if queue.get("one_at_a_time") is not True or queue.get("then")!="fifo":
+            fail(f"{filename}: invalid queue discipline")
+        for kind in queue.get("order",[]):
+            if kind not in K: fail(f"{filename}: unknown queued kind '{kind}'")
+        check_requirements([queue.get("next_when",{})],filename,robot)
+    for rule in robot["rules"]:
+        owner=rule["id"]
+        if owner in robot_ids: fail(f"{owner}: duplicate robot rule id")
+        robot_ids.add(owner)
+        if rule.get("for")=="persona":
+            persona+=1
+            if "on" in rule or "then" in rule: fail(f"{owner}: persona rule must not execute")
+            continue
+        executed+=1
+        if not {"on","if","then"} <= set(rule):
+            fail(f"{owner}: guard has no machine form")
+            continue
+        trigger=rule["on"]
+        if not isinstance(trigger,dict) or not set(trigger)&{"fact","delivered","arrives","expired","presence","op"}:
+            fail(f"{owner}: invalid robot trigger")
+        check_references(trigger,owner,robot)
+        for field in ("delivered","arrives","expired"):
+            if field in trigger and trigger[field] not in K: fail(f"{owner}: unknown trigger kind '{trigger[field]}'")
+        check_requirements(rule["if"],owner,robot)
+        for action in rule["then"]:
+            if not isinstance(action,dict) or len(set(action)&{"send","wake"})!=1 or set(action)-{"send","wake","to","args"}:
+                fail(f"{owner}: robot then must only send or wake")
+                continue
+            check_references(action.get("args",{}),owner,robot)
+            if "send" in action:
+                kind=action["send"]
+                if kind not in K: fail(f"{owner}: unknown send kind '{kind}'")
+                elif kind not in may: fail(f"{owner}: role '{role}' may not send '{kind}'")
+                else:
+                    for name in action.get("args",{}):
+                        if name not in K[kind].get("args",{}): fail(f"{owner}: unknown send argument '{name}'")
+                    for name,definition in K[kind].get("args",{}).items():
+                        if definition.get("required") and name not in action.get("args",{}): fail(f"{owner}: missing send argument '{name}'")
+            if "wake" in action:
+                source=(ROOT / "agents" / role / "AGENT.md").read_text()
+                frontmatter=load_yaml(re.match(r"---\n(.*?)\n---",source,re.S).group(1))
+                if action["wake"] not in frontmatter.get("modes",{}): fail(f"{owner}: unknown own persona mode '{action['wake']}'")
+if not fails:
+    ok(f"mailroom sends only its {len(declared)} declared effects; {len(ROBOTS)} robots checked against the matrix")
+    ok(f"{executed} robot rules with on/if/then; {persona} persona rules; queue and named thresholds checked")
 
 # render
 if "--render" in sys.argv:
