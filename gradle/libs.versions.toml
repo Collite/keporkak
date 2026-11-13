@@ -1,0 +1,28 @@
+[versions]
+# Checked 2026-11-13: https://github.com/modelcontextprotocol/kotlin-sdk/blob/0.16.0/gradle/libs.versions.toml
+kotlin = "2.4.21"
+# Checked 2026-11-13: https://services.gradle.org/versions/current (distribution checksum in wrapper properties).
+gradle = "9.9.1"
+# Checked 2026-11-13: pinned by contracts/architecture; Maven Central acp-jvm/0.34.0 POM and upstream v0.34.0 catalog.
+acp = "0.34.0"
+# Checked 2026-11-13: pinned by contracts/architecture; Maven Central kotlin-sdk-jvm/0.16.0 POM.
+mcp = "0.16.0"
+# Checked 2026-11-13: MCP 0.16.0 release catalog and Maven Central kotlinx-serialization-json-jvm/1.11.0 POM.
+serialization = "1.11.0"
+# Checked 2026-11-13: MCP 0.16.0 release catalog and Maven Central kotest-runner-junit5-jvm/6.2.6 POM.
+kotest = "6.2.6"
+# Checked 2026-11-13: Kotest 6.2.6 published POM (junit-platform-launcher 1.13.4).
+junit-platform = "1.13.4"
+
+[libraries]
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+acp = { module = "com.agentclientprotocol:acp", version.ref = "acp" }
+mcp = { module = "io.modelcontextprotocol:kotlin-sdk", version.ref = "mcp" }
+kotest = { module = "io.kotest:kotest-runner-junit5", version.ref = "kotest" }
+kotest-assertions = { module = "io.kotest:kotest-assertions-core", version.ref = "kotest" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
