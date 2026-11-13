@@ -25,6 +25,17 @@ class EngineBoundarySpec : StringSpec({
         result.exitCode shouldBe 1
         result.output.contains("private access") shouldBe true
     }
+    "a Java module outside the engine cannot call the decision factory" {
+        val result = constructorProbe("kp-log", "java", "package probe; public class Counterfeit { public Object make() { return kp.engine.Decision.Companion.create(); } }")
+        result.exitCode shouldBe 1
+        result.output.contains("Decision construction outside kp-engine is forbidden") shouldBe true
+    }
+    "suppressing Kotlin visibility cannot bypass the decision construction fence" {
+        val source = "@file:Suppress(\"INVISIBLE_MEMBER\", \"INVISIBLE_REFERENCE\")\npackage probe; fun counterfeit() = kp.engine.Decision.create()"
+        val result = constructorProbe("kp-log", "kotlin", source)
+        result.exitCode shouldBe 1
+        result.output.contains("Decision construction outside kp-engine is forbidden") shouldBe true
+    }
     "the engine itself can construct a decision" {
         val result = constructorProbe("kp-engine", "kotlin", "package kp.engine; fun decisionInside() = Decision.create()")
         result.exitCode shouldBe 0
