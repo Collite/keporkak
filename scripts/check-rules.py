@@ -80,7 +80,7 @@ if FIXTURE:
     }
     K = given.get("kinds", {"started": {
         "from": "coder", "to": "teamlead", "guard": "-", "args": {},
-        "class": {"default": "A"}, "window": "stage", "expiry": [], "require": [],
+        "class": {"default": "A"}, "window": "stage", "max_fires": None, "deadline": None, "expiry": [], "require": [],
     }})
     E = {"roles": {"coder": {}, "teamlead": {}}, "graduation": {"never": []},
          "mailroom_declared_effects": [], "caps": given.get("caps", {})}
@@ -238,10 +238,59 @@ for machine, definition in machines.items():
         if any(can_hold(a+b) for a in alternatives(left.get("require", [])) for b in alternatives(right.get("require", []))):
             print(f"WARN overlapping transitions {left.get('id')} and {right.get('id')} ({left['from']}, {left.get('kind')}, {left.get('on', 'message')})")
 
+def argument_references(value):
+    if isinstance(value, dict):
+        if "arg" in value and isinstance(value["arg"],str):
+            yield value["arg"]
+        for item in value.values():
+            yield from argument_references(item)
+    elif isinstance(value,list):
+        for item in value:
+            yield from argument_references(item)
+
+for machine, transition in all_transitions:
+    kind = K.get(transition.get("kind"), {})
+    if "args" in kind:
+        for name in set(argument_references([transition.get("require",[]), transition.get("effects",[])])):
+            if name not in kind["args"]:
+                fail(f"{transition.get('id')}: undeclared argument '{name}'")
+
 for name, kind in K.items():
+    for field in ("args", "class", "window", "max_fires", "deadline", "expiry"):
+        if field not in kind:
+            fail(f"{name}: missing {field}")
+    if "require" not in kind:
+        fail(f"{name}: guard has no machine form")
+    if kind.get("window") not in ("stage","day","return","session"):
+        fail(f"{name}: invalid window")
+    classification = kind.get("class")
+    if not isinstance(classification,dict) or classification.get("default") not in ("A","B","C"):
+        fail(f"{name}: invalid class")
+    elif any(case.get("class") not in ("A","B","C") or "if" not in case for case in classification.get("cases",[])):
+        fail(f"{name}: invalid class case")
+    for argument in set(argument_references([kind.get("require",[]),kind.get("class",{}),kind.get("expiry",[])])):
+        if argument not in kind.get("args",{}):
+            fail(f"{name}: undeclared argument '{argument}'")
+    for argument, definition in kind.get("args",{}).items():
+        if not isinstance(definition,dict) or not set(definition)&{"type","enum"}:
+            fail(f"{name}: untyped argument '{argument}'")
     check_requirements(kind.get("require", []), name)
+    for effect in kind.get("expiry",[]):
+        check_references(effect,name)
+        if not isinstance(effect,dict) or not set(effect)&{"emit","report","transition","do"}:
+            fail(f"{name}: invalid expiry effect")
+        if "transition" in effect and effect["transition"] not in seen_ids:
+            fail(f"{name}: expiry names unknown transition '{effect['transition']}'")
+        if "emit" in effect and effect["emit"] not in E["mailroom_declared_effects"]:
+            fail(f"{name}: undeclared expiry emit '{effect['emit']}'")
+        if "if" in effect:
+            check_requirements([effect["if"]],name)
+    if kind.get("to")=="daemon" and not any(t.get("kind")==name and any("do" in effect for effect in t.get("effects",[])) for _,t in all_transitions):
+        fail(f"{name}: daemon request has no operation binding")
     for case in (kind.get("class", {}).get("cases", []) if isinstance(kind.get("class"), dict) else []):
         check_requirements([case["if"]], name)
+if not fails:
+    ok(f"{len(K)} kinds with typed args, class cases, window, expiry and require")
 ok(f"closed vocabulary loaded: {len(V['facts'])} facts, {len(V['operations'])} operations")
 if not fails:
     ok("no unknown fact, operation, kind or cap; no literal number inside a requirement")

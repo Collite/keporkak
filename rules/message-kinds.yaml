@@ -1,85 +1,2195 @@
-# Keporkak — the message catalogue (P-6b). Every kind a seat may send; anything not here is refused (default deny).
-# Fields: from/to (roles; `cc` are informational copies), fires (a transition of stage-lifecycle.yaml or a companion
-# machine, or `-`), guard (checked by the mailroom; `observed`/`attested` per RV-13), class (A auto · C runs, Bora cc'd ·
-# B Bora must act; while Bora is absent, B is *held*, D-28), max_fires (per stage unless noted), deadline (reply or
-# expiry), on_expiry (what the mailroom does), reply (the kind expected back).
-# Roles: bora, principal, teamlead, pool (Pool Manager), coder, reviewer, qa, deputy, retro, gardener, daemon (requested operations),
-# mailroom (a mechanism: it sends only declared effects — engagement.yaml:mailroom_declared_effects; it decides nothing, P-10).
+# Message catalogue — typed arguments, class cases, deadlines and executable requirements (contracts §4.2).
 version: 1
 kinds:
-  # ---- the start gate
-  assignment-proposal: {from: teamlead, to: bora, fires: "planned→proposed", guard: "R4.8 predecessors exited · seat free · slots open · fence has SC ids + touches: (all observed)", class: B, max_fires: 2, deadline: 24h, on_expiry: "back to planned; principal pinged", reply: "approval | decline", note: "never graduates to C (D-27 d)"}
-  queue-approval:      {from: bora, to: teamlead, fires: "-", guard: "stages are in the current wave (R4.8) · signed by Bora's CLI", class: B, max_fires: "1/day", deadline: "-", on_expiry: "-", reply: "-", note: "U-2: tonight's pre-approved queue; the only 'yes' while absent (D-28)"}
-  approval:            {from: bora, to: teamlead, fires: "proposed→assigned | phase exit_pending→exited", guard: "signed by Bora's CLI", class: B, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-"}
-  queued-approval:     {from: deputy, to: teamlead, cc: [bora], fires: "proposed→assigned", guard: "Bora absent · the stage is named in a queue-approval signed by Bora for the current wave · the stage was not cut after he left (DEP-2)", class: A, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-", note: "the only yes the Deputy has; listed in the digest"}
-  decline:             {from: bora, to: teamlead, fires: "proposed→planned", guard: "signed by Bora's CLI", class: B, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-"}
-  assign:              {from: teamlead, to: coder, fires: "seat ready→busy", guard: "stage assigned (approval or queue)", class: A, max_fires: 1, deadline: 15m, on_expiry: "seat-gone check by the Pool Manager", reply: started}
-  started:             {from: coder, to: teamlead, fires: "assigned→building", guard: "branch off master exists (observed)", class: A, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-"}
-  # ---- building
-  stop:                {from: coder, to: principal, cc: [teamlead], fires: "building|fix_round*→stopped", guard: "names a stop-condition id (SC-n) from the fence", class: C, max_fires: 2, deadline: 4h, on_expiry: "escalate to Bora (B)", reply: triage, note: "replaces `question` (D-27 i); the 3rd stop per stage needs Bora"}
-  found-batch:         {from: mailroom, to: principal, fires: "found items: created", guard: "fan-out of the Found lines carried by review-request", class: A, max_fires: 3, deadline: "-", on_expiry: "-", reply: triage}
-  triage:              {from: principal, to: coder, cc: [teamlead], fires: "stopped→building | stopped→recut | found→triaged", guard: "outcome ∈ {resume, recut, issue, stage, drop} · task-count diff within R4.11 · no edit outside the Found section (observed) · resumes ≤ 2 then Bora", class: "A (resume, issue, drop) / C (stage) / B (recut)", max_fires: 6, deadline: "-", on_expiry: "-", reply: "-", note: "the brief's scope: add · delete · split · merge tasks, never re-design"}
-  # ---- QA: the only seat on the live target and in a browser (D-30, D-31)
-  qa-request:          {from: "coder | teamlead", to: qa, fires: "-", guard: "cites the stage, a task id and a DONE item that exist in the list (observed) · stage live: ≠ none · names what to verify, never a command (P-5)", class: A, max_fires: 3, deadline: 2h, on_expiry: "stop SC-9 for the asker", reply: qa-report, note: "one QA job at a time per office; tail jobs first, then FIFO (D-31)"}
-  qa-report:           {from: qa, to: "the asker", cc: [teamlead], fires: "building→candidate_deployed", guard: "outcome ∈ {pass, fail} · pointers: fixture path, command, counts · temp pods and namespace dropped (observed) · the transition fires on pass only", class: A, max_fires: 3, deadline: "-", on_expiry: "-", reply: "-", note: "U-1: the candidate is verified live before review; candidates run outside GitOps in a qa-<stage> namespace"}
-  computer-use-session: {from: qa, to: bora, fires: "-", guard: "computer use only (looking at the screen and clicking) — a scripted browser in QA's own profile needs no session · cites the task and DONE item", class: "per office computer_use: B | C | A | off (Bora's Mac: B)", max_fires: 3, deadline: 2h, on_expiry: "held while absent; expired → stop SC-9 for the asker", reply: "approval (where B)", note: "D-36 c: only computer use is governed, even on the Mac"}
-  review-request:      {from: coder, to: teamlead, cc: [principal], fires: "building|candidate_deployed→ready_for_review", guard: "PR ready · CI green on head · every task done <sha> · DONE lines ticked · Found lines carried (fan-out found-batch)", class: A, max_fires: 3, deadline: 1h, on_expiry: "nudge teamlead; 2nd expiry → Bora (C)", reply: review-bind}
-  review-bind:         {from: teamlead, to: reviewer, cc: [coder], fires: "ready_for_review→in_review", guard: "reviewer seat ≠ coder seat · rank(reviewer) ≥ rank(coder) (roster) · vendor ≠ coder's preferred", class: A, max_fires: 2, deadline: 8h, on_expiry: "re-bind once, then Bora (C)", reply: verdict}
-  verdict:             {from: reviewer, to: coder, cc: [teamlead], fires: "in_review→passed | fix_round", guard: "R5.2 shape · GitHub PR review on the same head sha (observed, R6.2) · FIX FIRST lists blockers with ids", class: A, max_fires: 1, deadline: "-", on_expiry: "-", reply: "repair-done (if FIX FIRST)"}
-  repair-done:         {from: coder, to: reviewer, fires: "fix_round|fix_round_3|fix_round_4→re_review", guard: "new commits since the verdict · CI green · one response line per blocker id (all observed)", class: A, max_fires: 4, deadline: 8h, on_expiry: "nudge reviewer; 2nd → teamlead", reply: re-verdict}
-  re-verdict:          {from: reviewer, to: coder, cc: [teamlead, principal], fires: "re_review→passed | fix_round | grant_pending | ruling_pending | recut", guard: "per open blocker only · a new finding only with introduced_by_fix (attested, logged)", class: "A (pass, round 2) / C (ladder, recut)", max_fires: 4, deadline: "-", on_expiry: "-", reply: "-"}
-  grant-request:       {from: mailroom, to: principal, cc: [reviewer, coder], fires: "-", guard: "emitted on the 3rd FIX FIRST (fix_rounds = 2)", class: C, max_fires: 1, deadline: 4h, on_expiry: "recut", reply: grant}
-  grant:               {from: principal, to: reviewer, cc: [coder, teamlead], fires: "grant_pending→fix_round_3 | recut", guard: "outcome ∈ {grant, refuse} · within deadline", class: C, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-"}
-  contract-flag:       {from: reviewer, to: principal, fires: "flag thread: asked", guard: "cites contracts.md § or a D-n", class: C, max_fires: 2, deadline: "-", on_expiry: "-", reply: "-", note: "RV-10; a contract change is never executed in the stage (R5.4)"}
-  classify-request:    {from: reviewer, to: bora, fires: "flag thread: asked", guard: "blocker-vs-follow-up question only (R5.4)", class: B, max_fires: 3, deadline: 24h, on_expiry: "held while absent; expired → reported", reply: ruling}
-  # ---- the tail (through the daemon)
-  merge:               {from: teamlead, to: daemon, cc: [bora], fires: "passed→merged | frozen | tail_failed", guard: "Bora present (deadman) · second key (reviewer vendor ≠ coder vendor) else B · audit: evidence lines · list ticked · no proof files · Found all triaged · no stray changes (observed)", class: C, max_fires: 2, deadline: 15m, on_expiry: "tail_failed", reply: "-", note: "D-27 a, n; master protected by GitHub branch protection"}
-  release:             {from: teamlead, to: daemon, cc: [bora], fires: "merged→released | tail_failed", guard: "stage rolls: ≠ none · build green · tag", class: C, max_fires: 2, deadline: 1h, on_expiry: "tail_failed", reply: "-"}
-  deploy-request:      {from: teamlead, to: qa, cc: [bora], fires: "-", guard: "stage released · live: target named · Bora present (deadman)", class: C, max_fires: 2, deadline: 2h, on_expiry: "tail_failed", reply: "deploy-done | deploy-failed", note: "the TeamLead requests; QA executes and verifies (D-30)"}
-  roll:                {from: qa, to: daemon, cc: [bora], fires: "-", guard: "an open deploy-request · the GitOps change for this stage's pin only · or the revert of QA's own failed roll", class: C, max_fires: 2, deadline: 30m, on_expiry: "deploy-failed", reply: "-", note: "the durable roll is a GitOps change through the daemon (D-27 n)"}
-  deploy-done:         {from: qa, to: teamlead, cc: [bora], fires: "released→deployed", guard: "rollout complete (observed) · the stage's smoke passed · pointers", class: C, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-"}
-  deploy-failed:       {from: qa, to: teamlead, cc: [bora], fires: "released→tail_failed", guard: "roll or smoke failed · rolled back to the previous pin by QA (observed) · pointers", class: C, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-", note: "QA rolls back its own failed deploy by itself; what happens next is Bora's (D-31, amends D-27 f)"}
-  stage-exit:          {from: teamlead, to: principal, cc: [coder, reviewer, retro, board], fires: "merged|released|deployed→exited", guard: "STATUS per R4.9 · REGISTER rebuilt · project committed and pushed (D-27 m) · Found all triaged", class: A, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-"}
-  close:               {from: teamlead, to: daemon, fires: "recut→closed", guard: "PR closed · worktree freed", class: A, max_fires: 1, deadline: "-", on_expiry: "-", reply: "-"}
-  recut-notice:        {from: teamlead, to: bora, fires: "-", guard: "stage in recut", class: B, max_fires: 1, deadline: "-", on_expiry: "held while absent", reply: "-", note: "Bora starts the Planner session (D-7/D-8)"}
-  # ---- Principal ↔ TeamLead (RV-10)
-  parallelism:         {from: principal, to: teamlead, fires: "-", guard: "names stages and a desired wave", class: A, max_fires: "4/day", deadline: "-", on_expiry: "-", reply: "-"}
-  pin-stage:           {from: principal, to: teamlead, cc: [bora], fires: "-", guard: "a new stage list in the owning plan (R4.7)", class: C, max_fires: "2/day", deadline: "-", on_expiry: "-", reply: "-", note: "never Deputy-approvable (RV-19)"}
-  unplanned-stage-ahead: {from: teamlead, to: bora, fires: "-", guard: "the next wave has a stage without a list", class: C, max_fires: "1/day", deadline: "-", on_expiry: "-", reply: "-"}
-  # ---- rulings and Bora's own kinds
-  ruling-request:      {from: "principal | teamlead | pool | mailroom", to: bora, fires: "flag thread: asked | ruling_pending", guard: "carries a stated default and a deadline · cites D-n / contract / border", class: B, max_fires: 3, deadline: 24h, on_expiry: "held while absent; expired → reported", reply: ruling}
-  ruling:              {from: bora, to: "the asker", fires: "flag thread: ruled | ruling_pending→fix_round_4 | recut | tail_failed→merged | recut | frozen→passed | recut", guard: "signed by Bora's CLI", class: B, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
-  reverse:             {from: bora, to: "the asker", cc: [mailroom], fires: "-", guard: "signed by Bora's CLI · names a digest item · severity ∈ {minor, serious}", class: B, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-", note: "feeds the shadow ledger (D-28); serious pauses the absent-mode policy"}
-  away:                {from: bora, to: mailroom, fires: "presence present→absent", guard: "signed by Bora's CLI (or N hours idle)", class: B, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
-  # ---- absent mode: the Deputy's kinds (D-28, D-33, D-35; rules in robots/deputy.yaml)
-  hold:                {from: deputy, to: "the asker", fires: "flag thread: asked→held", guard: "Bora absent · the kind is class B, or a tail kind (merge, release, deploy-request) · robots/deputy.yaml DEP-1, DEP-3", class: A, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
-  digest:              {from: deputy, to: bora, fires: "-", guard: "on presence absent→present (DEP-8), and on demand", class: C, max_fires: "1 per return", deadline: "-", on_expiry: "-", reply: "reverse (optional)", note: "held items · anomaly stops · shadow-ledger entries"}
-  anomaly-stop:        {from: deputy, to: "teamlead | pool", cc: [bora], fires: "-", guard: "Bora absent · one of the Deputy's anomaly rules fired (robots/deputy.yaml DEP-4…DEP-7)", class: C, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-", note: "U-3: the Deputy that can only say no"}
-  shadow-ruling:       {from: deputy, to: ledger, fires: "-", guard: "a held item exists · log only: what the Deputy would have ruled, its reason, what it was unsure of · never delivered to the asker", class: A, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-", note: "U-4; graduation only from recorded agreement with Bora's later ruling"}
-  # ---- seats and offices
-  session-request:     {from: teamlead, to: pool, fires: "-", guard: "within Bora's constraints (slots, budget)", class: A, max_fires: "10/day", deadline: 30m, on_expiry: "nudge", reply: session-report}
-  session-report:      {from: pool, to: teamlead, cc: [board], fires: "seat provisioned→ready", guard: "-", class: A, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
-  seat-gone:           {from: pool, to: teamlead, cc: [board], fires: "*active→paused | seat *→gone", guard: "pid/pty gone or protocol closed (observed) · an open in_progress tool call is busy, not gone", class: A, max_fires: 3, deadline: "-", on_expiry: "-", reply: "-"}
-  re-seated:           {from: pool, to: teamlead, cc: [coder], fires: "paused→*previous | gone→ready", guard: "inbox replayed · ≤ 3 events per stage", class: "A / C after the 2nd", max_fires: 3, deadline: "-", on_expiry: "-", reply: "-"}
-  pause:               {from: pool, to: "a seat", cc: [teamlead], fires: "-", guard: "anomaly-stop, 3rd refusal, or frozen stage", class: C, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-", note: "driver action as a row (D-27 k)"}
-  resume:              {from: pool, to: "a seat", cc: [teamlead], fires: "-", guard: "a ruling cleared the cause", class: C, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
-  compact:             {from: pool, to: "a seat", fires: "-", guard: "context above the health threshold", class: A, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
-  kill:                {from: pool, to: "a seat", cc: [teamlead], fires: "seat *→gone", guard: "stall (no update, no in_progress call) past the watchdog · or retire", class: C, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
-  retire:              {from: pool, to: "a seat", cc: [teamlead], fires: "seat *→retired", guard: "session-request remove, or budget cap", class: C, max_fires: "-", deadline: "-", on_expiry: "-", reply: "-"}
-  budget-warning:      {from: pool, to: bora, cc: [teamlead], fires: "-", guard: "threshold in budgets.yaml", class: C, max_fires: "3/day", deadline: "-", on_expiry: "-", reply: "-"}
-  # ---- reporting and the read-only seats
-  status-report:       {from: "principal | teamlead | pool", to: bora, fires: "-", guard: "the three-part shape (AGENTS.md)", class: A, max_fires: "6/day each", deadline: "-", on_expiry: "-", reply: "-", note: "managers only (D-27 h)"}
-  attack-plan:         {from: gardener, to: bora, fires: "-", guard: "Bora's attention-budget shape", class: C, max_fires: "1/day", deadline: "-", on_expiry: "-", reply: "-", note: "the Planner is reached through Bora"}
-  retro-report:        {from: retro, to: principal, cc: [bora], fires: "-", guard: "started by the Retro's own rules (robots/retro.yaml) · candidates classified by where the fix lives", class: C, max_fires: "1 per retro", deadline: "-", on_expiry: "-", reply: triage}
-  phase-exit-request:  {from: teamlead, to: bora, fires: "phase open→exit_pending", guard: "chart refreshed · STATUS rolled · reader floor checked · retro-report delivered", class: B, max_fires: 1, deadline: "-", on_expiry: "held while absent", reply: approval}
-  # ---- the mailroom's own
-  nudge:               {from: mailroom, to: "the sender", cc: [board], fires: "-", guard: "a refusal: rule id + the failed guard", class: "A / C on the 3rd refusal per seat per day (then pause)", max_fires: "-", deadline: "-", on_expiry: "-", reply: "-", note: "F5 δ; counted per seat, not per arrow (RV)"}
+  assignment-proposal:
+    from: teamlead
+    to: bora
+    fires: planned→proposed
+    guard: 'R4.8 predecessors exited · seat free · slots open · fence has SC ids + touches: (all observed)'
+    class:
+      default: B
+      cases: []
+    max_fires: 2
+    deadline: 24h
+    on_expiry: back to planned; principal pinged
+    reply: approval | decline
+    note: never graduates to C (D-27 d)
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      role:
+        type: string
+        required: true
+      level:
+        type: string
+        required: true
+      seat:
+        type: string
+        required: true
+      branch:
+        type: string
+    window: stage
+    require:
+    - fact: plan.predecessors_exited
+    - fact: pool.seat_available
+      role:
+        arg: role
+      level:
+        arg: level
+    - fact: budget.slot_open
+      dimension: office
+    - fact: budget.slot_open
+      dimension: subscription
+    - fact: budget.slot_open
+      dimension: effort
+    - fact: list.fence_complete
+    expiry:
+    - transition: T-07
+  queue-approval:
+    from: bora
+    to: teamlead
+    fires: '-'
+    guard: stages are in the current wave (R4.8) · signed by Bora's CLI
+    class:
+      default: B
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: 'U-2: tonight''s pre-approved queue; the only ''yes'' while absent (D-28)'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      stages:
+        type: array
+        required: true
+        items:
+          type: string
+    window: day
+    require:
+    - signed: bora
+    - fact: plan.in_current_wave
+      stage:
+        arg: stages
+    expiry: []
+  approval:
+    from: bora
+    to: teamlead
+    fires: proposed→assigned | phase exit_pending→exited
+    guard: signed by Bora's CLI
+    class:
+      default: B
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      outcome:
+        type: string
+    window: stage
+    require:
+    - signed: bora
+    expiry: []
+  queued-approval:
+    from: deputy
+    to: teamlead
+    cc:
+    - bora
+    fires: proposed→assigned
+    guard: Bora absent · the stage is named in a queue-approval signed by Bora for the current wave · the stage
+      was not cut after he left (DEP-2)
+    class:
+      default: A
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: the only yes the Deputy has; listed in the digest
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+    window: stage
+    require:
+    - fact: bora.present
+      eq: false
+    - fact: queue.names
+    - fact: stage.cut_at
+      lte:
+        fact: bora.absent_since
+    expiry: []
+  decline:
+    from: bora
+    to: teamlead
+    fires: proposed→planned
+    guard: signed by Bora's CLI
+    class:
+      default: B
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+    window: stage
+    require:
+    - signed: bora
+    expiry: []
+  assign:
+    from: teamlead
+    to: coder
+    fires: seat ready→busy
+    guard: stage assigned (approval or queue)
+    class:
+      default: A
+      cases: []
+    max_fires: 1
+    deadline: 15m
+    on_expiry: seat-gone check by the Pool Manager
+    reply: started
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      seat:
+        type: string
+        required: true
+    window: stage
+    require:
+    - fact: stage.state
+      eq: assigned
+    expiry: []
+  started:
+    from: coder
+    to: teamlead
+    fires: assigned→building
+    guard: branch off master exists (observed)
+    class:
+      default: A
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+    window: stage
+    require:
+    - fact: git.branch_exists
+    expiry: []
+  stop:
+    from: coder
+    to: principal
+    cc:
+    - teamlead
+    fires: building|fix_round*→stopped
+    guard: names a stop-condition id (SC-n) from the fence
+    class:
+      default: C
+      cases: []
+    max_fires: 2
+    deadline: 4h
+    on_expiry: escalate to Bora (B)
+    reply: triage
+    note: replaces `question` (D-27 i); the 3rd stop per stage needs Bora
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      sc:
+        type: string
+        required: true
+    window: stage
+    require:
+    - arg: sc
+      in:
+        fact: list.stop_conditions
+    expiry:
+    - report: bora
+      class: B
+      if:
+        fact: bora.present
+  found-batch:
+    from: mailroom
+    to: principal
+    fires: 'found items: created'
+    guard: fan-out of the Found lines carried by review-request
+    class:
+      default: A
+      cases: []
+    max_fires: 3
+    deadline: null
+    on_expiry: '-'
+    reply: triage
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      found:
+        type: array
+    window: stage
+    require:
+    - fact: list.found_untriaged
+      gt: 0
+    expiry: []
+  triage:
+    from: principal
+    to: coder
+    cc:
+    - teamlead
+    fires: stopped→building | stopped→recut | found→triaged
+    guard: outcome ∈ {resume, recut, issue, stage, drop} · task-count diff within R4.11 · no edit outside the Found
+      section (observed) · resumes ≤ 2 then Bora
+    class:
+      default: A
+      cases:
+      - if:
+          arg: outcome
+          eq: stage
+        class: C
+      - if:
+          arg: outcome
+          eq: recut
+        class: B
+    max_fires: 6
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: 'the brief''s scope: add · delete · split · merge tasks, never re-design'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      outcome:
+        enum:
+        - resume
+        - recut
+        - issue
+        - stage
+        - drop
+        required: true
+      found:
+        type: string
+      since:
+        type: string
+    window: stage
+    require:
+    - arg: outcome
+      in:
+      - resume
+      - recut
+      - issue
+      - stage
+      - drop
+    - fact: list.sections_changed
+      since:
+        arg: since
+      in:
+      - Found while doing
+    expiry: []
+  qa-request:
+    from: coder | teamlead
+    to: qa
+    fires: '-'
+    guard: 'cites the stage, a task id and a DONE item that exist in the list (observed) · stage live: ≠ none ·
+      names what to verify, never a command (P-5)'
+    class:
+      default: A
+      cases: []
+    max_fires: 3
+    deadline: 2h
+    on_expiry: stop SC-9 for the asker
+    reply: qa-report
+    note: one QA job at a time per office; tail jobs first, then FIFO (D-31)
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      task:
+        type: string
+        required: true
+      done:
+        type: string
+        required: true
+      verify:
+        type: string
+        required: true
+    window: stage
+    require:
+    - fact: list.task_exists
+      id:
+        arg: task
+    - fact: list.done_item_exists
+      id:
+        arg: done
+    - fact: stage.live
+      ne: none
+    - arg: verify
+    expiry:
+    - emit: nudge
+      to:
+        re: from
+      args:
+        rule: SC-9
+        failed_guard: QA deadline expired
+        sc: SC-9
+  qa-report:
+    from: qa
+    to:
+      re: from
+    cc:
+    - teamlead
+    fires: building→candidate_deployed
+    guard: 'outcome ∈ {pass, fail} · pointers: fixture path, command, counts · temp pods and namespace dropped (observed)
+      · the transition fires on pass only'
+    class:
+      default: A
+      cases: []
+    max_fires: 3
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: 'U-1: the candidate is verified live before review; candidates run outside GitOps in a qa-<stage> namespace'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      outcome:
+        enum:
+        - pass
+        - fail
+        required: true
+      fixture:
+        type: string
+        required: true
+      command:
+        type: string
+        required: true
+      counts:
+        type: object
+        required: true
+      sha:
+        type: string
+        required: true
+    window: stage
+    require:
+    - fact: fixture.exists
+      pointer:
+        arg: fixture
+    - fact: live.namespace_absent
+      stage:
+        msg: stage
+    expiry: []
+  computer-use-session:
+    from: qa
+    to: bora
+    fires: '-'
+    guard: computer use only (looking at the screen and clicking) — a scripted browser in QA's own profile needs
+      no session · cites the task and DONE item
+    class:
+      default: A
+      cases:
+      - if:
+          fact: office.computer_use
+          eq: B
+        class: B
+      - if:
+          fact: office.computer_use
+          eq: C
+        class: C
+    max_fires: 3
+    deadline: 2h
+    on_expiry: held while absent; expired → stop SC-9 for the asker
+    reply: approval (where B)
+    note: 'D-36 c: only computer use is governed, even on the Mac'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      task:
+        type: string
+        required: true
+      done:
+        type: string
+        required: true
+      purpose:
+        type: string
+        required: true
+    window: stage
+    require:
+    - fact: list.task_exists
+      id:
+        arg: task
+    - fact: list.done_item_exists
+      id:
+        arg: done
+    - fact: office.computer_use
+      ne: 'off'
+    expiry:
+    - report: bora
+      class: C
+      if:
+        fact: bora.present
+    - emit: nudge
+      to:
+        re: from
+      args:
+        rule: SC-9
+        failed_guard: computer-use deadline expired
+        sc: SC-9
+  review-request:
+    from: coder
+    to: teamlead
+    cc:
+    - principal
+    fires: building|candidate_deployed→ready_for_review
+    guard: PR ready · CI green on head · every task done <sha> · DONE lines ticked · Found lines carried (fan-out
+      found-batch)
+    class:
+      default: A
+      cases: []
+    max_fires: 3
+    deadline: 1h
+    on_expiry: nudge teamlead; 2nd expiry → Bora (C)
+    reply: review-bind
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      found:
+        type: array
+    window: stage
+    require:
+    - fact: pr.ready
+    - fact: ci.state
+      of:
+        fact: pr.head
+      eq: green
+    - fact: list.tasks_open
+      eq: 0
+    - attest: done_lines_hold
+    expiry:
+    - transition: T-74
+    - emit: nudge
+      to: teamlead
+      args:
+        rule: T-74
+        failed_guard: nudge teamlead; 2nd expiry → Bora (C)
+      if:
+        counter: review_request_expiries
+        lt:
+          cap: expiries_before_escalation
+    - report: bora
+      class: C
+      if:
+        counter: review_request_expiries
+        gte:
+          cap: expiries_before_escalation
+  review-bind:
+    from: teamlead
+    to: reviewer
+    cc:
+    - coder
+    fires: ready_for_review→in_review
+    guard: reviewer seat ≠ coder seat · rank(reviewer) ≥ rank(coder) (roster) · reviewer model ≥ review floor (D-45)
+    class:
+      default: A
+      cases: []
+    max_fires: 2
+    deadline: 8h
+    on_expiry: re-bind once, then Bora (C)
+    reply: verdict
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      reviewer:
+        type: string
+        required: true
+    window: stage
+    require:
+    - fact: seat.name
+      of:
+        arg: reviewer
+      ne:
+        fact: seat.name
+        of: coder
+    - fact: roster.rank
+      of:
+        arg: reviewer
+      gte:
+        fact: roster.rank
+        of: coder
+    - fact: roster.model_rank
+      of:
+        arg: reviewer
+      gte:
+        fact: roster.floor_rank
+    expiry:
+    - transition: T-75
+    - emit: nudge
+      to: teamlead
+      args:
+        rule: T-75
+        failed_guard: re-bind once, then Bora (C)
+      if:
+        counter: review_bind_expiries
+        lt:
+          cap: expiries_before_escalation
+    - report: bora
+      class: C
+      if:
+        counter: review_bind_expiries
+        gte:
+          cap: expiries_before_escalation
+  verdict:
+    from: reviewer
+    to: coder
+    cc:
+    - teamlead
+    fires: in_review→passed | fix_round
+    guard: R5.2 shape · GitHub PR review on the same head sha (observed, R6.2) · FIX FIRST lists blockers with ids
+    class:
+      default: A
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: repair-done (if FIX FIRST)
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      verdict:
+        enum:
+        - PASS
+        - PASS-FU
+        - FIX FIRST
+        required: true
+      sha:
+        type: string
+        required: true
+      blockers:
+        type: array
+        items:
+          type: object
+          required_fields:
+          - id
+      follow_ups:
+        type: array
+    window: stage
+    require:
+    - fact: pr.review_on
+      sha:
+        fact: pr.head
+      ne: none
+    - arg: sha
+      eq:
+        fact: pr.head
+    expiry: []
+  repair-done:
+    from: coder
+    to: reviewer
+    fires: fix_round|fix_round_3|fix_round_4→re_review
+    guard: new commits since the verdict · CI green · one response line per blocker id (all observed)
+    class:
+      default: A
+      cases: []
+    max_fires: 4
+    deadline: 8h
+    on_expiry: nudge reviewer; 2nd → teamlead
+    reply: re-verdict
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      verdict:
+        type: string
+        required: true
+    window: stage
+    require: []
+    expiry:
+    - transition: T-76
+    - emit: nudge
+      to: reviewer
+      args:
+        rule: T-76
+        failed_guard: nudge reviewer; 2nd → teamlead
+      if:
+        counter: repair_expiries
+        lt:
+          cap: expiries_before_escalation
+    - emit: nudge
+      to: teamlead
+      args:
+        rule: T-76
+        failed_guard: nudge reviewer; 2nd → teamlead
+      if:
+        counter: repair_expiries
+        gte:
+          cap: expiries_before_escalation
+  re-verdict:
+    from: reviewer
+    to: coder
+    cc:
+    - teamlead
+    - principal
+    fires: re_review→passed | fix_round | grant_pending | ruling_pending | recut
+    guard: per open blocker only · a new finding only with introduced_by_fix (attested, logged)
+    class:
+      default: A
+      cases:
+      - if:
+          not:
+            any:
+            - not:
+                arg: verdict
+                eq: FIX FIRST
+            - not:
+                counter: fix_rounds
+                gte:
+                  cap: fix_rounds_autonomous
+        class: C
+    max_fires: 4
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      verdict:
+        enum:
+        - PASS
+        - PASS-FU
+        - FIX FIRST
+        required: true
+      sha:
+        type: string
+        required: true
+      blockers:
+        type: array
+        items:
+          type: object
+          required_fields:
+          - id
+      new_findings:
+        type: array
+      follow_ups:
+        type: array
+    window: stage
+    require:
+    - fact: pr.review_on
+      sha:
+        fact: pr.head
+      ne: none
+    - arg: sha
+      eq:
+        fact: pr.head
+    - any:
+      - not:
+          arg: new_findings
+      - attest: introduced_by_fix
+    expiry: []
+  grant-request:
+    from: mailroom
+    to: principal
+    cc:
+    - reviewer
+    - coder
+    fires: '-'
+    guard: emitted on the 3rd FIX FIRST (fix_rounds = 2)
+    class:
+      default: C
+      cases: []
+    max_fires: 1
+    deadline: 4h
+    on_expiry: recut
+    reply: grant
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+    window: stage
+    require:
+    - counter: fix_rounds
+      eq:
+        cap: fix_rounds_autonomous
+    expiry:
+    - transition: T-27
+  grant:
+    from: principal
+    to: reviewer
+    cc:
+    - coder
+    - teamlead
+    fires: grant_pending→fix_round_3 | recut
+    guard: outcome ∈ {grant, refuse} · within deadline
+    class:
+      default: C
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      outcome:
+        enum:
+        - grant
+        - refuse
+        required: true
+    window: stage
+    require: []
+    expiry: []
+  contract-flag:
+    from: reviewer
+    to: principal
+    fires: 'flag thread: asked'
+    guard: cites contracts.md § or a D-n
+    class:
+      default: C
+      cases: []
+    max_fires: 2
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: RV-10; a contract change is never executed in the stage (R5.4)
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      citation:
+        type: string
+        required: true
+      default:
+        type: string
+    window: stage
+    require:
+    - arg: citation
+    expiry: []
+  classify-request:
+    from: reviewer
+    to: bora
+    fires: 'flag thread: asked'
+    guard: blocker-vs-follow-up question only (R5.4)
+    class:
+      default: B
+      cases: []
+    max_fires: 3
+    deadline: 24h
+    on_expiry: held while absent; expired → reported
+    reply: ruling
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      question:
+        type: string
+        required: true
+      default:
+        type: string
+        required: true
+    window: stage
+    require:
+    - arg: question
+    expiry:
+    - report: bora
+      class: C
+      if:
+        fact: bora.present
+  merge:
+    from: teamlead
+    to: daemon
+    cc:
+    - bora
+    fires: passed→merged | frozen | tail_failed
+    guard: 'Bora present (deadman) · second key (different reviewer seat, rank ≥ coder, model ≥ review floor; D-45)
+      else B · audit: evidence lines · list ticked · no proof files · Found all triaged · no stray changes (observed)'
+    class:
+      default: C
+      cases:
+      - if:
+          any:
+          - not:
+              fact: seat.name
+              of: reviewer
+              ne:
+                fact: seat.name
+                of: coder
+          - not:
+              fact: roster.rank
+              of: reviewer
+              gte:
+                fact: roster.rank
+                of: coder
+          - not:
+              fact: roster.model_rank
+              of: reviewer
+              gte:
+                fact: roster.floor_rank
+        class: B
+    max_fires: 2
+    deadline: 15m
+    on_expiry: tail_failed
+    reply: '-'
+    note: D-27 a, n; master protected by GitHub branch protection
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+    window: stage
+    require:
+    - fact: bora.present
+    - fact: pr.evidence_present
+    - fact: list.tasks_open
+      eq: 0
+    - fact: project.proof_files
+      eq: 0
+    - fact: list.found_untriaged
+      eq: 0
+    expiry:
+    - transition: T-77
+  release:
+    from: teamlead
+    to: daemon
+    cc:
+    - bora
+    fires: merged→released | tail_failed
+    guard: 'stage rolls: ≠ none · build green · tag'
+    class:
+      default: C
+      cases: []
+    max_fires: 2
+    deadline: 1h
+    on_expiry: tail_failed
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+    window: stage
+    require:
+    - fact: stage.rolls
+      ne: none
+    - fact: bora.present
+    expiry:
+    - transition: T-78
+  deploy-request:
+    from: teamlead
+    to: qa
+    cc:
+    - bora
+    fires: '-'
+    guard: 'stage released · live: target named · Bora present (deadman)'
+    class:
+      default: C
+      cases: []
+    max_fires: 2
+    deadline: 2h
+    on_expiry: tail_failed
+    reply: deploy-done | deploy-failed
+    note: the TeamLead requests; QA executes and verifies (D-30)
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      pin:
+        type: string
+        required: true
+      smoke:
+        type: string
+        required: true
+    window: stage
+    require:
+    - fact: stage.state
+      eq: released
+    - fact: stage.live
+      ne: none
+    - fact: bora.present
+    expiry:
+    - transition: T-79
+  roll:
+    from: qa
+    to: daemon
+    cc:
+    - bora
+    fires: '-'
+    guard: an open deploy-request · the GitOps change for this stage's pin only · or the revert of QA's own failed
+      roll
+    class:
+      default: C
+      cases: []
+    max_fires: 2
+    deadline: 30m
+    on_expiry: deploy-failed
+    reply: '-'
+    note: the durable roll is a GitOps change through the daemon (D-27 n)
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      operation:
+        enum:
+        - forward
+        - revert
+        required: true
+      pin:
+        type: string
+        required: true
+    window: stage
+    require:
+    - fact: request.open
+      kind: deploy-request
+    - fact: bora.present
+    expiry:
+    - emit: nudge
+      to: qa
+      args:
+        rule: roll-expiry
+        failed_guard: deploy-failed
+  deploy-done:
+    from: qa
+    to: teamlead
+    cc:
+    - bora
+    fires: released→deployed
+    guard: rollout complete (observed) · the stage's smoke passed · pointers
+    class:
+      default: C
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      pin:
+        type: string
+        required: true
+      smoke:
+        enum:
+        - pass
+        required: true
+      fixture:
+        type: string
+        required: true
+      command:
+        type: string
+        required: true
+      counts:
+        type: object
+        required: true
+    window: stage
+    require:
+    - fact: live.rollout_complete
+      target:
+        fact: stage.live
+      pin:
+        arg: pin
+    - fact: fixture.exists
+      pointer:
+        arg: fixture
+    expiry: []
+  deploy-failed:
+    from: qa
+    to: teamlead
+    cc:
+    - bora
+    fires: released→tail_failed
+    guard: roll or smoke failed · rolled back to the previous pin by QA (observed) · pointers
+    class:
+      default: C
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: QA rolls back its own failed deploy by itself; what happens next is Bora's (D-31, amends D-27 f)
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      outcome:
+        enum:
+        - fail
+        required: true
+      rollback:
+        enum:
+        - ok
+        required: true
+      fixture:
+        type: string
+        required: true
+      command:
+        type: string
+        required: true
+      counts:
+        type: object
+        required: true
+    window: stage
+    require:
+    - fact: fixture.exists
+      pointer:
+        arg: fixture
+    expiry: []
+  stage-exit:
+    from: teamlead
+    to: principal
+    cc:
+    - coder
+    - reviewer
+    - retro
+    - board
+    fires: merged|released|deployed→exited
+    guard: STATUS per R4.9 · REGISTER rebuilt · project committed and pushed (D-27 m) · Found all triaged
+    class:
+      default: A
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+    window: stage
+    require:
+    - fact: status.entry_present
+    - fact: list.found_untriaged
+      eq: 0
+    expiry: []
+  close:
+    from: teamlead
+    to: daemon
+    fires: recut→closed
+    guard: PR closed · worktree freed
+    class:
+      default: A
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+    window: stage
+    require: []
+    expiry: []
+  recut-notice:
+    from: teamlead
+    to: bora
+    fires: '-'
+    guard: stage in recut
+    class:
+      default: B
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: held while absent
+    reply: '-'
+    note: Bora starts the Planner session (D-7/D-8)
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+    window: stage
+    require:
+    - fact: stage.state
+      eq: recut
+    expiry:
+    - report: bora
+      class: C
+      if:
+        fact: bora.present
+  parallelism:
+    from: principal
+    to: teamlead
+    fires: '-'
+    guard: names stages and a desired wave
+    class:
+      default: A
+      cases: []
+    max_fires: 4
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      stages:
+        type: array
+        required: true
+        items:
+          type: string
+      wave:
+        type: string
+        required: true
+    window: day
+    require: []
+    expiry: []
+  pin-stage:
+    from: principal
+    to: teamlead
+    cc:
+    - bora
+    fires: '-'
+    guard: a new stage list in the owning plan (R4.7)
+    class:
+      default: C
+      cases: []
+    max_fires: 2
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: never Deputy-approvable (RV-19)
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      stage:
+        type: string
+        required: true
+      reason:
+        type: string
+        required: true
+    window: day
+    require:
+    - fact: plan.stage_has_list
+      stage:
+        arg: stage
+    expiry: []
+  unplanned-stage-ahead:
+    from: teamlead
+    to: bora
+    fires: '-'
+    guard: the next wave has a stage without a list
+    class:
+      default: C
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      stage:
+        type: string
+        required: true
+    window: day
+    require:
+    - fact: plan.wave_of
+      stage:
+        arg: stage
+      eq: next
+    - fact: plan.stage_has_list
+      stage:
+        arg: stage
+      eq: false
+    expiry: []
+  ruling-request:
+    from: principal | teamlead | pool | mailroom
+    to: bora
+    fires: 'flag thread: asked | ruling_pending'
+    guard: carries a stated default and a deadline · cites D-n / contract / border
+    class:
+      default: B
+      cases: []
+    max_fires: 3
+    deadline: 24h
+    on_expiry: held while absent; expired → reported
+    reply: ruling
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      default:
+        type: string
+        required: true
+      citation:
+        type: string
+        required: true
+    window: stage
+    require:
+    - arg: default
+    - arg: citation
+    expiry:
+    - report: bora
+      class: C
+      if:
+        fact: bora.present
+    - transition: T-32
+      if:
+        fact: bora.present
+  ruling:
+    from: bora
+    to:
+      re: from
+    fires: 'flag thread: ruled | ruling_pending→fix_round_4 | recut | tail_failed→merged | recut | frozen→passed
+      | recut'
+    guard: signed by Bora's CLI
+    class:
+      default: B
+      cases: []
+    max_fires: null
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      outcome:
+        type: string
+        required: true
+      seat:
+        type: string
+      cause:
+        type: string
+    window: stage
+    require:
+    - signed: bora
+    expiry: []
+  reverse:
+    from: bora
+    to:
+      re: from
+    cc:
+    - mailroom
+    fires: '-'
+    guard: signed by Bora's CLI · names a digest item · severity ∈ {minor, serious}
+    class:
+      default: B
+      cases: []
+    max_fires: null
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: feeds the shadow ledger (D-28); serious pauses the absent-mode policy
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      digest_item:
+        type: string
+        required: true
+      severity:
+        enum:
+        - minor
+        - serious
+        required: true
+    window: stage
+    require:
+    - signed: bora
+    - arg: digest_item
+    expiry: []
+  away:
+    from: bora
+    to: mailroom
+    fires: presence present→absent
+    guard: signed by Bora's CLI (or N hours idle)
+    class:
+      default: B
+      cases: []
+    max_fires: null
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+    window: stage
+    require: []
+    expiry: []
+  hold:
+    from: deputy
+    to:
+      re: from
+    fires: 'flag thread: asked→held'
+    guard: Bora absent · the kind is class B, or a tail kind (merge, release, deploy-request) · robots/deputy.yaml
+      DEP-1, DEP-3
+    class:
+      default: A
+      cases: []
+    max_fires: null
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+    window: stage
+    require:
+    - fact: bora.present
+      eq: false
+    - any:
+      - re: class
+        eq: B
+      - re: kind
+        in:
+        - merge
+        - release
+        - deploy-request
+    expiry: []
+  digest:
+    from: deputy
+    to: bora
+    fires: '-'
+    guard: on presence absent→present (DEP-8), and on demand
+    class:
+      default: C
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: reverse (optional)
+    note: held items · anomaly stops · shadow-ledger entries
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      items:
+        type: array
+    window: return
+    require: []
+    expiry: []
+  anomaly-stop:
+    from: deputy
+    to: teamlead | pool
+    cc:
+    - bora
+    fires: '-'
+    guard: Bora absent · one of the Deputy's anomaly rules fired (robots/deputy.yaml DEP-4…DEP-7)
+    class:
+      default: C
+      cases: []
+    max_fires: null
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: 'U-3: the Deputy that can only say no'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      rule:
+        enum:
+        - DEP-4
+        - DEP-5
+        - DEP-6
+        - DEP-7
+        required: true
+      seat:
+        type: string
+      target:
+        type: string
+    window: stage
+    require:
+    - fact: bora.present
+      eq: false
+    expiry: []
+  shadow-ruling:
+    from: deputy
+    to: ledger
+    fires: '-'
+    guard: 'a held item exists · log only: what the Deputy would have ruled, its reason, what it was unsure of ·
+      never delivered to the asker'
+    class:
+      default: A
+      cases: []
+    max_fires: null
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: U-4; graduation only from recorded agreement with Bora's later ruling
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      would_rule:
+        type: string
+        required: true
+      reason:
+        type: string
+        required: true
+      uncertain:
+        type: string
+        required: true
+    window: stage
+    require:
+    - fact: thread.state
+      eq: held
+    expiry: []
+  session-request:
+    from: teamlead
+    to: pool
+    fires: '-'
+    guard: within Bora's constraints (slots, budget)
+    class:
+      default: A
+      cases: []
+    max_fires: 10
+    deadline: 30m
+    on_expiry: nudge
+    reply: session-report
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      action:
+        enum:
+        - add
+        - remove
+        required: true
+      seat:
+        type: string
+      role:
+        type: string
+      level:
+        type: string
+    window: day
+    require:
+    - any:
+      - arg: action
+        eq: remove
+      - not:
+          any:
+          - not:
+              fact: budget.slot_open
+              dimension: office
+          - not:
+              fact: budget.slot_open
+              dimension: subscription
+          - not:
+              fact: budget.slot_open
+              dimension: effort
+    expiry:
+    - emit: nudge
+      to: pool
+      args:
+        rule: session-request-expiry
+        failed_guard: nudge
+  session-report:
+    from: pool
+    to: teamlead
+    cc:
+    - board
+    fires: seat provisioned→ready
+    guard: '-'
+    class:
+      default: A
+      cases: []
+    max_fires: null
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      seat:
+        type: string
+        required: true
+      role:
+        type: string
+        required: true
+    window: stage
+    require: []
+    expiry: []
+  seat-gone:
+    from: pool
+    to: teamlead
+    cc:
+    - board
+    fires: '*active→paused | seat *→gone'
+    guard: pid/pty gone or protocol closed (observed) · an open in_progress tool call is busy, not gone
+    class:
+      default: A
+      cases: []
+    max_fires: 3
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      seat:
+        type: string
+        required: true
+    window: stage
+    require:
+    - any:
+      - fact: seat.process_gone
+        seat:
+          arg: seat
+      - fact: seat.protocol_closed
+        seat:
+          arg: seat
+    - fact: seat.tool_call_open_for
+      seat:
+        arg: seat
+      eq: 0
+    expiry: []
+  re-seated:
+    from: pool
+    to: teamlead
+    cc:
+    - coder
+    fires: paused→*previous | gone→ready
+    guard: inbox replayed · ≤ 3 events per stage
+    class:
+      default: A
+      cases:
+      - if:
+          counter: seat_gone_events
+          gt:
+            cap: reseats_before_cc
+        class: C
+    max_fires: 3
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      seat:
+        type: string
+        required: true
+    window: stage
+    require:
+    - fact: seat.inbox_replayed
+      seat:
+        arg: seat
+    - counter: seat_gone_events
+      lte:
+        cap: seat_gone_events_per_stage
+    expiry: []
+  pause:
+    from: pool
+    to: a seat
+    cc:
+    - teamlead
+    fires: '-'
+    guard: anomaly-stop, 3rd refusal, or frozen stage
+    class:
+      default: C
+      cases: []
+    max_fires: null
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: driver action as a row (D-27 k)
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      seat:
+        type: string
+        required: true
+      cause:
+        type: string
+        required: true
+    window: stage
+    require:
+    - any:
+      - fact: refusals.today
+        seat:
+          arg: seat
+        gte:
+          cap: refusals_per_seat_per_day
+      - fact: stage.state
+        eq: frozen
+      - re: kind
+        eq: anomaly-stop
+      - counter: seat_gone_events
+        gte:
+          cap: seat_gone_events_per_stage
+    expiry: []
+  resume:
+    from: pool
+    to: a seat
+    cc:
+    - teamlead
+    fires: '-'
+    guard: a ruling cleared the cause
+    class:
+      default: C
+      cases: []
+    max_fires: null
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      seat:
+        type: string
+        required: true
+      cause:
+        type: string
+        required: true
+    window: stage
+    require:
+    - re: kind
+      eq: ruling
+    expiry: []
+  compact:
+    from: pool
+    to: a seat
+    fires: '-'
+    guard: context above the health threshold
+    class:
+      default: A
+      cases: []
+    max_fires: null
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      seat:
+        type: string
+        required: true
+    window: stage
+    require:
+    - fact: seat.context_used
+      seat:
+        arg: seat
+      gt:
+        robot: context_health
+    expiry: []
+  kill:
+    from: pool
+    to: a seat
+    cc:
+    - teamlead
+    fires: seat *→gone
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    class:
+      default: C
+      cases: []
+    max_fires: null
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      seat:
+        type: string
+        required: true
+    window: stage
+    require:
+    - any:
+      - not:
+          any:
+          - not:
+              fact: seat.silent_for
+              seat:
+                arg: seat
+              gt:
+                robot: watchdog_silence
+          - not:
+              fact: seat.tool_call_open_for
+              seat:
+                arg: seat
+              eq: 0
+      - re: kind
+        eq: retire
+    expiry: []
+  retire:
+    from: pool
+    to: a seat
+    cc:
+    - teamlead
+    fires: seat *→retired
+    guard: session-request remove, or budget cap
+    class:
+      default: C
+      cases: []
+    max_fires: null
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      seat:
+        type: string
+        required: true
+    window: stage
+    require:
+    - fact: seat.state
+      seat:
+        arg: seat
+      eq: idle
+    - any:
+      - re: kind
+        eq: session-request
+      - fact: budget.slots_over
+        dimension: office
+        gt: 0
+      - fact: budget.slots_over
+        dimension: subscription
+        gt: 0
+      - fact: budget.slots_over
+        dimension: effort
+        gt: 0
+    expiry: []
+  budget-warning:
+    from: pool
+    to: bora
+    cc:
+    - teamlead
+    fires: '-'
+    guard: threshold in budgets.yaml
+    class:
+      default: C
+      cases: []
+    max_fires: 3
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      subscription:
+        type: string
+        required: true
+      threshold:
+        type: string
+        required: true
+    window: day
+    require: []
+    expiry: []
+  status-report:
+    from: principal | teamlead | pool
+    to: bora
+    fires: '-'
+    guard: the three-part shape (AGENTS.md)
+    class:
+      default: A
+      cases: []
+    max_fires: 6
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: managers only (D-27 h)
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      doing_now:
+        type: string
+        required: true
+      bora_now:
+        type: string
+        required: true
+      after_approval:
+        type: string
+        required: true
+    window: day
+    require: []
+    expiry: []
+  attack-plan:
+    from: gardener
+    to: bora
+    fires: '-'
+    guard: Bora's attention-budget shape
+    class:
+      default: C
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: the Planner is reached through Bora
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      attention_budget:
+        type: string
+        required: true
+      items:
+        type: array
+        required: true
+    window: day
+    require: []
+    expiry: []
+  retro-report:
+    from: retro
+    to: principal
+    cc:
+    - bora
+    fires: '-'
+    guard: started by the Retro's own rules (robots/retro.yaml) · candidates classified by where the fix lives
+    class:
+      default: C
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: '-'
+    reply: triage
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      mode:
+        enum:
+        - stage-retro
+        - phase-retro
+        required: true
+      report:
+        type: string
+        required: true
+      candidates:
+        type: array
+        required: true
+    window: session
+    require: []
+    expiry: []
+  phase-exit-request:
+    from: teamlead
+    to: bora
+    fires: phase open→exit_pending
+    guard: chart refreshed · STATUS rolled · reader floor checked · retro-report delivered
+    class:
+      default: B
+      cases: []
+    max_fires: 1
+    deadline: null
+    on_expiry: held while absent
+    reply: approval
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+    window: stage
+    require:
+    - fact: plan.last_stage_exited
+    - fact: plan.chart_fresh
+    - fact: status.entries
+      lte:
+        cap: status_entries
+    - attest: floors_checked
+    - fact: log.count
+      kind: retro-report
+      scope: phase
+      where:
+        mode: phase-retro
+      gt: 0
+    expiry:
+    - report: bora
+      class: C
+      if:
+        fact: bora.present
+  nudge:
+    from: mailroom
+    to:
+      re: from
+    cc:
+    - board
+    fires: '-'
+    guard: 'a refusal: rule id + the failed guard'
+    class:
+      default: A
+      cases:
+      - if:
+          fact: refusals.today
+          gte:
+            cap: refusals_per_seat_per_day
+        class: C
+    max_fires: null
+    deadline: null
+    on_expiry: '-'
+    reply: '-'
+    note: F5 δ; counted per seat, not per arrow (RV)
+    args:
+      attest:
+        type: array
+        items:
+          enum:
+          - done_lines_hold
+          - introduced_by_fix
+          - floors_checked
+      rule:
+        type: string
+        required: true
+      failed_guard:
+        type: string
+        required: true
+      sc:
+        type: string
+      kind:
+        type: string
+    window: stage
+    require: []
+    expiry: []
 refused_by_construction:
-  - "coder → coder: anything"
-  - "reviewer → coder: anything but verdict / re-verdict (R5.6: no steering, no next work)"
-  - "reviewer → bora: anything but classify-request"
-  - "principal → reviewer: anything but grant (Q-11)"
-  - "anyone → anyone: 'approve' / 'approved' as a relay — a message never carries authority"
-  - "anyone but qa → the live target or a browser: no kind exists for it (a rule of the way of working, D-31 — held by borders and deny lists, not fenced)"
-  - "anyone → qa: a command to run (qa-request names what to verify)"
-  - "any kind not in this file"
+- 'coder → coder: anything'
+- 'reviewer → coder: anything but verdict / re-verdict (R5.6: no steering, no next work)'
+- 'reviewer → bora: anything but classify-request'
+- 'principal → reviewer: anything but grant (Q-11)'
+- 'anyone → anyone: ''approve'' / ''approved'' as a relay — a message never carries authority'
+- 'anyone but qa → the live target or a browser: no kind exists for it (a rule of the way of working, D-31 — held
+  by borders and deny lists, not fenced)'
+- 'anyone → qa: a command to run (qa-request names what to verify)'
+- any kind not in this file

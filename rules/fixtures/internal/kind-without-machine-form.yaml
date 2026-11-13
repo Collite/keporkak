@@ -1,0 +1,10 @@
+name: a kind guard without a machine form fails the check
+scenarios:
+  - name: prose alone on a kind
+    given:
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, on: message, guard: always, require: [], effects: []}
+      kinds:
+        started: {from: coder, to: teamlead, guard: prose only, args: {}, class: {default: A}, window: stage, max_fires: null, deadline: null, expiry: []}
+    expect:
+      failures: ["started: guard has no machine form"]

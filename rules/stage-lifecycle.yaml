@@ -1,4 +1,4 @@
-# Stage lifecycle and five companion machines — executable contracts §4 (D-41, D-42, D-45, D-49, D-50).
+# Stage lifecycle and five companion machines — executable contracts §4.
 version: 1
 states:
   planned:
@@ -357,17 +357,20 @@ transitions:
   'on': message
   require:
   - fact: seat.name
-    of: reviewer
+    of:
+      arg: reviewer
     ne:
       fact: seat.name
       of: coder
   - fact: roster.rank
-    of: reviewer
+    of:
+      arg: reviewer
     gte:
       fact: roster.rank
       of: coder
   - fact: roster.model_rank
-    of: reviewer
+    of:
+      arg: reviewer
     gte:
       fact: roster.floor_rank
   effects: []
@@ -388,7 +391,13 @@ transitions:
     in:
     - approved
     - commented
-  effects: []
+  effects:
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
 - from: in_review
   to: fix_round
   kind: verdict
@@ -404,6 +413,12 @@ transitions:
       cap: fix_rounds_autonomous
   effects:
   - count: fix_rounds
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
 - from: re_review
   to: fix_round
   kind: re-verdict
@@ -419,6 +434,12 @@ transitions:
       cap: fix_rounds_autonomous
   effects:
   - count: fix_rounds
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
 - from: fix_round
   to: re_review
   kind: repair-done
@@ -456,7 +477,13 @@ transitions:
     - PASS-FU
   - fact: review.open_blockers
     eq: []
-  effects: []
+  effects:
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
 - from: re_review
   to: grant_pending
   kind: re-verdict
@@ -473,6 +500,12 @@ transitions:
   effects:
   - emit: grant-request
     to: principal
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
 - from: grant_pending
   to: fix_round_3
   kind: grant
@@ -529,6 +562,12 @@ transitions:
   effects:
   - emit: ruling-request
     to: bora
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
 - from: ruling_pending
   to: fix_round_4
   kind: ruling
@@ -585,7 +624,13 @@ transitions:
   - counter: fix_rounds
     gte:
       cap: fix_rounds_with_bora_ruling
-  effects: []
+  effects:
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
 - from: passed
   to: passed
   kind: merge
@@ -1095,6 +1140,111 @@ transitions:
   effects:
   - do: project.commit_push
     with: {}
+- id: T-70
+  from: released
+  to: released
+  kind: roll
+  'on': message
+  guard: an open deploy-request · the GitOps change for this stage's pin only · or the revert of QA's own failed roll
+  require:
+  - arg: operation
+    eq: forward
+  effects:
+  - count: roll_attempts
+  - do: gitops.roll
+    with:
+      stage:
+        msg: stage
+      pin:
+        arg: pin
+- id: T-71
+  from: released
+  to: released
+  kind: roll
+  'on': op-result
+  guard: an open deploy-request · the GitOps change for this stage's pin only · or the revert of QA's own failed roll
+  require:
+  - op: gitops.roll
+    eq: ok
+  effects: []
+- id: T-72
+  from: released
+  to: released
+  kind: roll
+  'on': message
+  guard: an open deploy-request · the GitOps change for this stage's pin only · or the revert of QA's own failed roll
+  require:
+  - arg: operation
+    eq: revert
+  effects:
+  - count: roll_attempts
+  - do: gitops.revert
+    with:
+      stage:
+        msg: stage
+      pin:
+        arg: pin
+- id: T-73
+  from: released
+  to: released
+  kind: roll
+  'on': op-result
+  guard: an open deploy-request · the GitOps change for this stage's pin only · or the revert of QA's own failed roll
+  require:
+  - op: gitops.revert
+    eq: ok
+  effects: []
+- id: T-74
+  from: ready_for_review
+  to: ready_for_review
+  kind: review-request
+  'on': expiry
+  guard: nudge teamlead; 2nd expiry → Bora (C)
+  require: []
+  effects:
+  - count: review_request_expiries
+- id: T-75
+  from: in_review
+  to: in_review
+  kind: review-bind
+  'on': expiry
+  guard: re-bind once, then Bora (C)
+  require: []
+  effects:
+  - count: review_bind_expiries
+- id: T-76
+  from: re_review
+  to: re_review
+  kind: repair-done
+  'on': expiry
+  guard: nudge reviewer; 2nd → teamlead
+  require: []
+  effects:
+  - count: repair_expiries
+- id: T-77
+  from: passed
+  to: tail_failed
+  kind: merge
+  'on': expiry
+  guard: tail_failed
+  require: []
+  effects: []
+- id: T-78
+  from: merged
+  to: tail_failed
+  kind: release
+  'on': expiry
+  guard: tail_failed
+  require: []
+  effects: []
+- id: T-79
+  from: released
+  to: tail_failed
+  kind: deploy-request
+  'on': expiry
+  guard: tail_failed
+  require: []
+  effects: []
 active_states:
 - assigned
 - building
@@ -1294,11 +1444,71 @@ seat:
       lte:
         cap: seat_gone_events_per_stage
     effects: []
-  - from: '*'
-    to: '*'
+  - from: provisioned
+    to: provisioned
     kind: retire
     guard: TeamLead's session-request to remove, or budget cap (C)
     id: SEAT-08
+    'on': message
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+  - from: ready
+    to: ready
+    kind: retire
+    guard: TeamLead's session-request to remove, or budget cap (C)
+    id: SEAT-09
+    'on': message
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+  - from: busy
+    to: busy
+    kind: retire
+    guard: TeamLead's session-request to remove, or budget cap (C)
+    id: SEAT-10
+    'on': message
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+  - from: idle
+    to: idle
+    kind: retire
+    guard: TeamLead's session-request to remove, or budget cap (C)
+    id: SEAT-11
+    'on': message
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+  - from: gone
+    to: gone
+    kind: retire
+    guard: TeamLead's session-request to remove, or budget cap (C)
+    id: SEAT-12
+    'on': message
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+  - from: retired
+    to: retired
+    kind: retire
+    guard: TeamLead's session-request to remove, or budget cap (C)
+    id: SEAT-13
     'on': message
     require: []
     effects:
@@ -1310,7 +1520,7 @@ seat:
     to: retired
     kind: retire
     guard: TeamLead's session-request to remove, or budget cap (C)
-    id: SEAT-09
+    id: SEAT-14
     'on': op-result
     require:
     - op: seat.retire
@@ -1320,7 +1530,7 @@ seat:
     to: provisioned
     kind: session-report
     guard: handshake ok, MCP injected, identity bound
-    id: SEAT-10
+    id: SEAT-15
     'on': op-result
     require:
     - op: seat.start
@@ -1330,6 +1540,304 @@ seat:
       with:
         seat:
           arg: seat
+  - from: provisioned
+    to: provisioned
+    kind: pause
+    'on': message
+    guard: anomaly-stop, 3rd refusal, or frozen stage
+    require: []
+    effects:
+    - do: seat.cancel
+      with:
+        seat:
+          arg: seat
+    id: SEAT-16
+  - from: ready
+    to: ready
+    kind: pause
+    'on': message
+    guard: anomaly-stop, 3rd refusal, or frozen stage
+    require: []
+    effects:
+    - do: seat.cancel
+      with:
+        seat:
+          arg: seat
+    id: SEAT-17
+  - from: busy
+    to: busy
+    kind: pause
+    'on': message
+    guard: anomaly-stop, 3rd refusal, or frozen stage
+    require: []
+    effects:
+    - do: seat.cancel
+      with:
+        seat:
+          arg: seat
+    id: SEAT-18
+  - from: idle
+    to: idle
+    kind: pause
+    'on': message
+    guard: anomaly-stop, 3rd refusal, or frozen stage
+    require: []
+    effects:
+    - do: seat.cancel
+      with:
+        seat:
+          arg: seat
+    id: SEAT-19
+  - from: gone
+    to: gone
+    kind: pause
+    'on': message
+    guard: anomaly-stop, 3rd refusal, or frozen stage
+    require: []
+    effects:
+    - do: seat.cancel
+      with:
+        seat:
+          arg: seat
+    id: SEAT-20
+  - from: retired
+    to: retired
+    kind: pause
+    'on': message
+    guard: anomaly-stop, 3rd refusal, or frozen stage
+    require: []
+    effects:
+    - do: seat.cancel
+      with:
+        seat:
+          arg: seat
+    id: SEAT-21
+  - from: provisioned
+    to: provisioned
+    kind: compact
+    'on': message
+    guard: context above the health threshold
+    require: []
+    effects:
+    - do: seat.compact
+      with:
+        seat:
+          arg: seat
+    id: SEAT-22
+  - from: ready
+    to: ready
+    kind: compact
+    'on': message
+    guard: context above the health threshold
+    require: []
+    effects:
+    - do: seat.compact
+      with:
+        seat:
+          arg: seat
+    id: SEAT-23
+  - from: busy
+    to: busy
+    kind: compact
+    'on': message
+    guard: context above the health threshold
+    require: []
+    effects:
+    - do: seat.compact
+      with:
+        seat:
+          arg: seat
+    id: SEAT-24
+  - from: idle
+    to: idle
+    kind: compact
+    'on': message
+    guard: context above the health threshold
+    require: []
+    effects:
+    - do: seat.compact
+      with:
+        seat:
+          arg: seat
+    id: SEAT-25
+  - from: gone
+    to: gone
+    kind: compact
+    'on': message
+    guard: context above the health threshold
+    require: []
+    effects:
+    - do: seat.compact
+      with:
+        seat:
+          arg: seat
+    id: SEAT-26
+  - from: retired
+    to: retired
+    kind: compact
+    'on': message
+    guard: context above the health threshold
+    require: []
+    effects:
+    - do: seat.compact
+      with:
+        seat:
+          arg: seat
+    id: SEAT-27
+  - from: provisioned
+    to: provisioned
+    kind: kill
+    'on': message
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require: []
+    effects:
+    - do: seat.kill
+      with:
+        seat:
+          arg: seat
+    id: SEAT-28
+  - from: ready
+    to: ready
+    kind: kill
+    'on': message
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require: []
+    effects:
+    - do: seat.kill
+      with:
+        seat:
+          arg: seat
+    id: SEAT-29
+  - from: busy
+    to: busy
+    kind: kill
+    'on': message
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require: []
+    effects:
+    - do: seat.kill
+      with:
+        seat:
+          arg: seat
+    id: SEAT-30
+  - from: idle
+    to: idle
+    kind: kill
+    'on': message
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require: []
+    effects:
+    - do: seat.kill
+      with:
+        seat:
+          arg: seat
+    id: SEAT-31
+  - from: gone
+    to: gone
+    kind: kill
+    'on': message
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require: []
+    effects:
+    - do: seat.kill
+      with:
+        seat:
+          arg: seat
+    id: SEAT-32
+  - from: retired
+    to: retired
+    kind: kill
+    'on': message
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require: []
+    effects:
+    - do: seat.kill
+      with:
+        seat:
+          arg: seat
+    id: SEAT-33
+  - from: '*'
+    to: gone
+    kind: kill
+    'on': op-result
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require:
+    - op: seat.kill
+      eq: ok
+    effects: []
+    id: SEAT-34
+  - from: provisioned
+    to: provisioned
+    kind: resume
+    'on': message
+    guard: a ruling cleared the cause
+    require: []
+    effects:
+    - do: seat.wake
+      with:
+        seat:
+          arg: seat
+    id: SEAT-35
+  - from: ready
+    to: ready
+    kind: resume
+    'on': message
+    guard: a ruling cleared the cause
+    require: []
+    effects:
+    - do: seat.wake
+      with:
+        seat:
+          arg: seat
+    id: SEAT-36
+  - from: busy
+    to: busy
+    kind: resume
+    'on': message
+    guard: a ruling cleared the cause
+    require: []
+    effects:
+    - do: seat.wake
+      with:
+        seat:
+          arg: seat
+    id: SEAT-37
+  - from: idle
+    to: idle
+    kind: resume
+    'on': message
+    guard: a ruling cleared the cause
+    require: []
+    effects:
+    - do: seat.wake
+      with:
+        seat:
+          arg: seat
+    id: SEAT-38
+  - from: gone
+    to: gone
+    kind: resume
+    'on': message
+    guard: a ruling cleared the cause
+    require: []
+    effects:
+    - do: seat.wake
+      with:
+        seat:
+          arg: seat
+    id: SEAT-39
+  - from: retired
+    to: retired
+    kind: resume
+    'on': message
+    guard: a ruling cleared the cause
+    require: []
+    effects:
+    - do: seat.wake
+      with:
+        seat:
+          arg: seat
+    id: SEAT-40
 phase:
   states:
   - open

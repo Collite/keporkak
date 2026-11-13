@@ -113,6 +113,7 @@ caps:
   stage_tasks_min: 6
   stage_tasks_max: 8
   status_entries: 5
+  expiries_before_escalation: 2
 presence:
   idle_hours_to_absent: 4h
   signals:
