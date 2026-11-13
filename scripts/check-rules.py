@@ -9,14 +9,72 @@ Checks (each a line of output; exit 1 if any FAIL):
   - cycles in the stage chart: with the capped edges and the Bora-gate states removed, the graph must be acyclic
   - graduation.never kinds exist
   - P-10: the mailroom sends only declared effects, the daemon sends nothing; every robot rule sends a kind its role may send
-Usage: python3 scripts/check-rules.py [--render out.md]
+Usage: python3 scripts/check-rules.py [--render out.md] [--self-test]
 """
-import sys, re, yaml, pathlib, itertools
+import sys, re, yaml, pathlib, itertools, subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+# Exercise the same command-line validator on small, isolated rule documents.
+if "--self-test" in sys.argv:
+    total = failures = 0
+    for fixture in sorted((ROOT / "rules/fixtures").glob("*.yaml")):
+        spec = yaml.safe_load(fixture.read_text())
+        for index, scenario in enumerate(spec["scenarios"]):
+            total += 1
+            result = subprocess.run(
+                [sys.executable, __file__, "--fixture", str(fixture), "--scenario", str(index)],
+                text=True, capture_output=True,
+            )
+            output = result.stdout.splitlines()
+            actual_failures = [line.removeprefix("FAIL ") for line in output if line.startswith("FAIL ")]
+            actual_warnings = [line.removeprefix("WARN ") for line in output if line.startswith("WARN ")]
+            expected = scenario["expect"]
+            matches = (
+                not result.stderr
+                and result.returncode == (1 if expected.get("failures") else 0)
+                and actual_failures == expected.get("failures", [])
+                and actual_warnings == expected.get("warnings", [])
+                and all(line in output for line in expected.get("output", []))
+            )
+            print(("ok   " if matches else "FAIL ") + spec["name"] + " / " + scenario["name"])
+            if not matches:
+                failures += 1
+                print("     expected:", expected)
+                print("     observed failures:", actual_failures, "warnings:", actual_warnings)
+                if result.stderr:
+                    print(result.stderr.rstrip())
+    if not total:
+        failures += 1
+        print("FAIL no self-test fixtures found")
+    print(f"SELF-TEST: {'FAIL' if failures else 'PASS'} ({total} scenarios, {failures} failures)")
+    sys.exit(1 if failures else 0)
+
 L = yaml.safe_load((ROOT / "rules/stage-lifecycle.yaml").read_text())
 K = yaml.safe_load((ROOT / "rules/message-kinds.yaml").read_text())["kinds"]
 E = yaml.safe_load((ROOT / "rules/engagement.yaml").read_text())
+
+FIXTURE = "--fixture" in sys.argv
+W = []
+V = {"facts": {}, "operations": {}}
+if FIXTURE:
+    spec = yaml.safe_load(pathlib.Path(sys.argv[sys.argv.index("--fixture") + 1]).read_text())
+    scenario = spec["scenarios"][int(sys.argv[sys.argv.index("--scenario") + 1])]
+    given = scenario["given"]
+    L = {
+        "states": given.get("states", {"planned": {}, "exited": {"terminal": True}}),
+        "active_states": ["planned"],
+        "counters": given.get("counters", []),
+        "transitions": given["transitions"],
+    }
+    K = given.get("kinds", {"started": {
+        "from": "coder", "to": "teamlead", "guard": "-", "args": {},
+        "class": {"default": "A"}, "window": "stage", "expiry": [], "require": [],
+    }})
+    E = {"roles": {"coder": {}, "teamlead": {}}, "graduation": {"never": []},
+         "mailroom_declared_effects": [], "caps": given.get("caps", {})}
+    V = given.get("vocabulary", V)
+    W = given.get("walks", [])
 fails = []
 def fail(m): fails.append(m); print("FAIL", m)
 def ok(m): print("ok  ", m)
@@ -104,7 +162,7 @@ for name, k in K.items():
     if "daemon" in senders: fail(f"kind '{name}' is sent by the daemon — the daemon decides nothing (P-10)")
 for d in declared:
     if d not in K: fail(f"declared effect '{d}' is not a kind")
-robots = sorted((ROOT / "robots").glob("*.yaml"))
+robots = [] if FIXTURE else sorted((ROOT / "robots").glob("*.yaml"))
 for f in robots:
     R = yaml.safe_load(f.read_text()); role = R["role"]
     if role not in roles: fail(f"{f.name}: role '{role}' not in engagement.yaml"); continue

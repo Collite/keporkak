@@ -1,0 +1,27 @@
+name: a walk passes when every step has an arrow, and fails at the first step that has none
+scenarios:
+  - name: every step has an arrow
+    given:
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, on: message, guard: always, require: [], effects: []}
+      walks:
+        - name: legal
+          initial: planned
+          steps: [{who: coder, kind: started, args: {}, facts: {}}]
+          final: exited
+    expect:
+      output: ["ok   walk legal reached exited"]
+  - name: the second step has no arrow
+    given:
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, on: message, guard: always, require: [], effects: []}
+      walks:
+        - name: illegal
+          initial: planned
+          steps:
+            - {who: coder, kind: started, args: {}, facts: {}}
+            - {who: coder, kind: started, args: {}, facts: {}}
+            - {who: coder, kind: started, args: {}, facts: {}}
+          final: exited
+    expect:
+      failures: ["walk illegal step 2: no arrow from exited for started"]

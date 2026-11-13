@@ -1,0 +1,8 @@
+name: a guard without a machine form fails the check
+scenarios:
+  - name: prose alone
+    given:
+      transitions:
+        - {id: T-missing, from: planned, to: exited, kind: started, guard: branch exists}
+    expect:
+      failures: ["T-missing: guard has no machine form"]
