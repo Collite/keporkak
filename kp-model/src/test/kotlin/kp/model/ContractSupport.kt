@@ -27,13 +27,32 @@ fun modelAccepts(example: Example) = runCatching {
     when (example.schema) { "message" -> Message.read(example.value.jsonObject); else -> Record.read(example.value.jsonObject) }
 }.isSuccess
 data class CommandResult(val exitCode: Int, val output: String)
-fun runCommand(command: List<String>): CommandResult {
-    val process = ProcessBuilder(command).directory(root).redirectErrorStream(true).start()
+fun runCommand(command: List<String>, directory: File = root): CommandResult {
+    val process = ProcessBuilder(command).directory(directory).redirectErrorStream(true).start()
     val output = process.inputStream.bufferedReader().readText()
     return CommandResult(process.waitFor(), output)
 }
 fun engineDependencyProbe(notation: String): CommandResult {
-    val init = File(root, "build/probes/dependency.init.gradle").apply { parentFile.mkdirs() }
+    val fixture = engineFixture()
+    val init = File(fixture, "build/probes/dependency.init.gradle").apply { parentFile.mkdirs() }
     init.writeText("gradle.projectsEvaluated { rootProject.project(':kp-engine').dependencies.add('implementation', '$notation') }")
-    return runCommand(listOf("./gradlew", "--console=plain", "--max-workers=1", "-I", init.path, ":kp-engine:checkEngineDependencies"))
+    return runCommand(listOf("./gradlew", "--console=plain", "--max-workers=1", "-I", init.path, ":kp-engine:build"), fixture)
 }
+
+private val fixtureDirectory: File by lazy {
+    val directory = File(root, "build/engine-fixture").apply { mkdirs() }
+    listOf("settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat").forEach {
+        File(root, it).copyTo(File(directory, it), overwrite = true)
+    }
+    File(root, "gradle").copyRecursively(File(directory, "gradle"), overwrite = true)
+    File(directory, "gradlew").setExecutable(true)
+    File(root, "build-support").copyRecursively(File(directory, "build-support"), overwrite = true)
+    root.listFiles()!!.filter { it.isDirectory && it.name.startsWith("kp-") }.forEach { module ->
+        val target = File(directory, module.name).apply { mkdirs() }
+        File(module, "build.gradle.kts").copyTo(File(target, "build.gradle.kts"), overwrite = true)
+        val source = File(module, "src/main")
+        if (source.exists()) source.copyRecursively(File(target, "src/main"), overwrite = true)
+    }
+    directory
+}
+fun engineFixture(): File = fixtureDirectory
