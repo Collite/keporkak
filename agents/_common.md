@@ -4,7 +4,7 @@ You work in a squad of agents under explicit rules. Your seat name is your ident
 stage and the message kinds you may send.
 
 - **One door.** You reach other seats and Bora only through the Keporkak messaging tools (`whoami`, `inbox`, `send`,
-  `reply`). No other channel exists for you: no cross-session messaging, no files left for others to find, no terminals.
+  `reply`, `thread`). No other channel exists for you: no cross-session messaging, no files left for others to find, no terminals.
 - **Inbox first.** On every start and every wake, your first action is `inbox`.
 - **End your turn; you will be woken.** After a message that expects a reply, end your turn. Do not poll, sleep or
   watch. The answer arrives as your next prompt or in your inbox.

@@ -29,6 +29,15 @@
   own. The office sets the vendor and the computer-use class (`A | B | C | off`; Bora's Mac: **B**). QA runs one job at
   a time and cleans up after each. `D-30, D-31`
 
+- **SE-21 Working seats start fresh.** Coders, Reviewers, QA jobs, Retro, Deputy and Gardener get a new session for
+  every stage or job — the seat name stays; what they need is in `reads_at_start`. The Principal, the TeamLead and the
+  Pool Manager's seat live as long as their effort and are compacted. `D-39`
+- **SE-22 The daemon owns worktrees.** It creates a stage's worktree at assignment (one per stage and repository,
+  under the office's root) and removes it, with its scratch, at exit or close. A Reviewer gets a throwaway worktree of
+  the PR head. Nobody creates a worktree by hand. `D-39`
+- **SE-23 A stage never spans offices.** Its coder, reviewer and QA are the office's own. Only managers' traffic
+  crosses offices, and it travels through the project repo. Version 1 is one office. `D-39`
+
 ## Tools
 - **SE-12 Least tools per seat.** A seat gets the tools its modes need and no others; each is listed in its persona. `D-36`
 - **SE-13 The daemon injects a seat's tools** at session start from the persona — never from a vendor's global config. `D-36, D-18`
@@ -46,5 +55,5 @@
   environment. `D-36 d` (the mechanism: KP `16`)
 
 ## Open — to be ruled (C3 / planning)
-QA's tooling (C5, first item) · what a seat loads at start · context-health thresholds and when to compact · the roster's actual model table · seat
-naming across offices · when a seat is retired · the office bootstrap checklist.
+The Pool Manager's thresholds (watchdog silence, context health) · the roster's actual model table · the office
+bootstrap checklist · how a persona is packaged into each vendor's config home.

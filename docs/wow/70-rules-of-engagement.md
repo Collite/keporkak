@@ -83,6 +83,15 @@ office (`A | B | C | off`); on Bora's own machine it is **B**: every `computer-u
 a rule of the way of working, not a fence (D-31): it is held by the role borders, by deny lists where a vendor makes
 them cheap, and by the retro.
 
+## EN-12 The record
+Every message, and everything the mailroom did with it — delivered, refused (with the rule and the failed guard),
+held, expired, the transition it fired — is one line in an **append-only log in the project repo**, one file per stage
+(`mail/<effort>/<stage>.jsonl`) and one per office for traffic outside a stage. The log is the source of truth: the
+daemon rebuilds stage states, counters, deadlines and presence by replaying it, and it is committed with the STATUS at
+every exit. A message has fixed fields (who · to whom · kind · stage · a short body · pointers · deadline · by whom or
+which robot rule). A seat has five tools — `whoami`, `inbox`, `send`, `reply`, `thread` — and no way to wait: it ends
+its turn and is woken with the message as its next prompt. Bora has `kp inbox` and a desktop notification. (D-39)
+
 ## EN-10 What no guard holds
 Say it rather than assume it: R5.6 (no steering) inside a verdict body; the Design-Roles borders inside a triage body;
 read-exfiltration by a seat (every vendor mode reads everything); the retro's and the gardener's judgment. These are held

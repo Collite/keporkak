@@ -2,6 +2,7 @@
 
 One line per change: date · rule ids · what · the decision. Newest first.
 
+- 2026-11-12 · EN-12, SE-21…SE-23, BU-4 · **The record and the seats**: the mail log in the project repo is the source of truth; five seat tools, no wait; fresh sessions per stage; the daemon owns worktrees; a stage never spans offices; budgets as slot limits. · KP D-39
 - 2026-11-12 · PL-11, RW-14 · **Acceptance specs are written to be read**: enough tests to see the stage was really done (the removal test, the reading test), not every test. · KP D-38
 - 2026-11-12 · SE-12…SE-20 · **Tools per seat**: least tools, injected by the daemon, `just` first, CLI before MCP, no polling, scripted browser vs computer use, credentials injected never handled. · KP D-36
 - 2026-11-12 · P-10, EN-1, EN-9, SE-6 · **The daemon holds no rule.** Deciding belongs to personas and robots; `robots/` holds the rule-based halves of the Deputy, the Pool Manager, the Retro and QA; the mailroom sends only four declared effects. · KP D-35
