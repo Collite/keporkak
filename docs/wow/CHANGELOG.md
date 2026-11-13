@@ -2,6 +2,16 @@
 
 One line per change: date · rule ids · what · the decision. Newest first.
 
+- 2026-11-13 · EN-13, SE-25 · Wake checkpoints, session windows, next-wave and over-cap facts; stop-gate requirements belong to S2.2. · KP D-50
+- 2026-11-13 · EN-13 · Closed observed vocabulary, operation-result ordering, typed requirement forms, queues and persona-only robot guidance. · KP D-49
+- 2026-11-13 · EV-5 · `mail/**/*.jsonl` is the append-only source of truth and is excepted from refused proof shapes. · KP D-39
+- 2026-11-13 · SE-9, SE-10, SE-19, SE-25 · Panda is the Linux terminal office; the Mac watches remotely, computer use is off and QA is headless. · KP D-46
+- 2026-11-13 · EN-7, SE-8, RW-9 override · V1’s second key is a fresh different seat with pair rank at or above the coder and model at the review floor. · KP D-45
+- 2026-11-13 · SE-2, SE-3, SE-8, SE-10 · V1 runs Claude sessions only behind the vendor-neutral ACP driver. · KP D-44
+- 2026-11-13 · EN-3, EN-9, SE-24 · State-changing `sudo kp` commands require a root peer; unsigned reads never move presence. · KP D-43
+- 2026-11-13 · EN-7 · A no-roll stage with live DONE verified on the candidate head may exit directly from merged. · KP D-42
+- 2026-11-13 · EN-1, EN-13 · A generic in-process rule engine evaluates machine data; the daemon supplies facts and performs declared operations. · KP D-41
+
 - 2026-11-12 · EN-12, SE-21…SE-23, BU-4 · **The record and the seats**: the mail log in the project repo is the source of truth; five seat tools, no wait; fresh sessions per stage; the daemon owns worktrees; a stage never spans offices; budgets as slot limits. · KP D-39
 - 2026-11-12 · PL-11, RW-14 · **Acceptance specs are written to be read**: enough tests to see the stage was really done (the removal test, the reading test), not every test. · KP D-38
 - 2026-11-12 · SE-12…SE-20 · **Tools per seat**: least tools, injected by the daemon, `just` first, CLI before MCP, no polling, scripted browser vs computer use, credentials injected never handled. · KP D-36

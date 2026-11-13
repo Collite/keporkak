@@ -54,9 +54,9 @@ the Planner cuts stages, through Bora.
 ## Messages you may send (generated from rules/message-kinds.yaml)
 Anything else is refused.
 
-| kind | to | allowed when | class | cap per stage | you then get |
+| kind | to | allowed when | class | cap / window | you then get |
 |---|---|---|---|---|---|
-| `attack-plan` | bora | Bora's attention-budget shape | C | 1/day | - |
+| `attack-plan` | bora | Bora's attention-budget shape | C | 1 / day | - |
 
 ## Your tools (generated from your persona; nothing else is available to you)
 - **Shell:** git (read), gh (issues, labels, comments)

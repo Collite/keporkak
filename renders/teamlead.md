@@ -57,23 +57,23 @@ PR, free the worktree, tell Bora.
 ## Messages you may send (generated from rules/message-kinds.yaml)
 Anything else is refused.
 
-| kind | to | allowed when | class | cap per stage | you then get |
+| kind | to | allowed when | class | cap / window | you then get |
 |---|---|---|---|---|---|
-| `assignment-proposal` | bora | R4.8 predecessors exited · seat free · slots open · fence has SC ids + touches: (all observed) | B | 2 | approval | decline |
-| `assign` | coder | stage assigned (approval or queue) | A | 1 | started |
-| `qa-request` | qa | cites the stage, a task id and a DONE item that exist in the list (observed) · stage live: ≠ none · names what to verify, never a command (P-5) | A | 3 | qa-report |
-| `review-bind` | reviewer | reviewer seat ≠ coder seat · rank(reviewer) ≥ rank(coder) (roster) · vendor ≠ coder's preferred | A | 2 | verdict |
-| `merge` | daemon | Bora present (deadman) · second key (reviewer vendor ≠ coder vendor) else B · audit: evidence lines · list ticked · no proof files · Found all triaged · no stray changes (observed) | C | 2 | - |
-| `release` | daemon | stage rolls: ≠ none · build green · tag | C | 2 | - |
-| `deploy-request` | qa | stage released · live: target named · Bora present (deadman) | C | 2 | deploy-done | deploy-failed |
-| `stage-exit` | principal | STATUS per R4.9 · REGISTER rebuilt · project committed and pushed (D-27 m) · Found all triaged | A | 1 | - |
-| `close` | daemon | PR closed · worktree freed | A | 1 | - |
-| `recut-notice` | bora | stage in recut | B | 1 | - |
-| `unplanned-stage-ahead` | bora | the next wave has a stage without a list | C | 1/day | - |
-| `ruling-request` | bora | carries a stated default and a deadline · cites D-n / contract / border | B | 3 | ruling |
-| `session-request` | pool | within Bora's constraints (slots, budget) | A | 10/day | session-report |
-| `status-report` | bora | the three-part shape (AGENTS.md) | A | 6/day each | - |
-| `phase-exit-request` | bora | chart refreshed · STATUS rolled · reader floor checked · retro-report delivered | B | 1 | approval |
+| `assignment-proposal` | bora | R4.8 predecessors exited · seat free · slots open · fence has SC ids + touches: (all observed) | B | 2 / stage | approval \| decline |
+| `assign` | coder | stage assigned (approval or queue) | A | 1 / stage | started |
+| `qa-request` | qa | cites the stage, a task id and a DONE item that exist in the list (observed) · stage live: ≠ none · names what to verify, never a command (P-5) | A | 3 / stage | qa-report |
+| `review-bind` | reviewer | reviewer seat ≠ coder seat · rank(reviewer) ≥ rank(coder) (roster) · reviewer model ≥ review floor (D-45) | A | 2 / stage | verdict |
+| `merge` | daemon | Bora present (deadman) · second key (different reviewer seat, rank ≥ coder, model ≥ review floor; D-45) else B · audit: evidence lines · list ticked · no proof files · Found all triaged · no stray changes (observed) | C; B if (not (seat.name (of=reviewer) ≠ seat.name (of=coder)) or not (roster.rank (of=reviewer) ≥ roster.rank (of=coder)) or not (roster.model_rank (of=reviewer) ≥ roster.floor_rank)) | 2 / stage | - |
+| `release` | daemon | stage rolls: ≠ none · build green · tag | C | 2 / stage | - |
+| `deploy-request` | qa | stage released · live: target named · Bora present (deadman) | C | 2 / stage | deploy-done \| deploy-failed |
+| `stage-exit` | principal | STATUS per R4.9 · REGISTER rebuilt · project committed and pushed (D-27 m) · Found all triaged | A | 1 / stage | - |
+| `close` | daemon | PR closed · worktree freed | A | 1 / stage | - |
+| `recut-notice` | bora | stage in recut | B | 1 / stage | - |
+| `unplanned-stage-ahead` | bora | the next wave has a stage without a list | C | 1 / day | - |
+| `ruling-request` | bora | carries a stated default and a deadline · cites D-n / contract / border | B | 3 / stage | ruling |
+| `session-request` | pool | within Bora's constraints (slots, budget) | A | 10 / day | session-report |
+| `status-report` | bora | the three-part shape (AGENTS.md) | A | 6 / day | - |
+| `phase-exit-request` | bora | chart refreshed · STATUS rolled · reader floor checked · retro-report delivered | B | 1 / stage | approval |
 
 ## Your tools (generated from your persona; nothing else is available to you)
 - **Shell:** git (read), gh (read), just

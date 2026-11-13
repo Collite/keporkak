@@ -124,8 +124,8 @@ caps:
 presence:
   idle_hours_to_absent: 4h
   signals:
-  - any kp command
-  - kp away (immediate)
+  - any signed sudo kp command
+  - sudo kp away (immediate)
   while_absent: the Deputy's rules apply — robots/deputy.yaml
   on_return: the Deputy sends the digest (DEP-8)
 mailroom_declared_effects:
@@ -184,7 +184,7 @@ qa:
   exclusivity: 'a rule of the way of working, not a fence: no kubeconfig separation is required (D-31); held by
     role borders, by deny lists where a vendor makes them cheap, and by the retro'
 identity:
-  bora: 'required: the kp CLI signs with the OS user (D-27 j)'
+  bora: 'required: sudo kp authenticated as a root peer; unsigned reads never change presence (D-43)'
   seats: bound to the ACP session the daemon opened where the driver allows; otherwise an accepted v1 risk named
     in D-19
 what_no_guard_holds:

@@ -11,7 +11,9 @@
 - **EV-4 The audit trail is pointers.** The STATUS entry (≤ 5 lines) names the PR, merge sha and CI run; the
   `done <sha>` lines name the commits. The rest is on GitHub. `R6.6`
 - **EV-5 The project repo refuses proof shapes** (`*.log`, `*.xml`, `*.jsonl`, `**/review/**`, `**/proofs/`) in its
-  `.gitignore`. It is a guard, not the rule: an agent that needs such a file there is already off the list. `R6.4`
+  `.gitignore`. The append-only mail log, `mail/**/*.jsonl`, is the D-39 source of truth and is excepted from these
+  proof refusals. Every other proof restriction still applies. It is a guard, not the rule: an agent that needs a
+  refused proof file there is already off the list. `R6.4, D-39`
 - **EV-6 What the daemon observes** before a merge (`70` EN-6): the PR review on the head sha, CI green on that sha,
   every task ticked with `done <sha>`, the evidence lines present, every Found line triaged, no proof files, no stray
   change in the main checkouts and sibling repos. `D-19 c, D-27`
