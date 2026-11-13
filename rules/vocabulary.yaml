@@ -1,4 +1,4 @@
-# Closed vocabulary — contracts.md §4.4, Amendment 1 (§4.6, D-49).
+# Closed vocabulary — contracts.md §4.4, Amendments 1 and 2 (§4.6–§4.7, D-49–D-50).
 # O: observed · L: log · P: project · C: pool configuration.
 version: 1
 facts:
@@ -283,8 +283,8 @@ facts:
     returns: asked, held, ruled or expired
     source: L
   log.count:
-    params: kind, scope (stage, seat, phase, effort or office); optional `where` (args to match), `window` (a duration),
-      `since` (a kind)
+    params: 'kind, scope (stage, seat, phase, effort or office); optional where (args to match), window (a duration),
+      since (a kind, or {wake: <mode>} — the entity’s last wake in that mode)'
     returns: int — deliveries of that kind
     source: L
   request.open:
@@ -299,6 +299,14 @@ facts:
     params: —
     returns: time
     source: —
+  plan.wave_of:
+    params: stage
+    returns: past · current · next · later
+    source: P+L
+  budget.slots_over:
+    params: dimension
+    returns: int — seats in use above the limit; zero at or under it
+    source: L+C
 operations:
   worktree.create:
     requested_by: effect of `approval`/`queued-approval` · of `stage-exit`/`close` (§4.5)

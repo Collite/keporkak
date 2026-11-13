@@ -1,0 +1,11 @@
+name: operation result handlers for different operations do not overlap
+scenarios:
+  - name: a build result and a tag result
+    given:
+      vocabulary:
+        facts: {}
+        operations: {release.build: {}, tag.create: {}}
+      transitions:
+        - {id: T-build, from: planned, to: exited, kind: started, on: op-result, guard: build done, require: [{op: release.build, eq: ok}], effects: []}
+        - {id: T-tag, from: planned, to: exited, kind: started, on: op-result, guard: tag done, require: [{op: tag.create, eq: ok}], effects: []}
+    expect: {}

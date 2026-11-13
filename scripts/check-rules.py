@@ -11,15 +11,26 @@ Checks (each a line of output; exit 1 if any FAIL):
   - P-10: the mailroom sends only declared effects, the daemon sends nothing; every robot rule sends a kind its role may send
 Usage: python3 scripts/check-rules.py [--render out.md] [--self-test]
 """
-import sys, re, yaml, pathlib, itertools, subprocess
+import sys, re, yaml, pathlib, itertools, subprocess, json, copy
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+# YAML 1.2 booleans: `on` is a field name and `off` is an office value.
+class RulesLoader(yaml.SafeLoader):
+    pass
+RulesLoader.yaml_implicit_resolvers = {
+    key: [(tag, pattern) for tag, pattern in resolvers if tag != "tag:yaml.org,2002:bool"]
+    for key, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+RulesLoader.add_implicit_resolver("tag:yaml.org,2002:bool", re.compile(r"^(?:true|false)$", re.I), list("tTfF"))
+def load_yaml(text):
+    return yaml.load(text, Loader=RulesLoader)
 
 # Exercise the same command-line validator on small, isolated rule documents.
 if "--self-test" in sys.argv:
     total = failures = 0
-    for fixture in sorted((ROOT / "rules/fixtures").glob("*.yaml")):
-        spec = yaml.safe_load(fixture.read_text())
+    for fixture in sorted((ROOT / "rules/fixtures").rglob("*.yaml")):
+        spec = load_yaml(fixture.read_text())
         for index, scenario in enumerate(spec["scenarios"]):
             total += 1
             result = subprocess.run(
@@ -50,15 +61,15 @@ if "--self-test" in sys.argv:
     print(f"SELF-TEST: {'FAIL' if failures else 'PASS'} ({total} scenarios, {failures} failures)")
     sys.exit(1 if failures else 0)
 
-L = yaml.safe_load((ROOT / "rules/stage-lifecycle.yaml").read_text())
-K = yaml.safe_load((ROOT / "rules/message-kinds.yaml").read_text())["kinds"]
-E = yaml.safe_load((ROOT / "rules/engagement.yaml").read_text())
+L = load_yaml((ROOT / "rules/stage-lifecycle.yaml").read_text())
+K = load_yaml((ROOT / "rules/message-kinds.yaml").read_text())["kinds"]
+E = load_yaml((ROOT / "rules/engagement.yaml").read_text())
 
 FIXTURE = "--fixture" in sys.argv
 W = []
-V = yaml.safe_load((ROOT / "rules/vocabulary.yaml").read_text()) if not FIXTURE else {"facts": {}, "operations": {}}
+V = load_yaml((ROOT / "rules/vocabulary.yaml").read_text()) if not FIXTURE else {"facts": {}, "operations": {}}
 if FIXTURE:
-    spec = yaml.safe_load(pathlib.Path(sys.argv[sys.argv.index("--fixture") + 1]).read_text())
+    spec = load_yaml(pathlib.Path(sys.argv[sys.argv.index("--fixture") + 1]).read_text())
     scenario = spec["scenarios"][int(sys.argv[sys.argv.index("--scenario") + 1])]
     given = scenario["given"]
     L = {
@@ -88,9 +99,9 @@ def check_references(value, owner):
     if isinstance(value, dict):
         namespaces = {"fact": V["facts"], "op": V["operations"],
                       "do": V["operations"], "cap": E.get("caps", {}),
-                      "kind": K, "emit": K}
+                      "kind": K, "emit": K, "attest": V.get("attestations", {}), "counter": L.get("counters", {}), "count": L.get("counters", {})}
         labels = {"fact": "fact", "op": "operation", "do": "operation",
-                  "cap": "cap", "kind": "kind", "emit": "kind"}
+                  "cap": "cap", "kind": "kind", "emit": "kind", "attest": "attestation", "counter": "counter", "count": "counter"}
         for key, item in value.items():
             if key in namespaces and isinstance(item, str) and item not in namespaces[key]:
                 fail(f"{owner}: unknown {labels[key]} '{item}'")
@@ -103,7 +114,7 @@ def contains_number(value):
     if isinstance(value, bool):
         return False
     if isinstance(value, (int, float)):
-        return True
+        return value != 0
     if isinstance(value, dict):
         return any(contains_number(item) for item in value.values())
     if isinstance(value, list):
@@ -115,10 +126,118 @@ def check_requirements(requirements, owner):
     if contains_number(requirements):
         fail(f"{owner}: literal number inside a requirement")
 
-for transition in trans:
+machines = {"stage": L}
+for name in ("found_item", "flag_thread", "seat", "phase", "presence"):
+    if name in L:
+        machines[name] = L[name]
+all_transitions = [(name, transition) for name, machine in machines.items() for transition in machine["transitions"]]
+seen_ids = set()
+for machine, transition in all_transitions:
     owner = transition.get("id", f"{transition['from']}→{transition['to']}")
-    check_requirements(transition.get("require", []), owner)
+    if "require" not in transition:
+        fail(f"{owner}: guard has no machine form")
+        continue
+    for field in ("id", "on", "effects"):
+        if field not in transition:
+            fail(f"{owner}: missing {field}")
+    if owner in seen_ids:
+        fail(f"{owner}: duplicate transition id")
+    seen_ids.add(owner)
+    event = transition.get("on", "message")
+    if event not in ("message", "op-result", "expiry", "fact"):
+        fail(f"{owner}: unknown trigger '{event}'")
+    if event != "fact" and transition.get("kind") not in K:
+        fail(f"{owner}: unknown kind '{transition.get('kind')}'")
+    check_requirements(transition["require"], owner)
     check_references(transition.get("effects", []), owner)
+    for effect in transition.get("effects", []):
+        if not isinstance(effect, dict) or not set(effect) & {"do", "emit", "count"}:
+            fail(f"{owner}: unknown effect")
+        if "emit" in effect and effect["emit"] not in E["mailroom_declared_effects"]:
+            fail(f"{owner}: undeclared mailroom emit '{effect['emit']}'")
+        if "if" in effect:
+            check_requirements([effect["if"]], owner)
+    for requirement in transition["require"]:
+        if "op" in requirement and event != "op-result":
+            fail(f"{owner}: operation result outside op-result trigger")
+    known_states = set(machines[machine]["states"])
+    for state in (transition["from"], transition["to"]):
+        if state not in known_states and not state.startswith("*"):
+            fail(f"{owner}: unknown state '{state}' in {machine}")
+if not fails:
+    ok(f"every guard has a machine form: {len(all_transitions)} transitions with id, on, require and effects")
+
+# A conservative satisfiability check: unknown relationships warn instead of hiding overlap.
+COMPARISONS = {"eq", "ne", "in", "gt", "gte", "lt", "lte"}
+def constant(value):
+    if isinstance(value, dict) and set(value) == {"cap"}:
+        return E["caps"].get(value["cap"])
+    if isinstance(value, (str, int, float, bool, list)) or value is None:
+        return value
+    return None
+
+def alternatives(requirements):
+    result = [[]]
+    for requirement in requirements:
+        if "any" in requirement:
+            branches = [branch for item in requirement["any"] for branch in alternatives([item])]
+        elif "not" in requirement:
+            inverse = dict(requirement["not"])
+            if "eq" in inverse:
+                inverse["ne"] = inverse.pop("eq")
+                branches = [[inverse]]
+            elif not set(inverse) & COMPARISONS:
+                branches = [[{**inverse, "eq": False}]]
+            else:
+                branches = [[]]
+        else:
+            branches = [[requirement]]
+        result = [left + right for left in result for right in branches]
+    return result
+
+def can_hold(atoms):
+    # An op-result record names one operation.
+    if len({atom["op"] for atom in atoms if "op" in atom}) > 1:
+        return False
+    groups = {}
+    for atom in atoms:
+        key = json.dumps({k:v for k,v in atom.items() if k not in COMPARISONS}, sort_keys=True)
+        group = groups.setdefault(key, [])
+        comparison = next((name for name in COMPARISONS if name in atom), "eq")
+        value = constant(atom[comparison]) if comparison in atom else True
+        if value is not None:
+            group.append((comparison, value))
+    for constraints in groups.values():
+        equals = [value for comparison,value in constraints if comparison == "eq"]
+        if equals and any(value != equals[0] for value in equals):
+            return False
+        if equals:
+            value = equals[0]
+            for comparison, bound in constraints:
+                try:
+                    if comparison == "ne" and value == bound: return False
+                    if comparison == "in" and not (set(value) <= set(bound) if isinstance(value,list) else value in bound): return False
+                    if comparison == "gt" and not value > bound: return False
+                    if comparison == "gte" and not value >= bound: return False
+                    if comparison == "lt" and not value < bound: return False
+                    if comparison == "lte" and not value <= bound: return False
+                except TypeError:
+                    pass
+        lower = [(v,c=="gte") for c,v in constraints if c in ("gt","gte") and isinstance(v,(int,float))]
+        upper = [(v,c=="lte") for c,v in constraints if c in ("lt","lte") and isinstance(v,(int,float))]
+        if lower and upper:
+            lo,hi = max(lower),min(upper)
+            if lo[0] > hi[0] or lo[0] == hi[0] and not (lo[1] and hi[1]): return False
+    return True
+
+for machine, definition in machines.items():
+    for left,right in itertools.combinations(definition["transitions"], 2):
+        identity = lambda t: (t["from"], t.get("kind"), t.get("on", "message"))
+        if identity(left) != identity(right) or left.get("on") == "fact":
+            continue
+        if any(can_hold(a+b) for a in alternatives(left.get("require", [])) for b in alternatives(right.get("require", []))):
+            print(f"WARN overlapping transitions {left.get('id')} and {right.get('id')} ({left['from']}, {left.get('kind')}, {left.get('on', 'message')})")
+
 for name, kind in K.items():
     check_requirements(kind.get("require", []), name)
     for case in (kind.get("class", {}).get("cases", []) if isinstance(kind.get("class"), dict) else []):
@@ -169,10 +288,13 @@ for s in L["active_states"]:
 ok(f"{len(reach)} states reachable; all non-terminal states have an exit")
 
 # 5. cycles must be capped (the known cycles and the counter that caps each)
-capped = {("building","stopped"):"stops/resumes", ("stopped","building"):"resumes", ("proposed","planned"):"proposals",
-          ("fix_round","re_review"):"fix_rounds", ("re_review","fix_round"):"fix_rounds", ("*active","paused"):"seat_gone_events",
-          ("paused","*previous"):"seat_gone_events", ("tail_failed","merged"):"ruling (B)", ("frozen","passed"):"ruling (B)",
-          ("re_review","grant_pending"):"fix_rounds (once: at round 2)", ("re_review","ruling_pending"):"fix_rounds (once: at round 3)"}
+# Every result/expiry is tied to its capped request. Daily/session caps alone do not prove a stage cycle finite.
+capped = set()
+for transition in trans:
+    kind = K.get(transition.get("kind"), {})
+    maximum = kind.get("max_fires")
+    if kind.get("window", "stage") == "stage" and isinstance(maximum, int) and not isinstance(maximum,bool) and maximum > 0:
+        capped.add((transition["from"],transition["to"]))
 # sound and deterministic: remove every capped edge and every Bora-gate state; what remains must be acyclic
 gate = {n for n, d in L["states"].items() if d.get("bora_gate")}
 g = {}
@@ -208,7 +330,7 @@ for d in declared:
     if d not in K: fail(f"declared effect '{d}' is not a kind")
 robots = [] if FIXTURE else sorted((ROOT / "robots").glob("*.yaml"))
 for f in robots:
-    R = yaml.safe_load(f.read_text()); role = R["role"]
+    R = load_yaml(f.read_text()); role = R["role"]
     if role not in roles: fail(f"{f.name}: role '{role}' not in engagement.yaml"); continue
     may = {n for n, k in K.items() if role in {x.strip() for x in str(k["from"]).split("|")}}
     for i in R.get("intercepts") or []:
