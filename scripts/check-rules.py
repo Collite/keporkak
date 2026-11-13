@@ -295,6 +295,16 @@ ok(f"closed vocabulary loaded: {len(V['facts'])} facts, {len(V['operations'])} o
 if not fails:
     ok("no unknown fact, operation, kind or cap; no literal number inside a requirement")
 
+# Engagement requirements use the same closed language, with no hidden guards.
+for section in ("second_key", "stop_gate"):
+    if section in E:
+        check_requirements(E[section].get("require", []), section)
+        check_references(E[section],section)
+if "stop_gate" in E and E["stop_gate"].get("require") != []:
+    fail("stop_gate: requirements belong to S2.2 (Amendment 2)")
+if not fails:
+    ok("engagement second key, cap references and empty v1 stop gate checked")
+
 # 1. transitions → kinds
 for t in trans:
     if t["kind"] not in K: fail(f"transition {t['from']}→{t['to']} fires unknown kind '{t['kind']}'")

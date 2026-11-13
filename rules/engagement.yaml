@@ -1,4 +1,4 @@
-# Rules of engagement. Existing prose, roles and profiles are preserved.
+# Rules of engagement — machine limits and v1 second key; roles, principles and profiles preserved.
 version: 1
 principles:
 - 'P-1 Brakes before accelerators: every autonomous arrow starts throttled and capped; a loop ends at a human after
@@ -114,6 +114,13 @@ caps:
   stage_tasks_max: 8
   status_entries: 5
   expiries_before_escalation: 2
+  body_lines: 12
+  stop_gate_blocks: 3
+  stage_list_lines: 150
+  stage_days: 8
+  task_days_min: 0.5
+  task_days_max: 1
+  spec_behaviours: 5
 presence:
   idle_hours_to_absent: 4h
   signals:
@@ -127,7 +134,25 @@ mailroom_declared_effects:
 - grant-request
 - ruling-request
 second_key:
-  rule: reviewer vendor ≠ coder vendor; otherwise the merge is class B
+  rule: 'v1 (D-45): a different seat, a fresh session, (model, effort) at or above the coder''s, model at least
+    the roster''s review floor'
+  require:
+  - fact: seat.name
+    of: reviewer
+    ne:
+      fact: seat.name
+      of: coder
+  - fact: roster.rank
+    of: reviewer
+    gte:
+      fact: roster.rank
+      of: coder
+  - fact: roster.model_rank
+    of: reviewer
+    gte:
+      fact: roster.floor_rank
+  otherwise:
+    class: B
 autonomy_profiles:
   supervised:
     assignment-proposal: B
@@ -168,3 +193,11 @@ what_no_guard_holds:
 - 'read-exfiltration by a seat (06b): reads are unrestricted in every vendor mode'
 - 'only QA touches the live target and opens a browser: a rule, not a fence (D-31)'
 - 'a seat-gone during a long silent command: the watchdog treats an open in_progress tool call as busy'
+stop_gate:
+  max_consecutive_blocks:
+    cap: stop_gate_blocks
+  require: []
+permissions:
+  inside_working_directory: allow
+  outside_working_directory: deny
+  lifetime: once

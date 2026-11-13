@@ -48,6 +48,15 @@ kinds:
     - fact: budget.slot_open
       dimension: effort
     - fact: list.fence_complete
+    - fact: list.tasks_total
+      gte:
+        cap: stage_tasks_min
+    - fact: list.tasks_total
+      lte:
+        cap: stage_tasks_max
+    - fact: list.lines
+      lte:
+        cap: stage_list_lines
     expiry:
     - transition: T-07
   queue-approval:
