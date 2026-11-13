@@ -18,7 +18,7 @@ def validators():
 
 def compare(path):
     found = {}
-    for block in re.findall(r"^```json\n(.*?)^```", path.read_text(), re.M | re.S):
+    for block in re.findall(r"^```json\n(.*?)^```", path.read_bytes().decode("utf-8"), re.M | re.S):
         value = json.loads(block)
         if value.get("$id") in ("kp:message/1", "kp:record/1"):
             if value["$id"] in found:

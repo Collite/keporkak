@@ -31,10 +31,7 @@ class SkeletonSpec : StringSpec({
     }
 
     "the model accepts exactly what the contract's schemas accept, on one shared set of examples" {
-        sharedExamples().forEach { example ->
-            schemaAccepts(example) shouldBe example.accepted
-            modelAccepts(example) shouldBe example.accepted
-        }
+        assertSharedExamplesConform(sharedExamples())
     }
 
     "a dependency added to the engine module fails the build" {

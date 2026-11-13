@@ -56,3 +56,13 @@ private val fixtureDirectory: File by lazy {
     directory
 }
 fun engineFixture(): File = fixtureDirectory
+
+fun assertSharedExamplesConform(examples: List<Example>) {
+    require(examples.isNotEmpty()) { "shared examples must not be empty" }
+    examples.forEach { example ->
+        io.kotest.assertions.withClue(example.name) {
+            schemaAccepts(example) shouldBe example.accepted
+            modelAccepts(example) shouldBe example.accepted
+        }
+    }
+}

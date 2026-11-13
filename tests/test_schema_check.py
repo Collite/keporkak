@@ -19,6 +19,9 @@ class SchemaComparisonTests(unittest.TestCase):
         result = self.compare(lambda x: x.replace("{", "{ ", 1))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("differs", result.stderr)
+    def test_crlf_drift_is_refused(self):
+        result = self.compare(lambda x: x.replace("\n", "\r\n"))
+        self.assertNotEqual(result.returncode, 0)
     def test_a_missing_contract_schema_is_refused(self):
         result = self.compare(lambda x: x.replace('"kp:message/1"', '"kp:other/1"'))
         self.assertNotEqual(result.returncode, 0)

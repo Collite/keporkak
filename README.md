@@ -19,3 +19,13 @@ The engine's build checks its declared production and test classpath dependencie
 All modules are in one Gradle build: `kp-model`, `kp-rules`, `kp-engine`, `kp-log`, `kp-facts`, `kp-ops`, `kp-driver`, `kp-seat-api`, `kp-mailroom`, `kp-board`, and `kp-daemon`. Only the model and the decision construction boundary have code in S0.2. The Python `kp` client, agent sessions, log, engine behavior and mailroom belong to later stages.
 
 Library versions and their verification sources are recorded in `gradle/libs.versions.toml`; Python tooling versions and sources are in `requirements.txt`. The SDK API compilation spec checks both ACP 0.34.0 and MCP 0.16.0 with the selected Kotlin compiler. No check starts an agent or reaches a live target.
+
+To record a message carried by Bora before the daemon exists:
+
+```sh
+just record --project /path/to/project < message.json
+# For a message without a stage:
+just record --project /path/to/project --effort KP < message.json
+```
+
+The input is one complete message, including its existing id, sequence, timestamps and `by: "hand:<role>"`. It is validated before any path is created. Stage traffic goes to `mail/<effort>/_hand/p<n>-s<n.m>.jsonl`; unscoped traffic goes to `mail/<effort>/_hand/office-<office>-<yyyy>-<mm>.jsonl`. The recorder appends one UTF-8 JSON line under a file lock and syncs it to disk; it never writes the daemon's log or issues ids. Invalid input leaves existing log bytes unchanged.

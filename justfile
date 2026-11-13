@@ -30,3 +30,7 @@ schema-check contracts="": _python-env
 
 # The front door used by CI. Engine fences are part of Gradle's check/build.
 check: rules build test schema-check
+
+# Read one complete message from stdin; only the project's _hand directory is written.
+record +args: _python-env
+    build/python/bin/python scripts/kp-record.py "$@"
