@@ -1,0 +1,298 @@
+# One absent-mode night, with three stage contexts and a returning Bora.
+name: H-2-prime
+stage: S2.2
+initial: planned
+stages:
+  S2.3:
+    initial: in_review
+    machines:
+      seat: busy
+    facts:
+      seat.name:
+        coder: coder-2
+        reviewer: reviewer-1
+        reviewer-1: reviewer-1
+        pool: pool-1
+  tail:
+    initial: passed
+final:
+  S2.2: in_review
+  tail: merged
+  S2.3: fix_round
+expected_counts:
+  hold: 2
+  shadow-ruling: 2
+  anomaly-stop: 1
+  digest: 1
+seats:
+  coder-1: coder
+  coder-2: coder
+  reviewer-1: reviewer
+facts:
+  plan.predecessors_exited: true
+  pool.seat_available: true
+  budget.slot_open: true
+  list.fence_complete: true
+  list.tasks_total: 8
+  list.lines: 90
+  git.branch_exists: true
+  list.stop_conditions:
+  - SC-3
+  list.sections_changed:
+  - Found while doing
+  stage.rolls: none
+  stage.live: none
+  list.found_untriaged: 0
+  list.tasks_open: 0
+  seat.name:
+    coder: coder-1
+    reviewer: reviewer-1
+    reviewer-1: reviewer-1
+    pool: pool-1
+  roster.rank:
+    coder: 1
+    reviewer: 2
+    reviewer-1: 2
+  roster.model_rank:
+    coder: 1
+    reviewer: 2
+    reviewer-1: 2
+  roster.floor_rank: 2
+  seat.process_gone: false
+  seat.protocol_closed: false
+  seat.tool_call_open_for: 0
+  seat.inbox_replayed: false
+  project.proof_files: 0
+  git.stray_changes: 0
+  pr.evidence_present: true
+  plan.last_stage_exited: false
+  plan.in_current_wave: true
+  stage.cut_at: '2026-11-13T20:00:00Z'
+  bora.absent_since: '2026-11-13T22:30:00Z'
+  pr.ready: true
+  ci.state: green
+  pr.head: head-1
+  pr.review_on: changes_requested
+steps:
+- id: queue
+  who: bora
+  kind: queue-approval
+  signed: bora
+  args:
+    stages:
+    - S2.2
+    - S2.3
+- who: bora
+  kind: away
+  signed: bora
+  args: {}
+  expect:
+    states:
+      presence: absent
+- who: teamlead
+  kind: assignment-proposal
+  args:
+    role: coder
+    level: senior
+    seat: coder-1
+  expect:
+    state: proposed
+    sends:
+    - queued-approval
+- id: queued
+  who: deputy
+  by: robot:DEP-2
+  kind: queued-approval
+  args: {}
+- operation: worktree.create
+  request: queued
+  result: ok
+  expect:
+    state: assigned
+- who: teamlead
+  kind: assign
+  args:
+    seat: coder-1
+- who: coder-1
+  kind: started
+  args: {}
+- who: coder-1
+  kind: review-request
+  args:
+    attest:
+    - done_lines_hold
+  expect:
+    state: ready_for_review
+- who: teamlead
+  kind: review-bind
+  args:
+    reviewer: reviewer-1
+  expect:
+    state: in_review
+- id: classification
+  who: reviewer-1
+  kind: classify-request
+  args:
+    question: blocker or follow-up?
+    default: follow-up
+  expect:
+    held: true
+    sends:
+    - hold
+    wakes:
+    - shadow
+- who: deputy
+  by: robot:DEP-1-classify-request
+  kind: hold
+  re: classification
+  args: {}
+  expect:
+    states:
+      flag_thread: held
+- who: deputy
+  kind: shadow-ruling
+  args:
+    would_rule: follow-up
+    reason: the DONE line holds
+    uncertain: classification is Bora’s
+- stage: tail
+  id: tail-held
+  who: teamlead
+  kind: merge
+  args: {}
+  expect:
+    held: true
+    sends:
+    - hold
+    wakes:
+    - shadow
+    state: passed
+- who: deputy
+  by: robot:DEP-3
+  kind: hold
+  re: tail-held
+  args: {}
+- who: deputy
+  kind: shadow-ruling
+  args:
+    would_rule: hold
+    reason: the tail waits for Bora
+    uncertain: none
+- stage: S2.3
+  id: first-fix
+  who: reviewer-1
+  kind: verdict
+  args:
+    verdict: FIX FIRST
+    sha: head-1
+    blockers:
+    - id: B1
+    follow_ups: []
+  expect:
+    state: fix_round
+- who: coder-2
+  kind: repair-done
+  args:
+    verdict: first-fix
+  facts:
+    pr.head: head-2
+    pr.commits_since: 1
+    pr.blocker_responses:
+    - B1
+  expect:
+    state: re_review
+- who: reviewer-1
+  kind: re-verdict
+  args:
+    verdict: FIX FIRST
+    sha: head-2
+    blockers:
+    - id: B1
+    reviewed:
+    - B1
+    new_findings: []
+    follow_ups: []
+  expect:
+    state: fix_round
+    sends:
+    - anomaly-stop
+- id: anomaly
+  who: deputy
+  by: robot:DEP-4-re-verdict
+  kind: anomaly-stop
+  args:
+    rule: DEP-4
+    target: stage
+    seat: coder-2
+  expect:
+    sends:
+    - pause
+- id: pause
+  who: pool
+  by: robot:POOL-5
+  kind: pause
+  to: coder-2
+  re: anomaly
+  args:
+    seat: coder-2
+    cause: anomaly-stop
+- operation: seat.cancel
+  request: pause
+  result: ok
+- stage: S2.2
+  who: daemon
+  event:
+    fact: bora.acted
+  facts:
+    bora.acted: true
+  expect:
+    states:
+      presence: present
+    sends:
+    - digest
+- who: deputy
+  by: robot:DEP-8
+  kind: digest
+  args: {}
+  body: 'See the mail log: one classification, one tail hold, one anomaly and two shadow entries.'
+- who: bora
+  kind: ruling
+  signed: bora
+  re: classification
+  args:
+    outcome: follow-up
+- stage: S2.3
+  id: cleared
+  who: bora
+  kind: ruling
+  signed: bora
+  re: anomaly
+  args:
+    outcome: cleared
+    seat: coder-2
+    cause: anomaly-stop
+  expect:
+    sends:
+    - resume
+- id: resume
+  who: pool
+  by: robot:POOL-6
+  kind: resume
+  to: coder-2
+  re: cleared
+  args:
+    seat: coder-2
+    cause: anomaly-stop
+- operation: seat.wake
+  request: resume
+  result: ok
+- stage: tail
+  id: tail-merge
+  who: teamlead
+  kind: merge
+  args: {}
+- operation: git.merge
+  request: tail-merge
+  result: ok
+  expect:
+    state: merged

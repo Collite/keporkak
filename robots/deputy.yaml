@@ -137,6 +137,7 @@ rules:
   - send: hold
     to: teamlead
     args: {}
+  - wake: shadow
 - id: DEP-3-release
   when: a merge, release or deploy-request arrives
   note: send hold to the TeamLead — the tail waits for Bora's return
@@ -147,6 +148,7 @@ rules:
   - send: hold
     to: teamlead
     args: {}
+  - wake: shadow
 - id: DEP-3-deploy-request
   when: a merge, release or deploy-request arrives
   note: send hold to the TeamLead — the tail waits for Bora's return
@@ -157,6 +159,7 @@ rules:
   - send: hold
     to: teamlead
     args: {}
+  - wake: shadow
 - id: DEP-4
   when: two FIX FIRST in a row on one stage
   note: send anomaly-stop to the TeamLead (the stage pauses)
@@ -174,6 +177,9 @@ rules:
     args:
       rule: DEP-4
       target: stage
+      seat:
+        fact: seat.name
+        of: coder
 - id: DEP-4-re-verdict
   when: two FIX FIRST in a row on one stage
   note: send anomaly-stop to the TeamLead (the stage pauses)
@@ -191,6 +197,9 @@ rules:
     args:
       rule: DEP-4
       target: stage
+      seat:
+        fact: seat.name
+        of: coder
 - id: DEP-5
   when: two seat-gone events within an hour
   note: send anomaly-stop to the Pool Manager (the seat pauses)
@@ -243,6 +252,9 @@ rules:
     args:
       rule: DEP-7
       target: stage
+      seat:
+        fact: seat.name
+        of: coder
 - id: DEP-8
   when: presence turns present
   note: 'send digest to Bora: held items · anomaly stops · shadow rulings · ledger proposals; release what was held'

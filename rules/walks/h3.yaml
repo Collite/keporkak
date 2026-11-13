@@ -1,0 +1,209 @@
+# Certification, follow-up issue, release and deploy — supplied fake results.
+name: H-3
+stage: S3.2
+initial: planned
+final: exited
+note: Fake QA observations and operations only; no cluster or browser is used.
+seats:
+  coder-1: coder
+  reviewer-1: reviewer
+facts:
+  plan.predecessors_exited: true
+  pool.seat_available: true
+  budget.slot_open: true
+  list.fence_complete: true
+  list.tasks_total: 8
+  list.lines: 90
+  git.branch_exists: true
+  list.stop_conditions:
+  - SC-3
+  list.sections_changed:
+  - Found while doing
+  stage.rolls: automation-image
+  stage.live: bp-dsk
+  list.found_untriaged: 0
+  list.tasks_open: 8
+  seat.name:
+    coder: coder-1
+    reviewer: reviewer-1
+    reviewer-1: reviewer-1
+    pool: pool-1
+  roster.rank:
+    coder: 1
+    reviewer: 2
+    reviewer-1: 2
+  roster.model_rank:
+    coder: 1
+    reviewer: 2
+    reviewer-1: 2
+  roster.floor_rank: 2
+  seat.process_gone: false
+  seat.protocol_closed: false
+  seat.tool_call_open_for: 0
+  seat.inbox_replayed: false
+  project.proof_files: 0
+  git.stray_changes: 0
+  pr.evidence_present: true
+  plan.last_stage_exited: false
+  list.task_exists: true
+  list.done_item_exists: true
+  fixture.exists: true
+  live.namespace_absent: true
+  live.rollout_complete: true
+  status.entries: 5
+steps:
+- id: proposal
+  who: teamlead
+  kind: assignment-proposal
+  args:
+    role: coder
+    level: senior
+    seat: coder-1
+  expect:
+    state: proposed
+- id: approval
+  who: bora
+  kind: approval
+  signed: bora
+  args: {}
+  expect:
+    state: proposed
+- operation: worktree.create
+  request: approval
+  result: ok
+  expect:
+    state: assigned
+- id: assign
+  who: teamlead
+  kind: assign
+  args:
+    seat: coder-1
+  expect:
+    states:
+      seat: busy
+- who: coder-1
+  kind: started
+  args: {}
+  expect:
+    state: building
+- id: candidate-check
+  who: coder-1
+  kind: qa-request
+  args:
+    task: T5
+    done: D1
+    verify: the candidate satisfies the live DONE item
+- who: qa
+  kind: qa-report
+  re: candidate-check
+  args:
+    outcome: pass
+    fixture: fixtures/h3-candidate
+    command: fake check
+    counts:
+      checks: 1
+    sha: head-1
+  facts:
+    pr.head: head-1
+  expect:
+    state: candidate_deployed
+- who: coder-1
+  kind: review-request
+  args:
+    attest:
+    - done_lines_hold
+  facts:
+    pr.ready: true
+    ci.state: green
+    list.tasks_open: 0
+  expect:
+    state: ready_for_review
+- who: teamlead
+  kind: review-bind
+  args:
+    reviewer: reviewer-1
+  expect:
+    state: in_review
+- id: pass
+  who: reviewer-1
+  kind: verdict
+  args:
+    verdict: PASS-FU
+    sha: head-1
+    blockers: []
+    follow_ups:
+    - title: follow-up outside this stage
+      pointer: Found F1
+  facts:
+    pr.review_on: approved
+  expect:
+    state: passed
+- operation: issue.file
+  request: pass
+  result: ok
+- id: merge
+  who: teamlead
+  kind: merge
+  args: {}
+- operation: git.merge
+  request: merge
+  result: ok
+  expect:
+    state: merged
+- id: release
+  who: teamlead
+  kind: release
+  args: {}
+- operation: release.build
+  request: release
+  result: ok
+- operation: tag.create
+  request: release
+  result: ok
+  expect:
+    state: released
+- id: deployment
+  who: teamlead
+  kind: deploy-request
+  args:
+    pin: image-head-1
+    smoke: the stage smoke
+- id: roll
+  who: qa
+  kind: roll
+  re: deployment
+  args:
+    operation: forward
+    pin: image-head-1
+- operation: gitops.roll
+  request: roll
+  result: ok
+- who: qa
+  kind: deploy-done
+  re: deployment
+  args:
+    pin: image-head-1
+    smoke: pass
+    fixture: fixtures/h3-smoke
+    command: fake smoke
+    counts:
+      checks: 1
+  expect:
+    state: deployed
+- id: exit
+  who: teamlead
+  kind: stage-exit
+  args: {}
+  facts:
+    status.entry_present: true
+- operation: worktree.remove
+  request: exit
+  result: ok
+- operation: register.rebuild
+  request: exit
+  result: ok
+- operation: project.commit_push
+  request: exit
+  result: ok
+  expect:
+    state: exited

@@ -774,10 +774,16 @@ kinds:
           type: object
           required_fields:
           - id
+        required: true
       new_findings:
         type: array
       follow_ups:
         type: array
+      reviewed:
+        type: array
+        items:
+          type: string
+        required: true
     window: stage
     require:
     - fact: pr.review_on
@@ -791,6 +797,9 @@ kinds:
       - not:
           arg: new_findings
       - attest: introduced_by_fix
+    - arg: reviewed
+      eq:
+        fact: review.open_blockers
     expiry: []
   grant-request:
     from: mailroom
@@ -1177,6 +1186,8 @@ kinds:
     - fact: fixture.exists
       pointer:
         arg: fixture
+    - counter: rollbacks_completed
+      gt: 0
     expiry: []
   stage-exit:
     from: teamlead

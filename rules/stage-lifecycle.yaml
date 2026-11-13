@@ -87,6 +87,8 @@ counters:
     scope: stage
   review_bind_expiries:
     scope: stage
+  rollbacks_completed:
+    scope: stage
 transitions:
 - from: planned
   to: proposed
@@ -475,7 +477,7 @@ transitions:
     in:
     - PASS
     - PASS-FU
-  - fact: review.open_blockers
+  - arg: blockers
     eq: []
   effects:
   - do: issue.file
@@ -884,10 +886,10 @@ transitions:
   require:
   - arg: outcome
     eq: fail
-  - counter: roll_attempts
-    gt: 0
   - arg: rollback
     eq: ok
+  - counter: rollbacks_completed
+    gt: 0
   effects: []
 - from: deployed
   to: deployed
@@ -1193,7 +1195,8 @@ transitions:
   require:
   - op: gitops.revert
     eq: ok
-  effects: []
+  effects:
+  - count: rollbacks_completed
 - id: T-74
   from: ready_for_review
   to: ready_for_review
