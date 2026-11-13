@@ -9,7 +9,7 @@ fun validMessage(): JsonObject = Json.parseToJsonElement("""{"v":1,"seq":1,"at":
 fun assertRecordRoundTrips(examples: List<String>) {
     examples.forEach {
         val source = JsonObject(Json.parseToJsonElement(it).jsonObject + mapOf("v" to JsonPrimitive(1), "seq" to JsonPrimitive(2), "at" to JsonPrimitive("2026-11-13T12:00:01Z")))
-        Record.read(source).json shouldBe source
+        Json.encodeToJsonElement(Record.serializer(), Json.decodeFromJsonElement(Record.serializer(), source)) shouldBe source
     }
 }
 data class Example(val name: String, val schema: String, val accepted: Boolean, val value: JsonElement)
