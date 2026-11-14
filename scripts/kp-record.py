@@ -116,9 +116,11 @@ def logged(path):
     except json.JSONDecodeError:
         raise ValueError(f"existing hand log {path.name} has a line that is not JSON") from None
 
-def assign(message, project, path, answers):
-    """What the mailroom would assign (contracts.md §3): next hand id across the project's hand logs, next seq in this
-    log, the thread, and the time."""
+def assign(message, project, effort, answers):
+    """What the mailroom would assign (contracts.md §3): the time, then — in the hand log that time and the stage name —
+    the next hand id across the project's hand logs, the next seq in that log, and the thread. Returns that log."""
+    message["at"] = message["created"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    path = destination(project, {**message, "id": "m-hand-000000"}, effort)
     numbers = [int(match.group(1)) for log in sorted(project.glob("mail/*/_hand/*.jsonl")) for line in logged(log) if (match := HAND_ID.match(str(line.get("id", ""))))]
     own = logged(path)
     message["id"] = f"m-hand-{max(numbers, default=0) + 1:06d}"
@@ -129,7 +131,7 @@ def assign(message, project, path, answers):
         if answered is None:
             raise ValueError(f"the message it answers, {answers}, is not in {path.name}")
         message["thread"] = answered.get("thread", answers)
-    message["at"] = message["created"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return path
 
 def typed(pairs):
     result = {}
@@ -182,15 +184,15 @@ def from_command_line(args):
         match = re.fullmatch(r"([A-Z][A-Z0-9-]*)/P[0-9]+/S[0-9]+\.[0-9]+", args.stage)
         effort = match.group(1) if match else effort
     project = project_of(args, effort)
-    path = destination(project, {**message, "id": "m-hand-000001", "at": "2000-01-01T00:00:00Z"}, args.effort)
-    assign(message, project, path, args.answers)
+    path = assign(message, project, args.effort, args.answers)
     checked(message)
-    # Validation finishes before the first filesystem mutation; the assignment is redone under the lock.
+    # Validation finishes before the first filesystem mutation; the assignment, and with its time the hand log, is
+    # redone under the lock. Every hand log of an effort is in the same directory.
     path.parent.mkdir(parents=True, exist_ok=True)
     mail = os.open(project / "mail", os.O_RDONLY | os.O_DIRECTORY)
     try:
         fcntl.flock(mail, fcntl.LOCK_EX)
-        assign(message, project, path, args.answers)
+        path = assign(message, project, args.effort, args.answers)
         append(path, checked(message))
     finally:
         os.close(mail)

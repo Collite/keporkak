@@ -106,6 +106,16 @@ class RecorderCommandLineTests(unittest.TestCase):
         self.assertEqual((two["id"], two["seq"], two["thread"]), ("m-hand-000002", 2, "m-hand-000002"))
         self.assertEqual({key: one[key] for key in ("kind", "from", "to", "stage", "by", "v")}, {"kind": "review-request", "from": "coder", "to": "teamlead", "stage": "KP/P0/S0.3", "by": "hand:coder", "v": 1})
         self.assertEqual(one["at"], one["created"])
+    def test_an_unscoped_record_goes_to_the_hand_log_of_its_own_month_and_continues_its_sequence(self):
+        first = self.record("away", "--from", "bora", "--to", "mailroom", "--effort", "KP")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        second = self.record("away", "--from", "bora", "--to", "mailroom", "--effort", "KP")
+        self.assertEqual(second.returncode, 0, second.stderr)
+        hand = self.project / "mail/KP/_hand"
+        logs = sorted(path.name for path in hand.iterdir())
+        one, two = self.lines(hand / logs[0])
+        self.assertEqual(logs, [f"office-hand-{one['at'][:7]}.jsonl"])
+        self.assertEqual((one["seq"], two["seq"]), (1, 2))
     def test_a_reply_takes_the_thread_of_the_message_it_answers(self):
         self.record("review-request", "--from", "coder", "--to", "teamlead", "--stage", "KP/P0/S0.3")
         self.record("started", "--from", "coder", "--to", "teamlead", "--stage", "KP/P0/S0.3")
