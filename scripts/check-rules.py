@@ -803,7 +803,8 @@ class Walk:
             self.execute_step(attempt)
         except WalkError as error:
             text=str(error)
-            if not (text.startswith("kind ") or text.startswith("no arrow ") or text.startswith("role ") or text.startswith(("unknown argument", "missing argument", "invalid argument"))):
+            # A body over caps.body_lines is a refusal too (contracts.md §2.1).
+            if not (text.startswith("kind ") or text.startswith("no arrow ") or text.startswith("role ") or text.startswith(("unknown argument", "missing argument", "invalid argument", "body line cap exhausted"))):
                 raise
             if expected.get("refusal_contains","") not in text:
                 raise WalkError(f"wrong refusal: {text}")
