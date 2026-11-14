@@ -26,7 +26,8 @@ class SkeletonSpec : StringSpec({
             """{"event":"transition","machine":"stage","subject":"KP/P0/S0.2","from":"planned","to":"building","cause":"m-panda-000001"}""",
             """{"event":"fact","fact":"branch_exists","subject":"KP/P0/S0.2","value":true}""",
             """{"event":"op","op":"worktree","phase":"ok","cause":"m-panda-000001"}""",
-            """{"event":"rules","hash":"abc","files":{"rules/stage-lifecycle.yaml":"def"}}"""
+            """{"event":"rules","hash":"abc","files":{"rules/stage-lifecycle.yaml":"def"}}""",
+            """{"event":"read","seat":"coder-1","ids":["m-panda-000001"]}"""
         ))
     }
 

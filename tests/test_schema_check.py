@@ -26,4 +26,8 @@ class SchemaComparisonTests(unittest.TestCase):
         result = self.compare(lambda x: x.replace('"kp:message/1"', '"kp:other/1"'))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("missing", result.stderr)
+    def test_the_check_names_the_nine_record_types_it_validated(self):
+        result = subprocess.run([sys.executable, "build-support/check_schemas.py"], cwd=ROOT, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("9 record types (delivered, refused, held, expired, transition, fact, op, rules, read)", result.stdout)
 if __name__ == "__main__": unittest.main()

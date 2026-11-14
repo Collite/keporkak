@@ -14,8 +14,8 @@ internal fun integer(min: Int? = null): Check = { value ->
     }.getOrDefault(false)
 }
 internal fun nullable(check: Check): Check = { it == JsonNull || check(it) }
-internal fun array(check: Check, unique: Boolean = false): Check = {
-    it is JsonArray && it.all(check) && (!unique || it.distinct().size == it.size)
+internal fun array(check: Check, unique: Boolean = false, minItems: Int = 0): Check = {
+    it is JsonArray && it.size >= minItems && it.all(check) && (!unique || it.distinct().size == it.size)
 }
 internal fun dictionary(check: Check): Check = { it is JsonObject && it.values.all(check) }
 internal fun choice(vararg values: String): Check = { text(it) && it.jsonPrimitive.content in values }
@@ -57,11 +57,12 @@ private val recordShapes = mapOf(
     "delivered" to shape("id to class", "id" to text, "to" to array(text), "woke" to array(text), "class" to choice("A", "B", "C"), "rule" to text, "ticket" to nullable(integer()), "counted" to dictionary(integer()), "observed" to objectValue, "attested" to array(text)),
     "refused" to shape("id rule requirement", "id" to text, "rule" to text, "requirement" to text, "observed" to objectValue, "refusals_today" to integer()),
     "held" to shape("id by until", "id" to text, "by" to text, "until" to text, "ticket" to nullable(integer())),
-    "expired" to shape("id", "id" to text, "rule" to text),
-    "transition" to shape("machine subject from to cause", "machine" to choice("stage", "found", "flag", "seat", "phase", "presence"), "subject" to text, "from" to text, "to" to text, "rule" to text, "cause" to text),
+    "expired" to shape("id", "id" to text, "rule" to text, "report" to choice("bora"), "class" to choice("B", "C"), "ticket" to nullable(integer()), "deadline" to nullable(timestamp)),
+    "transition" to shape("machine subject from to cause", "machine" to choice("stage", "found", "flag", "seat", "phase", "presence"), "subject" to text, "from" to text, "to" to text, "rule" to text, "cause" to text, "counted" to dictionary(integer())),
     "fact" to shape("fact subject value", "fact" to text, "subject" to text, "value" to { true }, "evidence" to text),
     "op" to shape("op phase cause", "op" to text, "phase" to choice("requested", "ok", "failed"), "cause" to text, "with" to objectValue, "result" to objectValue, "reason" to text, "attempt" to integer(1)),
-    "rules" to shape("hash files", "hash" to text, "files" to dictionary(text))
+    "rules" to shape("hash files", "hash" to text, "files" to dictionary(text)),
+    "read" to shape("seat ids", "seat" to text, "ids" to array(text, minItems = 1))
 )
 internal fun validateRecord(value: JsonObject) {
     val event = value["event"]
