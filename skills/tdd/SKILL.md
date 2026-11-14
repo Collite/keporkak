@@ -44,6 +44,18 @@ Do not write a batch of unit tests ahead of the code — tests written against i
 - External collaborators (HTTP, gRPC, stores, the model gateway) are mocked or faked; behaviour that needs the real
   thing is a `[QA]` task, not yours.
 
+## At a boundary
+Where the stage crosses one — a line another program writes or reads, a wire format, a fence between modules — a green
+test on one side proves little. Test it from the far side too:
+- **Producer through consumer.** Write with the real producer and read with the real consumer, not each against its
+  own copy of the format.
+- **An independent oracle.** The expected value comes from something that shares no code with what is tested: the
+  contract's schema, another language's library, a literal worked out by hand.
+- **The failure path.** Feed what the far side must refuse — a torn line, an unknown field, a second writer — and see
+  it refused, with nothing changed.
+- **The second language's way in.** A fence built for one language is tried from the other (Java beside Kotlin, Python
+  beside the JVM) and from the build's side doors.
+
 ## Not in the loop
 Refactoring beyond what the task needs, speculative features, a later stage's component. If the code wants a refactor,
 that is one Found line.

@@ -19,6 +19,10 @@ against the DONE line — no code review beyond the fixture spec.
    doubt it.) A DONE item with no such spec, or a spec that would stay green, is a blocker. Then read the diff: does
    each DONE item hold, within the contract? If the repo documents coding
    standards, read them as a second axis; skip what tooling already enforces.
+   **At a boundary** (a line another program reads, a wire format, a module fence), green on one side proves little:
+   look for producer-through-consumer, an oracle that shares no code with the code under test, the failure path
+   (refused, nothing changed), and the second language's way in (the fence tried from Java as well as Kotlin, from the
+   build's side doors). A boundary claim without such a test is a test that does not test what it claims.
 3. Classify every finding. A **blocker** violates the contract, a D-n, the DONE line or a security invariant, or is a
    test that does not test what it claims. Everything else is a **follow-up** → a GitHub issue (group them).
 4. Settle doubts yourself: run the test, or a throwaway probe (say so; dummy credentials only). Do not ask the coder

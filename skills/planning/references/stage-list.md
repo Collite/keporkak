@@ -1,5 +1,5 @@
 # <effort>-<repo>-P<n> · S<n.m> — <title>            (PR: feat/<effort>-<repo>-p<n>-s<n.m>-<short>)
-Realizes: D-… · Contract: contracts.md §… · Pins: <producer> <version> (master's at branch time)
+Realizes: D-… · Contract: contracts.md §… (every section the tasks touch, walked) · Pins: <producer> <version> (master's at branch time)
 rolls: none | <image or artefact>  ·  live: none | <target>  ·  touches: none | contracts | architecture | UX | infra
 
 ## Scope fence
@@ -14,17 +14,18 @@ rolls: none | <image or artefact>  ·  live: none | <target>  ·  touches: none 
 - [ ] <previous stage merged / release available / branch from master>
 
 ## Tasks (tick right after landing; append one line `done <sha>` per task; edit nothing else)
-- [ ] T1 — Specs: <≤ 5 behaviours, one line each>
+- [ ] T1 — Specs. Seam: <the interface the specs observe>. Each named as its sentence: <≤ 5 behaviours, one line each>
 - [ ] T2 — …                                     (6–8 tasks)
 - [ ] T<n> — [QA] <a live check: what to verify, the fixture to save> (send `qa-request`; only QA touches the live target)
 
-## DONE (observable, all required)
+## DONE (observable on the PR's head at the hand-off, all required)
 - <behaviour visible from outside> · <test command + expected green> · <fixture saved at …> (if live)
 
 ## Exit
 - [ ] PR opened as ready from the stage branch; CI green on head; the PR description is the hand-off
 - [ ] review-NNN: PASS (fix rounds per the ladder: two on the verdict · a third on the Principal's grant · a fourth on Bora's ruling)
 - [ ] merged · released (if rolls) · deployed (if live) — by the TeamLead through the daemon
+- [ ] after the merge: <what only the merge shows — CI green on master, the released artefact>
 - [ ] STATUS entry (≤ 5 lines: PR, merge sha, CI run, counts); register rebuilt; every Found line triaged
 
 ## Found while doing (one line each; the Principal triages — the executor never acts on these here)

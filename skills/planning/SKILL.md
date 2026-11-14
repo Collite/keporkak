@@ -21,13 +21,19 @@ Ask before writing lists: open questions go in a section with a stated default e
 Use [references/stage-list.md](references/stage-list.md) exactly. The executor that reads it may add nothing: it
 ticks boxes, appends `done <sha>`, writes Found lines and Retro notes, and stops at the fence.
 - **Size.** 6–8 tasks; a task is ½–1 day with one observable result; a stage is one PR and ≤ 8 working days.
+- **Walk the contract before cutting (PL-18).** The header cites every contract section the tasks touch. Walk each
+  task against those sections — what it reads, what it writes, where each value comes from — before cutting the list.
+  A task that needs something no contract names means the list is not cut yet: fix the contract first.
 - **Specific about the result and its test — not the implementation.** Name interfaces, behaviours and acceptance;
   do not pre-decide detail the executor can read from the code; avoid file paths and line numbers that go stale. A
   specs task names ≤ 5 behaviours.
-- **Tests first.** T1 is specs: write each behaviour as the sentence that will become the spec's name — Bora reads
+- **Tests first.** T1 is specs and names its **seam** — the interface the specs observe (PL-19). Write each behaviour
+  as the sentence that will become the spec's name — Bora reads
   those specs to see that the stage was done, so name behaviours a person would recognise, at most five. Build stages verify with mocked unit and component tests. Anything that needs a real
   dependency is a **certification stage** with a live DONE line, placed where the plan needs it. Mark each live task `[QA]`: only the QA seat
   touches the live target or a browser — say what to verify and which fixture to save.
+- **DONE is checkable at the hand-off (PL-20).** Each DONE item is seen on the PR's head; what only the merge shows —
+  CI on master, a release, a deploy — is an Exit line.
 - **The three lines.** `rolls:` what the stage releases · `live:` where its DONE is observed · `touches:` which design
   border it crosses by plan (normally `none`). They decide what happens after PASS.
 - **The fence.** In scope (one sentence) · out of scope (neighbouring stages by name) · stop conditions with ids
