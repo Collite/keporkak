@@ -1,0 +1,44 @@
+# The models, their order, and what a level means (contracts.md §9; values: plan.md §4.1, D-45, D-47, D-48).
+# Model names are the ids the Claude CLI on Panda carries: Claude Code 2.1.325, its model catalog's latest per family
+# (it has no command that prints them). `just office-check` reads the same catalog on the office.
+version: 1
+vendors:
+  claude:
+    adapter: "@agentclientprotocol/claude-agent-acp"
+    # S2.1 pins the adapter with the handshake test: 0.106.0 if it passes, otherwise 0.104.1 (architecture.md §6, Q-8).
+    adapter_version: null
+    # master's pin in gradle/libs.versions.toml (`acp`); check-rules.py fails when the two differ.
+    sdk: "com.agentclientprotocol:acp:0.34.0"
+# low → high; one line per (model, effort) pair; model before effort (D-45). Efforts: every one the CLI offers.
+order:
+  - {vendor: claude, model: claude-haiku-5-5, effort: low}
+  - {vendor: claude, model: claude-haiku-5-5, effort: medium}
+  - {vendor: claude, model: claude-haiku-5-5, effort: high}
+  - {vendor: claude, model: claude-haiku-5-5, effort: xhigh}
+  - {vendor: claude, model: claude-haiku-5-5, effort: max}
+  - {vendor: claude, model: claude-sonnet-5-5, effort: low}
+  - {vendor: claude, model: claude-sonnet-5-5, effort: medium}
+  - {vendor: claude, model: claude-sonnet-5-5, effort: high}
+  - {vendor: claude, model: claude-sonnet-5-5, effort: xhigh}
+  - {vendor: claude, model: claude-sonnet-5-5, effort: max}
+  - {vendor: claude, model: claude-opus-5-5, effort: low}
+  - {vendor: claude, model: claude-opus-5-5, effort: medium}
+  - {vendor: claude, model: claude-opus-5-5, effort: high}
+  - {vendor: claude, model: claude-opus-5-5, effort: xhigh}
+  - {vendor: claude, model: claude-opus-5-5, effort: max}
+# skill × thinking → a line of `order`. Senior → the top model, junior → the cheapest;
+# thinking: S the lowest effort the CLI offers, M medium, L high, XL the highest it offers.
+levels:
+  junior:
+    S: {vendor: claude, model: claude-haiku-5-5, effort: low}
+    M: {vendor: claude, model: claude-haiku-5-5, effort: medium}
+    L: {vendor: claude, model: claude-haiku-5-5, effort: high}
+    XL: {vendor: claude, model: claude-haiku-5-5, effort: max}
+  senior:
+    S: {vendor: claude, model: claude-opus-5-5, effort: low}
+    M: {vendor: claude, model: claude-opus-5-5, effort: medium}
+    L: {vendor: claude, model: claude-opus-5-5, effort: high}
+    XL: {vendor: claude, model: claude-opus-5-5, effort: max}
+review:
+  # a reviewer's model is at least this; its (model, effort) at or above the coder's (D-45)
+  floor: claude-opus-5-5
