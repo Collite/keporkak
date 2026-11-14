@@ -62,26 +62,26 @@ fun fixtureFiles(given: YamlMap): Map<String, String> {
         "caps" to "{}",
         "vocabulary" to """{"facts": {}, "operations": {}}""",
     )
-    fun part(key: String): String = given.get<YamlNode>(key)?.let(::json) ?: defaults.getValue(key)
+    fun part(key: String): String = given.get<YamlNode>(key)?.let(::jsonOf) ?: defaults.getValue(key)
     val robots = given.get<YamlList>("robots")?.items.orEmpty()
     val vocabulary = part("vocabulary").trimEnd('}').trimEnd() + """, "version": 1}"""
     return filesOnMaster().filterKeys { it.startsWith("pool/") || it.startsWith("agents/") } + mapOf(
         "rules/stage-lifecycle.yaml" to """{"version": 1, "states": ${part("states")}, "active_states": ["planned"],
-            "counters": ${part("counters")}, "transitions": ${json(given.get<YamlList>("transitions")!!)}}""",
+            "counters": ${part("counters")}, "transitions": ${jsonOf(given.get<YamlList>("transitions")!!)}}""",
         "rules/message-kinds.yaml" to """{"version": 1, "kinds": ${part("kinds")}}""",
         "rules/engagement.yaml" to """{"version": 1, "roles": {"coder": {}, "teamlead": {}}, "graduation": {"never": []},
             "mailroom_declared_effects": [], "caps": ${part("caps")}}""",
         "rules/vocabulary.yaml" to vocabulary,
-    ) + robots.mapIndexed { index, robot -> "robots/fixture-$index.yaml" to json(robot) }
+    ) + robots.mapIndexed { index, robot -> "robots/fixture-$index.yaml" to jsonOf(robot) }
 }
 
 /** JSON is YAML: a fixture's sub-document handed on as text. Scalars keep their content. */
-private fun json(node: YamlNode): String = when (node) {
-    is YamlMap -> node.entries.entries.joinToString(", ", "{", "}") { (key, value) -> quote(key.content) + ": " + json(value) }
-    is YamlList -> node.items.joinToString(", ", "[", "]") { json(it) }
+fun jsonOf(node: YamlNode): String = when (node) {
+    is YamlMap -> node.entries.entries.joinToString(", ", "{", "}") { (key, value) -> quote(key.content) + ": " + jsonOf(value) }
+    is YamlList -> node.items.joinToString(", ", "[", "]") { jsonOf(it) }
     is YamlScalar -> if (node.content.matches(Regex("-?(0|[1-9][0-9]*)(\\.[0-9]+)?|true|false"))) node.content else quote(node.content)
     is YamlNull -> "null"
-    is YamlTaggedNode -> json(node.innerNode)
+    is YamlTaggedNode -> jsonOf(node.innerNode)
 }
 
 private fun quote(text: String): String =

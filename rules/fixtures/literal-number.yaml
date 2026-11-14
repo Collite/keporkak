@@ -2,7 +2,7 @@ name: a literal number inside a requirement fails the check
 scenarios:
   - name: numeric comparison
     given:
-      counters: [attempts]
+      counters: {attempts: {scope: stage}}
       transitions:
         - id: T-number
           from: planned
