@@ -114,7 +114,7 @@ transitions:
   effects:
   - count: proposals
 - from: proposed
-  to: proposed
+  to: assigned
   kind: approval
   guard: signed by Bora's CLI
   id: T-02
@@ -126,7 +126,7 @@ transitions:
     with:
       stage:
         msg: stage
-- from: proposed
+- from: assigned
   to: assigned
   kind: approval
   guard: signed by Bora's CLI
@@ -137,7 +137,7 @@ transitions:
     eq: ok
   effects: []
 - from: proposed
-  to: proposed
+  to: assigned
   kind: queued-approval
   guard: 'from the Deputy while Bora is absent: the stage is in his signed queue for the current wave (robots/deputy.yaml
     DEP-2)'
@@ -155,7 +155,7 @@ transitions:
     with:
       stage:
         msg: stage
-- from: proposed
+- from: assigned
   to: assigned
   kind: queued-approval
   guard: 'from the Deputy while Bora is absent: the stage is in his signed queue for the current wave (robots/deputy.yaml

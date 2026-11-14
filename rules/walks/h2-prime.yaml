@@ -104,6 +104,8 @@ steps:
   by: robot:DEP-2
   kind: queued-approval
   args: {}
+  expect:
+    state: assigned
 - operation: worktree.create
   request: queued
   result: ok

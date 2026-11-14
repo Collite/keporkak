@@ -1,0 +1,48 @@
+# B2: approval assigns before requesting creation; a failed result leaves it assigned (§4.5, §7).
+name: queued-approval-create-failure
+stage: queued-assignment
+initial: planned
+final: assigned
+facts:
+  plan.predecessors_exited: true
+  pool.seat_available: true
+  budget.slot_open: true
+  list.fence_complete: true
+  list.tasks_total: 8
+  list.lines: 90
+  plan.in_current_wave: true
+  stage.cut_at: '2026-11-13T20:00:00Z'
+  bora.absent_since: '2026-11-13T22:30:00Z'
+steps:
+- who: bora
+  kind: queue-approval
+  signed: bora
+  args:
+    stages:
+    - queued-assignment
+- who: bora
+  kind: away
+  signed: bora
+  args: {}
+- who: teamlead
+  kind: assignment-proposal
+  args:
+    role: coder
+    level: senior
+    seat: coder-1
+  expect:
+    state: proposed
+    sends:
+    - queued-approval
+- id: queued
+  who: deputy
+  by: robot:DEP-2
+  kind: queued-approval
+  args: {}
+  expect:
+    state: assigned
+- operation: worktree.create
+  request: queued
+  result: failed
+  expect:
+    state: assigned

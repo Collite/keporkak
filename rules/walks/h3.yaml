@@ -67,7 +67,7 @@ steps:
   signed: bora
   args: {}
   expect:
-    state: proposed
+    state: assigned
 - operation: worktree.create
   request: approval
   result: ok
