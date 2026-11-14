@@ -1,0 +1,14 @@
+# Keporkak — the sudo conditions for `kp` (contracts.md §6, D-43). Installed by Bora; see office/README.md.
+# A signed `kp` command is `sudo kp …`: the daemon accepts it only from a root peer, so sudo must ask Bora every time.
+#
+# The name sorts last in /etc/sudoers.d (and has no dot, which sudo would skip). When several rules match a command,
+# sudo uses the last one, so this file decides for kp even if an earlier rule says NOPASSWD.
+
+# S1.5 installs kp here, root-owned and not writable by the office user.
+Cmnd_Alias KP_SIGNED = /usr/local/bin/kp
+
+# No cached ticket: a password every time for kp, even right after another sudo command.
+Defaults!KP_SIGNED timestamp_timeout=0
+
+# No NOPASSWD: the office user runs kp as root only with a password.
+bora ALL=(root) PASSWD: KP_SIGNED

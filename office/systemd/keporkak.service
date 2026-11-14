@@ -1,0 +1,19 @@
+# Keporkak — the office daemon as a systemd user service of the office user (architecture.md §4).
+# TEMPLATE. S1.5 delivers the daemon's launcher and replaces @DAEMON_LAUNCHER@ and @DAEMON_WORKING_DIRECTORY@;
+# install it only then (office/README.md). Lingering must be on, so the service survives a logout.
+
+[Unit]
+Description=Keporkak office daemon
+Documentation=file://%h/Dev/keporkak/keporkak/office/README.md
+
+[Service]
+Type=simple
+WorkingDirectory=@DAEMON_WORKING_DIRECTORY@
+# Panda's JDK, Node and just come from mise. A user service does not read the login shell, so its PATH names the shims.
+Environment=PATH=%h/.local/share/mise/shims:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=@DAEMON_LAUNCHER@
+# A restart ends the daemon's seats; they are re-seated after its replay (architecture.md §4).
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
