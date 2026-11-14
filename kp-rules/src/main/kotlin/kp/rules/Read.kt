@@ -307,7 +307,12 @@ private fun transition(doc: Doc, node: Node): Transition? {
     fields["id"]
     val from = (fields["from"] as? Node.Scalar)?.text
     val to = (fields["to"] as? Node.Scalar)?.text
-    if (!fields.has("require")) return null.also { doc.problem(owner, "guard has no machine form") }
+    if (!fields.has("require")) {
+        // Reported once; the arrow still counts for the machine's exits and reachability, as check-rules.py counts it.
+        doc.problem(owner, "guard has no machine form")
+        val kind = (fields["kind"] as? Node.Scalar)?.text
+        return if (id != null && from != null && to != null) Transition(id, from, to, kind, Event.MESSAGE, null, emptyList(), emptyList()) else null
+    }
     listOf("id", "on", "effects").filterNot { fields.has(it) }.forEach { doc.problem(owner, "missing $it") }
     val forms = Forms(doc, owner)
     val eventName = (fields["on"] as? Node.Scalar)?.text ?: "message"

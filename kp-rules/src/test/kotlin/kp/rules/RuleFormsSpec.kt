@@ -12,7 +12,7 @@ import kotlin.time.Duration.Companion.minutes
 
 /** T2 — every form of contracts.md §4.1–§4.4 has a type, and a form the contract does not list is a problem. */
 class RuleFormsSpec : StringSpec({
-    "master's four rules files type without a problem once their anchors are written out" {
+    "master's files type without a problem once their anchors are written out" {
         val loaded = Rules.load(rulesFilesOnMaster())
 
         loaded.problems.shouldBeEmpty()
@@ -52,10 +52,10 @@ class RuleFormsSpec : StringSpec({
     }
 })
 
-/** Master's four rules files, with any anchor written out so they can be typed before T5 removes the anchors. */
+/** Master's files, with any anchor written out so they can be typed before T5 removes the anchors. */
 fun rulesFilesOnMaster(): Map<String, String> {
     val permissive = Yaml(configuration = YamlConfiguration(anchorsAndAliases = AnchorsAndAliases.Permitted()))
-    return filesOnMaster().filterKeys { it.startsWith("rules/") }.mapValues { (_, text) -> jsonOf(permissive.parseToYamlNode(text)) }
+    return filesOnMaster().mapValues { (path, text) -> if (path.endsWith(".yaml")) jsonOf(permissive.parseToYamlNode(text)) else text }
 }
 
 private fun lifecycleWith(transition: String): Map<String, String> {

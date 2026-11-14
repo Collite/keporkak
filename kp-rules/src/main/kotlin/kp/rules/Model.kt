@@ -1,13 +1,19 @@
 package kp.rules
 
+import java.math.BigDecimal
 import kotlin.time.Duration
 
-/** The rule set: the four rules files, typed and checked. */
+/** The rule set: the four rules files, the robots, the pool files and the personas' modes, typed and checked. */
 class RuleSet internal constructor(
     val lifecycle: Lifecycle,
     val kinds: Map<String, Kind>,
     val engagement: Engagement,
     val vocabulary: Vocabulary,
+    /** By file name (`deputy.yaml`). */
+    val robots: Map<String, Robot>,
+    val pool: Pool,
+    /** The modes a role's persona declares (`agents/<role>/AGENT.md`); a robot's `wake:` names one of its own. */
+    val personaModes: Map<String, Set<String>>,
 )
 
 // rules/stage-lifecycle.yaml (contracts.md §4.1)
@@ -137,3 +143,96 @@ data class FactSpec(val name: String, val params: String, val returns: String, v
 data class OperationSpec(val name: String, val requestedBy: String?, val identity: String?, val results: String?)
 
 data class Vocabulary(val facts: Map<String, FactSpec>, val operations: Map<String, OperationSpec>, val attestations: Map<String, String>)
+
+// robots/*.yaml (contracts.md §8)
+
+sealed interface RobotTrigger {
+    data class Fact(val name: String) : RobotTrigger
+    data class Delivered(val kind: String) : RobotTrigger
+    data class Arrives(val kind: String) : RobotTrigger
+    data class Expired(val kind: String) : RobotTrigger
+    data class Presence(val state: String) : RobotTrigger
+    data class Operation(val operation: String, val outcome: Outcome) : RobotTrigger
+}
+
+sealed interface Action {
+    data class Send(val kind: String, val to: Value, val args: Map<String, Value>) : Action
+    /** Starts or wakes the robot's own seat in one of its persona's modes. */
+    data class Wake(val mode: String) : Action
+}
+
+/** An executed rule has [on] and [then]; a rule `for: persona` has neither and is only rendered. */
+data class RobotRule(
+    val id: String,
+    val whenText: String?,
+    val note: String?,
+    val forPersona: Boolean,
+    val on: RobotTrigger?,
+    val condition: List<Requirement>,
+    val then: List<Action>,
+)
+
+sealed interface Intercept {
+    data class Kind(val name: String) : Intercept
+    data class ClassTo(val messageClass: MessageClass, val to: String) : Intercept
+}
+
+data class ProseRule(val id: String, val whenText: String?, val note: String?)
+
+data class Queue(val order: List<String>, val nextWhen: Requirement, val prose: List<ProseRule>)
+
+data class Robot(
+    val file: String,
+    val role: String,
+    val activeWhen: Requirement,
+    val intercepts: List<Intercept>,
+    val rules: List<RobotRule>,
+    val queue: Queue?,
+    val thresholds: Map<String, Literal>,
+    /** Prose the persona reads; never executed. */
+    val limits: List<String>,
+)
+
+// pool/*.yaml (contracts.md §9)
+
+data class Line(val vendor: String, val model: String, val effort: String)
+
+data class Vendor(val name: String, val adapter: String, val adapterVersion: String?, val sdk: String)
+
+data class RoleModel(val model: String, val effort: String)
+
+data class Roster(
+    val vendors: Map<String, Vendor>,
+    /** Low → high; one line per (model, effort). */
+    val order: List<Line>,
+    val levels: Map<String, Map<String, Line>>,
+    val reviewFloor: String,
+    /** A model only the listed roles may run. */
+    val reserved: Map<String, List<String>>,
+    val roleModels: Map<String, RoleModel>,
+)
+
+data class Office(
+    val name: String,
+    val os: String,
+    val user: String,
+    val roots: Map<String, String>,
+    val project: Map<String, String>,
+    val repos: Map<String, String>,
+    val liveTargets: List<String>,
+    val computerUse: String,
+    val qaVendor: String,
+    val listen: Map<String, String>,
+)
+
+data class Slots(val total: Int, val perSubscription: Map<String, Int>, val perOffice: Map<String, Int>, val stagesInFlightPerEffort: Int)
+
+data class Budgets(val slots: Slots, val warn: List<BigDecimal>, val onCap: String)
+
+data class Pool(
+    val roster: Roster,
+    val offices: Map<String, Office>,
+    val budgets: Budgets,
+    /** Every scalar of a pool file by its dotted path — what `{roster: …}`, `{budget: …}` and (per office) `{office: …}` read. */
+    val values: Map<PoolFile, List<Map<String, Literal>>>,
+)

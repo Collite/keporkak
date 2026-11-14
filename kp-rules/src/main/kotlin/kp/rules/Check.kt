@@ -18,6 +18,8 @@ internal class Names {
     val attestations = mutableListOf<String>()
     val args = mutableListOf<String>()
     val emits = mutableListOf<String>()
+    val pools = mutableListOf<Value.Pool>()
+    val thresholds = mutableListOf<String>()
 
     fun requirement(requirement: Requirement) {
         when (requirement) {
@@ -49,8 +51,14 @@ internal class Names {
             is Value.Fact -> call(value.fact)
             is Value.Items -> value.items.forEach(::value)
             is Value.Fields -> value.fields.values.forEach(::value)
+            is Value.Pool -> pools += value
+            is Value.Robot -> thresholds += value.threshold
             else -> Unit
         }
+    }
+
+    fun action(action: Action) {
+        if (action is Action.Send) { value(action.to); action.args.values.forEach(::value) }
     }
 
     fun effect(effect: Effect) {
@@ -221,4 +229,27 @@ internal class RulesCheck(
         }
         engagement.mailroomDeclaredEffects.filterNot { it in kinds }.forEach { problem(Owner(ENGAGEMENT, null), "declared effect '$it' is not a kind") }
     }
+}
+
+/** Every rule of the set with the names it uses: transitions, kinds, the engagement's requirements, robot rules. */
+internal fun uses(lifecycle: Lifecycle, kinds: Map<String, Kind>, engagement: Engagement, robots: Map<String, Robot>): List<Pair<Owner, Names>> {
+    val transitions = lifecycle.machines.values.flatMap { it.transitions }.map { transition ->
+        Owner(LIFECYCLE, transition.id) to Names().apply { transition.require.forEach(::requirement); transition.effects.forEach(::effect) }
+    }
+    val kindUses = kinds.values.map { kind ->
+        Owner(KINDS, kind.name) to Names().apply {
+            kind.require.forEach(::requirement); kind.classRule.cases.forEach { requirement(it.condition) }; kind.expiry.forEach(::effect)
+        }
+    }
+    val engagementUses = listOfNotNull(
+        engagement.secondKey?.let { key -> Owner(ENGAGEMENT, "second_key") to Names().apply { key.require.forEach(::requirement) } },
+        engagement.stopGate?.let { gate -> Owner(ENGAGEMENT, "stop_gate") to Names().apply { gate.require.forEach(::requirement); value(gate.maxConsecutiveBlocks) } },
+    )
+    val robotUses = robots.flatMap { (path, robot) ->
+        listOf(Owner(path, robot.file) to Names().apply { requirement(robot.activeWhen); robot.queue?.let { requirement(it.nextWhen) } }) +
+            robot.rules.filterNot { it.forPersona }.map { rule ->
+                Owner(path, rule.id) to Names().apply { rule.condition.forEach(::requirement); rule.then.forEach(::action) }
+            }
+    }
+    return transitions + kindUses + engagementUses + robotUses
 }

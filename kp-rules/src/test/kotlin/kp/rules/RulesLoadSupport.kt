@@ -64,7 +64,7 @@ fun fixtureFiles(given: YamlMap): Map<String, String> {
     )
     fun part(key: String): String = given.get<YamlNode>(key)?.let(::jsonOf) ?: defaults.getValue(key)
     val robots = given.get<YamlList>("robots")?.items.orEmpty()
-    val vocabulary = part("vocabulary").trimEnd('}').trimEnd() + """, "version": 1}"""
+    val vocabulary = part("vocabulary").let { it.substring(0, it.lastIndexOf('}')) + """, "version": 1}""" }
     return filesOnMaster().filterKeys { it.startsWith("pool/") || it.startsWith("agents/") } + mapOf(
         "rules/stage-lifecycle.yaml" to """{"version": 1, "states": ${part("states")}, "active_states": ["planned"],
             "counters": ${part("counters")}, "transitions": ${jsonOf(given.get<YamlList>("transitions")!!)}}""",
