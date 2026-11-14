@@ -1,0 +1,18 @@
+# Checked 2026-11-13: https://pypi.org/pypi/jsonschema/4.25.1/json
+jsonschema==4.25.1
+# Checked 2026-11-13: https://pypi.org/pypi/PyYAML/6.0.3/json
+PyYAML==6.0.3
+# Checked 2026-11-13: https://pypi.org/pypi/rfc3339-validator/0.1.4/json
+rfc3339-validator==0.1.4
+# Checked 2026-11-13: https://pypi.org/pypi/attrs/25.4.0/json
+attrs==25.4.0
+# Checked 2026-11-13: https://pypi.org/pypi/jsonschema-specifications/2025.9.1/json
+jsonschema-specifications==2025.9.1
+# Checked 2026-11-13: https://pypi.org/pypi/referencing/0.37.0/json
+referencing==0.37.0
+# Checked 2026-11-13: https://pypi.org/pypi/rpds-py/0.30.0/json
+rpds-py==0.30.0
+# Checked 2026-11-13: https://pypi.org/pypi/typing-extensions/4.15.0/json
+typing-extensions==4.15.0
+# Checked 2026-11-13: https://pypi.org/pypi/six/1.17.0/json
+six==1.17.0

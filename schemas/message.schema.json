@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kp:message/1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "seq", "at", "id", "thread", "from", "to", "kind", "subject", "created", "by"],
+  "properties": {
+    "v":        {"const": 1},
+    "seq":      {"type": "integer", "minimum": 1},
+    "at":       {"type": "string", "format": "date-time"},
+    "id":       {"type": "string", "pattern": "^m-[a-z0-9]+-[0-9]{6,}$"},
+    "thread":   {"type": "string", "pattern": "^m-[a-z0-9]+-[0-9]{6,}$"},
+    "re":       {"type": ["string", "null"], "pattern": "^m-[a-z0-9]+-[0-9]{6,}$"},
+    "from":     {"$ref": "#/$defs/party"},
+    "to":       {"$ref": "#/$defs/party"},
+    "cc":       {"type": "array", "items": {"$ref": "#/$defs/party"}, "uniqueItems": true},
+    "kind":     {"type": "string", "pattern": "^[a-z][a-z-]*$"},
+    "stage":    {"type": ["string", "null"], "pattern": "^[A-Z][A-Z0-9-]*/P[0-9]+/S[0-9]+\\.[0-9]+$"},
+    "subject":  {"type": "string", "minLength": 1, "maxLength": 120},
+    "body":     {"type": "string"},
+    "pointers": {"type": "array", "items": {"type": "string", "minLength": 3}},
+    "args":     {"type": "object"},
+    "deadline": {"type": ["string", "null"], "format": "date-time"},
+    "created":  {"type": "string", "format": "date-time"},
+    "by":       {"type": "string", "pattern": "^(seat:[a-z][a-z0-9-]*|robot:[A-Z]+-[0-9]+|bora-cli|effect:T-[0-9]+|hand:[a-z][a-z0-9-]*)$"}
+  },
+  "$defs": {
+    "party": {"type": "string", "pattern": "^(bora|daemon|mailroom|ledger|board|[a-z]+(-[a-z0-9]+)*)$"}
+  }
+}
