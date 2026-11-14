@@ -1,0 +1,27 @@
+name: a requirement that names an unknown fact, operation, kind or cap fails the check
+scenarios:
+  - name: four unknown names
+    given:
+      vocabulary:
+        facts: {request.open: {params: [stage, kind], returns: bool, source: L}}
+        operations: {}
+      counters: [attempts]
+      transitions:
+        - id: T-unknown
+          from: planned
+          to: exited
+          kind: started
+          on: op-result
+          guard: all references must exist
+          require:
+            - {fact: missing.fact}
+            - {op: missing.operation, eq: ok}
+            - {fact: request.open, stage: this, kind: missing-kind}
+            - {counter: attempts, lt: {cap: missing_cap}}
+          effects: []
+    expect:
+      failures:
+        - "T-unknown: unknown fact 'missing.fact'"
+        - "T-unknown: unknown operation 'missing.operation'"
+        - "T-unknown: unknown kind 'missing-kind'"
+        - "T-unknown: unknown cap 'missing_cap'"

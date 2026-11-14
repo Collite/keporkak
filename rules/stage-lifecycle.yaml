@@ -1,116 +1,1935 @@
-# Keporkak — the stage lifecycle (P-5c). Source of truth for the mailroom's guard (D-9, D-21).
-# A transition is fired by exactly one message kind (see message-kinds.yaml); anything else is refused.
-# Guards: `observed` = the daemon checks the world (CI, files, roster); `attested` = the sender asserts, logged as such (RV-13).
-# Converged 2026-11-12 from 07 (P-5/P-5b), review-261112-c2 (RV-n, U-n), D-20…D-28.
+# Stage lifecycle and five companion machines — executable contracts §4.
 version: 1
 states:
-  planned:            {desc: "in the plan, not proposed", terminal: false}
-  proposed:           {desc: "TeamLead proposed an assignment; Bora's gate (or the pre-approved queue)", bora_gate: true}
-  assigned:           {desc: "approved; seat bound; coder not yet started"}
-  building:           {desc: "the coder executes the list"}
-  stopped:            {desc: "a fence stop condition was named; Principal triages"}
-  candidate_deployed: {desc: "U-1: QA verified the candidate on the live target before review (stages with a live DONE only)"}
-  ready_for_review:   {desc: "PR ready, CI green; waiting for the reviewer binding"}
-  in_review:          {desc: "full review (R5.1)"}
-  fix_round:          {desc: "autonomous fix round 1 or 2 (counter in context)"}
-  re_review:          {desc: "per-open-blocker re-review only (R5.3 second half)"}
-  grant_pending:      {desc: "a third FIX FIRST; the Principal may grant (D-23); entered at most once per stage (fix_rounds = 2)"}
-  fix_round_3:        {desc: "granted third round"}
-  ruling_pending:     {desc: "a fourth FIX FIRST; only Bora may rule (D-23)", bora_gate: true}
-  fix_round_4:        {desc: "Bora-ruled fourth round"}
-  passed:             {desc: "PASS or PASS — follow-ups filed"}
-  merged:             {desc: "on master (merge through the daemon, D-27 n)"}
-  released:           {desc: "image built / version tagged (skip if rolls: none)"}
-  deployed:           {desc: "rolled and smoke-tested on the live target by QA (skip if live: none)"}
-  tail_failed:        {desc: "merge, build or roll failed after the retry; Bora's gate (D-27 f)", bora_gate: true}
-  frozen:             {desc: "stray change at the merge audit; this stage only, seat paused (D-27 g)", bora_gate: true}
-  exited:             {desc: "STATUS, REGISTER, project committed+pushed; Found all triaged", terminal: true}
-  recut:              {desc: "back to the planner; Bora starts the Planner session (B)", bora_gate: true}
-  closed:             {desc: "PR closed, worktree freed after recut", terminal: true}
-  paused:             {desc: "seat gone while active (any active state); Pool Manager re-seats", overlay: true}
-
-# Context counters the mailroom keeps per stage (caps come from engagement.yaml:caps unless stated)
-counters: [proposals, stops, resumes, review_requests, fix_rounds, seat_gone_events, tail_retries, refusals_per_seat]
-
+  planned:
+    desc: in the plan, not proposed
+    terminal: false
+  proposed:
+    desc: TeamLead proposed an assignment; Bora's gate (or the pre-approved queue)
+    bora_gate: true
+  assigned:
+    desc: approved; seat bound; coder not yet started
+  building:
+    desc: the coder executes the list
+  stopped:
+    desc: a fence stop condition was named; Principal triages
+  candidate_deployed:
+    desc: 'U-1: QA verified the candidate on the live target before review (stages with a live DONE only)'
+  ready_for_review:
+    desc: PR ready, CI green; waiting for the reviewer binding
+  in_review:
+    desc: full review (R5.1)
+  fix_round:
+    desc: autonomous fix round 1 or 2 (counter in context)
+  re_review:
+    desc: per-open-blocker re-review only (R5.3 second half)
+  grant_pending:
+    desc: a third FIX FIRST; the Principal may grant (D-23); entered at most once per stage (fix_rounds = 2)
+  fix_round_3:
+    desc: granted third round
+  ruling_pending:
+    desc: a fourth FIX FIRST; only Bora may rule (D-23)
+    bora_gate: true
+  fix_round_4:
+    desc: Bora-ruled fourth round
+  passed:
+    desc: PASS or PASS — follow-ups filed
+  merged:
+    desc: on master (merge through the daemon, D-27 n)
+  released:
+    desc: 'image built / version tagged (skip if rolls: none)'
+  deployed:
+    desc: 'rolled and smoke-tested on the live target by QA (skip if live: none)'
+  tail_failed:
+    desc: merge, build or roll failed after the retry; Bora's gate (D-27 f)
+    bora_gate: true
+  frozen:
+    desc: stray change at the merge audit; this stage only, seat paused (D-27 g)
+    bora_gate: true
+  exited:
+    desc: STATUS, REGISTER, project committed+pushed; Found all triaged
+    terminal: true
+  recut:
+    desc: back to the planner; Bora starts the Planner session (B)
+    bora_gate: true
+  closed:
+    desc: PR closed, worktree freed after recut
+    terminal: true
+  paused:
+    desc: seat gone while active (any active state); Pool Manager re-seats
+    overlay: true
+counters:
+  proposals:
+    scope: stage
+  stops:
+    scope: stage
+  resumes:
+    scope: stage
+  review_requests:
+    scope: stage
+  fix_rounds:
+    scope: stage
+  seat_gone_events:
+    scope: stage
+  tail_retries:
+    scope: stage
+  refusals_per_seat:
+    scope: seat
+  merge_attempts:
+    scope: stage
+  release_attempts:
+    scope: stage
+  roll_attempts:
+    scope: stage
+  review_request_expiries:
+    scope: stage
+  repair_expiries:
+    scope: stage
+  review_bind_expiries:
+    scope: stage
+  rollbacks_completed:
+    scope: stage
 transitions:
-  - {from: planned,            to: proposed,           kind: assignment-proposal, guard: "R4.8 predecessors exited (observed) · seat free (roster) · slots open (budgets) · fence has SC ids and a touches: line (observed)"}
-  - {from: proposed,           to: assigned,           kind: approval,            guard: "signed by Bora's CLI"}
-  - {from: proposed,           to: assigned,           kind: queued-approval,     guard: "from the Deputy while Bora is absent: the stage is in his signed queue for the current wave (robots/deputy.yaml DEP-2)"}
-  - {from: proposed,           to: planned,            kind: decline,             guard: "signed by Bora's CLI; or deadline expired (counter proposals ≤ 2, then Principal ping)"}
-  - {from: assigned,           to: building,           kind: started,             guard: "branch off master exists (observed)"}
-  - {from: building,           to: stopped,            kind: stop,                guard: "names a stop-condition id from the fence (SC-n) · counter stops"}
-  - {from: fix_round,          to: stopped,            kind: stop,                guard: "as above (RV-8)"}
-  - {from: fix_round_3,        to: stopped,            kind: stop,                guard: "as above"}
-  - {from: fix_round_4,        to: stopped,            kind: stop,                guard: "as above"}
-  - {from: stopped,            to: building,           kind: triage,              guard: "outcome=resume · task-count diff within R4.11 · no edit outside the Found section (observed) · counter resumes ≤ 2, the 3rd needs Bora"}
-  - {from: stopped,            to: recut,              kind: triage,              guard: "outcome=recut (class B: Bora is the gate, D-27 b)"}
-  - {from: building,           to: candidate_deployed, kind: qa-report,           guard: "outcome=pass on a qa-request for a live task · stage live: ≠ none · fixture saved · temp pods dropped (observed) (U-1, D-31)"}
-  - {from: candidate_deployed, to: ready_for_review,   kind: review-request,      guard: "see below"}
-  - {from: building,           to: ready_for_review,   kind: review-request,      guard: "PR ready (observed) · CI green on head (observed) · every task ticked with done <sha> (observed) · DONE lines ticked (attested) · fans out found-batch · counter review_requests ≤ 3"}
-  - {from: ready_for_review,   to: in_review,          kind: review-bind,         guard: "reviewer seat ≠ coder seat · roster rank(reviewer) ≥ rank(coder) · vendor ≠ coder's vendor preferred (required later for autonomous merge, U-6)"}
-  - {from: in_review,          to: passed,             kind: verdict,             guard: "verdict ∈ {PASS, PASS-FU} · a GitHub PR review exists on the same head sha (observed, R6.2)"}
-  - {from: in_review,          to: fix_round,          kind: verdict,             guard: "verdict = FIX FIRST · blockers with ids · counter fix_rounds < 2"}
-  - {from: re_review,          to: fix_round,          kind: re-verdict,          guard: "blockers remain · counter fix_rounds < 2"}
-  - {from: fix_round,          to: re_review,          kind: repair-done,         guard: "new commits since the verdict (observed) · CI green (observed) · one response line per blocker id (observed)"}
-  - {from: re_review,          to: passed,             kind: re-verdict,          guard: "per open blocker only · PASS"}
-  - {from: re_review,          to: grant_pending,      kind: re-verdict,          guard: "blockers remain · counter fix_rounds = 2 → the mailroom emits grant-request to the Principal"}
-  - {from: grant_pending,      to: fix_round_3,        kind: grant,               guard: "from the Principal · within deadline"}
-  - {from: grant_pending,      to: recut,              kind: grant,               guard: "refused, or deadline expired"}
-  - {from: fix_round_3,        to: re_review,          kind: repair-done,         guard: "as above"}
-  - {from: re_review,          to: ruling_pending,     kind: re-verdict,          guard: "blockers remain after round 3 → the mailroom emits ruling-request to Bora"}
-  - {from: ruling_pending,     to: fix_round_4,        kind: ruling,              guard: "from Bora's CLI · outcome=grant"}
-  - {from: ruling_pending,     to: recut,              kind: ruling,              guard: "outcome=recut, or deadline expired (held while absent, D-28)"}
-  - {from: fix_round_4,        to: re_review,          kind: repair-done,         guard: "as above"}
-  - {from: re_review,          to: recut,              kind: re-verdict,          guard: "blockers remain after round 4"}
-  - {from: passed,             to: merged,             kind: merge,               guard: "while Bora is absent the Deputy holds it (DEP-3) · second key: reviewer vendor ≠ coder vendor else class B (U-6) · audit (observed): evidence lines present · list fully ticked · no proof files · every Found line triaged · no stray changes in main checkouts/sibling repos (D-19 c) · counter tail_retries ≤ 1"}
-  - {from: passed,             to: frozen,             kind: merge,               guard: "audit found a stray change → this stage frozen, coder seat paused (D-27 g)"}
-  - {from: passed,             to: tail_failed,        kind: merge,               guard: "merge failed twice (conflict, stale CI)"}
-  - {from: merged,             to: released,           kind: release,             guard: "stage rolls: ≠ none · image built, version tagged · counter tail_retries ≤ 1"}
-  - {from: merged,             to: exited,             kind: stage-exit,          guard: "stage rolls: none and live: none · exit guard below"}
-  - {from: merged,             to: tail_failed,        kind: release,             guard: "build failed twice"}
-  - {from: released,           to: deployed,           kind: deploy-done,         guard: "QA: rollout complete (observed) · smoke passed · on the TeamLead's deploy-request · Bora present"}
-  - {from: released,           to: exited,             kind: stage-exit,          guard: "stage live: none · exit guard below"}
-  - {from: released,           to: tail_failed,        kind: deploy-failed,       guard: "QA: roll or smoke failed · rolled back to the previous pin by QA (D-31)"}
-  - {from: deployed,           to: exited,             kind: stage-exit,          guard: "STATUS per R4.9 (observed) · REGISTER rebuilt · project committed and pushed (D-27 m) · every Found line triaged (RV-29)"}
-  - {from: tail_failed,        to: merged,             kind: ruling,              guard: "Bora: retry (after a fix)"}
-  - {from: tail_failed,        to: recut,              kind: ruling,              guard: "Bora: recut"}
-  - {from: frozen,             to: passed,             kind: ruling,              guard: "Bora: cleared (stray change explained/removed)"}
-  - {from: frozen,             to: recut,              kind: ruling,              guard: "Bora: recut"}
-  - {from: recut,              to: closed,             kind: close,               guard: "PR closed · worktree freed (daemon) · recut-notice sent to Bora"}
-  # overlay: the seat lifecycle hits the stage
-  - {from: "*active",          to: paused,             kind: seat-gone,           guard: "pid/pty gone or ACP protocol closed (observed) · an open in_progress tool call counts as busy, not gone · counter seat_gone_events ≤ 3 per stage, then pause for Bora"}
-  - {from: paused,             to: "*previous",        kind: re-seated,           guard: "fresh seat with the list, STATUS and the unread inbox replayed · class C after the 2nd re-seat"}
-
-active_states: [assigned, building, stopped, candidate_deployed, ready_for_review, in_review, fix_round, re_review, grant_pending, fix_round_3, ruling_pending, fix_round_4, passed, merged, released]
-
-# The two sub-machines and the two companion machines (converged in 11-c2-converged.md; kept here for the validator)
+- from: planned
+  to: proposed
+  kind: assignment-proposal
+  guard: 'R4.8 predecessors exited (observed) · seat free (roster) · slots open (budgets) · fence has SC ids and a touches:
+    line (observed)'
+  id: T-01
+  'on': message
+  require:
+  - fact: plan.predecessors_exited
+  - fact: pool.seat_available
+    role:
+      arg: role
+    level:
+      arg: level
+  - fact: budget.slot_open
+    dimension: office
+  - fact: budget.slot_open
+    dimension: subscription
+  - fact: budget.slot_open
+    dimension: effort
+  - fact: list.fence_complete
+  effects:
+  - count: proposals
+- from: proposed
+  to: assigned
+  kind: approval
+  guard: signed by Bora's CLI
+  id: T-02
+  'on': message
+  require:
+  - signed: bora
+  effects:
+  - do: worktree.create
+    with:
+      stage:
+        msg: stage
+- from: assigned
+  to: assigned
+  kind: approval
+  guard: signed by Bora's CLI
+  id: T-03
+  'on': op-result
+  require:
+  - op: worktree.create
+    eq: ok
+  effects: []
+- from: proposed
+  to: assigned
+  kind: queued-approval
+  guard: 'from the Deputy while Bora is absent: the stage is in his signed queue for the current wave (robots/deputy.yaml
+    DEP-2)'
+  id: T-04
+  'on': message
+  require:
+  - fact: bora.present
+    eq: false
+  - fact: queue.names
+  - fact: stage.cut_at
+    lte:
+      fact: bora.absent_since
+  effects:
+  - do: worktree.create
+    with:
+      stage:
+        msg: stage
+- from: assigned
+  to: assigned
+  kind: queued-approval
+  guard: 'from the Deputy while Bora is absent: the stage is in his signed queue for the current wave (robots/deputy.yaml
+    DEP-2)'
+  id: T-05
+  'on': op-result
+  require:
+  - op: worktree.create
+    eq: ok
+  effects: []
+- from: proposed
+  to: planned
+  kind: decline
+  guard: signed by Bora's CLI; or deadline expired (counter proposals ≤ 2, then Principal ping)
+  id: T-06
+  'on': message
+  require:
+  - signed: bora
+  effects: []
+- from: proposed
+  to: planned
+  kind: assignment-proposal
+  guard: signed by Bora's CLI; or deadline expired (counter proposals ≤ 2, then Principal ping)
+  id: T-07
+  'on': expiry
+  require: []
+  effects:
+  - emit: nudge
+    to: principal
+    if:
+      counter: proposals
+      gte:
+        cap: proposals_per_stage
+- from: assigned
+  to: building
+  kind: started
+  guard: branch off master exists (observed)
+  id: T-08
+  'on': message
+  require:
+  - fact: git.branch_exists
+  effects: []
+- from: building
+  to: stopped
+  kind: stop
+  guard: names a stop-condition id from the fence (SC-n) · counter stops
+  id: T-09
+  'on': message
+  require:
+  - arg: sc
+    in:
+      fact: list.stop_conditions
+  effects:
+  - count: stops
+- from: fix_round
+  to: stopped
+  kind: stop
+  guard: as above (RV-8)
+  id: T-10
+  'on': message
+  require:
+  - arg: sc
+    in:
+      fact: list.stop_conditions
+  effects:
+  - count: stops
+- from: fix_round_3
+  to: stopped
+  kind: stop
+  guard: as above
+  id: T-11
+  'on': message
+  require:
+  - arg: sc
+    in:
+      fact: list.stop_conditions
+  effects:
+  - count: stops
+- from: fix_round_4
+  to: stopped
+  kind: stop
+  guard: as above
+  id: T-12
+  'on': message
+  require:
+  - arg: sc
+    in:
+      fact: list.stop_conditions
+  effects:
+  - count: stops
+- from: stopped
+  to: building
+  kind: triage
+  guard: outcome=resume · task-count diff within R4.11 · no edit outside the Found section (observed) · counter resumes ≤
+    2, the 3rd needs Bora
+  id: T-13
+  'on': message
+  require:
+  - arg: outcome
+    eq: resume
+  - fact: list.tasks_total
+    gte:
+      cap: stage_tasks_min
+  - fact: list.tasks_total
+    lte:
+      cap: stage_tasks_max
+  - fact: list.sections_changed
+    since:
+      arg: since
+    in:
+    - Found while doing
+  - counter: resumes
+    lt:
+      cap: resumes_per_stage
+  effects:
+  - count: resumes
+- from: stopped
+  to: recut
+  kind: triage
+  guard: 'outcome=recut (class B: Bora is the gate, D-27 b)'
+  id: T-14
+  'on': message
+  require:
+  - arg: outcome
+    eq: recut
+  effects: []
+- from: building
+  to: candidate_deployed
+  kind: qa-report
+  guard: 'outcome=pass on a qa-request for a live task · stage live: ≠ none · fixture saved · temp pods dropped (observed)
+    (U-1, D-31)'
+  id: T-15
+  'on': message
+  require:
+  - arg: outcome
+    eq: pass
+  - re: kind
+    eq: qa-request
+  - fact: stage.live
+    ne: none
+  - fact: fixture.exists
+    pointer:
+      arg: fixture
+  - fact: live.namespace_absent
+    stage:
+      msg: stage
+  effects: []
+- from: candidate_deployed
+  to: ready_for_review
+  kind: review-request
+  guard: see below
+  id: T-16
+  'on': message
+  require:
+  - &id001
+    fact: pr.ready
+  - &id002
+    fact: ci.state
+    of:
+      fact: pr.head
+    eq: green
+  - &id003
+    fact: list.tasks_open
+    eq: 0
+  - &id004
+    attest: done_lines_hold
+  - &id005
+    counter: review_requests
+    lt:
+      cap: review_requests_per_stage
+  effects:
+  - &id006
+    count: review_requests
+  - &id007
+    emit: found-batch
+    to: principal
+    if:
+      fact: list.found_untriaged
+      gt: 0
+- from: building
+  to: ready_for_review
+  kind: review-request
+  guard: PR ready (observed) · CI green on head (observed) · every task ticked with done <sha> (observed) · DONE lines ticked
+    (attested) · fans out found-batch · counter review_requests ≤ 3
+  id: T-17
+  'on': message
+  require:
+  - *id001
+  - *id002
+  - *id003
+  - *id004
+  - *id005
+  effects:
+  - *id006
+  - *id007
+- from: ready_for_review
+  to: in_review
+  kind: review-bind
+  guard: reviewer seat ≠ coder seat · roster rank(reviewer) ≥ rank(coder) · reviewer model ≥ roster review floor (D-45)
+  id: T-18
+  'on': message
+  require:
+  - fact: seat.name
+    of:
+      arg: reviewer
+    ne:
+      fact: seat.name
+      of: coder
+  - fact: roster.rank
+    of:
+      arg: reviewer
+    gte:
+      fact: roster.rank
+      of: coder
+  - fact: roster.model_rank
+    of:
+      arg: reviewer
+    gte:
+      fact: roster.floor_rank
+  effects: []
+- from: in_review
+  to: passed
+  kind: verdict
+  guard: verdict ∈ {PASS, PASS-FU} · a GitHub PR review exists on the same head sha (observed, R6.2)
+  id: T-19
+  'on': message
+  require:
+  - arg: verdict
+    in:
+    - PASS
+    - PASS-FU
+  - fact: pr.review_on
+    sha:
+      fact: pr.head
+    in:
+    - approved
+    - commented
+  effects:
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
+- from: in_review
+  to: fix_round
+  kind: verdict
+  guard: verdict = FIX FIRST · blockers with ids · counter fix_rounds < 2
+  id: T-20
+  'on': message
+  require:
+  - arg: verdict
+    eq: FIX FIRST
+  - arg: blockers
+  - counter: fix_rounds
+    lt:
+      cap: fix_rounds_autonomous
+  effects:
+  - count: fix_rounds
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
+- from: re_review
+  to: fix_round
+  kind: re-verdict
+  guard: blockers remain · counter fix_rounds < 2
+  id: T-21
+  'on': message
+  require:
+  - arg: verdict
+    eq: FIX FIRST
+  - arg: blockers
+  - counter: fix_rounds
+    lt:
+      cap: fix_rounds_autonomous
+  effects:
+  - count: fix_rounds
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
+- from: fix_round
+  to: re_review
+  kind: repair-done
+  guard: new commits since the verdict (observed) · CI green (observed) · one response line per blocker id (observed)
+  id: T-22
+  'on': message
+  require:
+  - &id008
+    fact: pr.commits_since
+    message:
+      arg: verdict
+    gt: 0
+  - &id009
+    fact: ci.state
+    of:
+      fact: pr.head
+    eq: green
+  - &id010
+    fact: pr.blocker_responses
+    ids:
+      fact: review.open_blockers
+    eq:
+      fact: review.open_blockers
+  effects: []
+- from: re_review
+  to: passed
+  kind: re-verdict
+  guard: per open blocker only · PASS
+  id: T-23
+  'on': message
+  require:
+  - arg: verdict
+    in:
+    - PASS
+    - PASS-FU
+  - arg: blockers
+    eq: []
+  effects:
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
+- from: re_review
+  to: grant_pending
+  kind: re-verdict
+  guard: blockers remain · counter fix_rounds = 2 → the mailroom emits grant-request to the Principal
+  id: T-24
+  'on': message
+  require:
+  - arg: verdict
+    eq: FIX FIRST
+  - arg: blockers
+  - counter: fix_rounds
+    eq:
+      cap: fix_rounds_autonomous
+  effects:
+  - emit: grant-request
+    to: principal
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
+- from: grant_pending
+  to: fix_round_3
+  kind: grant
+  guard: from the Principal · within deadline
+  id: T-25
+  'on': message
+  require:
+  - arg: outcome
+    eq: grant
+  effects:
+  - count: fix_rounds
+- from: grant_pending
+  to: recut
+  kind: grant
+  guard: refused, or deadline expired
+  id: T-26
+  'on': message
+  require:
+  - arg: outcome
+    eq: refuse
+  effects: []
+- from: grant_pending
+  to: recut
+  kind: grant-request
+  guard: refused, or deadline expired
+  id: T-27
+  'on': expiry
+  require: []
+  effects: []
+- from: fix_round_3
+  to: re_review
+  kind: repair-done
+  guard: as above
+  id: T-28
+  'on': message
+  require:
+  - *id008
+  - *id009
+  - *id010
+  effects: []
+- from: re_review
+  to: ruling_pending
+  kind: re-verdict
+  guard: blockers remain after round 3 → the mailroom emits ruling-request to Bora
+  id: T-29
+  'on': message
+  require:
+  - arg: verdict
+    eq: FIX FIRST
+  - arg: blockers
+  - counter: fix_rounds
+    eq:
+      cap: fix_rounds_with_principal_grant
+  effects:
+  - emit: ruling-request
+    to: bora
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
+- from: ruling_pending
+  to: fix_round_4
+  kind: ruling
+  guard: from Bora's CLI · outcome=grant
+  id: T-30
+  'on': message
+  require:
+  - signed: bora
+  - arg: outcome
+    eq: grant
+  effects:
+  - count: fix_rounds
+- from: ruling_pending
+  to: recut
+  kind: ruling
+  guard: outcome=recut, or deadline expired (held while absent, D-28)
+  id: T-31
+  'on': message
+  require:
+  - signed: bora
+  - arg: outcome
+    eq: recut
+  effects: []
+- from: ruling_pending
+  to: recut
+  kind: ruling-request
+  guard: outcome=recut, or deadline expired (held while absent, D-28)
+  id: T-32
+  'on': expiry
+  require:
+  - fact: bora.present
+  effects: []
+- from: fix_round_4
+  to: re_review
+  kind: repair-done
+  guard: as above
+  id: T-33
+  'on': message
+  require:
+  - *id008
+  - *id009
+  - *id010
+  effects: []
+- from: re_review
+  to: recut
+  kind: re-verdict
+  guard: blockers remain after round 4
+  id: T-34
+  'on': message
+  require:
+  - arg: verdict
+    eq: FIX FIRST
+  - arg: blockers
+  - counter: fix_rounds
+    gte:
+      cap: fix_rounds_with_bora_ruling
+  effects:
+  - do: issue.file
+    with:
+      follow_ups:
+        arg: follow_ups
+    if:
+      arg: follow_ups
+- from: passed
+  to: passed
+  kind: merge
+  guard: 'while Bora is absent the Deputy holds it (DEP-3) · second key: different reviewer seat · reviewer rank ≥ coder rank
+    · reviewer model ≥ review floor else class B (D-45) · audit (observed): evidence lines present · list fully ticked · no
+    proof files · every Found line triaged · no stray changes in main checkouts/sibling repos (D-19 c) · counter tail_retries
+    ≤ 1'
+  id: T-35
+  'on': message
+  require:
+  - fact: bora.present
+  - fact: pr.evidence_present
+  - fact: list.tasks_open
+    eq: 0
+  - fact: project.proof_files
+    eq: 0
+  - fact: list.found_untriaged
+    eq: 0
+  - fact: git.stray_changes
+    eq: 0
+  - counter: merge_attempts
+    lte:
+      cap: tail_retries
+  effects:
+  - count: merge_attempts
+  - do: git.merge
+    with:
+      stage:
+        msg: stage
+- from: passed
+  to: merged
+  kind: merge
+  guard: 'while Bora is absent the Deputy holds it (DEP-3) · second key: different reviewer seat · reviewer rank ≥ coder rank
+    · reviewer model ≥ review floor else class B (D-45) · audit (observed): evidence lines present · list fully ticked · no
+    proof files · every Found line triaged · no stray changes in main checkouts/sibling repos (D-19 c) · counter tail_retries
+    ≤ 1'
+  id: T-36
+  'on': op-result
+  require:
+  - op: git.merge
+    eq: ok
+  effects: []
+- from: passed
+  to: passed
+  kind: merge
+  guard: 'while Bora is absent the Deputy holds it (DEP-3) · second key: different reviewer seat · reviewer rank ≥ coder rank
+    · reviewer model ≥ review floor else class B (D-45) · audit (observed): evidence lines present · list fully ticked · no
+    proof files · every Found line triaged · no stray changes in main checkouts/sibling repos (D-19 c) · counter tail_retries
+    ≤ 1'
+  id: T-37
+  'on': op-result
+  require:
+  - op: git.merge
+    eq: failed
+  - counter: merge_attempts
+    lte:
+      cap: tail_retries
+  effects: []
+- from: passed
+  to: frozen
+  kind: merge
+  guard: audit found a stray change → this stage frozen, coder seat paused (D-27 g)
+  id: T-38
+  'on': message
+  require:
+  - fact: git.stray_changes
+    gt: 0
+  effects: []
+- from: passed
+  to: tail_failed
+  kind: merge
+  guard: merge failed twice (conflict, stale CI)
+  id: T-39
+  'on': op-result
+  require:
+  - op: git.merge
+    eq: failed
+  - counter: merge_attempts
+    gt:
+      cap: tail_retries
+  effects: []
+- from: merged
+  to: merged
+  kind: release
+  guard: 'stage rolls: ≠ none · image built, version tagged · counter tail_retries ≤ 1'
+  id: T-40
+  'on': message
+  require:
+  - fact: stage.rolls
+    ne: none
+  - counter: release_attempts
+    lte:
+      cap: tail_retries
+  effects:
+  - count: release_attempts
+  - do: release.build
+    with:
+      stage:
+        msg: stage
+- from: merged
+  to: merged
+  kind: release
+  guard: 'stage rolls: ≠ none · image built, version tagged · counter tail_retries ≤ 1'
+  id: T-41
+  'on': op-result
+  require:
+  - op: release.build
+    eq: ok
+  effects:
+  - do: tag.create
+    with:
+      stage:
+        msg: stage
+- from: merged
+  to: released
+  kind: release
+  guard: 'stage rolls: ≠ none · image built, version tagged · counter tail_retries ≤ 1'
+  id: T-42
+  'on': op-result
+  require:
+  - op: tag.create
+    eq: ok
+  effects: []
+- from: merged
+  to: merged
+  kind: release
+  guard: 'stage rolls: ≠ none · image built, version tagged · counter tail_retries ≤ 1'
+  id: T-43
+  'on': op-result
+  require:
+  - any:
+    - op: release.build
+      eq: failed
+    - op: tag.create
+      eq: failed
+  - counter: release_attempts
+    lte:
+      cap: tail_retries
+  effects: []
+- from: merged
+  to: merged
+  kind: stage-exit
+  guard: 'stage rolls: none and (live: none or live DONE verified on the candidate head sha) · exit guard below (D-42)'
+  id: T-44
+  'on': message
+  require:
+  - &id011
+    fact: status.entry_present
+  - &id012
+    fact: status.entries
+    lte:
+      cap: status_entries
+  - &id013
+    fact: list.found_untriaged
+    eq: 0
+  - fact: stage.rolls
+    eq: none
+  - any:
+    - fact: stage.live
+      eq: none
+    - fact: log.count
+      kind: qa-report
+      scope: stage
+      where:
+        outcome: pass
+        sha:
+          fact: pr.head
+      gt: 0
+  effects:
+  - do: worktree.remove
+    with:
+      stage:
+        msg: stage
+- from: merged
+  to: exited
+  kind: stage-exit
+  guard: 'stage rolls: none and (live: none or live DONE verified on the candidate head sha) · exit guard below (D-42)'
+  id: T-45
+  'on': op-result
+  require:
+  - op: project.commit_push
+    eq: ok
+  effects: []
+- from: merged
+  to: tail_failed
+  kind: release
+  guard: build failed twice
+  id: T-46
+  'on': op-result
+  require:
+  - any:
+    - op: release.build
+      eq: failed
+    - op: tag.create
+      eq: failed
+  - counter: release_attempts
+    gt:
+      cap: tail_retries
+  effects: []
+- from: released
+  to: deployed
+  kind: deploy-done
+  guard: 'QA: rollout complete (observed) · smoke passed · on the TeamLead''s deploy-request · Bora present'
+  id: T-47
+  'on': message
+  require:
+  - fact: live.rollout_complete
+    target:
+      fact: stage.live
+    pin:
+      arg: pin
+  - arg: smoke
+    eq: pass
+  - re: kind
+    eq: deploy-request
+  - fact: bora.present
+  effects: []
+- from: released
+  to: released
+  kind: stage-exit
+  guard: 'stage live: none · exit guard below'
+  id: T-48
+  'on': message
+  require:
+  - *id011
+  - *id012
+  - *id013
+  - fact: stage.live
+    eq: none
+  effects:
+  - do: worktree.remove
+    with:
+      stage:
+        msg: stage
+- from: released
+  to: exited
+  kind: stage-exit
+  guard: 'stage live: none · exit guard below'
+  id: T-49
+  'on': op-result
+  require:
+  - op: project.commit_push
+    eq: ok
+  effects: []
+- from: released
+  to: tail_failed
+  kind: deploy-failed
+  guard: 'QA: roll or smoke failed · rolled back to the previous pin by QA (D-31)'
+  id: T-50
+  'on': message
+  require:
+  - arg: outcome
+    eq: fail
+  - arg: rollback
+    eq: ok
+  - counter: rollbacks_completed
+    gt: 0
+  effects: []
+- from: deployed
+  to: deployed
+  kind: stage-exit
+  guard: STATUS per R4.9 (observed) · REGISTER rebuilt · project committed and pushed (D-27 m) · every Found line triaged
+    (RV-29)
+  id: T-51
+  'on': message
+  require:
+  - *id011
+  - *id012
+  - *id013
+  effects:
+  - do: worktree.remove
+    with:
+      stage:
+        msg: stage
+- from: deployed
+  to: exited
+  kind: stage-exit
+  guard: STATUS per R4.9 (observed) · REGISTER rebuilt · project committed and pushed (D-27 m) · every Found line triaged
+    (RV-29)
+  id: T-52
+  'on': op-result
+  require:
+  - op: project.commit_push
+    eq: ok
+  effects: []
+- from: tail_failed
+  to: merged
+  kind: ruling
+  guard: 'Bora: retry (after a fix)'
+  id: T-53
+  'on': message
+  require:
+  - signed: bora
+  - arg: outcome
+    eq: retry
+  effects: []
+- from: tail_failed
+  to: recut
+  kind: ruling
+  guard: 'Bora: recut'
+  id: T-54
+  'on': message
+  require:
+  - signed: bora
+  - arg: outcome
+    eq: recut
+  effects: []
+- from: frozen
+  to: passed
+  kind: ruling
+  guard: 'Bora: cleared (stray change explained/removed)'
+  id: T-55
+  'on': message
+  require:
+  - signed: bora
+  - arg: outcome
+    eq: cleared
+  effects: []
+- from: frozen
+  to: recut
+  kind: ruling
+  guard: 'Bora: recut'
+  id: T-56
+  'on': message
+  require:
+  - signed: bora
+  - arg: outcome
+    eq: recut
+  effects: []
+- from: recut
+  to: recut
+  kind: close
+  guard: PR closed · worktree freed (daemon) · recut-notice sent to Bora
+  id: T-57
+  'on': message
+  require:
+  - fact: log.count
+    kind: recut-notice
+    scope: stage
+    gt: 0
+  effects:
+  - do: pr.close
+    with:
+      stage:
+        msg: stage
+- from: recut
+  to: closed
+  kind: close
+  guard: PR closed · worktree freed (daemon) · recut-notice sent to Bora
+  id: T-58
+  'on': op-result
+  require:
+  - op: project.commit_push
+    eq: ok
+  effects: []
+- from: '*active'
+  to: paused
+  kind: seat-gone
+  guard: pid/pty gone or ACP protocol closed (observed) · an open in_progress tool call counts as busy, not gone · counter
+    seat_gone_events ≤ 3 per stage, then pause for Bora
+  id: T-59
+  'on': message
+  require:
+  - any:
+    - fact: seat.process_gone
+      seat:
+        arg: seat
+    - fact: seat.protocol_closed
+      seat:
+        arg: seat
+  - fact: seat.tool_call_open_for
+    seat:
+      arg: seat
+    eq: 0
+  - counter: seat_gone_events
+    lt:
+      cap: seat_gone_events_per_stage
+  effects:
+  - count: seat_gone_events
+  - do: seat.reseat
+    with:
+      seat:
+        arg: seat
+- from: paused
+  to: '*previous'
+  kind: re-seated
+  guard: fresh seat with the list, STATUS and the unread inbox replayed · class C after the 2nd re-seat
+  id: T-60
+  'on': message
+  require:
+  - fact: seat.inbox_replayed
+    seat:
+      arg: seat
+  - counter: seat_gone_events
+    lte:
+      cap: seat_gone_events_per_stage
+  effects: []
+- from: merged
+  to: merged
+  kind: stage-exit
+  guard: 'stage rolls: none and (live: none or live DONE verified on the candidate head sha) · exit guard below (D-42)'
+  id: T-61
+  'on': op-result
+  require:
+  - op: worktree.remove
+    eq: ok
+  effects:
+  - do: register.rebuild
+    with: {}
+- from: merged
+  to: merged
+  kind: stage-exit
+  guard: 'stage rolls: none and (live: none or live DONE verified on the candidate head sha) · exit guard below (D-42)'
+  id: T-62
+  'on': op-result
+  require:
+  - op: register.rebuild
+    eq: ok
+  effects:
+  - do: project.commit_push
+    with: {}
+- from: released
+  to: released
+  kind: stage-exit
+  guard: 'stage live: none · exit guard below'
+  id: T-63
+  'on': op-result
+  require:
+  - op: worktree.remove
+    eq: ok
+  effects:
+  - do: register.rebuild
+    with: {}
+- from: released
+  to: released
+  kind: stage-exit
+  guard: 'stage live: none · exit guard below'
+  id: T-64
+  'on': op-result
+  require:
+  - op: register.rebuild
+    eq: ok
+  effects:
+  - do: project.commit_push
+    with: {}
+- from: deployed
+  to: deployed
+  kind: stage-exit
+  guard: STATUS per R4.9 (observed) · REGISTER rebuilt · project committed and pushed (D-27 m) · every Found line triaged
+    (RV-29)
+  id: T-65
+  'on': op-result
+  require:
+  - op: worktree.remove
+    eq: ok
+  effects:
+  - do: register.rebuild
+    with: {}
+- from: deployed
+  to: deployed
+  kind: stage-exit
+  guard: STATUS per R4.9 (observed) · REGISTER rebuilt · project committed and pushed (D-27 m) · every Found line triaged
+    (RV-29)
+  id: T-66
+  'on': op-result
+  require:
+  - op: register.rebuild
+    eq: ok
+  effects:
+  - do: project.commit_push
+    with: {}
+- from: recut
+  to: recut
+  kind: close
+  guard: PR closed · worktree freed (daemon) · recut-notice sent to Bora
+  id: T-67
+  'on': op-result
+  require:
+  - op: pr.close
+    eq: ok
+  effects:
+  - do: worktree.remove
+    with:
+      stage:
+        msg: stage
+- from: recut
+  to: recut
+  kind: close
+  guard: PR closed · worktree freed (daemon) · recut-notice sent to Bora
+  id: T-68
+  'on': op-result
+  require:
+  - op: worktree.remove
+    eq: ok
+  effects:
+  - do: register.rebuild
+    with: {}
+- from: recut
+  to: recut
+  kind: close
+  guard: PR closed · worktree freed (daemon) · recut-notice sent to Bora
+  id: T-69
+  'on': op-result
+  require:
+  - op: register.rebuild
+    eq: ok
+  effects:
+  - do: project.commit_push
+    with: {}
+- id: T-70
+  from: released
+  to: released
+  kind: roll
+  'on': message
+  guard: an open deploy-request · the GitOps change for this stage's pin only · or the revert of QA's own failed roll
+  require:
+  - arg: operation
+    eq: forward
+  effects:
+  - count: roll_attempts
+  - do: gitops.roll
+    with:
+      stage:
+        msg: stage
+      pin:
+        arg: pin
+- id: T-71
+  from: released
+  to: released
+  kind: roll
+  'on': op-result
+  guard: an open deploy-request · the GitOps change for this stage's pin only · or the revert of QA's own failed roll
+  require:
+  - op: gitops.roll
+    eq: ok
+  effects: []
+- id: T-72
+  from: released
+  to: released
+  kind: roll
+  'on': message
+  guard: an open deploy-request · the GitOps change for this stage's pin only · or the revert of QA's own failed roll
+  require:
+  - arg: operation
+    eq: revert
+  effects:
+  - count: roll_attempts
+  - do: gitops.revert
+    with:
+      stage:
+        msg: stage
+      pin:
+        arg: pin
+- id: T-73
+  from: released
+  to: released
+  kind: roll
+  'on': op-result
+  guard: an open deploy-request · the GitOps change for this stage's pin only · or the revert of QA's own failed roll
+  require:
+  - op: gitops.revert
+    eq: ok
+  effects:
+  - count: rollbacks_completed
+- id: T-74
+  from: ready_for_review
+  to: ready_for_review
+  kind: review-request
+  'on': expiry
+  guard: nudge teamlead; 2nd expiry → Bora (C)
+  require: []
+  effects:
+  - count: review_request_expiries
+- id: T-75
+  from: in_review
+  to: in_review
+  kind: review-bind
+  'on': expiry
+  guard: re-bind once, then Bora (C)
+  require: []
+  effects:
+  - count: review_bind_expiries
+- id: T-76
+  from: re_review
+  to: re_review
+  kind: repair-done
+  'on': expiry
+  guard: nudge reviewer; 2nd → teamlead
+  require: []
+  effects:
+  - count: repair_expiries
+- id: T-77
+  from: passed
+  to: tail_failed
+  kind: merge
+  'on': expiry
+  guard: tail_failed
+  require: []
+  effects: []
+- id: T-78
+  from: merged
+  to: tail_failed
+  kind: release
+  'on': expiry
+  guard: tail_failed
+  require: []
+  effects: []
+- id: T-79
+  from: released
+  to: tail_failed
+  kind: deploy-request
+  'on': expiry
+  guard: tail_failed
+  require: []
+  effects: []
+active_states:
+- assigned
+- building
+- stopped
+- candidate_deployed
+- ready_for_review
+- in_review
+- fix_round
+- re_review
+- grant_pending
+- fix_round_3
+- ruling_pending
+- fix_round_4
+- passed
+- merged
+- released
 found_item:
-  states: [found, triaged]
+  states:
+  - found
+  - triaged
   transitions:
-    - {from: found, to: triaged, kind: triage, guard: "outcome ∈ {resume, issue, stage, drop}; `issue` → Gardener (D-14), `stage` → Planner via Bora"}
+  - from: found
+    to: triaged
+    kind: triage
+    guard: outcome ∈ {resume, issue, stage, drop}; `issue` → Gardener (D-14), `stage` → Planner via Bora
+    id: FOUND_ITEM-01
+    'on': message
+    require:
+    - arg: outcome
+      in:
+      - resume
+      - issue
+      - stage
+      - drop
+    effects:
+    - do: issue.file
+      with:
+        found:
+          arg: found
+      if:
+        arg: outcome
+        eq: issue
 flag_thread:
-  states: [asked, held, ruled, expired]
+  states:
+  - asked
+  - held
+  - ruled
+  - expired
   transitions:
-    - {from: asked,  to: ruled,   kind: ruling,  guard: "from Bora's CLI"}
-    - {from: asked,  to: held,    kind: hold,    guard: "Bora absent (D-28); listed in the digest"}
-    - {from: held,   to: ruled,   kind: ruling,  guard: "from Bora's CLI"}
-    - {from: asked,  to: expired, kind: expire,  guard: "deadline passed while present; reported, never auto-resolved; one open thread per (stage, subject)"}
+  - from: asked
+    to: ruled
+    kind: ruling
+    guard: from Bora's CLI
+    id: FLAG_THREAD-01
+    'on': message
+    require:
+    - signed: bora
+    effects: []
+  - from: asked
+    to: held
+    kind: hold
+    guard: Bora absent (D-28); listed in the digest
+    id: FLAG_THREAD-02
+    'on': message
+    require:
+    - fact: bora.present
+      eq: false
+    effects: []
+  - from: held
+    to: ruled
+    kind: ruling
+    guard: from Bora's CLI
+    id: FLAG_THREAD-03
+    'on': message
+    require:
+    - signed: bora
+    effects: []
+  - from: asked
+    to: expired
+    kind: ruling-request
+    guard: deadline passed while present; reported, never auto-resolved; one open thread per (stage, subject)
+    id: FLAG_THREAD-04
+    'on': expiry
+    require:
+    - fact: bora.present
+    - fact: thread.open
+    effects: []
+  - from: asked
+    to: expired
+    kind: classify-request
+    guard: deadline passed while present; reported, never auto-resolved; one open thread per (stage, subject)
+    id: FLAG_THREAD-05
+    'on': expiry
+    require:
+    - fact: bora.present
+    - fact: thread.open
+    effects: []
 seat:
-  states: [provisioned, ready, busy, idle, gone, retired]
+  states:
+  - provisioned
+  - ready
+  - busy
+  - idle
+  - gone
+  - retired
   transitions:
-    - {from: provisioned, to: ready,   kind: session-report, guard: "handshake ok, MCP injected, identity bound"}
-    - {from: ready,       to: busy,    kind: assign,         guard: "a stage assigned"}
-    - {from: busy,        to: idle,    kind: stage-exit,     guard: "or close"}
-    - {from: "*",         to: gone,    kind: seat-gone,      guard: "observed by the Pool Manager"}
-    - {from: gone,        to: ready,   kind: re-seated,      guard: "≤ 3 events per stage"}
-    - {from: "*",         to: retired, kind: retire,         guard: "TeamLead's session-request to remove, or budget cap (C)"}
+  - from: provisioned
+    to: provisioned
+    kind: session-report
+    guard: handshake ok, MCP injected, identity bound
+    id: SEAT-01
+    'on': message
+    require:
+    - re: kind
+      eq: session-request
+    - fact: budget.slot_open
+      dimension: office
+    - fact: budget.slot_open
+      dimension: subscription
+    effects:
+    - do: seat.start
+      with:
+        seat:
+          arg: seat
+        role:
+          arg: role
+  - from: provisioned
+    to: ready
+    kind: session-report
+    guard: handshake ok, MCP injected, identity bound
+    id: SEAT-02
+    'on': op-result
+    require:
+    - op: token.mint
+      eq: ok
+    effects: []
+  - from: ready
+    to: busy
+    kind: assign
+    guard: a stage assigned
+    id: SEAT-03
+    'on': message
+    require:
+    - fact: stage.state
+      eq: assigned
+    effects: []
+  - from: busy
+    to: idle
+    kind: stage-exit
+    guard: or close
+    id: SEAT-04
+    'on': op-result
+    require:
+    - op: project.commit_push
+      eq: ok
+    effects: []
+  - from: busy
+    to: idle
+    kind: close
+    guard: or close
+    id: SEAT-05
+    'on': op-result
+    require:
+    - op: project.commit_push
+      eq: ok
+    effects: []
+  - from: '*'
+    to: gone
+    kind: seat-gone
+    guard: observed by the Pool Manager
+    id: SEAT-06
+    'on': message
+    require:
+    - any:
+      - fact: seat.process_gone
+        seat:
+          arg: seat
+      - fact: seat.protocol_closed
+        seat:
+          arg: seat
+    - fact: seat.tool_call_open_for
+      seat:
+        arg: seat
+      eq: 0
+    effects: []
+  - from: gone
+    to: ready
+    kind: re-seated
+    guard: ≤ 3 events per stage
+    id: SEAT-07
+    'on': message
+    require:
+    - fact: seat.inbox_replayed
+      seat:
+        arg: seat
+    - counter: seat_gone_events
+      lte:
+        cap: seat_gone_events_per_stage
+    effects: []
+  - from: provisioned
+    to: provisioned
+    kind: retire
+    guard: TeamLead's session-request to remove, or budget cap (C)
+    id: SEAT-08
+    'on': message
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+  - from: ready
+    to: ready
+    kind: retire
+    guard: TeamLead's session-request to remove, or budget cap (C)
+    id: SEAT-09
+    'on': message
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+  - from: busy
+    to: busy
+    kind: retire
+    guard: TeamLead's session-request to remove, or budget cap (C)
+    id: SEAT-10
+    'on': message
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+  - from: idle
+    to: idle
+    kind: retire
+    guard: TeamLead's session-request to remove, or budget cap (C)
+    id: SEAT-11
+    'on': message
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+  - from: gone
+    to: gone
+    kind: retire
+    guard: TeamLead's session-request to remove, or budget cap (C)
+    id: SEAT-12
+    'on': message
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+  - from: retired
+    to: retired
+    kind: retire
+    guard: TeamLead's session-request to remove, or budget cap (C)
+    id: SEAT-13
+    'on': message
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+  - from: '*'
+    to: retired
+    kind: retire
+    guard: TeamLead's session-request to remove, or budget cap (C)
+    id: SEAT-14
+    'on': op-result
+    require:
+    - op: seat.retire
+      eq: ok
+    effects: []
+  - from: provisioned
+    to: provisioned
+    kind: session-report
+    guard: handshake ok, MCP injected, identity bound
+    id: SEAT-15
+    'on': op-result
+    require:
+    - op: seat.start
+      eq: ok
+    effects:
+    - do: token.mint
+      with:
+        seat:
+          arg: seat
+  - from: provisioned
+    to: provisioned
+    kind: pause
+    'on': message
+    guard: anomaly-stop, 3rd refusal, or frozen stage
+    require: []
+    effects:
+    - do: seat.cancel
+      with:
+        seat:
+          arg: seat
+    id: SEAT-16
+  - from: ready
+    to: ready
+    kind: pause
+    'on': message
+    guard: anomaly-stop, 3rd refusal, or frozen stage
+    require: []
+    effects:
+    - do: seat.cancel
+      with:
+        seat:
+          arg: seat
+    id: SEAT-17
+  - from: busy
+    to: busy
+    kind: pause
+    'on': message
+    guard: anomaly-stop, 3rd refusal, or frozen stage
+    require: []
+    effects:
+    - do: seat.cancel
+      with:
+        seat:
+          arg: seat
+    id: SEAT-18
+  - from: idle
+    to: idle
+    kind: pause
+    'on': message
+    guard: anomaly-stop, 3rd refusal, or frozen stage
+    require: []
+    effects:
+    - do: seat.cancel
+      with:
+        seat:
+          arg: seat
+    id: SEAT-19
+  - from: gone
+    to: gone
+    kind: pause
+    'on': message
+    guard: anomaly-stop, 3rd refusal, or frozen stage
+    require: []
+    effects:
+    - do: seat.cancel
+      with:
+        seat:
+          arg: seat
+    id: SEAT-20
+  - from: retired
+    to: retired
+    kind: pause
+    'on': message
+    guard: anomaly-stop, 3rd refusal, or frozen stage
+    require: []
+    effects:
+    - do: seat.cancel
+      with:
+        seat:
+          arg: seat
+    id: SEAT-21
+  - from: provisioned
+    to: provisioned
+    kind: compact
+    'on': message
+    guard: context above the health threshold
+    require: []
+    effects:
+    - do: seat.compact
+      with:
+        seat:
+          arg: seat
+    id: SEAT-22
+  - from: ready
+    to: ready
+    kind: compact
+    'on': message
+    guard: context above the health threshold
+    require: []
+    effects:
+    - do: seat.compact
+      with:
+        seat:
+          arg: seat
+    id: SEAT-23
+  - from: busy
+    to: busy
+    kind: compact
+    'on': message
+    guard: context above the health threshold
+    require: []
+    effects:
+    - do: seat.compact
+      with:
+        seat:
+          arg: seat
+    id: SEAT-24
+  - from: idle
+    to: idle
+    kind: compact
+    'on': message
+    guard: context above the health threshold
+    require: []
+    effects:
+    - do: seat.compact
+      with:
+        seat:
+          arg: seat
+    id: SEAT-25
+  - from: gone
+    to: gone
+    kind: compact
+    'on': message
+    guard: context above the health threshold
+    require: []
+    effects:
+    - do: seat.compact
+      with:
+        seat:
+          arg: seat
+    id: SEAT-26
+  - from: retired
+    to: retired
+    kind: compact
+    'on': message
+    guard: context above the health threshold
+    require: []
+    effects:
+    - do: seat.compact
+      with:
+        seat:
+          arg: seat
+    id: SEAT-27
+  - from: provisioned
+    to: provisioned
+    kind: kill
+    'on': message
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require: []
+    effects:
+    - do: seat.kill
+      with:
+        seat:
+          arg: seat
+    id: SEAT-28
+  - from: ready
+    to: ready
+    kind: kill
+    'on': message
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require: []
+    effects:
+    - do: seat.kill
+      with:
+        seat:
+          arg: seat
+    id: SEAT-29
+  - from: busy
+    to: busy
+    kind: kill
+    'on': message
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require: []
+    effects:
+    - do: seat.kill
+      with:
+        seat:
+          arg: seat
+    id: SEAT-30
+  - from: idle
+    to: idle
+    kind: kill
+    'on': message
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require: []
+    effects:
+    - do: seat.kill
+      with:
+        seat:
+          arg: seat
+    id: SEAT-31
+  - from: gone
+    to: gone
+    kind: kill
+    'on': message
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require: []
+    effects:
+    - do: seat.kill
+      with:
+        seat:
+          arg: seat
+    id: SEAT-32
+  - from: retired
+    to: retired
+    kind: kill
+    'on': message
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require: []
+    effects:
+    - do: seat.kill
+      with:
+        seat:
+          arg: seat
+    id: SEAT-33
+  - from: '*'
+    to: gone
+    kind: kill
+    'on': op-result
+    guard: stall (no update, no in_progress call) past the watchdog · or retire
+    require:
+    - op: seat.kill
+      eq: ok
+    effects: []
+    id: SEAT-34
+  - from: provisioned
+    to: provisioned
+    kind: resume
+    'on': message
+    guard: a ruling cleared the cause
+    require: []
+    effects:
+    - do: seat.wake
+      with:
+        seat:
+          arg: seat
+    id: SEAT-35
+  - from: ready
+    to: ready
+    kind: resume
+    'on': message
+    guard: a ruling cleared the cause
+    require: []
+    effects:
+    - do: seat.wake
+      with:
+        seat:
+          arg: seat
+    id: SEAT-36
+  - from: busy
+    to: busy
+    kind: resume
+    'on': message
+    guard: a ruling cleared the cause
+    require: []
+    effects:
+    - do: seat.wake
+      with:
+        seat:
+          arg: seat
+    id: SEAT-37
+  - from: idle
+    to: idle
+    kind: resume
+    'on': message
+    guard: a ruling cleared the cause
+    require: []
+    effects:
+    - do: seat.wake
+      with:
+        seat:
+          arg: seat
+    id: SEAT-38
+  - from: gone
+    to: gone
+    kind: resume
+    'on': message
+    guard: a ruling cleared the cause
+    require: []
+    effects:
+    - do: seat.wake
+      with:
+        seat:
+          arg: seat
+    id: SEAT-39
+  - from: retired
+    to: retired
+    kind: resume
+    'on': message
+    guard: a ruling cleared the cause
+    require: []
+    effects:
+    - do: seat.wake
+      with:
+        seat:
+          arg: seat
+    id: SEAT-40
 phase:
-  states: [open, exit_pending, exited]
+  states:
+  - open
+  - exit_pending
+  - exited
   transitions:
-    - {from: open,         to: exit_pending, kind: phase-exit-request, guard: "last stage of the last wave exited · chart refreshed (R3) · STATUS rolled over (R4.9) · reader floor checked (R8) · retro-report delivered (D-13)"}
-    - {from: exit_pending, to: exited,       kind: approval,           guard: "Bora (U-7: class B)"}
+  - from: open
+    to: exit_pending
+    kind: phase-exit-request
+    guard: last stage of the last wave exited · chart refreshed (R3) · STATUS rolled over (R4.9) · reader floor checked (R8)
+      · retro-report delivered (D-13)
+    id: PHASE-01
+    'on': message
+    require:
+    - fact: plan.last_stage_exited
+    - fact: plan.chart_fresh
+    - fact: status.entries
+      lte:
+        cap: status_entries
+    - attest: floors_checked
+    - fact: log.count
+      kind: retro-report
+      scope: phase
+      where:
+        mode: phase-retro
+      gt: 0
+    effects: []
+  - from: exit_pending
+    to: exit_pending
+    kind: approval
+    guard: 'Bora (U-7: class B)'
+    id: PHASE-02
+    'on': message
+    require:
+    - signed: bora
+    effects:
+    - do: register.rebuild
+      with: {}
+  - from: exit_pending
+    to: exited
+    kind: approval
+    guard: 'Bora (U-7: class B)'
+    id: PHASE-03
+    'on': op-result
+    require:
+    - op: project.commit_push
+      eq: ok
+    effects: []
+  - from: exit_pending
+    to: exit_pending
+    kind: approval
+    guard: 'Bora (U-7: class B)'
+    id: PHASE-04
+    'on': op-result
+    require:
+    - op: register.rebuild
+      eq: ok
+    effects:
+    - do: project.commit_push
+      with: {}
 presence:
-  states: [present, absent]
+  states:
+  - present
+  - absent
   transitions:
-    - {from: present, to: absent,  kind: away,     guard: "no action from Bora's CLI for N hours (default 4), or `kp away`"}
-    - {from: absent,  to: present, kind: presence, guard: "any action from Bora's CLI → digest delivered"}
+  - from: present
+    to: absent
+    kind: away
+    guard: no action from Bora's CLI for N hours (default 4), or `kp away`
+    id: PRESENCE-01
+    'on': message
+    require:
+    - signed: bora
+    effects: []
+  - from: present
+    to: absent
+    guard: no action from Bora's CLI for N hours (default 4), or `kp away`
+    id: PRESENCE-02
+    'on': fact
+    require:
+    - fact: bora.idle_for
+      gte:
+        engagement: presence.idle_hours_to_absent
+    effects: []
+  - from: absent
+    to: present
+    guard: any action from Bora's CLI → digest delivered
+    id: PRESENCE-03
+    'on': fact
+    require:
+    - fact: bora.acted
+    effects: []

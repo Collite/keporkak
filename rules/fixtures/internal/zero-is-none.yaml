@@ -1,0 +1,8 @@
+name: zero is none and is permitted inside a requirement
+scenarios:
+  - name: no attempts yet
+    given:
+      counters: [attempts]
+      transitions:
+        - {id: T-zero, from: planned, to: exited, kind: started, on: message, guard: none yet, require: [{counter: attempts, eq: 0}], effects: []}
+    expect: {}

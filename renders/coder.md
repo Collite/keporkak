@@ -57,13 +57,13 @@ stage on the same PR. Touch the live target, open a browser, or message another 
 ## Messages you may send (generated from rules/message-kinds.yaml)
 Anything else is refused.
 
-| kind | to | allowed when | class | cap per stage | you then get |
+| kind | to | allowed when | class | cap / window | you then get |
 |---|---|---|---|---|---|
-| `started` | teamlead | branch off master exists (observed) | A | 1 | - |
-| `stop` | principal | names a stop-condition id (SC-n) from the fence | C | 2 | triage |
-| `qa-request` | qa | cites the stage, a task id and a DONE item that exist in the list (observed) · stage live: ≠ none · names what to verify, never a command (P-5) | A | 3 | qa-report |
-| `review-request` | teamlead | PR ready · CI green on head · every task done <sha> · DONE lines ticked · Found lines carried (fan-out found-batch) | A | 3 | review-bind |
-| `repair-done` | reviewer | new commits since the verdict · CI green · one response line per blocker id (all observed) | A | 4 | re-verdict |
+| `started` | teamlead | branch off master exists (observed) | A | 1 / stage | - |
+| `stop` | principal | names a stop-condition id (SC-n) from the fence | C | 2 / stage | triage |
+| `qa-request` | qa | cites the stage, a task id and a DONE item that exist in the list (observed) · stage live: ≠ none · names what to verify, never a command (P-5) | A | 3 / stage | qa-report |
+| `review-request` | teamlead | PR ready · CI green on head · every task done <sha> · DONE lines ticked · Found lines carried (fan-out found-batch) | A | 3 / stage | review-bind |
+| `repair-done` | reviewer | new commits since the verdict · CI green · one response line per blocker id (all observed) | A | 4 / stage | re-verdict |
 
 ## Your tools (generated from your persona; nothing else is available to you)
 - **Shell:** git, gh (own PR), just, the repo's build and test tools

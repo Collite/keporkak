@@ -1,21 +1,275 @@
-# The Deputy's robot half (D-28, D-33, D-35). Its LLM half only writes shadow rulings (agents/deputy/AGENT.md).
+# Deputy robot — absent-mode interception and declared sends only.
 role: deputy
-active_when: "presence = absent"
-intercepts:            # while absent the mailroom routes these here instead of to their addressee (a declared effect)
-  - "every class-B kind addressed to bora"
-  - merge
-  - release
-  - deploy-request
+active_when:
+  fact: bora.present
+  eq: false
+intercepts:
+- class: B
+  to: bora
+- merge
+- release
+- deploy-request
 rules:
-  - {id: DEP-1, when: "a class-B kind addressed to Bora arrives", then: "send hold to the asker · wake the LLM half for a shadow-ruling"}
-  - {id: DEP-2, when: "an assignment-proposal arrives and the stage is named in a queue-approval signed by Bora for the current wave", then: "send queued-approval to the TeamLead (the only yes the Deputy has)"}
-  - {id: DEP-3, when: "a merge, release or deploy-request arrives", then: "send hold to the TeamLead — the tail waits for Bora's return"}
-  - {id: DEP-4, when: "two FIX FIRST in a row on one stage", then: "send anomaly-stop to the TeamLead (the stage pauses)"}
-  - {id: DEP-5, when: "two seat-gone events within an hour", then: "send anomaly-stop to the Pool Manager (the seat pauses)"}
-  - {id: DEP-6, when: "consumption above twice the daily median", then: "send anomaly-stop to the Pool Manager (provisioning pauses)"}
-  - {id: DEP-7, when: "a stray change is observed in a main checkout", then: "send anomaly-stop to the TeamLead (the stage freezes)"}
-  - {id: DEP-8, when: "presence turns present", then: "send digest to Bora: held items · anomaly stops · shadow rulings · ledger proposals; release what was held"}
+- id: DEP-1
+  when: a class-B kind addressed to Bora arrives
+  note: send hold to the asker · wake the LLM half for a shadow-ruling
+  'on':
+    arrives: assignment-proposal
+  if:
+  - msg: to
+    eq: bora
+  - not:
+      not:
+        any:
+        - not: &id001
+            fact: queue.names
+        - not: &id002
+            fact: stage.cut_at
+            lte:
+              fact: bora.absent_since
+        - not: &id003
+            fact: log.count
+            kind: reverse
+            scope: office
+            where:
+              severity: serious
+            since: queue-approval
+            eq: 0
+  then:
+  - send: hold
+    to:
+      trigger: from
+    args: {}
+  - wake: shadow
+- id: DEP-9
+  when: a class-B kind addressed to Bora arrives
+  note: send hold to the asker · wake the LLM half for a shadow-ruling
+  'on':
+    arrives: classify-request
+  if:
+  - msg: to
+    eq: bora
+  then:
+  - send: hold
+    to:
+      trigger: from
+    args: {}
+  - wake: shadow
+- id: DEP-10
+  when: a class-B kind addressed to Bora arrives
+  note: send hold to the asker · wake the LLM half for a shadow-ruling
+  'on':
+    arrives: ruling-request
+  if:
+  - msg: to
+    eq: bora
+  then:
+  - send: hold
+    to:
+      trigger: from
+    args: {}
+  - wake: shadow
+- id: DEP-11
+  when: a class-B kind addressed to Bora arrives
+  note: send hold to the asker · wake the LLM half for a shadow-ruling
+  'on':
+    arrives: phase-exit-request
+  if:
+  - msg: to
+    eq: bora
+  then:
+  - send: hold
+    to:
+      trigger: from
+    args: {}
+  - wake: shadow
+- id: DEP-12
+  when: a class-B kind addressed to Bora arrives
+  note: send hold to the asker · wake the LLM half for a shadow-ruling
+  'on':
+    arrives: recut-notice
+  if:
+  - msg: to
+    eq: bora
+  then:
+  - send: hold
+    to:
+      trigger: from
+    args: {}
+  - wake: shadow
+- id: DEP-13
+  when: a class-B kind addressed to Bora arrives
+  note: send hold to the asker · wake the LLM half for a shadow-ruling
+  'on':
+    arrives: computer-use-session
+  if:
+  - msg: to
+    eq: bora
+  - fact: office.computer_use
+    eq: B
+  then:
+  - send: hold
+    to:
+      trigger: from
+    args: {}
+  - wake: shadow
+- id: DEP-2
+  when: an assignment-proposal arrives and the stage is named in a queue-approval signed by Bora for the current
+    wave
+  note: send queued-approval to the TeamLead (the only yes the Deputy has)
+  'on':
+    arrives: assignment-proposal
+  if:
+  - *id001
+  - *id002
+  - *id003
+  then:
+  - send: queued-approval
+    to: teamlead
+    args: {}
+- id: DEP-3
+  when: a merge, release or deploy-request arrives
+  note: send hold to the TeamLead — the tail waits for Bora's return
+  'on':
+    arrives: merge
+  if: []
+  then:
+  - send: hold
+    to: teamlead
+    args: {}
+  - wake: shadow
+- id: DEP-14
+  when: a merge, release or deploy-request arrives
+  note: send hold to the TeamLead — the tail waits for Bora's return
+  'on':
+    arrives: release
+  if: []
+  then:
+  - send: hold
+    to: teamlead
+    args: {}
+  - wake: shadow
+- id: DEP-15
+  when: a merge, release or deploy-request arrives
+  note: send hold to the TeamLead — the tail waits for Bora's return
+  'on':
+    arrives: deploy-request
+  if: []
+  then:
+  - send: hold
+    to: teamlead
+    args: {}
+  - wake: shadow
+- id: DEP-4
+  when: two FIX FIRST in a row on one stage
+  note: send anomaly-stop to the TeamLead (the stage pauses)
+  'on':
+    delivered: verdict
+  if:
+  - arg: verdict
+    eq: FIX FIRST
+  - counter: fix_rounds
+    gte:
+      cap: fix_rounds_autonomous
+  then:
+  - send: anomaly-stop
+    to: teamlead
+    args:
+      rule: DEP-4
+      target: stage
+      seat:
+        fact: seat.name
+        of: coder
+- id: DEP-16
+  when: two FIX FIRST in a row on one stage
+  note: send anomaly-stop to the TeamLead (the stage pauses)
+  'on':
+    delivered: re-verdict
+  if:
+  - arg: verdict
+    eq: FIX FIRST
+  - counter: fix_rounds
+    gte:
+      cap: fix_rounds_autonomous
+  then:
+  - send: anomaly-stop
+    to: teamlead
+    args:
+      rule: DEP-4
+      target: stage
+      seat:
+        fact: seat.name
+        of: coder
+- id: DEP-5
+  when: two seat-gone events within an hour
+  note: send anomaly-stop to the Pool Manager (the seat pauses)
+  'on':
+    delivered: seat-gone
+  if:
+  - fact: log.count
+    kind: seat-gone
+    scope: seat
+    window:
+      robot: flap_window
+    gte:
+      robot: flap_events
+  then:
+  - send: anomaly-stop
+    to: pool
+    args:
+      rule: DEP-5
+      seat:
+        trigger: args.seat
+      target: seat
+- id: DEP-6
+  when: consumption above twice the daily median
+  note: send anomaly-stop to the Pool Manager (provisioning pauses)
+  'on':
+    fact: budget.vs_daily_median
+  if:
+  - fact: budget.vs_daily_median
+    subscription:
+      trigger: subscription
+    gt:
+      robot: median_factor
+  then:
+  - send: anomaly-stop
+    to: pool
+    args:
+      rule: DEP-6
+      target: provisioning
+- id: DEP-7
+  when: a stray change is observed in a main checkout
+  note: send anomaly-stop to the TeamLead (the stage freezes)
+  'on':
+    fact: git.stray_changes
+  if:
+  - fact: git.stray_changes
+    gt: 0
+  then:
+  - send: anomaly-stop
+    to: teamlead
+    args:
+      rule: DEP-7
+      target: stage
+      seat:
+        fact: seat.name
+        of: coder
+- id: DEP-8
+  when: presence turns present
+  note: 'send digest to Bora: held items · anomaly stops · shadow rulings · ledger proposals; release what was held'
+  'on':
+    presence: present
+  if: []
+  then:
+  - send: digest
+    to: bora
+    args: {}
 limits:
-  - "never a queued-approval for a stage cut after Bora left (pin stages included)"
-  - "never anything but hold for approval, ruling, reverse, phase-exit-request"
-  - "a 'serious' reverse from Bora switches DEP-2 off until he switches it on again"
+- never a queued-approval for a stage cut after Bora left (pin stages included)
+- never anything but hold for approval, ruling, reverse, phase-exit-request
+- a 'serious' reverse from Bora switches DEP-2 off until he switches it on again
+thresholds:
+  flap_events: 2
+  flap_window: 1h
+  median_factor: 2

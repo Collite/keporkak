@@ -1,14 +1,275 @@
-# The Pool Manager's robot half (D-20, D-27 k, D-35). Its LLM half provisions, reports and explains.
+# Pool robot — observations send declared kinds; own modes do the words and provisioning choices.
 role: pool
-active_when: always
+active_when:
+  always: true
 intercepts: []
 rules:
-  - {id: POOL-1, when: "the driver reports a seat's process or protocol gone, and no tool call is in progress", then: "send seat-gone · if this is the stage's 1st–3rd event: start a fresh seat, replay list, STATUS and unread inbox, send re-seated · otherwise send pause for the stage (Bora cc'd)"}
-  - {id: POOL-2, when: "a seat is silent past the watchdog and has no tool call in progress", then: "send kill, then POOL-1"}
-  - {id: POOL-3, when: "a seat's context passes the health threshold", then: "send compact"}
-  - {id: POOL-4, when: "a seat's third refusal of the day", then: "send pause to that seat (Bora cc'd)"}
-  - {id: POOL-5, when: "an anomaly-stop names a seat or provisioning", then: "send pause accordingly"}
-  - {id: POOL-6, when: "a ruling clears the cause of a pause", then: "send resume"}
-  - {id: POOL-7, when: "a budget threshold in pool/budgets.yaml is crossed", then: "send budget-warning (text by the LLM half)"}
-  - {id: POOL-8, when: "a session-request asks to remove a seat, or a slot cap is exceeded", then: "send retire to an idle seat"}
-open: ["the watchdog's silence limit", "the context health threshold", "budget thresholds"]   # rulebook 80/90, to be ruled in planning
+- id: POOL-1
+  when: the driver reports a seat's process or protocol gone, and no tool call is in progress
+  note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
+    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+  'on':
+    fact: seat.process_gone
+  if:
+  - &id002
+    fact: seat.tool_call_open_for
+    seat: &id001
+      trigger: seat
+    eq: 0
+  - &id003
+    counter: seat_gone_events
+    lt:
+      cap: seat_gone_events_per_stage
+  then:
+  - send: seat-gone
+    to: teamlead
+    args:
+      seat: *id001
+- id: POOL-11
+  when: the driver reports a seat's process or protocol gone, and no tool call is in progress
+  note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
+    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+  'on':
+    fact: seat.process_gone
+  if:
+  - *id002
+  - &id004
+    counter: seat_gone_events
+    gte:
+      cap: seat_gone_events_per_stage
+  then:
+  - send: pause
+    to: *id001
+    args:
+      seat: *id001
+      cause: reseat cap
+- id: POOL-12
+  when: the driver reports a seat's process or protocol gone, and no tool call is in progress
+  note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
+    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+  'on':
+    fact: seat.protocol_closed
+  if:
+  - *id002
+  - *id003
+  then:
+  - send: seat-gone
+    to: teamlead
+    args:
+      seat: *id001
+- id: POOL-13
+  when: the driver reports a seat's process or protocol gone, and no tool call is in progress
+  note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
+    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+  'on':
+    fact: seat.protocol_closed
+  if:
+  - *id002
+  - *id004
+  then:
+  - send: pause
+    to: *id001
+    args:
+      seat: *id001
+      cause: reseat cap
+- id: POOL-14
+  when: the driver reports a seat's process or protocol gone, and no tool call is in progress
+  note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
+    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+  'on':
+    op: seat.reseat
+    eq: ok
+  if:
+  - fact: seat.inbox_replayed
+    seat: *id001
+  then:
+  - send: re-seated
+    to: teamlead
+    args:
+      seat: *id001
+- id: POOL-2
+  when: a seat is silent past the watchdog and has no tool call in progress
+  note: send kill, then POOL-1
+  'on':
+    fact: seat.silent_for
+  if:
+  - fact: seat.silent_for
+    seat: *id001
+    gt:
+      robot: watchdog_silence
+  - *id002
+  then:
+  - send: kill
+    to: *id001
+    args:
+      seat: *id001
+- id: POOL-3
+  when: a seat's context passes the health threshold
+  note: send compact
+  'on':
+    fact: seat.context_used
+  if:
+  - fact: seat.context_used
+    seat: *id001
+    gt:
+      robot: context_health
+  then:
+  - send: compact
+    to: *id001
+    args:
+      seat: *id001
+- id: POOL-4
+  when: a seat's third refusal of the day
+  note: send pause to that seat (Bora cc'd)
+  'on':
+    fact: refusals.today
+  if:
+  - fact: refusals.today
+    seat: *id001
+    eq:
+      cap: refusals_per_seat_per_day
+  then:
+  - send: pause
+    to: *id001
+    args:
+      seat: *id001
+      cause: refusal cap
+- id: POOL-5
+  when: an anomaly-stop names a seat or provisioning
+  note: send pause accordingly
+  'on':
+    delivered: anomaly-stop
+  if:
+  - arg: seat
+  then:
+  - send: pause
+    to:
+      trigger: args.seat
+    args:
+      seat:
+        trigger: args.seat
+      cause: anomaly-stop
+- id: POOL-15
+  when: an anomaly-stop names a seat or provisioning
+  note: send pause accordingly
+  'on':
+    delivered: anomaly-stop
+  if:
+  - arg: target
+    eq: provisioning
+  then:
+  - send: pause
+    to: pool
+    args:
+      seat:
+        fact: seat.name
+        of: pool
+      cause: provisioning anomaly
+- id: POOL-6
+  when: a ruling clears the cause of a pause
+  note: send resume
+  'on':
+    delivered: ruling
+  if:
+  - arg: outcome
+    eq: cleared
+  - arg: seat
+  - arg: cause
+  then:
+  - send: resume
+    to:
+      trigger: args.seat
+    args:
+      seat:
+        trigger: args.seat
+      cause:
+        trigger: args.cause
+- id: POOL-7
+  when: a budget threshold in pool/budgets.yaml is crossed
+  note: send budget-warning (text by the LLM half)
+  'on':
+    fact: budget.consumption
+  if:
+  - any:
+    - fact: budget.consumption
+      subscription:
+        trigger: subscription
+      window: subscription
+      gte:
+        budget: warn.0
+    - fact: budget.consumption
+      subscription:
+        trigger: subscription
+      window: subscription
+      gte:
+        budget: warn.1
+  then:
+  - wake: report
+- id: POOL-8
+  when: a session-request asks to remove a seat, or a slot cap is exceeded
+  note: send retire to an idle seat
+  'on':
+    delivered: session-request
+  if:
+  - arg: action
+    eq: remove
+  - fact: seat.state
+    seat:
+      trigger: args.seat
+    eq: idle
+  then:
+  - send: retire
+    to:
+      trigger: args.seat
+    args:
+      seat:
+        trigger: args.seat
+- id: POOL-16
+  when: a session-request asks to remove a seat, or a slot cap is exceeded
+  note: send retire to an idle seat
+  'on':
+    fact: budget.slots_over
+  if:
+  - fact: budget.slots_over
+    dimension:
+      trigger: dimension
+    gt: 0
+  then:
+  - wake: provision
+- id: POOL-9
+  when: an open tool call is older than the ratified watch limit (plan.md §4.1)
+  'on':
+    fact: seat.tool_call_open_for
+  if:
+  - fact: seat.tool_call_open_for
+    seat: *id001
+    gt:
+      robot: open_tool_call_watch
+  then:
+  - wake: report
+- id: POOL-10
+  when: 'an assign deadline expires: check whether the assigned seat is gone'
+  'on':
+    expired: assign
+  if:
+  - any:
+    - fact: seat.process_gone
+      seat:
+        trigger: args.seat
+    - fact: seat.protocol_closed
+      seat:
+        trigger: args.seat
+  - fact: seat.tool_call_open_for
+    seat:
+      trigger: args.seat
+    eq: 0
+  then:
+  - send: seat-gone
+    to: teamlead
+    args:
+      seat:
+        trigger: args.seat
+thresholds:
+  watchdog_silence: 5m
+  open_tool_call_watch: 60m
+  context_health: 0.7

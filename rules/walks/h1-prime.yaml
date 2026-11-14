@@ -1,0 +1,266 @@
+# Supplied observations and fake operation results; this walk never runs external actions.
+name: H-1-prime
+stage: S2.1
+initial: planned
+final: exited
+note: H-1′ with seat death. D-45 ranks replace the stale vendor example; Found triage precedes merge as the authoritative
+  guards require.
+seats:
+  coder-1: coder
+  reviewer-1: reviewer
+facts:
+  plan.predecessors_exited: true
+  pool.seat_available: true
+  budget.slot_open: true
+  list.fence_complete: true
+  list.tasks_total: 8
+  list.lines: 90
+  git.branch_exists: true
+  list.stop_conditions:
+  - SC-3
+  list.sections_changed:
+  - Found while doing
+  stage.rolls: none
+  stage.live: none
+  list.found_untriaged: 1
+  list.tasks_open: 8
+  seat.name:
+    coder: coder-1
+    reviewer: reviewer-1
+    reviewer-1: reviewer-1
+    pool: pool-1
+  roster.rank:
+    coder: 1
+    reviewer: 2
+    reviewer-1: 2
+  roster.model_rank:
+    coder: 1
+    reviewer: 2
+    reviewer-1: 2
+  roster.floor_rank: 2
+  seat.process_gone: false
+  seat.protocol_closed: false
+  seat.tool_call_open_for: 0
+  seat.inbox_replayed: false
+  project.proof_files: 0
+  git.stray_changes: 0
+  pr.evidence_present: true
+  plan.last_stage_exited: false
+steps:
+- id: proposal
+  who: teamlead
+  kind: assignment-proposal
+  args:
+    role: coder
+    level: senior
+    seat: coder-1
+  expect:
+    state: proposed
+- id: approval
+  who: bora
+  kind: approval
+  signed: bora
+  args: {}
+  expect:
+    state: assigned
+- operation: worktree.create
+  request: approval
+  result: ok
+  expect:
+    state: assigned
+- id: assign
+  who: teamlead
+  kind: assign
+  args:
+    seat: coder-1
+  expect:
+    states:
+      seat: busy
+- who: coder-1
+  kind: started
+  args: {}
+  expect:
+    state: building
+- id: stop
+  who: coder-1
+  kind: stop
+  args:
+    sc: SC-3
+  expect:
+    state: stopped
+- who: principal
+  kind: triage
+  re: stop
+  args:
+    outcome: resume
+    found: missing-wheel
+    since: stop
+  expect:
+    state: building
+- who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: coder-1
+  facts:
+    seat.process_gone: true
+  expect:
+    rules:
+    - POOL-1
+    sends:
+    - seat-gone
+    wakes: []
+- id: seat-died
+  who: pool
+  by: robot:POOL-1
+  kind: seat-gone
+  args:
+    seat: coder-1
+  expect:
+    state: paused
+    states:
+      seat: gone
+- operation: seat.reseat
+  request: seat-died
+  result: ok
+  facts:
+    seat.inbox_replayed: true
+  expect:
+    sends:
+    - re-seated
+- who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: coder-1
+  expect:
+    state: building
+    states:
+      seat: ready
+- id: review-request
+  who: coder-1
+  kind: review-request
+  args:
+    attest:
+    - done_lines_hold
+  facts:
+    pr.ready: true
+    ci.state: green
+    pr.head: head-1
+    list.tasks_open: 0
+  expect:
+    state: ready_for_review
+- who: mailroom
+  kind: found-batch
+  args: {}
+  re: review-request
+- who: principal
+  kind: triage
+  args:
+    outcome: stage
+    found: T3-follow-up
+    since: review-request
+  expect:
+    state: ready_for_review
+- who: principal
+  kind: pin-stage
+  args:
+    stage: reader-pin
+    reason: the Found line needs its owning stage
+  facts:
+    plan.stage_has_list: true
+- id: ruling-request
+  who: principal
+  kind: ruling-request
+  args:
+    default: cut the owning stage
+    citation: contracts.md §4.5
+- who: bora
+  kind: ruling
+  signed: bora
+  re: ruling-request
+  args:
+    outcome: stage
+- who: teamlead
+  kind: review-bind
+  args:
+    reviewer: reviewer-1
+  expect:
+    state: in_review
+- id: verdict
+  who: reviewer-1
+  kind: verdict
+  args:
+    verdict: FIX FIRST
+    sha: head-1
+    blockers:
+    - id: B1
+    - id: B2
+    follow_ups: []
+  facts:
+    pr.review_on: changes_requested
+  expect:
+    state: fix_round
+- id: repair
+  who: coder-1
+  kind: repair-done
+  args:
+    verdict: verdict
+  facts:
+    pr.head: head-2
+    pr.commits_since: 1
+    pr.blocker_responses:
+    - B1
+    - B2
+  expect:
+    state: re_review
+- who: reviewer-1
+  kind: re-verdict
+  args:
+    verdict: PASS
+    sha: head-2
+    blockers: []
+    new_findings: []
+    follow_ups: []
+    reviewed:
+    - B1
+    - B2
+  facts:
+    pr.review_on: approved
+  expect:
+    state: passed
+- id: merge
+  who: teamlead
+  kind: merge
+  args: {}
+  facts:
+    list.found_untriaged: 0
+  expect:
+    state: passed
+- operation: git.merge
+  request: merge
+  result: ok
+  expect:
+    state: merged
+- id: exit
+  who: teamlead
+  kind: stage-exit
+  args: {}
+  facts:
+    status.entry_present: true
+    status.entries: 5
+  expect:
+    state: merged
+- operation: worktree.remove
+  request: exit
+  result: ok
+- operation: register.rebuild
+  request: exit
+  result: ok
+- operation: project.commit_push
+  request: exit
+  result: ok
+  expect:
+    state: exited
+    wakes:
+    - stage-retro

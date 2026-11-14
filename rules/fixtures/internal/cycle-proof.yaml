@@ -1,0 +1,26 @@
+name: a stage cycle needs a stage cap or a Bora gate
+scenarios:
+  - name: an uncapped self loop is refused
+    given:
+      states: {planned: {}}
+      transitions:
+        - {id: T-loop, from: planned, to: planned, kind: started, on: message, guard: loop, require: [], effects: []}
+    expect:
+      failures: ["uncapped cycle without a Bora gate: planned → planned"]
+  - name: a stage cap makes the loop finite
+    given:
+      states: {planned: {}}
+      kinds:
+        started: {from: coder, to: teamlead, guard: loop, args: {}, class: {default: A}, max_fires: 1, window: stage, deadline: null, expiry: [], require: []}
+      transitions:
+        - {id: T-loop, from: planned, to: planned, kind: started, on: message, guard: loop, require: [], effects: []}
+    expect: {}
+  - name: a daily cap does not prove a stage cycle finite
+    given:
+      states: {planned: {}}
+      kinds:
+        started: {from: coder, to: teamlead, guard: loop, args: {}, class: {default: A}, max_fires: 1, window: day, deadline: null, expiry: [], require: []}
+      transitions:
+        - {id: T-loop, from: planned, to: planned, kind: started, on: message, guard: loop, require: [], effects: []}
+    expect:
+      failures: ["uncapped cycle without a Bora gate: planned → planned"]

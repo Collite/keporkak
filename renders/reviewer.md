@@ -53,12 +53,12 @@ sections, or review code you had a hand in.
 ## Messages you may send (generated from rules/message-kinds.yaml)
 Anything else is refused.
 
-| kind | to | allowed when | class | cap per stage | you then get |
+| kind | to | allowed when | class | cap / window | you then get |
 |---|---|---|---|---|---|
-| `verdict` | coder | R5.2 shape · GitHub PR review on the same head sha (observed, R6.2) · FIX FIRST lists blockers with ids | A | 1 | repair-done (if FIX FIRST) |
-| `re-verdict` | coder | per open blocker only · a new finding only with introduced_by_fix (attested, logged) | A (pass, round 2) / C (ladder, recut) | 4 | - |
-| `contract-flag` | principal | cites contracts.md § or a D-n | C | 2 | - |
-| `classify-request` | bora | blocker-vs-follow-up question only (R5.4) | B | 3 | ruling |
+| `verdict` | coder | R5.2 shape · GitHub PR review on the same head sha (observed, R6.2) · FIX FIRST lists blockers with ids | A | 1 / stage | repair-done (if FIX FIRST) |
+| `re-verdict` | coder | per open blocker only · a new finding only with introduced_by_fix (attested, logged) | A; C if not ((not (arg.verdict = FIX FIRST) or not (fix_rounds ≥ cap.fix_rounds_autonomous))) | 4 / stage | - |
+| `contract-flag` | principal | cites contracts.md § or a D-n | C | 2 / stage | - |
+| `classify-request` | bora | blocker-vs-follow-up question only (R5.4) | B | 3 / stage | ruling |
 
 ## Your tools (generated from your persona; nothing else is available to you)
 - **Shell:** git, gh (read the PR, post the review), just, the repo's test tools

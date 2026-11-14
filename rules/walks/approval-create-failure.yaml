@@ -1,0 +1,33 @@
+# B2: approval assigns before requesting creation; a failed result leaves it assigned (§4.5, §7).
+name: approval-create-failure
+stage: direct-assignment
+initial: planned
+final: assigned
+facts:
+  plan.predecessors_exited: true
+  pool.seat_available: true
+  budget.slot_open: true
+  list.fence_complete: true
+  list.tasks_total: 8
+  list.lines: 90
+steps:
+- who: teamlead
+  kind: assignment-proposal
+  args:
+    role: coder
+    level: senior
+    seat: coder-1
+  expect:
+    state: proposed
+- id: approval
+  who: bora
+  kind: approval
+  signed: bora
+  args: {}
+  expect:
+    state: assigned
+- operation: worktree.create
+  request: approval
+  result: failed
+  expect:
+    state: assigned

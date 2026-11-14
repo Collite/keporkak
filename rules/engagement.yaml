@@ -1,93 +1,203 @@
-# Keporkak — rules of engagement: roles, their borders, the caps, the absent-mode policy, presence.
-# The arrows themselves live in message-kinds.yaml (one row per kind); this file holds what is *about* roles and limits.
-# Default deny: a seat may send only the kinds whose `from` names its role. Converged 2026-11-12 (D-20…D-28).
+# Rules of engagement — machine limits and v1 second key; roles, principles and profiles preserved.
 version: 1
 principles:
-  - "P-1 Brakes before accelerators: every autonomous arrow starts throttled and capped; a loop ends at a human after a few tries."
-  - "P-2 Pointers, not payloads: messages carry links to project/ files, PRs and CI runs, never copies."
-  - "P-3 History, not the present: the D-log is dated; STATUS is state; neither pretends to be the other."
-  - "P-4 Mechanical → a check, judgement → prose."
-  - "P-5 A message never carries authority: approval, grant and ruling are kinds with a signer, never text in a body."
-  - "P-6 Observed, not attested: a guard about the world is checked by the daemon; a guard about intent is attested and logged as such."
-  - "P-7 No endless loops: every arrow has max_fires, every thread a hop cap, every wait a deadline."
-  - "P-10 The daemon holds no rule: it reports facts, checks declared guards, carries out declared effects and requested operations. Whatever decides is a persona (judgement) or a robot (its written rules) — a named entity in this matrix."
-
+- 'P-1 Brakes before accelerators: every autonomous arrow starts throttled and capped; a loop ends at a human after
+  a few tries.'
+- 'P-2 Pointers, not payloads: messages carry links to project/ files, PRs and CI runs, never copies.'
+- 'P-3 History, not the present: the D-log is dated; STATUS is state; neither pretends to be the other.'
+- P-4 Mechanical → a check, judgement → prose.
+- 'P-5 A message never carries authority: approval, grant and ruling are kinds with a signer, never text in a body.'
+- 'P-6 Observed, not attested: a guard about the world is checked by the daemon; a guard about intent is attested
+  and logged as such.'
+- 'P-7 No endless loops: every arrow has max_fires, every thread a hop cap, every wait a deadline.'
+- 'P-10 The daemon holds no rule: it reports facts, checks declared guards, carries out declared effects and requested
+  operations. Whatever decides is a persona (judgement) or a robot (its written rules) — a named entity in this
+  matrix.'
 roles:
-  bora:      {host: "non-agent CLI (kp), signed by the OS user", may: "approve · decline · rule · reverse · queue · away", never: "-"}
-  principal: {host: "CLI seat, frontier model; loop on a cheaper subagent", may: "triage Found and stops · add/delete/split/merge tasks within R4.11 · cut pin stages · grant fix round 3 · propose parallelism", never: "re-design a feature · redraw architecture · change protocol/auth/libraries (Design-Roles borders) · reach a reviewer except by grant · approve · bind · merge"}
-  teamlead:  {host: "CLI seat", may: "propose assignments · bind reviewers · merge · release · request deploys from QA · audit stage exits · regenerate REGISTER/board · request seats", never: "plan content · code · rule · approve its own proposal · touch the live target"}
-  pool:      {host: "one entity, two halves: a robot (robots/pool.yaml) and a thin CLI seat for provisioning, reports and explanations", may: "provision · re-seat · pause · resume · compact · kill · retire · budget warnings", never: "assign content · code"}
-  coder:     {host: "CLI seat (Claude Code | Codex | OpenCode)", may: "execute one stage list · tick + done <sha> · Found lines · stop with an SC id · push the stage branch · open the PR · review-request · repair-done", never: "add tasks · act on Found lines · cross the fence · edit pins · 'continue on the same PR' · message another coder · pick a reviewer · merge · touch the live target · open a browser or use computer use (headless browsers inside a test suite are fine)"}
-  reviewer:  {host: "CLI seat, never the coder's; vendor ≠ coder's preferred", may: "verdict · re-verdict per open blocker · file follow-up issues (through the daemon) · classify-request · contract-flag", never: "plan · steer · demand proof packages · a round the ladder has not granted · address Bora beyond classification"}
-  qa:        {host: "CLI seat; exactly one per office; vendor per office (Claude first)", may: "verify named list items on the live target: deploy candidates as temp pods in a qa-<stage> namespace, create and drop temp pods, read the stored credentials, save fixtures · roll a pin on a deploy-request and smoke-test it · roll back its own failed roll · open a browser / use computer use in its own profile, per the office's computer_use class", never: "edit code, plans or lists · run a command another seat wrote · touch the demo cluster · echo a credential · keep temp pods after a job · roll forward a fix"}
-  deputy:    {host: "one entity, two halves: a robot (robots/deputy.yaml) active while Bora is absent, and a scheduled CLI seat woken per held item", may: "hold what waits for Bora · give a queued-approval for a stage in his signed queue · anomaly-stop · the digest on his return · write a shadow-ruling to the ledger", never: "answer the asker · approve, grant or rule (until a D-n hands it a named kind) · rule on contracts, architecture, UX, infra, the rules, budgets or limits · change its own rules"}
-  retro:     {host: "CLI seat, read-only, cheaper model", may: "read lists, Found, reviews, PRs, STATUS, transcripts, mail · write retro-*.md · retro-report", never: "edit anything else · trigger itself"}
-  gardener:     {host: "scheduled CLI seat with gh (squad ≠ host, D-14)", may: "triage labels and comments (with the AI disclaimer) · agent briefs · one report · attack-plan", never: "edit code, plans or lists · close an issue outside the wontfix rule · open a stage"}
-  daemon:    {host: "the office daemon (Kotlin)", may: "report facts (a seat's process died · Bora idle · CI state · a stray change) · requested operations: merge · release · tag · roll (GitOps change, for QA) · issue · close · commit/push project", never: "decide · hold a rule of its own (P-10)"}
-  mailroom:  {host: "the daemon's mechanism", may: "store · check the declared guard · log · count · refuse (nudge) · route · the declared effects listed below", never: "decide · hold a rule of its own (P-10)"}
-
+  bora:
+    host: non-agent CLI (kp), signed by the OS user
+    may: approve · decline · rule · reverse · queue · away
+    never: '-'
+  principal:
+    host: CLI seat, frontier model; loop on a cheaper subagent
+    may: triage Found and stops · add/delete/split/merge tasks within R4.11 · cut pin stages · grant fix round 3
+      · propose parallelism
+    never: re-design a feature · redraw architecture · change protocol/auth/libraries (Design-Roles borders) · reach
+      a reviewer except by grant · approve · bind · merge
+  teamlead:
+    host: CLI seat
+    may: propose assignments · bind reviewers · merge · release · request deploys from QA · audit stage exits ·
+      regenerate REGISTER/board · request seats
+    never: plan content · code · rule · approve its own proposal · touch the live target
+  pool:
+    host: 'one entity, two halves: a robot (robots/pool.yaml) and a thin CLI seat for provisioning, reports and
+      explanations'
+    may: provision · re-seat · pause · resume · compact · kill · retire · budget warnings
+    never: assign content · code
+  coder:
+    host: CLI seat (Claude Code | Codex | OpenCode)
+    may: execute one stage list · tick + done <sha> · Found lines · stop with an SC id · push the stage branch ·
+      open the PR · review-request · repair-done
+    never: add tasks · act on Found lines · cross the fence · edit pins · 'continue on the same PR' · message another
+      coder · pick a reviewer · merge · touch the live target · open a browser or use computer use (headless browsers
+      inside a test suite are fine)
+  reviewer:
+    host: CLI seat, never the coder's; vendor ≠ coder's preferred
+    may: verdict · re-verdict per open blocker · file follow-up issues (through the daemon) · classify-request ·
+      contract-flag
+    never: plan · steer · demand proof packages · a round the ladder has not granted · address Bora beyond classification
+  qa:
+    host: CLI seat; exactly one per office; vendor per office (Claude first)
+    may: 'verify named list items on the live target: deploy candidates as temp pods in a qa-<stage> namespace,
+      create and drop temp pods, read the stored credentials, save fixtures · roll a pin on a deploy-request and
+      smoke-test it · roll back its own failed roll · open a browser / use computer use in its own profile, per
+      the office''s computer_use class'
+    never: edit code, plans or lists · run a command another seat wrote · touch the demo cluster · echo a credential
+      · keep temp pods after a job · roll forward a fix
+  deputy:
+    host: 'one entity, two halves: a robot (robots/deputy.yaml) active while Bora is absent, and a scheduled CLI
+      seat woken per held item'
+    may: hold what waits for Bora · give a queued-approval for a stage in his signed queue · anomaly-stop · the
+      digest on his return · write a shadow-ruling to the ledger
+    never: answer the asker · approve, grant or rule (until a D-n hands it a named kind) · rule on contracts, architecture,
+      UX, infra, the rules, budgets or limits · change its own rules
+  retro:
+    host: CLI seat, read-only, cheaper model
+    may: read lists, Found, reviews, PRs, STATUS, transcripts, mail · write retro-*.md · retro-report
+    never: edit anything else · trigger itself
+  gardener:
+    host: scheduled CLI seat with gh (squad ≠ host, D-14)
+    may: triage labels and comments (with the AI disclaimer) · agent briefs · one report · attack-plan
+    never: edit code, plans or lists · close an issue outside the wontfix rule · open a stage
+  daemon:
+    host: the office daemon (Kotlin)
+    may: 'report facts (a seat''s process died · Bora idle · CI state · a stray change) · requested operations:
+      merge · release · tag · roll (GitOps change, for QA) · issue · close · commit/push project'
+    never: decide · hold a rule of its own (P-10)
+  mailroom:
+    host: the daemon's mechanism
+    may: store · check the declared guard · log · count · refuse (nudge) · route · the declared effects listed below
+    never: decide · hold a rule of its own (P-10)
 classes:
-  A: "runs without Bora"
-  B: "Bora must act; while absent the request is held (D-28)"
-  C: "runs; Bora is cc'd (board, digest)"
+  A: runs without Bora
+  B: Bora must act; while absent the request is held (D-28)
+  C: runs; Bora is cc'd (board, digest)
 graduation:
-  rule: "a kind moves B → C, or into the Deputy's hands, only by a D-n, proposed by the shadow ledger after N consecutive recorded agreements"
-  N: 10            # Q-15 default
-  never: [assignment-proposal, ruling, reverse, approval, queue-approval, phase-exit-request]   # D-27 d, D.7
-
-caps:                       # defaults; message-kinds.yaml may narrow, never widen
+  rule: a kind moves B → C, or into the Deputy's hands, only by a D-n, proposed by the shadow ledger after N consecutive
+    recorded agreements
+  N: 10
+  never:
+  - assignment-proposal
+  - ruling
+  - reverse
+  - approval
+  - queue-approval
+  - phase-exit-request
+caps:
   max_fires_default: 3
   hops_per_thread: 8
-  refusals_per_seat_per_day: 3        # 3rd → nudge cc Bora + pause (F5 δ)
-  fix_rounds_autonomous: 2            # 3rd by Principal grant, 4th by Bora (D-23)
-  resumes_per_stage: 2                # 3rd needs Bora (RV-15)
-  seat_gone_events_per_stage: 3       # then pause for Bora (RV-16)
-  proposals_per_stage: 2              # then back to planned + Principal ping (RV-17)
-  tail_retries: 1                     # merge, build, roll each once more; then tail_failed (B)
-  qa_requests_per_stage: 3            # then stop SC-9 (D-31)
+  refusals_per_seat_per_day: 3
+  fix_rounds_autonomous: 2
+  resumes_per_stage: 2
+  seat_gone_events_per_stage: 3
+  proposals_per_stage: 2
+  tail_retries: 1
+  qa_requests_per_stage: 3
   review_requests_per_stage: 3
   open_flag_threads_per_subject: 1
   deadline_default: 24h
-  on_expiry_default: "report to Bora; never auto-resolve (flag threads) · fall back per kind otherwise"
-
-presence:                   # a fact the daemon reports; what absence *means* is the Deputy's (D-28, D-35)
-  idle_hours_to_absent: 4
-  signals: ["any kp command", "kp away (immediate)"]
-  while_absent: "the Deputy's rules apply — robots/deputy.yaml"
-  on_return: "the Deputy sends the digest (DEP-8)"
-
-mailroom_declared_effects:  # the only kinds the mailroom itself sends; each is a consequence written in the rules, never a choice
-  - nudge            # a refusal: the rule id and the failed guard
-  - found-batch      # fan-out of the Found lines carried by a review-request
-  - grant-request    # the third FIX FIRST (stage-lifecycle: re_review → grant_pending)
-  - ruling-request   # the fourth FIX FIRST (re_review → ruling_pending)
-
-second_key:                 # U-6: the autonomous merge guard
-  rule: "reviewer vendor ≠ coder vendor; otherwise the merge is class B"
-
-autonomy_profiles:          # F1 γ presets over the classes (chosen per effort on the board; v1 = supervised)
-  supervised:  {assignment-proposal: B, merge: C, deploy-request: C, phase-exit-request: B, presence.pause_tail: true}
-  assisted:    {assignment-proposal: B, merge: A, deploy-request: C, phase-exit-request: B, presence.pause_tail: true}
-  autonomous:  {assignment-proposal: "queue", merge: A, deploy-request: A, phase-exit-request: B, presence.pause_tail: false}
-
-qa:                         # D-30, D-31
+  on_expiry_default: report to Bora; never auto-resolve (flag threads) · fall back per kind otherwise
+  fix_rounds_with_principal_grant: 3
+  fix_rounds_with_bora_ruling: 4
+  reseats_before_cc: 2
+  stage_tasks_min: 6
+  stage_tasks_max: 8
+  status_entries: 5
+  expiries_before_escalation: 2
+  body_lines: 12
+  stop_gate_blocks: 3
+  stage_list_lines: 150
+  stage_days: 8
+  task_days_min: 0.5
+  task_days_max: 1
+  spec_behaviours: 5
+presence:
+  idle_hours_to_absent: 4h
+  signals:
+  - any signed sudo kp command
+  - sudo kp away (immediate)
+  while_absent: the Deputy's rules apply — robots/deputy.yaml
+  on_return: the Deputy sends the digest (DEP-8)
+mailroom_declared_effects:
+- nudge
+- found-batch
+- grant-request
+- ruling-request
+second_key:
+  rule: 'v1 (D-45): a different seat, a fresh session, (model, effort) at or above the coder''s, model at least
+    the roster''s review floor'
+  require:
+  - fact: seat.name
+    of: reviewer
+    ne:
+      fact: seat.name
+      of: coder
+  - fact: roster.rank
+    of: reviewer
+    gte:
+      fact: roster.rank
+      of: coder
+  - fact: roster.model_rank
+    of: reviewer
+    gte:
+      fact: roster.floor_rank
+  otherwise:
+    class: B
+autonomy_profiles:
+  supervised:
+    assignment-proposal: B
+    merge: C
+    deploy-request: C
+    phase-exit-request: B
+    presence.pause_tail: true
+  assisted:
+    assignment-proposal: B
+    merge: A
+    deploy-request: C
+    phase-exit-request: B
+    presence.pause_tail: true
+  autonomous:
+    assignment-proposal: queue
+    merge: A
+    deploy-request: A
+    phase-exit-request: B
+    presence.pause_tail: false
+qa:
   instances_per_office: 1
-  queue: "QA's own rules — robots/qa.yaml"
-  computer_use:             # configured per office in pool/offices.yaml: A | B | C | off
+  queue: QA's own rules — robots/qa.yaml
+  computer_use:
     default: C
-    bora-mac: B             # every computer-use-session needs Bora's approval; scripted browsers (Playwright) are not governed (D-36 c)
-  candidates: "temp pods in a qa-<stage> namespace, outside GitOps; dropped at the end of the job"
-  durable_roll: "a GitOps change through the daemon (roll), verified by QA's smoke"
-  rollback: "QA reverts its own failed roll to the previous pin by itself; the stage is then tail_failed (B)"
-  exclusivity: "a rule of the way of working, not a fence: no kubeconfig separation is required (D-31); held by role borders, by deny lists where a vendor makes them cheap, and by the retro"
-
+    bora-mac: B
+  candidates: temp pods in a qa-<stage> namespace, outside GitOps; dropped at the end of the job
+  durable_roll: a GitOps change through the daemon (roll), verified by QA's smoke
+  rollback: QA reverts its own failed roll to the previous pin by itself; the stage is then tail_failed (B)
+  exclusivity: 'a rule of the way of working, not a fence: no kubeconfig separation is required (D-31); held by
+    role borders, by deny lists where a vendor makes them cheap, and by the retro'
 identity:
-  bora: "required: the kp CLI signs with the OS user (D-27 j)"
-  seats: "bound to the ACP session the daemon opened where the driver allows; otherwise an accepted v1 risk named in D-19"
-
-what_no_guard_holds:        # RV-14, stated so nobody assumes otherwise
-  - "R5.6 (no steering) inside a verdict body"
-  - "Design-Roles borders inside a triage body"
-  - "read-exfiltration by a seat (06b): reads are unrestricted in every vendor mode"
-  - "only QA touches the live target and opens a browser: a rule, not a fence (D-31)"
-  - "a seat-gone during a long silent command: the watchdog treats an open in_progress tool call as busy"
+  bora: 'required: sudo kp authenticated as a root peer; unsigned reads never change presence (D-43)'
+  seats: bound to the ACP session the daemon opened where the driver allows; otherwise an accepted v1 risk named
+    in D-19
+what_no_guard_holds:
+- R5.6 (no steering) inside a verdict body
+- Design-Roles borders inside a triage body
+- 'read-exfiltration by a seat (06b): reads are unrestricted in every vendor mode'
+- 'only QA touches the live target and opens a browser: a rule, not a fence (D-31)'
+- 'a seat-gone during a long silent command: the watchdog treats an open in_progress tool call as busy'
+stop_gate:
+  max_consecutive_blocks:
+    cap: stop_gate_blocks
+  require: []
+permissions:
+  inside_working_directory: allow
+  outside_working_directory: deny
+  lifetime: once

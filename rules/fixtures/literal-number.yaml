@@ -1,0 +1,16 @@
+name: a literal number inside a requirement fails the check
+scenarios:
+  - name: numeric comparison
+    given:
+      counters: [attempts]
+      transitions:
+        - id: T-number
+          from: planned
+          to: exited
+          kind: started
+          on: message
+          guard: attempts below their cap
+          require: [{counter: attempts, lt: 3}]
+          effects: []
+    expect:
+      failures: ["T-number: literal number inside a requirement"]

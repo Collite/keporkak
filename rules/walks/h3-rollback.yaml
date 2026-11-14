@@ -1,0 +1,100 @@
+# A rollback claim alone fails; the successful revert is required before deploy-failed.
+name: H-3-rollback
+stage: S3.2-rollback
+initial: released
+final: tail_failed
+facts:
+  plan.predecessors_exited: true
+  pool.seat_available: true
+  budget.slot_open: true
+  list.fence_complete: true
+  list.tasks_total: 8
+  list.lines: 90
+  git.branch_exists: true
+  list.stop_conditions:
+  - SC-3
+  list.sections_changed:
+  - Found while doing
+  stage.rolls: automation-image
+  stage.live: bp-dsk
+  list.found_untriaged: 0
+  list.tasks_open: 8
+  seat.name:
+    coder: coder-1
+    reviewer: reviewer-1
+    reviewer-1: reviewer-1
+    pool: pool-1
+  roster.rank:
+    coder: 1
+    reviewer: 2
+    reviewer-1: 2
+  roster.model_rank:
+    coder: 1
+    reviewer: 2
+    reviewer-1: 2
+  roster.floor_rank: 2
+  seat.process_gone: false
+  seat.protocol_closed: false
+  seat.tool_call_open_for: 0
+  seat.inbox_replayed: false
+  project.proof_files: 0
+  git.stray_changes: 0
+  pr.evidence_present: true
+  plan.last_stage_exited: false
+  list.task_exists: true
+  list.done_item_exists: true
+  fixture.exists: true
+  live.namespace_absent: true
+  live.rollout_complete: true
+  status.entries: 5
+steps:
+- id: deployment
+  who: teamlead
+  kind: deploy-request
+  args:
+    pin: image-head-1
+    smoke: the stage smoke
+- id: roll
+  who: qa
+  kind: roll
+  re: deployment
+  args:
+    operation: forward
+    pin: image-head-1
+- operation: gitops.roll
+  request: roll
+  result: ok
+- who: qa
+  kind: deploy-failed
+  re: deployment
+  args:
+    outcome: fail
+    rollback: ok
+    fixture: fixtures/h3-failed
+    command: fake smoke
+    counts:
+      failed: 1
+  expect:
+    refused: true
+- id: revert
+  who: qa
+  kind: roll
+  re: deployment
+  args:
+    operation: revert
+    pin: previous-pin
+- operation: gitops.revert
+  request: revert
+  result: ok
+- who: qa
+  kind: deploy-failed
+  re: deployment
+  args:
+    outcome: fail
+    rollback: ok
+    fixture: fixtures/h3-failed
+    command: fake smoke
+    counts:
+      failed: 1
+  expect:
+    state: tail_failed

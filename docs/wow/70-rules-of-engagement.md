@@ -6,8 +6,9 @@
 > this file is wrong. Converged 2026-11-12 (KP D-9, D-20…D-28; QA D-30, D-31); amendments go through a D-n and `CHANGELOG.md`.
 
 ## EN-1 The rules are a statechart; the mailroom is its guard
-Every stage has a lifecycle. A message is an attempt to fire one of its transitions. The mailroom — a mechanism that holds no rule of
-its own (D-21, P-10) — delivers a message only if (a) the kind exists in the catalogue, (b) the sender's role owns that kind,
+Every stage has a lifecycle. A message is an attempt to fire one of its transitions. The mailroom uses a generic rule engine with no I/O, in the daemon’s process. The daemon gathers observations and
+performs declared operations; the engine evaluates the rules data and holds no rule of its own (D-21, P-10, D-41).
+It delivers a message only if (a) the kind exists in the catalogue, (b) the sender's role owns that kind,
 (c) the stage is in the transition's source state, (d) the guard holds, and (e) no cap is exhausted. Everything else is
 **refused**, and a refusal is itself a message: a `nudge` back to the sender with the rule id and the failed guard.
 Whatever is not explicitly allowed is forbidden; there is no other switch.
@@ -22,8 +23,9 @@ Autonomy *profiles* (`supervised` · `assisted` · `autonomous`) are presets ove
 ## EN-3 Bora's gates
 Bora approves a stage **at its start** — the assignment (rewrites R4.10). PASS merges; release and deploy follow where
 the stage's plan names them (`rolls:` and `live:` lines). Bora also rules: the fourth fix round, a re-cut, a failed tail,
-a frozen stage, a classification question, a contract change, a phase exit. He answers from a **non-agent client**
-(`kp approve | decline | rule | reverse | queue | away`) signed by his OS user — never through a model's tool (RV-22).
+a frozen stage, a classification question, a contract change, a phase exit. He answers from a **non-agent client**, `sudo kp approve | decline | rule | reverse | queue | away`, authenticated
+by a root peer on the socket — never through a model’s tool (RV-22, D-43). The office user alone is insufficient
+because seats share it. Unsigned read commands cannot change presence or release the tail.
 While he is absent (EN-9), class-B requests are held, never refused.
 
 ## EN-4 The ladder: no endless loops
@@ -49,9 +51,13 @@ Since the TeamLead is both actor and auditor at the exit (D-25), the merge audit
 
 ## EN-7 The tail
 `passed → merged → released → deployed → exited` — merge and release through the daemon's guarded operations, the deploy by QA (EN-11) —
-with skip edges for stages that roll nothing. Autonomous merge needs the **second key**: the reviewer's vendor differs
-from the coder's; otherwise the merge is class B. Certification stages roll the **candidate before review** (U-1), so a
-live DONE line is attemptable when the reviewer reads it. A failed merge or build after one retry, or a roll QA had to roll back, is Bora's
+with skip edges for stages that roll nothing. A v1 merge without a new approval needs the **second key**: a different reviewer seat in a fresh session, its
+(model, effort) at or above the coder’s, and its model at or above the roster’s review floor; otherwise class B
+(D-45). The roster orders model before effort. `review-bind` refuses a reviewer below either rank requirement.
+Certification stages roll the **candidate before review** (U-1), so a
+live DONE line is attemptable when the reviewer reads it. `merged → exited` also permits `rolls: none` with a
+live DONE verified by a passing candidate QA report on the current head sha (D-42); it needs no release or durable roll.
+A failed merge or build after one retry, or a roll QA had to roll back, is Bora's
 (`tail_failed`); a stray change at the audit freezes that stage only and pauses its seat. Seats push branches; master is
 unreachable except through the daemon's identity (GitHub branch protection) — in the code repos and in `project`.
 
@@ -62,7 +68,8 @@ its driver actions — pause, resume, compact, kill, retire — are rows of the 
 office keeps its own roster; `project` is the channel between offices: any Keporkak office may commit, push and merge it.
 
 ## EN-9 Presence, and the Deputy
-The daemon tracks Bora's **presence**: `present` → `absent` after N idle hours or on `kp away`; back on any action.
+The daemon tracks Bora’s **presence**: `present` → `absent` after the declared signed-command idle threshold or
+`sudo kp away`; back on a signed command. An unsigned `kp inbox` is a read and counts for nothing (D-43).
 *The Deputy takes over while he is absent* (D-28, D-33) — one entity with two halves: a **robot** that acts by its written rules (`robots/deputy.yaml`) and a seat that only shadows.
 The daemon merely reports that he is absent; everything that follows is the Deputy's: B requests are **held**; the autonomous tail
 **pauses** (the deadman switch); the **anomaly rules** may stop or pause (two FIX FIRST in a row, a flapping seat, a
@@ -81,7 +88,9 @@ reports `deploy-done` — or rolls back to the previous pin by itself and report
 is Bora's. QA's browser work is scripted (Playwright, its own profile) and needs no approval. Only **computer use** has a class per
 office (`A | B | C | off`); on Bora's own machine it is **B**: every `computer-use-session` waits for him. QA never edits code, plans or lists, and never echoes a credential. This exclusivity is
 a rule of the way of working, not a fence (D-31): it is held by the role borders, by deny lists where a vendor makes
-them cheap, and by the retro.
+them cheap, and by the retro. In the Claude-only v1 Panda office, computer use is off and QA uses headless
+Playwright; the Mac is a remote watcher and board client. This office policy overrides generic headed-browser
+guidance in a persona. `D-44, D-46`
 
 ## EN-12 The record
 Every message, and everything the mailroom did with it — delivered, refused (with the rule and the failed guard),
@@ -97,6 +106,19 @@ Say it rather than assume it: R5.6 (no steering) inside a verdict body; the Desi
 read-exfiltration by a seat (every vendor mode reads everything); the retro's and the gardener's judgment. These are held
 by personas, reviews and retros — the rulebook's other chapters — not by the mailroom.
 
+## EN-13 The machine form is the executable rule
+`rules/vocabulary.yaml` is the closed list of facts, operation identities/results and permitted attestations.
+Transitions have stable ids, triggers, ordered requirements and declared effects; kind arguments are typed, classes
+have explicit cases, limits have named windows and expiry actions. A refusal names the rule id and its first failed
+requirement. Prose remains for people; it is never interpreted by the engine. Numbers live once at their rule owner;
+requirements name them. Zero and booleans may appear directly. Operations finish through `op-result` records.
+`check-rules.py` validates these forms and walks the supplied scenario observations without executing operations. `D-41, D-49`
+
+Robots send kinds their role owns or wake one of their own persona’s modes. Queue delivery is data; guidance only a
+persona can follow is marked `for: persona`. History counts may start at the entity’s last wake in a mode, and a
+session window covers a working seat’s one fresh job. The stop-gate block is declared empty here: S2.2 defines its
+observable requirements with the hook. `D-49, D-50`
+
 ## Amendments this chapter makes to earlier rules
 - **R4.2** stop list: "the 2nd review round" → *a fix round the ladder has not granted*.
 - **R4.10**: *Bora approves a stage at its start — the assignment. The executor does not pause between tasks;
@@ -106,3 +128,5 @@ by personas, reviews and retros — the rulebook's other chapters — not by the
 - **R4.1** addition: a stage does not exit while a Found line has no triage outcome.
 - **R6.2**: the `verdict` kind is guarded by the GitHub PR review on the same head sha; it links, it does not copy.
 - **AGENTS.md** "do not commit or push `project`": superseded for the daemon (D-27 m); still true for human sessions.
+
+- **RW-9 / U-6 in v1**: D-45’s seat/session and rank checks above supersede the earlier vendor condition.

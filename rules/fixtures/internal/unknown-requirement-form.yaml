@@ -1,0 +1,8 @@
+name: a requirement outside the contract language is refused
+scenarios:
+  - name: an invented predicate
+    given:
+      transitions:
+        - {id: T-form, from: planned, to: exited, kind: started, on: message, guard: invented, require: [{frobnicate: ready}], effects: []}
+    expect:
+      failures: ["T-form: unknown requirement form"]

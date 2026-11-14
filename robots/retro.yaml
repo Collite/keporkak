@@ -1,8 +1,51 @@
-# The Retro's robot half: when a retro runs (D-13, D-35). The retro itself is the LLM half.
+# Retro robot — wakes its own fresh session only, after exit cleanup completed.
 role: retro
-active_when: always
+active_when:
+  always: true
 intercepts: []
 rules:
-  - {id: RET-1, when: "a stage-exit arrives for a stage that had a FIX FIRST or a stop", then: "start a stage-retro"}
-  - {id: RET-2, when: "a stage-exit arrives and it is the 5th exit since the last stage-retro", then: "start a stage-retro"}
-  - {id: RET-3, when: "the last stage of a phase exits", then: "start a phase-retro (always; the phase cannot exit without its retro-report)"}
+- id: RET-1
+  when: a stage-exit arrives for a stage that had a FIX FIRST or a stop
+  note: start a stage-retro
+  'on': &id001
+    op: project.commit_push
+    eq: ok
+  if:
+  - &id002
+    fact: stage.state
+    eq: exited
+  - &id003
+    any:
+    - counter: fix_rounds
+      gt: 0
+    - counter: stops
+      gt: 0
+  then:
+  - wake: stage-retro
+- id: RET-2
+  when: a stage-exit arrives and it is the 5th exit since the last stage-retro
+  note: start a stage-retro
+  'on': *id001
+  if:
+  - *id002
+  - not: *id003
+  - fact: log.count
+    kind: stage-exit
+    scope: effort
+    since:
+      wake: stage-retro
+    gte:
+      robot: stage_exit_cadence
+  then:
+  - wake: stage-retro
+- id: RET-3
+  when: the last stage of a phase exits
+  note: start a phase-retro (always; the phase cannot exit without its retro-report)
+  'on': *id001
+  if:
+  - *id002
+  - fact: plan.last_stage_exited
+  then:
+  - wake: phase-retro
+thresholds:
+  stage_exit_cadence: 5

@@ -1,0 +1,9 @@
+name: two transitions of one kind from one state that can both hold produce a warning naming both
+scenarios:
+  - name: identical true guards
+    given:
+      transitions:
+        - {id: T-left, from: planned, to: exited, kind: started, on: message, guard: always, require: [], effects: []}
+        - {id: T-right, from: planned, to: exited, kind: started, on: message, guard: always, require: [], effects: []}
+    expect:
+      warnings: ["overlapping transitions T-left and T-right (planned, started, message)"]

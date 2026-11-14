@@ -1,0 +1,72 @@
+name: robot rule ids fit a message's by field
+scenarios:
+- name: a suffixed id is refused
+  given:
+    vocabulary:
+      facts:
+        pr.ready:
+          params: []
+          returns: bool
+          source: O
+      operations: {}
+    transitions:
+    - id: T-start
+      from: planned
+      to: exited
+      kind: started
+      'on': message
+      guard: always
+      require: []
+      effects: []
+    robots:
+    - role: coder
+      active_when:
+        always: true
+      intercepts: []
+      rules:
+      - id: TEST-1-split
+        when: the PR becomes ready
+        'on':
+          fact: pr.ready
+        if: []
+        then:
+        - send: started
+          to: teamlead
+          args: {}
+  expect:
+    failures:
+    - 'TEST-1-split: robot rule id must match [A-Z]+-[0-9]+'
+- name: a numbered split id is accepted
+  given:
+    vocabulary:
+      facts:
+        pr.ready:
+          params: []
+          returns: bool
+          source: O
+      operations: {}
+    transitions:
+    - id: T-start
+      from: planned
+      to: exited
+      kind: started
+      'on': message
+      guard: always
+      require: []
+      effects: []
+    robots:
+    - role: coder
+      active_when:
+        always: true
+      intercepts: []
+      rules:
+      - id: TEST-12
+        when: the PR becomes ready
+        'on':
+          fact: pr.ready
+        if: []
+        then:
+        - send: started
+          to: teamlead
+          args: {}
+  expect: {}
