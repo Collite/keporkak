@@ -20,10 +20,24 @@ internal class Names {
     val emits = mutableListOf<String>()
     val pools = mutableListOf<Value.Pool>()
     val thresholds = mutableListOf<String>()
+    val modes = mutableListOf<String>()
+    val engagementPaths = mutableListOf<String>()
+    val destinations = mutableListOf<String>()
+    /** (machine, state) for every `{fact: <machine>.state}` compared with a literal state. */
+    val states = mutableListOf<Pair<String, String>>()
 
     fun requirement(requirement: Requirement) {
         when (requirement) {
-            is Requirement.Fact -> { call(requirement.fact); requirement.comparison?.let { value(it.value) } }
+            is Requirement.Fact -> {
+                call(requirement.fact)
+                requirement.comparison?.let { comparison ->
+                    value(comparison.value)
+                    if (requirement.fact.name.endsWith(".state") && comparison.operator in setOf(Operator.EQ, Operator.NE, Operator.IN)) {
+                        val machine = requirement.fact.name.removeSuffix(".state")
+                        literals(comparison.value).forEach { states += machine to it }
+                    }
+                }
+            }
             is Requirement.Arg -> { args += requirement.name; requirement.comparison?.let { value(it.value) } }
             is Requirement.Message -> requirement.comparison?.let { value(it.value) }
             is Requirement.Reply -> requirement.comparison?.let { value(it.value) }
@@ -39,9 +53,18 @@ internal class Names {
     fun call(fact: FactCall) {
         facts += fact.name
         fact.params.forEach { (name, param) ->
-            if (name == "kind") (param as? Value.Constant)?.literal?.let { (it as? Literal.Text)?.value }?.let { kinds += it }
+            if (name == "kind" || name == "since") text(param)?.let { kinds += it }
+            if (name == "since") ((param as? Value.Fields)?.fields?.get("wake"))?.let(::text)?.let { modes += it }
             value(param)
         }
+    }
+
+    private fun text(value: Value): String? = ((value as? Value.Constant)?.literal as? Literal.Text)?.value
+
+    private fun literals(value: Value): List<String> = when (value) {
+        is Value.Constant -> listOfNotNull(text(value))
+        is Value.Items -> value.items.mapNotNull(::text)
+        else -> emptyList()
     }
 
     fun value(value: Value) {
@@ -53,18 +76,22 @@ internal class Names {
             is Value.Fields -> value.fields.values.forEach(::value)
             is Value.Pool -> pools += value
             is Value.Robot -> thresholds += value.threshold
+            is Value.Engagement -> engagementPaths += value.path
             else -> Unit
         }
     }
 
     fun action(action: Action) {
-        if (action is Action.Send) { value(action.to); action.args.values.forEach(::value) }
+        if (action is Action.Send) { text(action.to)?.let { destinations += it }; value(action.to); action.args.values.forEach(::value) }
     }
 
     fun effect(effect: Effect) {
         effect.condition?.let(::requirement)
         when (effect) {
-            is Effect.Emit -> { kinds += effect.kind; emits += effect.kind; value(effect.to); effect.args.values.forEach(::value) }
+            is Effect.Emit -> {
+                kinds += effect.kind; emits += effect.kind; text(effect.to)?.let { destinations += it }
+                value(effect.to); effect.args.values.forEach(::value)
+            }
             is Effect.Do -> { operations += effect.operation; effect.with.values.forEach(::value) }
             is Effect.Count -> counters += effect.counter
             is Effect.Report, is Effect.Transition -> Unit
@@ -79,7 +106,11 @@ internal class RulesCheck(
     private val kinds: Map<String, Kind>,
     private val engagement: Engagement,
     private val vocabulary: Vocabulary,
+    private val robots: Map<String, Robot>,
+    private val personaModes: Map<String, Set<String>>,
 ) {
+    private val parties = setOf("bora", "daemon", "mailroom", "ledger", "board")
+    private val reservedStates = setOf("*", "*active", "*previous")
     private val transitionIds = lifecycle.machines.values.flatMap { machine -> machine.transitions.map { it.id } }.toSet()
 
     fun run() {
@@ -94,8 +125,24 @@ internal class RulesCheck(
 
     private fun problem(owner: Owner, message: String) = report.add(owner.file, owner.id, message)
 
-    /** Every name resolves against the vocabulary, the kinds, the caps, the counters and the attestations. */
-    fun resolve(owner: Owner, names: Names) {
+    /** The thresholds a `{robot: …}` may name for a rule sent by [roles]: those of these roles' own robot files. */
+    fun thresholdsOf(roles: Collection<String>): Set<String> = robots.values.filter { it.role in roles }.flatMap { it.thresholds.keys }.toSet()
+
+    /**
+     * Every name resolves: facts, operations, kinds (also in a `since:`), caps, counters, attestations, states, an
+     * `{engagement: …}` path, the destination of an emit or a send, `{robot: …}` against [thresholds] only, and a
+     * `since: {wake: …}` against [modes] — the robot's own persona's ([ownModes]) or, outside a robot, any persona's.
+     */
+    fun resolve(owner: Owner, names: Names, thresholds: Set<String>, modes: Set<String> = personaModes.values.flatten().toSet(), ownModes: Boolean = false) {
+        names.engagementPaths.filterNot { path -> engagement.values.keys.any { it == path || it.startsWith("$path.") } }
+            .forEach { problem(owner, "unknown engagement value '$it'") }
+        names.destinations.filterNot { it in engagement.roles || it in parties }.forEach { problem(owner, "unknown destination '$it'") }
+        names.thresholds.filterNot { it in thresholds }.forEach { problem(owner, "unknown robot threshold '$it'") }
+        names.modes.filterNot { it in modes }.forEach { problem(owner, if (ownModes) "unknown own persona mode '$it'" else "unknown persona mode '$it'") }
+        for ((machine, state) in names.states) {
+            val states = lifecycle.machines[machine]?.states ?: continue
+            if (state !in states) problem(owner, "unknown state '$state' in $machine")
+        }
         names.facts.filterNot { it in vocabulary.facts }.forEach { problem(owner, "unknown fact '$it'") }
         names.operations.filterNot { it in vocabulary.operations }.forEach { problem(owner, "unknown operation '$it'") }
         names.kinds.filterNot { it in kinds }.forEach { problem(owner, "unknown kind '$it'") }
@@ -111,11 +158,11 @@ internal class RulesCheck(
             if (!seen.add(transition.id)) problem(owner, "duplicate transition id")
             if (transition.on != Event.FACT && transition.kind !in kinds) problem(owner, "unknown kind '${transition.kind}'")
             val names = Names().apply { transition.require.forEach(::requirement); transition.effects.forEach(::effect) }
-            resolve(owner, names)
+            resolve(owner, names, thresholdsOf(kinds[transition.kind]?.from.orEmpty()))
             names.emits.filterNot { it in engagement.mailroomDeclaredEffects }.forEach { problem(owner, "undeclared mailroom emit '$it'") }
             if (transition.on != Event.OP_RESULT && transition.require.any { it is Requirement.Operation }) problem(owner, "operation result outside op-result trigger")
             for (state in listOf(transition.from, transition.to)) {
-                if (state !in machine.states && !state.startsWith("*")) problem(owner, "unknown state '$state' in ${machine.name}")
+                if (state !in machine.states && state !in reservedStates) problem(owner, "unknown state '$state' in ${machine.name}")
             }
             val declared = kinds[transition.kind]?.args ?: continue
             names.args.distinct().filterNot { it in declared }.forEach { problem(owner, "undeclared argument '$it'") }
@@ -130,7 +177,7 @@ internal class RulesCheck(
                 kind.classRule.cases.forEach { requirement(it.condition) }
                 kind.expiry.forEach(::effect)
             }
-            resolve(owner, names)
+            resolve(owner, names, thresholdsOf(kind.from))
             names.args.distinct().filterNot { it in kind.args }.forEach { problem(owner, "undeclared argument '$it'") }
             for (effect in kind.expiry) {
                 if (effect is Effect.Transition && effect.id !in transitionIds) problem(owner, "expiry names unknown transition '${effect.id}'")
@@ -143,10 +190,10 @@ internal class RulesCheck(
     }
 
     private fun engagementRequirements() {
-        engagement.secondKey?.let { key -> resolve(Owner(ENGAGEMENT, "second_key"), Names().apply { key.require.forEach(::requirement) }) }
+        engagement.secondKey?.let { key -> resolve(Owner(ENGAGEMENT, "second_key"), Names().apply { key.require.forEach(::requirement) }, emptySet()) }
         engagement.stopGate?.let { gate ->
             val owner = Owner(ENGAGEMENT, "stop_gate")
-            resolve(owner, Names().apply { gate.require.forEach(::requirement); value(gate.maxConsecutiveBlocks) })
+            resolve(owner, Names().apply { gate.require.forEach(::requirement); value(gate.maxConsecutiveBlocks) }, emptySet())
             if (gate.require.isNotEmpty()) problem(owner, "requirements belong to S2.2 (Amendment 2)")
         }
     }

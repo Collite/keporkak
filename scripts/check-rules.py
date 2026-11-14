@@ -98,22 +98,67 @@ def ok(m): print("ok  ", m)
 states = set(L["states"])
 trans = L["transitions"]
 roles = set(E["roles"])
+PARTIES = {"bora", "daemon", "mailroom", "ledger", "board"}   # contracts.md §1
+RESERVED_STATES = {"*", "*active", "*previous"}             # contracts.md §4.1, and `*` (any state) on master
 
-# All executable names are resolved against the closed vocabulary and rule owners.
-def check_references(value, owner, robot=None):
+MISSING = object()
+def path_value(root, path):
+    value=root
+    for part in str(path).split("."):
+        if isinstance(value,dict): value=value.get(part,MISSING)
+        elif isinstance(value,list) and part.isdigit() and int(part)<len(value): value=value[int(part)]
+        else: return MISSING
+    return value
+
+def persona_modes(role):
+    source = ROOT / "agents" / role / "AGENT.md"
+    if not source.is_file():
+        return {}
+    return load_yaml(re.match(r"---\n(.*?)\n---", source.read_text(), re.S).group(1)).get("modes", {}) or {}
+ALL_MODES = {mode for persona in sorted((ROOT / "agents").glob("*/AGENT.md")) for mode in persona_modes(persona.parent.name)}
+
+def sender_thresholds(senders):
+    """A `{robot: …}` outside a robot names a threshold of the robot file of the kind's own sender (contracts.md §4.1)."""
+    names = {part.strip() for part in str(senders or "").split("|")}
+    return {name for _, robot in ROBOTS if robot.get("role") in names for name in robot.get("thresholds", {})}
+
+def check_destination(to, owner):
+    if isinstance(to, str) and to not in roles | PARTIES:
+        fail(f"{owner}: unknown destination '{to}'")
+
+# All executable names are resolved against the closed vocabulary and rule owners (issue #4).
+# `{robot: …}` resolves against one robot's thresholds: the robot's own, or — outside a robot — those of the robot
+# file of the rule's sender (`thresholds`). A `since:` names a kind or `{wake: <mode>}` of a persona: the robot's own.
+def check_references(value, owner, robot=None, thresholds=frozenset()):
     if isinstance(value, dict):
         namespaces = {"fact": V["facts"], "op": V["operations"],
                       "do": V["operations"], "cap": E.get("caps", {}),
-                      "kind": K, "emit": K, "attest": V.get("attestations", {}), "counter": L.get("counters", {}), "count": L.get("counters", {}), "robot": robot.get("thresholds",{}) if robot is not None else ROBOT_THRESHOLDS}
+                      "kind": K, "emit": K, "attest": V.get("attestations", {}), "counter": L.get("counters", {}), "count": L.get("counters", {}), "robot": robot.get("thresholds",{}) if robot is not None else thresholds}
         labels = {"fact": "fact", "op": "operation", "do": "operation",
                   "cap": "cap", "kind": "kind", "emit": "kind", "attest": "attestation", "counter": "counter", "count": "counter", "robot": "robot threshold"}
         for key, item in value.items():
             if key in namespaces and isinstance(item, str) and item not in namespaces[key]:
                 fail(f"{owner}: unknown {labels[key]} '{item}'")
-            check_references(item, owner, robot)
+            if key == "since" and isinstance(item, str) and item not in K:
+                fail(f"{owner}: unknown kind '{item}'")
+            if key == "since" and isinstance(item, dict) and isinstance(item.get("wake"), str):
+                modes = persona_modes(robot["role"]) if robot is not None else ALL_MODES
+                if item["wake"] not in modes:
+                    fail(f"{owner}: unknown {'own ' if robot is not None else ''}persona mode '{item['wake']}'")
+            if key == "engagement" and isinstance(item, str) and path_value(E, item) is MISSING:
+                fail(f"{owner}: unknown engagement value '{item}'")
+            if key == "fact" and isinstance(item, str) and item.endswith(".state") and item.removesuffix(".state") in machines:
+                known = set(machines[item.removesuffix(".state")]["states"])
+                for comparison in ("eq", "ne", "in"):
+                    compared = value.get(comparison)
+                    for state in (compared if isinstance(compared, list) else [compared]):
+                        if isinstance(state, str) and state not in known:
+                            fail(f"{owner}: unknown state '{state}' in {item.removesuffix('.state')}")
+            if key not in ("since",) or not isinstance(item, dict):
+                check_references(item, owner, robot, thresholds)
     elif isinstance(value, list):
         for item in value:
-            check_references(item, owner, robot)
+            check_references(item, owner, robot, thresholds)
 
 def contains_number(value):
     if isinstance(value, bool):
@@ -145,12 +190,12 @@ def check_requirement_form(requirement,owner):
     elif form=="signed" and requirement[form]!="bora":fail(f"{owner}: unknown signer")
     elif form=="op" and requirement.get("eq") not in ("ok","failed"):fail(f"{owner}: unknown operation result")
 
-def check_requirements(requirements, owner, robot=None):
+def check_requirements(requirements, owner, robot=None, thresholds=frozenset()):
     if not isinstance(requirements,list):
         fail(f"{owner}: require must be a list")
         return
     for requirement in requirements:check_requirement_form(requirement,owner)
-    check_references(requirements, owner, robot)
+    check_references(requirements, owner, robot, thresholds)
     if contains_number(requirements):
         fail(f"{owner}: literal number inside a requirement")
 
@@ -176,21 +221,24 @@ for machine, transition in all_transitions:
         fail(f"{owner}: unknown trigger '{event}'")
     if event != "fact" and transition.get("kind") not in K:
         fail(f"{owner}: unknown kind '{transition.get('kind')}'")
-    check_requirements(transition["require"], owner)
-    check_references(transition.get("effects", []), owner)
+    thresholds = sender_thresholds(K.get(transition.get("kind"), {}).get("from"))
+    check_requirements(transition["require"], owner, thresholds=thresholds)
+    check_references(transition.get("effects", []), owner, thresholds=thresholds)
     for effect in transition.get("effects", []):
         if not isinstance(effect, dict) or not set(effect) & {"do", "emit", "count"}:
             fail(f"{owner}: unknown effect")
         if "emit" in effect and effect["emit"] not in E["mailroom_declared_effects"]:
             fail(f"{owner}: undeclared mailroom emit '{effect['emit']}'")
+        if isinstance(effect, dict) and "emit" in effect:
+            check_destination(effect.get("to"), owner)
         if "if" in effect:
-            check_requirements([effect["if"]], owner)
+            check_requirements([effect["if"]], owner, thresholds=thresholds)
     for requirement in transition["require"]:
         if "op" in requirement and event != "op-result":
             fail(f"{owner}: operation result outside op-result trigger")
     known_states = set(machines[machine]["states"])
     for state in (transition["from"], transition["to"]):
-        if state not in known_states and not state.startswith("*"):
+        if state not in known_states and state not in RESERVED_STATES:
             fail(f"{owner}: unknown state '{state}' in {machine}")
 if not fails:
     ok(f"every guard has a machine form: {len(all_transitions)} transitions with id, on, require and effects")
@@ -302,9 +350,12 @@ for name, kind in K.items():
     for argument, definition in kind.get("args",{}).items():
         if not isinstance(definition,dict) or not set(definition)&{"type","enum"}:
             fail(f"{name}: untyped argument '{argument}'")
-    check_requirements(kind.get("require", []), name)
+    thresholds = sender_thresholds(kind.get("from"))
+    check_requirements(kind.get("require", []), name, thresholds=thresholds)
     for effect in kind.get("expiry",[]):
-        check_references(effect,name)
+        check_references(effect,name,thresholds=thresholds)
+        if isinstance(effect, dict) and "emit" in effect:
+            check_destination(effect.get("to"), name)
         if not isinstance(effect,dict) or not set(effect)&{"emit","report","transition","do"}:
             fail(f"{name}: invalid expiry effect")
         if "transition" in effect and effect["transition"] not in seen_ids:
@@ -312,11 +363,11 @@ for name, kind in K.items():
         if "emit" in effect and effect["emit"] not in E["mailroom_declared_effects"]:
             fail(f"{name}: undeclared expiry emit '{effect['emit']}'")
         if "if" in effect:
-            check_requirements([effect["if"]],name)
+            check_requirements([effect["if"]],name,thresholds=thresholds)
     if kind.get("to")=="daemon" and not any(t.get("kind")==name and any("do" in effect for effect in t.get("effects",[])) for _,t in all_transitions):
         fail(f"{name}: daemon request has no operation binding")
     for case in (kind.get("class", {}).get("cases", []) if isinstance(kind.get("class"), dict) else []):
-        check_requirements([case["if"]], name)
+        check_requirements([case["if"]], name, thresholds=thresholds)
 if not fails:
     ok(f"{len(K)} kinds with typed args, class cases, window, expiry and require")
 ok(f"closed vocabulary loaded: {len(V['facts'])} facts, {len(V['operations'])} operations")
@@ -333,11 +384,7 @@ if "stop_gate" in E and E["stop_gate"].get("require") != []:
 if not fails:
     ok("engagement second key, cap references and empty v1 stop gate checked")
 
-# 1. transitions → kinds
-for t in trans:
-    if t["kind"] not in K: fail(f"transition {t['from']}→{t['to']} fires unknown kind '{t['kind']}'")
-    for s in (t["from"], t["to"]):
-        if not s.startswith("*") and s not in states: fail(f"transition {t['from']}→{t['to']} references unknown state '{s}'")
+# 1. transitions → kinds (each transition's kind and states are checked above, with its id)
 ok(f"{len(trans)} stage transitions checked against {len(K)} kinds")
 
 # 2. kinds → transitions (only those that name a stage transition 'a→b')
@@ -463,7 +510,9 @@ for filename, robot in ROBOTS:
                 fail(f"{owner}: robot then must only send or wake")
                 continue
             check_references(action.get("args",{}),owner,robot)
+            check_references(action.get("to"),owner,robot)
             if "send" in action:
+                check_destination(action.get("to"), owner)
                 kind=action["send"]
                 if kind not in K: fail(f"{owner}: unknown send kind '{kind}'")
                 elif kind not in may: fail(f"{owner}: role '{role}' may not send '{kind}'")
@@ -473,9 +522,7 @@ for filename, robot in ROBOTS:
                     for name,definition in K[kind].get("args",{}).items():
                         if definition.get("required") and name not in action.get("args",{}): fail(f"{owner}: missing send argument '{name}'")
             if "wake" in action:
-                source=(ROOT / "agents" / role / "AGENT.md").read_text()
-                frontmatter=load_yaml(re.match(r"---\n(.*?)\n---",source,re.S).group(1))
-                if action["wake"] not in frontmatter.get("modes",{}): fail(f"{owner}: unknown own persona mode '{action['wake']}'")
+                if action["wake"] not in persona_modes(role): fail(f"{owner}: unknown own persona mode '{action['wake']}'")
 if not fails:
     ok(f"mailroom sends only its {len(declared)} declared effects; {len(ROBOTS)} robots checked against the matrix")
     ok(f"{executed} robot rules with on/if/then; {persona} persona rules; queue and named thresholds checked")
@@ -483,14 +530,6 @@ if not fails:
 
 # Walk the public rules, using supplied observations and fake operation results only.
 # There is no I/O or action execution here: do/send/wake are checked and recorded.
-MISSING = object()
-def path_value(root, path):
-    value=root
-    for part in str(path).split("."):
-        if isinstance(value,dict): value=value.get(part,MISSING)
-        elif isinstance(value,list) and part.isdigit() and int(part)<len(value): value=value[int(part)]
-        else: return MISSING
-    return value
 
 def comparable(value):
     if isinstance(value,str):

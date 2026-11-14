@@ -44,10 +44,9 @@ internal class RobotsCheck(
         }
     }
 
-    private fun resolve(owner: Owner, robot: Robot, names: Names) {
-        rules.resolve(owner, names)
-        names.thresholds.filterNot { it in robot.thresholds }.forEach { report.add(owner.file, owner.id, "unknown robot threshold '$it'") }
-    }
+    /** A robot's names resolve like any rule's; `{robot: …}` and a wake's mode against its own file and persona only. */
+    private fun resolve(owner: Owner, robot: Robot, names: Names) =
+        rules.resolve(owner, names, robot.thresholds.keys, personaModes[robot.role].orEmpty(), ownModes = true)
 
     private fun trigger(owner: Owner, trigger: RobotTrigger) {
         when (trigger) {
