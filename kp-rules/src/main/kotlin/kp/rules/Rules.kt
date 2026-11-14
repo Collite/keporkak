@@ -53,7 +53,9 @@ object Rules {
         RobotsCheck(report, rules, kinds, engagement, vocabulary, robots, personaModes).run()
         val officeValues = (officesNode as Node.Mapping).entries["offices"].let { it as? Node.Mapping }?.entries?.values?.map { flatten(it) }.orEmpty()
         val values = mapOf(PoolFile.ROSTER to listOf(flatten(rosterNode)), PoolFile.OFFICE to officeValues, PoolFile.BUDGET to listOf(flatten(budgetsNode)))
-        checkPoolValues(report, uses(lifecycle, kinds, engagement, robots), values)
+        val uses = uses(lifecycle, kinds, engagement, robots)
+        checkPoolValues(report, uses, values)
+        checkCountersRead(report, lifecycle, uses)
         rosterRoles(report, roster, engagement)
 
         val problems = report.problems

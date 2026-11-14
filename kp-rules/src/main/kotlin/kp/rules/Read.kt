@@ -133,7 +133,10 @@ internal class Forms(private val doc: Doc, private val id: String?) {
         return when (form) {
             "any" -> (target as? Node.Sequence)?.items?.mapNotNull(::requirement)?.let { Requirement.Any(it) }
                 .also { if (target !is Node.Sequence) problem("any must contain requirements") }
-            "not" -> requirement(target)?.let { Requirement.Not(it) }
+            "not" -> {
+                if (target is Node.Mapping && "not" in target.entries) problem("a requirement negates a negation")
+                requirement(target)?.let { Requirement.Not(it) }
+            }
             "always" -> ((target as? Node.Scalar)?.literal as? Literal.Bool)?.let { Requirement.Always(it.value) }
                 .also { if (it == null) problem("always must be boolean") }
             else -> {

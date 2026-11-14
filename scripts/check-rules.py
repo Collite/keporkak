@@ -181,7 +181,9 @@ def check_requirement_form(requirement,owner):
         if not isinstance(requirement[form],list):fail(f"{owner}: any must contain requirements")
         else:
             for item in requirement[form]:check_requirement_form(item,owner)
-    elif form=="not":check_requirement_form(requirement[form],owner)
+    elif form=="not":
+        if isinstance(requirement[form],dict) and "not" in requirement[form]:fail(f"{owner}: a requirement negates a negation")
+        check_requirement_form(requirement[form],owner)
     elif form=="always":
         if not isinstance(requirement[form],bool):fail(f"{owner}: always must be boolean")
     elif not isinstance(requirement[form],str):fail(f"{owner}: requirement name must be a string")
@@ -871,6 +873,42 @@ class Walk:
                 fail(f"walk {self.name}: expected {expected_count} {kind} deliveries, observed {actual_count}")
                 return
         ok(f"walk {self.name} reached {expected}")
+
+# The rules data reads clean (issues #5, #6): no counter that nothing reads, no anchor, the comments a round trip loses.
+def counter_reads(value):
+    if isinstance(value, dict):
+        if isinstance(value.get("counter"), str):
+            yield value["counter"]
+        for item in value.values():
+            yield from counter_reads(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from counter_reads(item)
+read_counters = set(counter_reads([L, K, E] + [robot for _, robot in ROBOTS]))
+for name in L.get("counters", {}):
+    if name not in read_counters: fail(f"counter '{name}' is declared but nothing reads it")
+if not FIXTURE:
+    RULE_FILES = [ROOT / "rules" / name for name in ("stage-lifecycle.yaml", "message-kinds.yaml", "engagement.yaml", "vocabulary.yaml")]
+    RULE_FILES += sorted((ROOT / "robots").glob("*.yaml")) + sorted((ROOT / "pool").glob("*.yaml"))
+    for path in RULE_FILES:
+        text = path.read_text()
+        label = path.relative_to(ROOT)
+        if any(isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None) for event in yaml.parse(text, Loader=RulesLoader)):
+            fail(f"{label}: a YAML anchor or alias — every rule is written out")
+        if not text.startswith("#"):
+            fail(f"{label}: the header comment is gone")
+    # What S0.1's round trip lost and S1.0 put back: a YAML dump drops comments, so edit these files as text.
+    KEPT = {"rules/stage-lifecycle.yaml": ["# Guards: `observed` = the daemon checks the world"],
+            "rules/message-kinds.yaml": ["# Fields: from/to (roles;", "  # ---- the start gate"],
+            "rules/engagement.yaml": ["# Default deny:"] + [f"  {cap}: " for cap in ("refusals_per_seat_per_day", "fix_rounds_autonomous",
+                "resumes_per_stage", "seat_gone_events_per_stage", "proposals_per_stage", "tail_retries", "qa_requests_per_stage")]}
+    for name, kept in KEPT.items():
+        lines = (ROOT / name).read_text().splitlines()
+        for start in kept:
+            if not any(line.startswith(start) and "#" in line for line in lines):
+                fail(f"{name}: the comment on '{start.strip()}' is gone — edit the rules as text, never by a YAML round trip")
+if not fails:
+    ok("every counter is read; no anchor or alias; the legends and the caps' sources are comments")
 
 if not FIXTURE:
     W=[load_yaml(path.read_text()) for path in sorted((ROOT / "rules/walks").glob("*.yaml"))]

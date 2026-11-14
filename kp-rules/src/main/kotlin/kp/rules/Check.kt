@@ -15,6 +15,8 @@ internal class Names {
     val kinds = mutableListOf<String>()
     val caps = mutableListOf<String>()
     val counters = mutableListOf<String>()
+    /** Counters a requirement reads (a `count:` effect only moves one). */
+    val counterReads = mutableListOf<String>()
     val attestations = mutableListOf<String>()
     val args = mutableListOf<String>()
     val emits = mutableListOf<String>()
@@ -41,7 +43,7 @@ internal class Names {
             is Requirement.Arg -> { args += requirement.name; requirement.comparison?.let { value(it.value) } }
             is Requirement.Message -> requirement.comparison?.let { value(it.value) }
             is Requirement.Reply -> requirement.comparison?.let { value(it.value) }
-            is Requirement.Counter -> { counters += requirement.name; requirement.comparison?.let { value(it.value) } }
+            is Requirement.Counter -> { counters += requirement.name; counterReads += requirement.name; requirement.comparison?.let { value(it.value) } }
             is Requirement.Attest -> attestations += requirement.name
             is Requirement.Operation -> operations += requirement.operation
             is Requirement.Any -> requirement.items.forEach(::requirement)
@@ -299,4 +301,10 @@ internal fun uses(lifecycle: Lifecycle, kinds: Map<String, Kind>, engagement: En
             }
     }
     return transitions + kindUses + engagementUses + robotUses
+}
+
+/** A counter is declared to be read: one that nothing reads is a problem (issue #5). */
+internal fun checkCountersRead(report: Report, lifecycle: Lifecycle, uses: List<Pair<Owner, Names>>) {
+    val read = uses.flatMap { it.second.counterReads }.toSet()
+    lifecycle.counters.keys.filterNot { it in read }.forEach { report.add(LIFECYCLE, null, "counter '$it' is declared but nothing reads it") }
 }

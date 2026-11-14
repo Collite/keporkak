@@ -1,3 +1,7 @@
+# Keporkak — the stage lifecycle (P-5c). Source of truth for the mailroom's guard (D-9, D-21).
+# A transition is fired by exactly one message kind (see message-kinds.yaml); anything else is refused.
+# Guards: `observed` = the daemon checks the world (CI, files, roster); `attested` = the sender asserts, logged as such (RV-13).
+# Converged 2026-11-12 from 07 (P-5/P-5b), review-261112-c2 (RV-n, U-n), D-20…D-28.
 # Stage lifecycle and five companion machines — executable contracts §4.
 version: 1
 states:
@@ -55,9 +59,11 @@ states:
   closed:
     desc: PR closed, worktree freed after recut
     terminal: true
+  # overlay: the seat lifecycle hits the stage
   paused:
     desc: seat gone while active (any active state); Pool Manager re-seats
     overlay: true
+# Context counters the mailroom keeps per stage (caps come from engagement.yaml:caps unless stated)
 counters:
   proposals:
     scope: stage
@@ -71,15 +77,9 @@ counters:
     scope: stage
   seat_gone_events:
     scope: stage
-  tail_retries:
-    scope: stage
-  refusals_per_seat:
-    scope: seat
   merge_attempts:
     scope: stage
   release_attempts:
-    scope: stage
-  roll_attempts:
     scope: stage
   review_request_expiries:
     scope: stage
@@ -310,27 +310,20 @@ transitions:
   id: T-16
   'on': message
   require:
-  - &id001
-    fact: pr.ready
-  - &id002
-    fact: ci.state
+  - fact: pr.ready
+  - fact: ci.state
     of:
       fact: pr.head
     eq: green
-  - &id003
-    fact: list.tasks_open
+  - fact: list.tasks_open
     eq: 0
-  - &id004
-    attest: done_lines_hold
-  - &id005
-    counter: review_requests
+  - attest: done_lines_hold
+  - counter: review_requests
     lt:
       cap: review_requests_per_stage
   effects:
-  - &id006
-    count: review_requests
-  - &id007
-    emit: found-batch
+  - count: review_requests
+  - emit: found-batch
     to: principal
     if:
       fact: list.found_untriaged
@@ -343,14 +336,24 @@ transitions:
   id: T-17
   'on': message
   require:
-  - *id001
-  - *id002
-  - *id003
-  - *id004
-  - *id005
+  - fact: pr.ready
+  - fact: ci.state
+    of:
+      fact: pr.head
+    eq: green
+  - fact: list.tasks_open
+    eq: 0
+  - attest: done_lines_hold
+  - counter: review_requests
+    lt:
+      cap: review_requests_per_stage
   effects:
-  - *id006
-  - *id007
+  - count: review_requests
+  - emit: found-batch
+    to: principal
+    if:
+      fact: list.found_untriaged
+      gt: 0
 - from: ready_for_review
   to: in_review
   kind: review-bind
@@ -449,18 +452,15 @@ transitions:
   id: T-22
   'on': message
   require:
-  - &id008
-    fact: pr.commits_since
+  - fact: pr.commits_since
     message:
       arg: verdict
     gt: 0
-  - &id009
-    fact: ci.state
+  - fact: ci.state
     of:
       fact: pr.head
     eq: green
-  - &id010
-    fact: pr.blocker_responses
+  - fact: pr.blocker_responses
     ids:
       fact: review.open_blockers
     eq:
@@ -544,9 +544,19 @@ transitions:
   id: T-28
   'on': message
   require:
-  - *id008
-  - *id009
-  - *id010
+  - fact: pr.commits_since
+    message:
+      arg: verdict
+    gt: 0
+  - fact: ci.state
+    of:
+      fact: pr.head
+    eq: green
+  - fact: pr.blocker_responses
+    ids:
+      fact: review.open_blockers
+    eq:
+      fact: review.open_blockers
   effects: []
 - from: re_review
   to: ruling_pending
@@ -609,9 +619,19 @@ transitions:
   id: T-33
   'on': message
   require:
-  - *id008
-  - *id009
-  - *id010
+  - fact: pr.commits_since
+    message:
+      arg: verdict
+    gt: 0
+  - fact: ci.state
+    of:
+      fact: pr.head
+    eq: green
+  - fact: pr.blocker_responses
+    ids:
+      fact: review.open_blockers
+    eq:
+      fact: review.open_blockers
   effects: []
 - from: re_review
   to: recut
@@ -779,14 +799,11 @@ transitions:
   id: T-44
   'on': message
   require:
-  - &id011
-    fact: status.entry_present
-  - &id012
-    fact: status.entries
+  - fact: status.entry_present
+  - fact: status.entries
     lte:
       cap: status_entries
-  - &id013
-    fact: list.found_untriaged
+  - fact: list.found_untriaged
     eq: 0
   - fact: stage.rolls
     eq: none
@@ -857,9 +874,12 @@ transitions:
   id: T-48
   'on': message
   require:
-  - *id011
-  - *id012
-  - *id013
+  - fact: status.entry_present
+  - fact: status.entries
+    lte:
+      cap: status_entries
+  - fact: list.found_untriaged
+    eq: 0
   - fact: stage.live
     eq: none
   effects:
@@ -899,9 +919,12 @@ transitions:
   id: T-51
   'on': message
   require:
-  - *id011
-  - *id012
-  - *id013
+  - fact: status.entry_present
+  - fact: status.entries
+    lte:
+      cap: status_entries
+  - fact: list.found_untriaged
+    eq: 0
   effects:
   - do: worktree.remove
     with:
@@ -1152,7 +1175,6 @@ transitions:
   - arg: operation
     eq: forward
   effects:
-  - count: roll_attempts
   - do: gitops.roll
     with:
       stage:
@@ -1179,7 +1201,6 @@ transitions:
   - arg: operation
     eq: revert
   effects:
-  - count: roll_attempts
   - do: gitops.revert
     with:
       stage:
@@ -1264,6 +1285,7 @@ active_states:
 - passed
 - merged
 - released
+# The companion machines (converged in 11-c2-converged.md; kept here for the validator)
 found_item:
   states:
   - found

@@ -71,9 +71,9 @@ Executable rules run under your name. Rules marked persona are your instructions
 
 Named thresholds: stage_exit_cadence = 5
 
-- **RET-1** when a stage-exit arrives for a stage that had a FIX FIRST or a stop; if stage.state = exited and (fix_rounds > 0 or stops > 0) → wake your stage-retro mode
-- **RET-2** when a stage-exit arrives and it is the 5th exit since the last stage-retro; if stage.state = exited and not ((fix_rounds > 0 or stops > 0)) and log.count (kind=stage-exit, scope=effort, since=wake: stage-retro) ≥ robot.stage_exit_cadence → wake your stage-retro mode
-- **RET-3** when the last stage of a phase exits; if stage.state = exited and plan.last_stage_exited → wake your phase-retro mode
+- **RET-1** on project.commit_push is ok: when a stage-exit arrives for a stage that had a FIX FIRST or a stop; if stage.state = exited and (fix_rounds > 0 or stops > 0) → wake your stage-retro mode
+- **RET-2** on project.commit_push is ok: when a stage-exit arrives and it is the 5th exit since the last stage-retro; if stage.state = exited and not ((fix_rounds > 0 or stops > 0)) and log.count (kind=stage-exit, scope=effort, since=wake: stage-retro) ≥ robot.stage_exit_cadence → wake your stage-retro mode
+- **RET-3** on project.commit_push is ok: when the last stage of a phase exits; if stage.state = exited and plan.last_stage_exited → wake your phase-retro mode
 
 ## Messages that reach you
 `qa-report`, `stage-exit`, `ruling`, `reverse`, `hold`, `pause`, `resume`, `compact`, `kill`, `retire`, `nudge`
