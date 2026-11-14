@@ -34,3 +34,7 @@ check: rules build test schema-check
 # Read one complete message from stdin; only the project's _hand directory is written.
 record +args: _python-env
     build/python/bin/python scripts/kp-record.py "$@"
+
+# What the office has and what Bora must still do (contracts.md §12); reads and reports, changes nothing.
+office-check *args: _python-env
+    build/python/bin/python scripts/office-check.py "$@"
