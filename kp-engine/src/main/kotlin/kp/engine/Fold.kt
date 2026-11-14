@@ -2,15 +2,30 @@ package kp.engine
 
 import kp.model.Delivered
 import kp.model.Envelope
+import kp.model.Expired
+import kp.model.Held
 import kp.model.Message
+import kp.model.Op
+import kp.model.Read
+import kp.model.Refused
 import kp.model.Rules
 import kp.model.Transition
+import kp.model.utc
 
 /** A machine's subject's current state; [previous] is the state before it (what `*previous` names). */
 data class MachineState(val state: String, val previous: String?, val since: String, val cause: String, val rule: String?)
 
 /** A message that waits for an answer by its `deadline`. */
 data class Wait(val kind: String, val stage: String?, val from: String, val to: String, val deadline: String, val expiries: Int)
+
+/** A held message: which robot held it, what releases it, since when. */
+data class Hold(val by: String, val until: String, val since: String)
+
+/** An item that waits for Bora: the message it is about, the record that raised it, and Bora's answer once given. */
+data class Ticket(val item: String, val raisedBy: String, val at: String, val answeredBy: String? = null)
+
+/** A seat's refusals on one UTC day, as its last refusal that day counted them. */
+data class Refusals(val day: String, val count: Long)
 
 /** A message written and not yet delivered or refused — what its records need to know of it. */
 data class Pending(val kind: String, val from: String, val to: String, val stage: String?, val thread: String, val re: String?, val deadline: String?)
@@ -31,13 +46,26 @@ data class State(
     val counters: Map<String, Map<String, Long>> = emptyMap(),
     /** Messages on the log whose delivery or refusal is not (yet) recorded, by id. */
     val pending: Map<String, Pending> = emptyMap(),
+    /** Open waits by message id: delivered or held, a deadline, and no answer or final expiry yet. */
     val deadlines: Map<String, Wait> = emptyMap(),
+    val held: Map<String, Hold> = emptyMap(),
+    val tickets: Map<Long, Ticket> = emptyMap(),
+    /** party → ids delivered to it and in no `read` record of it, in delivery order. */
     val unread: Map<String, List<String>> = emptyMap(),
+    /** thread → its delivered messages. */
+    val hops: Map<String, Int> = emptyMap(),
+    /** seat → its refusals on the day of its last refusal. */
+    val refusals: Map<String, Refusals> = emptyMap(),
 ) {
     fun stage(id: String): String? = machine("stage", id)?.state
     fun machine(machine: String, subject: String): MachineState? = machines[machine]?.get(subject)
     fun presence(subject: String): String? = machine("presence", subject)?.state
     fun counter(subject: String, name: String): Long = counters[subject]?.get(name) ?: 0L
+    fun unread(seat: String): List<String> = unread[seat].orEmpty()
+    fun openTickets(): Map<Long, Ticket> = tickets.filterValues { it.answeredBy == null }
+    fun hops(thread: String): Int = hops[thread] ?: 0
+    /** The seat's refusals on [day] (UTC, `yyyy-mm-dd`); the state keeps only the day of its last refusal. */
+    fun refusalsOn(seat: String, day: String): Long = refusals[seat]?.takeIf { it.day == day }?.count ?: 0L
 }
 
 /**
@@ -49,27 +77,89 @@ fun fold(lines: Iterable<Envelope>, from: State = State()): State = lines.fold(f
     if (seq <= state.seq) state else Folding(state).apply(line).done(seq, line.at.value)
 }
 
-/** One line's changes to the state. */
+/**
+ * One line's changes to the state. What ends a wait, from the records alone: a delivered reply (`re`) from the waiting
+ * message's addressee — every kind's declared reply comes from there, and a mailroom nudge does not; an `ok` or
+ * `failed` operation the message caused, for a request to the daemon; an expiry without a new deadline.
+ */
 private class Folding(state: State) {
     private var s = state
 
     fun apply(line: Envelope): Folding = apply {
+        val at = line.at.value
         when (line) {
             is Message -> s = s.copy(pending = s.pending + (line.id.value to Pending(line.kind, line.from.value, line.to.value, line.stage?.value, line.thread.value, line.re?.value, line.deadline?.value)))
             is Transition -> {
                 val before = s.machine(line.machine, line.subject)
                 val previous = if (line.from != line.to) line.from else before?.previous
-                val moved = MachineState(line.to, previous, line.at.value, line.cause, line.rule)
+                val moved = MachineState(line.to, previous, at, line.cause, line.rule)
                 s = s.copy(machines = s.machines + (line.machine to (s.machines[line.machine].orEmpty() + (line.subject to moved))))
                 count(line.subject, line.counted)
             }
             is Delivered -> {
                 val message = s.pending[line.id]
                 message?.stage?.let { count(it, line.counted) }
-                s = s.copy(pending = s.pending - line.id)
+                raise(line.ticket, line.id, line.event, at)
+                if (message != null) {
+                    wait(line.id, message)
+                    message.re?.let { answered -> if (s.deadlines[answered]?.to == message.from) s = s.copy(deadlines = s.deadlines - answered) }
+                    if (message.from == BORA && message.re != null) answer(message.re, line.id)
+                    s = s.copy(hops = s.hops + (message.thread to s.hops(message.thread) + 1))
+                }
+                s = s.copy(
+                    pending = s.pending - line.id,
+                    held = s.held - line.id,
+                    unread = s.unread + line.to.associateWith { party -> s.unread(party) + line.id },
+                )
+            }
+            is Refused -> {
+                s.pending[line.id]?.let { message ->
+                    val day = utc(at).toLocalDate().toString()
+                    val earlier = s.refusals[message.from]?.takeIf { it.day == day }?.count ?: 0L
+                    s = s.copy(refusals = s.refusals + (message.from to Refusals(day, line.refusalsToday?.longValueExact() ?: (earlier + 1))))
+                }
+                s = s.copy(pending = s.pending - line.id, held = s.held - line.id)
+            }
+            is Held -> {
+                s = s.copy(held = s.held + (line.id to Hold(line.by, line.until, at)))
+                raise(line.ticket, line.id, line.event, at)
+                s.pending[line.id]?.let { wait(line.id, it) }
+            }
+            is Expired -> {
+                raise(line.ticket, line.id, line.event, at)
+                val next = line.deadline?.value
+                val open = s.deadlines[line.id]
+                s = when {
+                    next == null -> s.copy(deadlines = s.deadlines - line.id, held = s.held - line.id, pending = if (line.id in s.held) s.pending - line.id else s.pending)
+                    open != null -> s.copy(deadlines = s.deadlines + (line.id to open.copy(deadline = next, expiries = open.expiries + 1)))
+                    else -> s
+                }
+            }
+            is Op -> if (line.phase != "requested") s = s.copy(deadlines = s.deadlines - line.cause)
+            is Read -> {
+                val seen = line.ids.toSet()
+                val left = s.unread(line.seat).filterNot { it in seen }
+                s = s.copy(unread = if (left.isEmpty()) s.unread - line.seat else s.unread + (line.seat to left))
             }
             is Rules -> s = s.copy(rules = line.hash)
+            else -> Unit
         }
+    }
+
+    /** A delivered or held message with a deadline starts to wait, unless it already does. */
+    private fun wait(id: String, message: Pending) {
+        val deadline = message.deadline ?: return
+        if (id !in s.deadlines) s = s.copy(deadlines = s.deadlines + (id to Wait(message.kind, message.stage, message.from, message.to, deadline, 0)))
+    }
+
+    private fun raise(ticket: java.math.BigInteger?, item: String, event: String, at: String) {
+        val number = ticket?.longValueExact() ?: return
+        if (number !in s.tickets) s = s.copy(tickets = s.tickets + (number to Ticket(item, event, at)))
+    }
+
+    /** A ticket is answered once: Bora's first delivered reply to its item. */
+    private fun answer(item: String, by: String) {
+        s = s.copy(tickets = s.tickets.mapValues { (_, ticket) -> if (ticket.item == item && ticket.answeredBy == null) ticket.copy(answeredBy = by) else ticket })
     }
 
     private fun count(subject: String, counted: Map<String, java.math.BigInteger>?) {
@@ -80,3 +170,5 @@ private class Folding(state: State) {
 
     fun done(seq: Long, at: String): State = s.copy(seq = seq, at = at)
 }
+
+private const val BORA = "bora"

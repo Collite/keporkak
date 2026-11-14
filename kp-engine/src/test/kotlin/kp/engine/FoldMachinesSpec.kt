@@ -5,9 +5,10 @@ import io.kotest.matchers.shouldBe
 import kp.model.Envelope
 import kp.model.parseLine
 
-/** Lines as the log holds them; `seq` and `at` are filled in from the line's place in the list. */
+/** Lines as the log holds them; `seq`, and `at` unless the line has one, are filled in from its place in the list. */
 fun log(vararg lines: String): List<Envelope> = lines.mapIndexed { index, line ->
-    parseLine("""{"v":1,"seq":${index + 1},"at":"2026-11-14T09:${"%02d".format(index)}:00Z",""" + line.removePrefix("{"))
+    val at = if (""""at":""" in line) "" else """"at":"2026-11-14T09:${"%02d".format(index)}:00Z","""
+    parseLine("""{"v":1,"seq":${index + 1},$at""" + line.removePrefix("{"))
 }
 fun move(machine: String, subject: String, from: String, to: String, cause: String = "m-panda-000001", extra: String = "") =
     """{"event":"transition","machine":"$machine","subject":"$subject","from":"$from","to":"$to","cause":"$cause"$extra}"""
