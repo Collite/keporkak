@@ -1,0 +1,8 @@
+# Slot limits per dimension (BU-4) and warning thresholds (contracts.md §9; values: plan.md §4.1, D-47).
+version: 1
+# total: with one office it cannot exceed Panda's 4.
+slots: {total: 4, per_subscription: {claude: 4}, per_office: {panda: 4}, stages_in_flight_per_effort: 2}
+# fractions of a subscription's limit; robots/pool.yaml POOL-7 reads them as warn.0 and warn.1
+warn: [0.7, 0.9]
+# provisioning pauses; a running seat is never stopped
+on_cap: pause_provisioning

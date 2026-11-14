@@ -268,7 +268,7 @@ rules:
 limits:
 - never a queued-approval for a stage cut after Bora left (pin stages included)
 - never anything but hold for approval, ruling, reverse, phase-exit-request
-- a 'serious' reverse from Bora switches DEP-2 off until he switches it on again
+- a 'serious' reverse from Bora switches DEP-2 off until his next signed queue-approval switches it on again
 thresholds:
   flap_events: 2
   flap_window: 1h

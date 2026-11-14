@@ -9,9 +9,11 @@ Checks (each a line of output; exit 1 if any FAIL):
   - cycles in the stage chart: with the capped edges and the Bora-gate states removed, the graph must be acyclic
   - graduation.never kinds exist
   - P-10: the mailroom sends only declared effects, the daemon sends nothing; every robot rule sends a kind its role may send
-Usage: python3 scripts/check-rules.py [--render out.md] [--self-test]
+  - pool/ (contracts.md §9): the three files' shapes; every level is a line of the order; the review floor is a model of
+    it; office and subscription names; every {roster: …}, {office: …} and {budget: …} value the rules use resolves
+Usage: python3 scripts/check-rules.py [--pool DIR] [--render out.md] [--self-test]
 """
-import sys, re, yaml, pathlib, itertools, subprocess, json, copy
+import sys, re, yaml, pathlib, itertools, subprocess, json, copy, tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -801,7 +803,8 @@ class Walk:
             self.execute_step(attempt)
         except WalkError as error:
             text=str(error)
-            if not (text.startswith("kind ") or text.startswith("no arrow ") or text.startswith("role ") or text.startswith(("unknown argument", "missing argument", "invalid argument"))):
+            # A body over caps.body_lines is a refusal too (contracts.md §2.1).
+            if not (text.startswith("kind ") or text.startswith("no arrow ") or text.startswith("role ") or text.startswith(("unknown argument", "missing argument", "invalid argument", "body line cap exhausted"))):
                 raise
             if expected.get("refusal_contains","") not in text:
                 raise WalkError(f"wrong refusal: {text}")
@@ -835,6 +838,143 @@ if not FIXTURE:
 for walk in W:
     Walk(walk).run()
 if W and not fails:ok(f"the walks pass ({len(W)} walks)")
+
+# 8. pool/: the office's three files (contracts.md §9) and every pool value the rules use
+POOL = pathlib.Path(sys.argv[sys.argv.index("--pool") + 1]) if "--pool" in sys.argv else ROOT / "pool"
+COMPUTER_USE = ("A", "B", "C", "off")
+ROOTS = ("worktrees", "scratch", "seats", "secrets")
+SIZES = ("S", "M", "L", "XL")
+LISTENER = re.compile(r"^127\.0\.0\.1:([1-9][0-9]{0,4})$")
+
+def pool_file(name):
+    path = POOL / name
+    if not path.is_file():
+        fail(f"pool/{name}: missing")
+        return {}
+    data = load_yaml(path.read_text())
+    if not isinstance(data, dict) or data.get("version") != 1:
+        fail(f"pool/{name}: version must be 1")
+        return {}
+    return data
+
+def positive(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+def text(value):
+    return isinstance(value, str) and value.strip() != ""
+
+def check_roster(roster):
+    label = "pool/roster.yaml"
+    vendors = roster.get("vendors") if isinstance(roster.get("vendors"), dict) else {}
+    if not vendors: fail(f"{label}: vendors must name at least one vendor")
+    catalog = tomllib.loads((ROOT / "gradle/libs.versions.toml").read_text())
+    pins = {item["module"]: catalog["versions"][item["version"]["ref"]] for item in catalog["libraries"].values() if isinstance(item, dict) and "ref" in item.get("version", {})}
+    for name, vendor in vendors.items():
+        vendor = vendor if isinstance(vendor, dict) else {}
+        if not text(vendor.get("adapter")): fail(f"{label}: vendor '{name}' has no adapter")
+        if vendor.get("adapter_version") is not None and not text(vendor.get("adapter_version")): fail(f"{label}: vendor '{name}' adapter_version must be a version or null")
+        module, _, version = str(vendor.get("sdk", "")).rpartition(":")
+        if module not in pins: fail(f"{label}: vendor '{name}' sdk '{vendor.get('sdk')}' is not a library of gradle/libs.versions.toml")
+        elif version != pins[module]: fail(f"{label}: vendor '{name}' sdk version {version} differs from the catalog's pin {pins[module]}")
+    order = roster.get("order") if isinstance(roster.get("order"), list) else []
+    if not order: fail(f"{label}: order must list (model, effort) pairs")
+    pairs, models = [], []
+    for index, line in enumerate(order):
+        if not isinstance(line, dict) or set(line) != {"vendor", "model", "effort"} or not all(text(line[key]) for key in line):
+            fail(f"{label}: order line {index} must be {{vendor, model, effort}}")
+            continue
+        if line["vendor"] not in vendors: fail(f"{label}: order line {index} names unknown vendor '{line['vendor']}'")
+        pair = (line["vendor"], line["model"], line["effort"])
+        if pair in pairs: fail(f"{label}: order line {index} repeats ({line['model']}, {line['effort']})")
+        pairs.append(pair)
+        if line["model"] in models and models[-1] != line["model"]: fail(f"{label}: order line {index}: model before effort — {line['model']}'s pairs must be adjacent")
+        if not models or models[-1] != line["model"]: models.append(line["model"])
+    levels = roster.get("levels") if isinstance(roster.get("levels"), dict) else {}
+    for skill in ("junior", "senior"):
+        if skill not in levels: fail(f"{label}: levels lack '{skill}'")
+    for skill, sizes in levels.items():
+        sizes = sizes if isinstance(sizes, dict) else {}
+        if set(sizes) != set(SIZES): fail(f"{label}: level {skill} must map exactly {', '.join(SIZES)}")
+        for size, line in sizes.items():
+            if not isinstance(line, dict) or (line.get("vendor"), line.get("model"), line.get("effort")) not in pairs or len(line) != 3:
+                fail(f"{label}: level {skill} {size} is not a line of the order")
+    floor = (roster.get("review") or {}).get("floor") if isinstance(roster.get("review"), dict) else None
+    if floor not in models: fail(f"{label}: review floor '{floor}' is not a model of the order")
+    ok(f"{label}: {len(pairs)} (model, effort) pairs of {len(models)} models; {len(levels)} levels × {len(SIZES)} sizes on the order; review floor {floor}")
+    return vendors
+
+def check_offices(offices, vendors):
+    label = "pool/offices.yaml"
+    entries = offices.get("offices") if isinstance(offices.get("offices"), dict) else {}
+    if not entries: fail(f"{label}: offices must name at least one office")
+    for name, office in entries.items():
+        if not re.fullmatch(r"[a-z][a-z0-9]*", str(name)) or name == "hand": fail(f"{label}: '{name}' is not an office name (lower-case; 'hand' is reserved)")
+        office = office if isinstance(office, dict) else {}
+        for key in ("os", "user"):
+            if not text(office.get(key)): fail(f"{label}: {name}: {key} missing")
+        roots = office.get("roots") if isinstance(office.get("roots"), dict) else {}
+        for root in ROOTS:
+            if not text(roots.get(root)): fail(f"{label}: {name}: roots lack '{root}'")
+        for root in sorted(set(roots) - set(ROOTS)): fail(f"{label}: {name}: unknown root '{root}'")
+        project = office.get("project") if isinstance(office.get("project"), dict) else {}
+        if not project: fail(f"{label}: {name}: project must map efforts to checkouts")
+        for effort, path in project.items():
+            if not re.fullmatch(r"[A-Z][A-Z0-9-]*", str(effort)) or not text(path): fail(f"{label}: {name}: project '{effort}' must be an effort id with a path")
+        repos = office.get("repos") if isinstance(office.get("repos"), dict) else {}
+        if not repos or not all(text(path) for path in repos.values()): fail(f"{label}: {name}: repos must map repo names to checkouts")
+        targets = office.get("live_targets")
+        if not isinstance(targets, list) or not all(text(target) for target in targets): fail(f"{label}: {name}: live_targets must be a list of names")
+        if office.get("computer_use") not in COMPUTER_USE: fail(f"{label}: {name}: unknown computer_use class '{office.get('computer_use')}'")
+        qa = office.get("qa") if isinstance(office.get("qa"), dict) else {}
+        if qa.get("vendor") not in vendors: fail(f"{label}: {name}: qa vendor '{qa.get('vendor')}' is not a roster vendor")
+        listen = office.get("listen") if isinstance(office.get("listen"), dict) else {}
+        ports = []
+        for listener in ("mcp", "board"):
+            match = LISTENER.fullmatch(str(listen.get(listener, "")))
+            if not match or int(match.group(1)) > 65535: fail(f"{label}: {name}: listen.{listener} must be 127.0.0.1:<port>")
+            else: ports.append(match.group(1))
+        if len(ports) == 2 and ports[0] == ports[1]: fail(f"{label}: {name}: mcp and board listen on one port")
+    ok(f"{label}: {len(entries)} office(s) ({', '.join(entries)}) with roots, computer use and listeners checked")
+    return entries
+
+def check_budgets(budgets, vendors, entries):
+    label = "pool/budgets.yaml"
+    slots = budgets.get("slots") if isinstance(budgets.get("slots"), dict) else {}
+    for key in ("total", "stages_in_flight_per_effort"):
+        if not positive(slots.get(key)): fail(f"{label}: slots.{key} must be a positive integer")
+    for key, known, noun in (("per_subscription", vendors, "subscription"), ("per_office", entries, "office")):
+        limits = slots.get(key) if isinstance(slots.get(key), dict) else {}
+        if not limits: fail(f"{label}: slots.{key} must name at least one {noun}")
+        for name, limit in limits.items():
+            if name not in known: fail(f"{label}: {key} names unknown {noun} '{name}'")
+            if not positive(limit): fail(f"{label}: {key}.{name} must be a positive integer")
+    warn = budgets.get("warn")
+    if not isinstance(warn, list) or not warn or not all(isinstance(value, (int, float)) and not isinstance(value, bool) and 0 < value < 1 for value in warn) or warn != sorted(set(warn)):
+        fail(f"{label}: warn must be ascending fractions between 0 and 1")
+    if budgets.get("on_cap") != "pause_provisioning": fail(f"{label}: on_cap must be pause_provisioning (a running seat is never stopped)")
+    ok(f"{label}: slot limits name known subscriptions and offices; warnings at {warn}")
+
+def pool_values(value, found):
+    if isinstance(value, dict):
+        if len(value) == 1 and next(iter(value)) in ("roster", "office", "budget"):
+            found.append(value)
+        for item in value.values(): pool_values(item, found)
+    elif isinstance(value, list):
+        for item in value: pool_values(item, found)
+    return found
+
+if not FIXTURE:
+    roster_data, offices_data, budgets_data = pool_file("roster.yaml"), pool_file("offices.yaml"), pool_file("budgets.yaml")
+    pool_vendors = check_roster(roster_data)
+    pool_offices = check_offices(offices_data, pool_vendors)
+    check_budgets(budgets_data, pool_vendors, pool_offices)
+    used = pool_values([L, K, E] + [robot for _, robot in ROBOTS], [])
+    for value in used:
+        namespace, path = next(iter(value.items()))
+        sources = {"roster": [roster_data], "budget": [budgets_data], "office": list(pool_offices.values())}[namespace]
+        if not sources or any(path_value(source, path) is MISSING for source in sources):
+            fail(f"pool: {{{namespace}: {path}}} used by the rules does not resolve")
+    ok(f"pool values the rules use resolve: {len(used)} ({', '.join('{' + next(iter(v)) + ': ' + str(next(iter(v.values()))) + '}' for v in used) or 'none'})")
 
 # render
 if "--render" in sys.argv:

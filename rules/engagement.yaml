@@ -114,7 +114,7 @@ caps:
   stage_tasks_max: 8
   status_entries: 5
   expiries_before_escalation: 2
-  body_lines: 12
+  body_lines: 40
   stop_gate_blocks: 3
   stage_list_lines: 150
   stage_days: 8
