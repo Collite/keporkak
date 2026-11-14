@@ -436,6 +436,9 @@ for filename, robot in ROBOTS:
         check_requirements([queue.get("next_when",{})],filename,robot)
     for rule in robot["rules"]:
         owner=rule["id"]
+        if not isinstance(owner,str) or re.fullmatch(r"[A-Z]+-[0-9]+",owner) is None:
+            fail(f"{owner}: robot rule id must match [A-Z]+-[0-9]+")
+            continue
         if owner in robot_ids: fail(f"{owner}: duplicate robot rule id")
         robot_ids.add(owner)
         if rule.get("for")=="persona":

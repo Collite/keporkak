@@ -129,7 +129,7 @@ steps:
     sends:
     - re-seated
 - who: pool
-  by: robot:POOL-1-replayed
+  by: robot:POOL-14
   kind: re-seated
   args:
     seat: coder-1

@@ -25,7 +25,7 @@ rules:
     to: teamlead
     args:
       seat: *id001
-- id: POOL-1-limit
+- id: POOL-11
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
     inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
@@ -43,7 +43,7 @@ rules:
     args:
       seat: *id001
       cause: reseat cap
-- id: POOL-1-protocol
+- id: POOL-12
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
     inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
@@ -57,7 +57,7 @@ rules:
     to: teamlead
     args:
       seat: *id001
-- id: POOL-1-protocol-limit
+- id: POOL-13
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
     inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
@@ -72,7 +72,7 @@ rules:
     args:
       seat: *id001
       cause: reseat cap
-- id: POOL-1-replayed
+- id: POOL-14
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
     inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
@@ -149,7 +149,7 @@ rules:
       seat:
         trigger: args.seat
       cause: anomaly-stop
-- id: POOL-5-provisioning
+- id: POOL-15
   when: an anomaly-stop names a seat or provisioning
   note: send pause accordingly
   'on':
@@ -224,7 +224,7 @@ rules:
     args:
       seat:
         trigger: args.seat
-- id: POOL-8-over-cap
+- id: POOL-16
   when: a session-request asks to remove a seat, or a slot cap is exceeded
   note: send retire to an idle seat
   'on':

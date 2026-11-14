@@ -142,7 +142,7 @@ steps:
     wakes:
     - shadow
 - who: deputy
-  by: robot:DEP-1-classify-request
+  by: robot:DEP-9
   kind: hold
   re: classification
   args: {}
@@ -218,7 +218,7 @@ steps:
     - anomaly-stop
 - id: anomaly
   who: deputy
-  by: robot:DEP-4-re-verdict
+  by: robot:DEP-16
   kind: anomaly-stop
   args:
     rule: DEP-4

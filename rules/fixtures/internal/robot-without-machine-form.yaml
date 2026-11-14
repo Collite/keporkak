@@ -8,6 +8,6 @@ scenarios:
         - role: coder
           active_when: {always: true}
           intercepts: []
-          rules: [{id: ROBOT-missing, when: prose only}]
+          rules: [{id: ROBOT-1, when: prose only}]
     expect:
-      failures: ["ROBOT-missing: guard has no machine form"]
+      failures: ["ROBOT-1: guard has no machine form"]
