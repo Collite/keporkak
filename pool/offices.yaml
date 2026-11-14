@@ -1,0 +1,23 @@
+# One entry per office (contracts.md §9; values: plan.md §4.1, D-46). v1 has one office: Panda.
+# `~` is the office user's home. `hand` is reserved for hand-recorded lines and is never an office (contracts.md §1).
+version: 1
+offices:
+  panda:
+    os: linux
+    # Under D-19 every seat runs as Bora's OS user; the split is v1.1's first item (D-46).
+    user: bora
+    roots:
+      worktrees: ~/Dev/keporkak/_wt
+      scratch: ~/Dev/_scratch
+      # the seats' config homes, one per seat
+      seats: ~/.local/share/keporkak/seats
+      # mode 0700; its files 0600 (architecture.md §4)
+      secrets: ~/.config/keporkak/secrets
+    # The toy's plan is under toy/ in the same project checkout.
+    project: {KP: ~/Dev/keporkak/project, TOY: ~/Dev/keporkak/project}
+    repos: {keporkak: ~/Dev/keporkak/keporkak, kp-toy: ~/Dev/keporkak/kp-toy}
+    live_targets: [bp-dsk]
+    # A | B | C | off
+    computer_use: "off"
+    qa: {vendor: claude}
+    listen: {mcp: "127.0.0.1:7711", board: "127.0.0.1:7712"}
