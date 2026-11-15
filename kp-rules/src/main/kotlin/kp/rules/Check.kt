@@ -301,7 +301,7 @@ internal fun uses(lifecycle: Lifecycle, kinds: Map<String, Kind>, engagement: En
         engagement.stopGate?.let { gate -> Owner(ENGAGEMENT, "stop_gate") to Names().apply { gate.require.forEach(::requirement); value(gate.maxConsecutiveBlocks) } },
     )
     val robotUses = robots.flatMap { (path, robot) ->
-        listOf(Owner(path, robot.file) to Names().apply { requirement(robot.activeWhen); robot.queue?.let { requirement(it.nextWhen) } }) +
+        listOf(Owner(path, null) to Names().apply { requirement(robot.activeWhen); robot.queue?.let { requirement(it.nextWhen) } }) +
             robot.rules.filterNot { it.forPersona }.map { rule ->
                 Owner(path, rule.id) to Names().apply { rule.condition.forEach(::requirement); rule.then.forEach(::action) }
             }
@@ -314,6 +314,22 @@ internal fun checkBlocksNotRepeated(report: Report, engagement: Engagement, uses
     for ((owner, names) in uses) for ((block, requirements) in engagement.blocks) {
         if (requirements.isEmpty() || owner == Owner(ENGAGEMENT, block)) continue
         if (names.parts.containsAll(requirements)) report.add(owner.file, owner.id, "repeats the requirements of '$block' — refer to the block with {holds: $block}")
+    }
+}
+
+/**
+ * One block never names another — itself included — so that no evaluation runs in a circle (contracts.md §4.1,
+ * Amendment 9). The engine never follows one either.
+ */
+internal fun checkBlocksNameNoBlock(report: Report, engagement: Engagement) {
+    fun named(requirement: Requirement): List<String> = when (requirement) {
+        is Requirement.Holds -> listOf(requirement.block)
+        is Requirement.Any -> requirement.items.flatMap(::named)
+        is Requirement.Not -> named(requirement.item)
+        else -> emptyList()
+    }
+    for ((block, requirements) in engagement.blocks) {
+        requirements.flatMap(::named).toSortedSet().forEach { report.add(ENGAGEMENT, block, "names the block '$it' — a block never names a block") }
     }
 }
 

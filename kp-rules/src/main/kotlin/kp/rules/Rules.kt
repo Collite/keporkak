@@ -42,9 +42,10 @@ object Rules {
         val rosterNode = parsed(ROSTER)
         val roster = rosterNode?.let { readRoster(Doc(ROSTER, report), it) }
         val officesNode = parsed(OFFICES)
-        val offices = officesNode?.let { readOffices(Doc(OFFICES, report), it, roster?.vendors?.keys.orEmpty()) }
+        // Without a roster there are no vendors to check against: a missing roster is one problem, not one per vendor named.
+        val offices = officesNode?.let { readOffices(Doc(OFFICES, report), it, roster?.vendors?.keys) }
         val budgetsNode = parsed(BUDGETS)
-        val budgets = budgetsNode?.let { readBudgets(Doc(BUDGETS, report), it, roster?.vendors?.keys.orEmpty(), offices?.keys.orEmpty()) }
+        val budgets = budgetsNode?.let { readBudgets(Doc(BUDGETS, report), it, roster?.vendors?.keys, offices?.keys.orEmpty()) }
         if (lifecycle == null || kinds == null || engagement == null || vocabulary == null || roster == null || offices == null || budgets == null) {
             return Loaded.Invalid(report.problems)
         }
@@ -57,6 +58,7 @@ object Rules {
         checkPoolValues(report, uses, values)
         checkCountersRead(report, lifecycle, uses)
         checkBlocksNotRepeated(report, engagement, uses)
+        checkBlocksNameNoBlock(report, engagement)
         rosterRoles(report, roster, engagement)
 
         val problems = report.problems

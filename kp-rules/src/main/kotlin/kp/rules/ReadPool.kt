@@ -104,7 +104,8 @@ internal fun readRoster(doc: Doc, node: Node): Roster? {
 }
 
 /** pool/offices.yaml (contracts.md §9): one entry per office. */
-internal fun readOffices(doc: Doc, node: Node, vendors: Set<String>): Map<String, Office>? {
+/** [vendors]: the roster's, or null when the roster could not be read — then no vendor is checked. */
+internal fun readOffices(doc: Doc, node: Node, vendors: Set<String>?): Map<String, Office>? {
     val fields = doc.fields(doc.mapping(node, null, "the offices file") ?: return null, null)
     doc.version(fields)
     val entries = (fields["offices"] as? Node.Mapping)?.entries.orEmpty()
@@ -134,7 +135,7 @@ internal fun readOffices(doc: Doc, node: Node, vendors: Set<String>): Map<String
         if (use !in computerUse) doc.problem(name, "unknown computer_use class '${(read?.get("computer_use") as? Node.Scalar)?.literal?.let(::show)}'")
         val qa = (read?.get("qa") as? Node.Mapping)
         val qaVendor = doc.textOrNull(qa?.entries?.get("vendor"))
-        if (qaVendor !in vendors) doc.problem(name, "qa vendor '$qaVendor' is not a roster vendor")
+        if (vendors != null && qaVendor !in vendors) doc.problem(name, "qa vendor '$qaVendor' is not a roster vendor")
         qa?.entries?.keys?.minus("vendor")?.forEach { doc.problem(name, "unknown field 'qa.$it'") }
         val listen = (read?.get("listen") as? Node.Mapping)?.entries.orEmpty().mapValues { doc.textOrNull(it.value) }
         val ports = listOf("mcp", "board").mapNotNull { key ->
@@ -150,7 +151,8 @@ internal fun readOffices(doc: Doc, node: Node, vendors: Set<String>): Map<String
 }
 
 /** pool/budgets.yaml (contracts.md §9): slot limits per dimension and warning thresholds. */
-internal fun readBudgets(doc: Doc, node: Node, vendors: Set<String>, offices: Set<String>): Budgets? {
+/** [vendors]: the roster's, or null when the roster could not be read — then no subscription is checked. */
+internal fun readBudgets(doc: Doc, node: Node, vendors: Set<String>?, offices: Set<String>): Budgets? {
     val fields = doc.fields(doc.mapping(node, null, "the budgets file") ?: return null, null)
     doc.version(fields)
     val slots = (fields["slots"] as? Node.Mapping)?.entries.orEmpty()
@@ -161,7 +163,7 @@ internal fun readBudgets(doc: Doc, node: Node, vendors: Set<String>, offices: Se
         val map = (slots[key] as? Node.Mapping)?.entries.orEmpty()
         if (map.isEmpty()) doc.problem(null, "slots.$key must name at least one $noun")
         key to map.mapNotNull { (name, limit) ->
-            if (name !in known) doc.problem(null, "$key names unknown $noun '$name'")
+            if (known != null && name !in known) doc.problem(null, "$key names unknown $noun '$name'")
             doc.positive(limit).also { if (it == null) doc.problem(null, "$key.$name must be a positive integer") }?.let { name to it }
         }.toMap()
     }

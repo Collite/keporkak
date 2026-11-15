@@ -11,7 +11,9 @@ Checks (each a line of output; exit 1 if any FAIL):
   - P-10: the mailroom sends only declared effects, the daemon sends nothing; every robot rule sends a kind its role may send
   - pool/ (contracts.md §9): the three files' shapes; every level is a line of the order; the review floor is a model of
     it; office and subscription names; every {roster: …}, {office: …} and {budget: …} value the rules use resolves
-Usage: python3 scripts/check-rules.py [--pool DIR] [--render out.md] [--self-test]
+Usage: python3 scripts/check-rules.py [--pool DIR] [--render out.md] [--self-test] [--trace WALK]
+  --trace WALK  also prints the named walk as a `WALK <json>` line and, after each step, a `TRACE <json>` line: whether
+                it was refused, the transitions it fired and every stage's state — the engine's second opinion (S1.2)
 """
 import sys, re, yaml, pathlib, itertools, subprocess, json, copy, tomllib
 
@@ -68,6 +70,7 @@ K = load_yaml((ROOT / "rules/message-kinds.yaml").read_text())["kinds"]
 E = load_yaml((ROOT / "rules/engagement.yaml").read_text())
 
 FIXTURE = "--fixture" in sys.argv
+TRACE = sys.argv[sys.argv.index("--trace") + 1] if "--trace" in sys.argv else None
 W = []
 V = load_yaml((ROOT / "rules/vocabulary.yaml").read_text()) if not FIXTURE else {"facts": {}, "operations": {}}
 if FIXTURE:
@@ -126,6 +129,22 @@ def sender_thresholds(senders):
 
 # The blocks of requirements a `{holds: …}` may name (contracts.md §4.1, Amendment 7).
 BLOCKS = {name: E[name].get("require", []) for name in ("second_key", "stop_gate") if isinstance(E.get(name), dict)}
+
+# An attestation is described in prose (contracts.md §4.4): the loader reads its description as text, and so does this.
+for name, description in (V.get("attestations") or {}).items():
+    if not isinstance(description, str): fail(f"attestations.{name} must be text")
+
+def named_blocks(requirement):
+    """The blocks a requirement names with {holds: …}, inside any and not too."""
+    if not isinstance(requirement, dict): return
+    if isinstance(requirement.get("holds"), str): yield requirement["holds"]
+    for item in requirement.get("any", []) if isinstance(requirement.get("any"), list) else []: yield from named_blocks(item)
+    if "not" in requirement: yield from named_blocks(requirement["not"])
+
+# One block never names another — itself included — so no evaluation runs in a circle (contracts.md §4.1, Amendment 9).
+for name, requirements in BLOCKS.items():
+    for named in sorted({block for requirement in requirements or [] for block in named_blocks(requirement)}):
+        fail(f"{name}: names the block '{named}' — a block never names a block")
 
 def check_destination(to, owner):
     if isinstance(to, str) and to not in roles | PARTIES:
@@ -510,6 +529,8 @@ for filename, robot in ROBOTS:
         trigger=rule["on"]
         if not isinstance(trigger,dict) or not set(trigger)&{"fact","delivered","arrives","expired","presence","op"}:
             fail(f"{owner}: invalid robot trigger")
+        elif "presence" in trigger and trigger["presence"] not in ("present","absent"):
+            fail(f"{owner}: presence is present or absent")
         check_references(trigger,owner,robot)
         for field in ("delivered","arrives","expired"):
             if field in trigger and trigger[field] not in K: fail(f"{owner}: unknown trigger kind '{trigger[field]}'")
@@ -689,11 +710,12 @@ class Walk:
         for namespace in ("roster","office","budget"):
             if set(value)=={namespace}:return path_value(self.definition.get("configuration",{}).get(namespace,{}),value[namespace])
         return {key:self.value(item) for key,item in value.items()}
-    def holds(self, requirement):
+    def holds(self, requirement, blocks=True):
         if "always" in requirement:return requirement["always"] is True
-        if "holds" in requirement:return requirement["holds"] in BLOCKS and all(self.holds(item) for item in BLOCKS[requirement["holds"]])
-        if "any" in requirement:return any(self.holds(item) for item in requirement["any"])
-        if "not" in requirement:return not self.holds(requirement["not"])
+        # A block named inside a block is reported, and never followed (Amendment 9).
+        if "holds" in requirement:return blocks and requirement["holds"] in BLOCKS and all(self.holds(item,False) for item in BLOCKS[requirement["holds"]])
+        if "any" in requirement:return any(self.holds(item,blocks) for item in requirement["any"])
+        if "not" in requirement:return not self.holds(requirement["not"],blocks)
         if "attest" in requirement:return requirement["attest"] in self.ctx.get("args",{}).get("attest",[])
         if "signed" in requirement:return requirement["signed"]=="bora" and self.ctx.get("signed")=="bora" and self.ctx.get("role")=="bora"
         if "fact" in requirement:actual=self.fact(requirement)
@@ -812,6 +834,7 @@ class Walk:
                 try:edge=self.robot_rules("presence",current_presence)
                 finally:self.shared["presence"]=current_presence
                 actual={key:actual[key]+edge[key] for key in ("rules","sends","wakes")}
+            self.fired=fired
             if not actual["rules"] and not fired:raise WalkError("observation has no robot or lifecycle arrow")
             self.check_expectation(step,{**actual,"transitions":fired})
             return
@@ -863,6 +886,7 @@ class Walk:
             self.ctx.update(id=request_id,status="delivered",tick=self.index)
             self.messages[request_id]=copy.deepcopy(self.ctx)
         fired=self.transitions(event,kind_name,request_id)
+        self.fired=fired
         if not fired and not operation and any(t.get("kind")==kind_name and t.get("on","message")==event for _,t in all_transitions):
             raise WalkError(f"no arrow from {self.state('stage')} for {kind_name}")
         if not operation:self.history.append(copy.deepcopy(self.ctx))
@@ -892,11 +916,15 @@ class Walk:
             return
         raise WalkError("expected refusal, but the message was delivered")
     def run(self):
+        if TRACE:print("WALK "+json.dumps(self.definition,sort_keys=True))
         for self.index,step in enumerate(self.definition["steps"],1):
+            self.fired=[]
             try:self.step(step)
             except WalkError as error:
                 fail(f"walk {self.name} step {self.index}: {error}")
                 return
+            if TRACE:print("TRACE "+json.dumps({"step":self.index,"refused":bool(step.get("expect",{}).get("refused")),"fired":self.fired,
+                "stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()}},sort_keys=True))
         expected=self.definition["final"]
         actual={stage:context["states"]["stage"] for stage,context in self.contexts.items()} if isinstance(expected,dict) else self.state("stage")
         if actual!=expected:
@@ -925,10 +953,11 @@ def counter_reads(value):
 read_counters = set(counter_reads([L, K, E] + [robot for _, robot in ROBOTS]))
 
 # Either reader, given the scalar plain: PyYAML with the rules' YAML 1.2 booleans, or the Kotlin loader's resolver.
-LOADER_SCALARS = re.compile(r"-?(0|[1-9][0-9]*)(\.[0-9]+([eE][-+]?[0-9]+)?)?|(?i:true|false)")
-def reads_as_number_or_boolean(value):
+LOADER_SCALARS = re.compile(r"-?(0|[1-9][0-9]*)(\.[0-9]+([eE][-+]?[0-9]+)?)?|(?i:true|false)|~|null|Null|NULL")
+def reads_as_number_boolean_or_null(value):
+    if value == "": return False  # '' is text to both readers
     tag = RulesLoader("").resolve(yaml.ScalarNode, value, (True, False))
-    return tag in ("tag:yaml.org,2002:int", "tag:yaml.org,2002:float", "tag:yaml.org,2002:bool") or LOADER_SCALARS.fullmatch(value) is not None
+    return tag in ("tag:yaml.org,2002:int", "tag:yaml.org,2002:float", "tag:yaml.org,2002:bool", "tag:yaml.org,2002:null") or LOADER_SCALARS.fullmatch(value) is not None
 for name in L.get("counters", {}):
     if name not in read_counters: fail(f"counter '{name}' is declared but nothing reads it")
 if not FIXTURE:
@@ -942,8 +971,8 @@ if not FIXTURE:
         if not text.startswith("#"):
             fail(f"{label}: the header comment is gone")
         for event in yaml.parse(text, Loader=RulesLoader):
-            if isinstance(event, yaml.ScalarEvent) and event.style in ("'", '"') and reads_as_number_or_boolean(event.value):
-                fail(f"{label}: the quoted scalar '{event.value}' (line {event.start_mark.line + 1}) would read as a number or a boolean — the loader cannot see quotes")
+            if isinstance(event, yaml.ScalarEvent) and event.style in ("'", '"') and reads_as_number_boolean_or_null(event.value):
+                fail(f"{label}: the quoted scalar '{event.value}' (line {event.start_mark.line + 1}) would read as a number, a boolean or null — the loader resolves a scalar by its text, not its quotes")
     # What S0.1's round trip lost and S1.0 put back: a YAML dump drops comments, so edit these files as text.
     KEPT = {"rules/stage-lifecycle.yaml": ["# Guards: `observed` = the daemon checks the world"],
             "rules/message-kinds.yaml": ["# Fields: from/to (roles;", "  # ---- the start gate"],
@@ -955,12 +984,12 @@ if not FIXTURE:
             if not any(line.startswith(start) and "#" in line for line in lines):
                 fail(f"{name}: the comment on '{start.strip()}' is gone — edit the rules as text, never by a YAML round trip")
 if not fails:
-    ok("every counter is read; no anchor or alias; no quoted number or boolean; the legends and the caps' sources are comments")
+    ok("every counter is read; no anchor or alias; no quoted number, boolean or null; the legends and the caps' sources are comments")
 
 if not FIXTURE:
     W=[load_yaml(path.read_text()) for path in sorted((ROOT / "rules/walks").glob("*.yaml"))]
 for walk in W:
-    Walk(walk).run()
+    if TRACE is None or walk["name"]==TRACE:Walk(walk).run()
 if W and not fails:ok(f"the walks pass ({len(W)} walks)")
 
 # 8. pool/: the office's three files (contracts.md §9) and every pool value the rules use

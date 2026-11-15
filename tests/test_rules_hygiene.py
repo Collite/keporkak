@@ -51,15 +51,21 @@ class RulesHygieneTests(unittest.TestCase):
         self.edit("rules/stage-lifecycle.yaml", "# Guards: `observed` = the daemon checks the world", "# Guards checked by the daemon")
         self.assertEqual(self.failures(), ["rules/stage-lifecycle.yaml: the comment on '# Guards: `observed` = the daemon checks the world' is gone — edit the rules as text, never by a YAML round trip"])
 
-    def test_a_quoted_scalar_that_reads_as_a_number_or_a_boolean_fails(self):
+    def test_a_quoted_scalar_that_reads_as_a_number_a_boolean_or_null_fails(self):
         note = "    note: D-27 a, n; master protected by GitHub branch protection\n"
         self.edit("rules/message-kinds.yaml", note, "    note: '2'\n")
         text = (self.copy / "rules/message-kinds.yaml").read_text()
         line = text[:text.index("    note: '2'\n")].count("\n") + 1
-        self.assertEqual(self.failures(), [f"rules/message-kinds.yaml: the quoted scalar '2' (line {line}) would read as a number or a boolean — the loader cannot see quotes"])
+        self.assertEqual(self.failures(), [f"rules/message-kinds.yaml: the quoted scalar '2' (line {line}) would read as a number, a boolean or null — the loader resolves a scalar by its text, not its quotes"])
         self.edit("rules/message-kinds.yaml", "    note: '2'\n", "    note: 'True'\n")
         self.assertEqual(len(self.failures()), 1)
-        self.edit("rules/message-kinds.yaml", "    note: 'True'\n", "    note: 'off'\n")
+        self.edit("rules/message-kinds.yaml", "    note: 'True'\n", "    note: 'null'\n")
+        self.assertEqual(self.failures(), [f"rules/message-kinds.yaml: the quoted scalar 'null' (line {line}) would read as a number, a boolean or null — the loader resolves a scalar by its text, not its quotes"])
+        self.edit("rules/message-kinds.yaml", "    note: 'null'\n", "    note: '~'\n")
+        self.assertEqual(len(self.failures()), 1)
+        self.edit("rules/message-kinds.yaml", "    note: '~'\n", "    note: 'off'\n")
+        self.assertEqual(self.failures(), [])
+        self.edit("rules/message-kinds.yaml", "    note: 'off'\n", "    note: ''\n")
         self.assertEqual(self.failures(), [])
 
     def test_two_robot_rules_that_render_as_one_line_fail(self):

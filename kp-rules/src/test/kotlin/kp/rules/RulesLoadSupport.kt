@@ -48,9 +48,9 @@ fun pythonFailures(scenario: Scenario): List<String> {
         .filterNot { it.startsWith("walk ") }.sorted()
 }
 
-/** The loader's problems on the same scenario, in the validator's words: `<id>: <what>`. */
+/** The loader's problems on the same scenario, in the validator's words: `<id>: <what>` — a robot's own problem is named by its file, as the validator names it. */
 fun loaderFailures(scenario: Scenario): List<String> =
-    Rules.load(fixtureFiles(scenario.given)).problems.map { listOfNotNull(it.id, it.message).joinToString(": ") }.sorted()
+    Rules.load(fixtureFiles(scenario.given)).problems.map { listOfNotNull(it.id ?: it.file.takeIf { file -> file.startsWith("robots/") }?.substringAfterLast('/'), it.message).joinToString(": ") }.sorted()
 
 /** A scenario's rule documents, completed the way `check-rules.py --fixture` completes them; pool files and personas are master's. */
 fun fixtureFiles(given: YamlMap): Map<String, String> {

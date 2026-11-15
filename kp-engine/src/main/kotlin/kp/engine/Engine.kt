@@ -1,0 +1,287 @@
+package kp.engine
+
+import kp.model.utc
+import kp.rules.ArgSpec
+import kp.rules.ArgType
+import kp.rules.Effect
+import kp.rules.Event
+import kp.rules.FactCall
+import kp.rules.Kind
+import kp.rules.Literal
+import kp.rules.MessageClass
+import kp.rules.Requirement
+import kp.rules.RuleSet
+import kp.rules.Transition
+import kp.rules.Value
+import kp.rules.Window
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import kotlin.time.Duration
+
+/**
+ * The mailroom's guard (architecture.md §1): the rule set applied to a trigger. Pure — it reads no file, no clock
+ * and no world; "now" is a fact like any other. [profile] names the autonomy profile in force (`engagement.yaml:
+ * autonomy_profiles`), which the rules do not choose.
+ */
+class Engine(private val rules: RuleSet, private val profile: String) {
+    /**
+     * The facts [judge] will read that the table must supply (contracts.md §4.4): every fact its requirements, class
+     * cases and effects may read, but those of source L, which the engine answers from the state — and `now`.
+     */
+    fun needs(state: State, trigger: Trigger): List<Need> {
+        val context = Context.of(trigger, state) ?: return emptyList()
+        return Needs(rules, state, context).collect()
+    }
+
+    /** What is to happen: deliver or refuse, which transitions fire, which counters move, which effects are requested, under which class. */
+    fun judge(state: State, trigger: Trigger, facts: Facts): Decision {
+        val context = Context.of(trigger, state) ?: return Decision.create(Outcome.NOTHING)
+        return Judgement(rules, state, context, facts, profile).run()
+    }
+}
+
+/** The caps the engine enforces for every kind, by their names in `engagement.yaml:caps` (contracts.md §2.1, §4.1). */
+private const val BODY_LINES = "body_lines"
+private const val HOPS = "hops_per_thread"
+private const val MAX_FIRES_DEFAULT = "max_fires_default"
+
+private class Judgement(private val rules: RuleSet, private val state: State, private val context: Context, facts: Facts, private val profile: String) {
+    private val evaluation = Evaluation(rules, state, context, facts)
+    private val machines = Machines(rules, state)
+
+    fun run(): Decision = if (context.event == Event.MESSAGE) arrival() else fire()
+
+    private fun refuse(rule: String, requirement: String, failed: Requirement? = null) = Decision.create(
+        Outcome.REFUSE, rule = rule, requirement = requirement, failed = failed?.let(::render) ?: requirement,
+        unsupplied = evaluation.unsupplied.toList(), observed = evaluation.observed.toMap(), attested = evaluation.attested(),
+    )
+
+    /** `on: message` — what holds for every kind, the kind's own requirements, then the candidates of every machine. */
+    private fun arrival(): Decision {
+        val message = context.message!!
+        val kind = rules.kinds[message.kind] ?: return refuse(message.kind, "kinds: no '${message.kind}'")
+        everyKind(kind, message)?.let { (requirement, failed) -> return refuse(kind.name, requirement, failed) }
+        evaluation.firstFailure(kind.require)?.let { return refuse(kind.name, kind.guard ?: render(it), it) }
+        val fired = fireMachines(kind)
+        if (fired.moves.isEmpty() && rules.lifecycle.machines.values.any { machine -> machine.transitions.any { it.kind == kind.name && it.on == Event.MESSAGE } }) {
+            val (candidate, _) = fired.first ?: return refuse(kind.name, kind.fires ?: "fires: -")
+            val failure = evaluation.firstFailure(candidate.require)
+            return refuse(candidate.id, candidate.guard ?: failure?.let(::render).orEmpty(), failure)
+        }
+        val messageClass = classify(kind)
+        val deadline = kind.deadline?.let { duration -> now()?.let { plus(it, duration) } ?: return refuse(kind.name, "deadline: $duration") }
+        return Decision.create(
+            Outcome.DELIVER, rule = fired.rule(), unsupplied = evaluation.unsupplied.toList(), moves = fired.moves, counted = evaluation.moved.toMap(),
+            effects = fired.effects, messageClass = messageClass, waitsForBora = messageClass == MessageClass.B, deadline = deadline,
+            observed = evaluation.observed.toMap(), attested = evaluation.attested(),
+        )
+    }
+
+    /**
+     * What the engine enforces for every kind with no requirement written (contracts.md §4.1, §2.1): the sender's
+     * role owns the kind, `args` against the declaration, the body's line cap, the thread's hop cap, `max_fires`
+     * within the window. A refusal quotes the rule file's field.
+     */
+    private fun everyKind(kind: Kind, message: View): Pair<String, Requirement?>? {
+        if (kind.from.none { roleOwns(it, message.from) }) return "from: ${kind.from.joinToString(" | ")}" to null
+        arguments(kind, message.args)?.let { return it to null }
+        val bodyLines = cap(BODY_LINES)
+        if (bodyLines != null && lines(message.body).toBigDecimal() > bodyLines) return "caps.$BODY_LINES: ${bodyLines.toPlainString()}" to null
+        val hops = cap(HOPS)
+        if (hops != null && state.hops(message.thread).toBigDecimal() >= hops) return "caps.$HOPS: ${hops.toPlainString()}" to null
+        val maximum = kind.maxFires?.toBigDecimal() ?: cap(MAX_FIRES_DEFAULT)
+        if (maximum != null && fires(kind, message).toBigDecimal() >= maximum) {
+            val written = if (kind.maxFires != null) "max_fires: ${kind.maxFires}" else "caps.$MAX_FIRES_DEFAULT: ${maximum.toPlainString()}"
+            return "$written, window: ${kind.window.key}" to null
+        }
+        return null
+    }
+
+    private fun cap(name: String) = (rules.engagement.caps[name] as? Literal.Number)?.value
+
+    /** A body's lines, as a reader counts them: a last line end opens no line. */
+    private fun lines(body: String?): Int = body?.lines()?.let { if (it.last().isEmpty()) it.size.dec() else it.size } ?: 0
+
+    /** The kind's deliveries in the window this message falls in. */
+    private fun fires(kind: Kind, message: View): Int {
+        val earlier = state.delivered.values.filter { it.kind == kind.name }
+        val bySender = earlier.filter { it.from == message.from }
+        return when (kind.window) {
+            Window.STAGE -> earlier.count { it.stage == message.stage }
+            Window.DAY -> now()?.let { day(it) }?.let { today -> bySender.count { day(it.at) == today } } ?: bySender.size
+            Window.RETURN -> state.machine(PRESENCE_MACHINE, BORA)?.since?.let { since -> bySender.count { !before(it.at, since) } } ?: bySender.size
+            Window.SESSION -> context.session?.let { since -> bySender.count { !before(it.at, since) } } ?: bySender.size
+        }
+    }
+
+    /** `args` against the kind's declaration (contracts.md §2.1): an unknown key is refused, then each declared one. */
+    private fun arguments(kind: Kind, args: Datum.Fields): String? {
+        args.fields.keys.firstOrNull { it !in kind.args }?.let { return "args: '$it' is not declared" }
+        kind.args.forEach { (name, spec) ->
+            val value = args.fields[name]
+            if (value == null && spec.required) return "args: '$name' is required"
+            if (value != null && !typed(value, spec)) return "args: '$name' is not ${describe(spec)}"
+        }
+        return null
+    }
+
+    private fun typed(value: Datum, spec: ArgSpec): Boolean {
+        if (spec.enum != null && spec.enum!!.map(::literal).none { it == value }) return false
+        val type = when (spec.type) {
+            null -> true
+            ArgType.STRING -> value is Datum.Text
+            ArgType.ARRAY -> value is Datum.Items
+            ArgType.OBJECT -> value is Datum.Fields
+            ArgType.BOOLEAN -> value is Datum.Bool
+            ArgType.INTEGER -> value is Datum.Number && value.value.stripTrailingZeros().scale() <= 0
+            ArgType.NUMBER -> value is Datum.Number
+        }
+        val items = spec.items?.let { item -> (value as? Datum.Items)?.items?.all { typed(it, item) } } ?: true
+        val fields = spec.requiredFields.all { it in ((value as? Datum.Fields)?.fields ?: return spec.requiredFields.isEmpty()) }
+        return type && items && fields
+    }
+
+    private fun describe(spec: ArgSpec): String = spec.enum?.joinToString(" | ", "one of ") { render(it) } ?: spec.type?.key ?: "valid"
+
+    /** A kind's class: its first case that holds; else the autonomy profile in force, where it names the kind; else its default. */
+    private fun classify(kind: Kind): MessageClass {
+        kind.classRule.cases.firstOrNull { evaluation.holds(it.condition) }?.let { return it.messageClass }
+        val preset = (rules.engagement.autonomyProfiles[profile]?.get(kind.name) as? Literal.Text)?.value
+        return MessageClass.entries.firstOrNull { it.name == preset } ?: kind.classRule.default
+    }
+
+    /** `on: op-result`, `on: expiry`, `on: fact` — the same evaluation; an expiry adds its kind's `expiry` effects. */
+    private fun fire(): Decision {
+        val kind = context.kind?.let(rules.kinds::get)
+        val fired = fireMachines(kind)
+        val expiry = if (context.event == Event.EXPIRY && kind != null) effects(kind.expiry.filter { it !is Effect.Transition }, kind.name) else emptyList()
+        val effects = fired.effects + expiry
+        val reported = expiry.filterIsInstance<Requested.Report>().firstOrNull()
+        return Decision.create(
+            if (fired.moves.isEmpty() && effects.isEmpty()) Outcome.NOTHING else Outcome.FIRE,
+            rule = fired.rule() ?: kind?.name?.takeIf { effects.isNotEmpty() }, unsupplied = evaluation.unsupplied.toList(),
+            moves = fired.moves, counted = evaluation.moved.toMap(), effects = effects, messageClass = reported?.messageClass,
+            waitsForBora = reported != null, observed = evaluation.observed.toMap(),
+        )
+    }
+
+    private class Fired(val moves: List<Move>, val effects: List<Requested>, val first: Pair<Transition, String>?) {
+        /** The rule a `delivered` record names: the stage machine's transition, else the first that fired. */
+        fun rule(): String? = (moves.firstOrNull { it.machine == STAGE_MACHINE } ?: moves.firstOrNull())?.rule
+    }
+
+    /**
+     * Each machine in turn (contracts.md §4.1, choosing among transitions): its candidates for this trigger, from its
+     * subject's state, in file order; the first whose requirements are all met fires, and its effects apply before the next
+     * machine is read. An expiry's `{transition: …, if: …}` keeps a candidate only while its `if` holds.
+     */
+    private fun fireMachines(kind: Kind?): Fired {
+        val gated = kind?.takeIf { context.event == Event.EXPIRY }?.expiry?.filterIsInstance<Effect.Transition>()?.associateBy { it.id }.orEmpty()
+        val moves = ArrayList<Move>()
+        val effects = ArrayList<Requested>()
+        var first: Pair<Transition, String>? = null
+        rules.lifecycle.machines.values.forEach { machine ->
+            val subject = machines.subject(machine, context) ?: return@forEach
+            val candidates = machines.candidates(machine, subject, context).filter { gated[it.id]?.condition?.let(evaluation::holds) ?: true }
+            if (first == null) first = candidates.firstOrNull()?.let { it to subject }
+            val selected = candidates.firstOrNull { evaluation.firstFailure(it.require) == null } ?: return@forEach
+            val from = machines.state(machines.recordName(machine.name), subject) ?: return@forEach
+            val to = machines.destination(selected, machine, subject) ?: return@forEach
+            val before = evaluation.moved.toMap()
+            effects += effects(selected.effects, selected.id)
+            moves += Move(machines.recordName(machine.name), subject, from, to, selected.id, evaluation.moved.filter { before[it.key] != it.value })
+        }
+        return Fired(moves, effects, first)
+    }
+
+    /** Effects in order, each `if` decided as it is reached; a count moves its counter for the effects after it. */
+    private fun effects(effects: List<Effect>, rule: String): List<Requested> = effects.mapNotNull { effect ->
+        if (effect.condition?.let(evaluation::holds) == false) return@mapNotNull null
+        when (effect) {
+            is Effect.Count -> null.also { evaluation.count(effect.counter) }
+            is Effect.Emit -> Requested.Emit(rule, effect.kind, (evaluation.value(effect.to) as? Datum.Text)?.value, resolved(effect.args))
+            is Effect.Do -> Requested.Do(rule, effect.operation, resolved(effect.with))
+            is Effect.Report -> Requested.Report(rule, effect.to, effect.messageClass)
+            is Effect.Transition -> null
+        }
+    }
+
+    private fun resolved(values: Map<String, Value>): Map<String, Datum> = values.mapValues { evaluation.value(it.value) ?: Datum.Null }
+
+    private fun now(): String? = (evaluation.fact(FactCall(NOW, emptyMap())) as? Datum.Text)?.value
+}
+
+private fun day(at: String): String = utc(at).toLocalDate().toString()
+private fun before(at: String, since: String): Boolean = utc(at).isBefore(utc(since))
+private fun plus(at: String, duration: Duration): String =
+    utc(at).plusSeconds(duration.inWholeSeconds).atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME).replace("+00:00", "Z")
+
+/** The facts a judgement may read and the table must supply, found by reading the rules, not by judging. */
+private class Needs(private val rules: RuleSet, state: State, private val context: Context) {
+    private val evaluation = Evaluation(rules, state, context, Facts.NONE)
+    private val machines = Machines(rules, state)
+    private val needs = LinkedHashSet<Need>()
+
+    fun collect(): List<Need> {
+        needs += Need(NOW, emptyMap())
+        val kind = context.kind?.let(rules.kinds::get)
+        if (context.event == Event.MESSAGE && kind != null) {
+            kind.require.forEach(::requirement)
+            kind.classRule.cases.forEach { requirement(it.condition) }
+        }
+        if (context.event == Event.EXPIRY && kind != null) kind.expiry.forEach(::effect)
+        rules.lifecycle.machines.values.forEach { machine ->
+            val subject = machines.subject(machine, context) ?: return@forEach
+            machines.candidates(machine, subject, context).forEach { transition ->
+                transition.require.forEach(::requirement)
+                transition.effects.forEach(::effect)
+            }
+        }
+        return needs.toList()
+    }
+
+    private fun effect(effect: Effect) {
+        effect.condition?.let(::requirement)
+        when (effect) {
+            is Effect.Emit -> (effect.args.values + effect.to).forEach(::value)
+            is Effect.Do -> effect.with.values.forEach(::value)
+            else -> Unit
+        }
+    }
+
+    private fun requirement(requirement: Requirement) {
+        when (requirement) {
+            is Requirement.Fact -> { call(requirement.fact); requirement.comparison?.value?.let(::value) }
+            is Requirement.Arg -> requirement.comparison?.value?.let(::value)
+            is Requirement.Message -> requirement.comparison?.value?.let(::value)
+            is Requirement.Reply -> requirement.comparison?.value?.let(::value)
+            is Requirement.Counter -> requirement.comparison?.value?.let(::value)
+            is Requirement.Any -> requirement.items.forEach(::requirement)
+            is Requirement.Not -> requirement(requirement.item)
+            is Requirement.Holds -> rules.engagement.blocks[requirement.block]?.filter { it !is Requirement.Holds }?.forEach(::requirement)
+            else -> Unit
+        }
+    }
+
+    private fun value(value: Value) {
+        when (value) {
+            is Value.Fact -> call(value.fact)
+            is Value.Items -> value.items.forEach(::value)
+            is Value.Fields -> value.fields.values.forEach(::value)
+            else -> Unit
+        }
+    }
+
+    /** A fact the table must supply becomes a need; one the engine answers is not, but the facts in its parameters are. */
+    private fun call(call: FactCall): Need? {
+        call.params.values.forEach(::value)
+        if (evaluation.answeredByEngine(call.name)) return null
+        val params = call.params.mapValues { (_, param) ->
+            when (param) {
+                is Value.Fact -> if (evaluation.answeredByEngine(param.fact.name)) evaluation.value(param)?.let { Need.Param.Known(it) } else call(param.fact)?.let { Need.Param.Of(it) }
+                else -> evaluation.value(param)?.let { Need.Param.Known(it) }
+            } ?: return null
+        }
+        return Need(call.name, params).also { needs += it }
+    }
+}

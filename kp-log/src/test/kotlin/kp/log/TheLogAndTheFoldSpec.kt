@@ -5,6 +5,8 @@ import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kp.engine.Datum
+import kp.engine.Delivery
 import kp.engine.MachineState
 import kp.engine.State
 import kp.engine.Wait
@@ -87,6 +89,17 @@ class TheLogAndTheFoldSpec : StringSpec({
             // assign + started; stop + triage; review-request + nudge
             hops = mapOf("m-panda-000101" to 2, "m-panda-000103" to 2, "m-panda-000105" to 2),
             refusals = emptyMap(),
+            // every message delivered, as the engine reads it back (S1.2): its kind, parties, stage, thread, args, class and when
+            delivered = mapOf(
+                "m-panda-000101" to Delivery("m-panda-000101", "assign", "teamlead", "coder-1", "KP/P1/S1.1", "m-panda-000101", null, "seat:teamlead", Datum.Fields(emptyMap()), "A", "2026-11-14T09:00:00Z"),
+                "m-panda-000102" to Delivery("m-panda-000102", "started", "coder-1", "teamlead", "KP/P1/S1.1", "m-panda-000101", "m-panda-000101", "seat:coder-1", Datum.Fields(emptyMap()), "A", "2026-11-14T09:10:00Z"),
+                "m-panda-000103" to Delivery("m-panda-000103", "stop", "coder-1", "principal", "KP/P1/S1.1", "m-panda-000103", null, "seat:coder-1", Datum.Fields(mapOf("sc" to Datum.Text("SC-10"))), "C", "2026-11-14T11:30:00Z"),
+                "m-panda-000104" to Delivery("m-panda-000104", "triage", "principal", "coder-1", "KP/P1/S1.1", "m-panda-000103", "m-panda-000103", "seat:principal", Datum.Fields(mapOf("outcome" to Datum.Text("resume"))), "A", "2026-11-14T12:00:00Z"),
+                "m-panda-000105" to Delivery("m-panda-000105", "review-request", "coder-1", "teamlead", "KP/P1/S1.1", "m-panda-000105", null, "seat:coder-1", Datum.Fields(mapOf("attest" to Datum.Items(listOf(Datum.Text("done_lines_hold"))))), "A", "2026-11-14T15:00:00Z"),
+                "m-panda-000106" to Delivery("m-panda-000106", "nudge", "mailroom", "teamlead", "KP/P1/S1.1", "m-panda-000105", "m-panda-000105", "effect:T-74", Datum.Fields(mapOf("rule" to Datum.Text("T-74"))), "A", "2026-11-14T16:00:00Z"),
+            ),
+            // no delivered record answers another (contracts.md §2.2, Amendment 8)
+            answered = emptySet(),
         )
     }
 
