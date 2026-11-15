@@ -58,6 +58,8 @@ sealed interface Requirement {
     data class Not(val item: Requirement) : Requirement
     /** `{always: true}` — a robot that is always active (contracts.md §8). */
     data class Always(val holds: Boolean) : Requirement
+    /** `{holds: <block>}` — every requirement of the named block of `engagement.yaml` holds (contracts.md §4.1, Amendment 7). */
+    data class Holds(val block: String) : Requirement
 }
 
 enum class MessageClass { A, B, C }

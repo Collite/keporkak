@@ -1,8 +1,10 @@
 # Keporkak — the message catalogue (P-6b). Every kind a seat may send; anything not here is refused (default deny).
 # Fields: from/to (roles; `cc` are informational copies), fires (a transition of stage-lifecycle.yaml or a companion
-# machine, or `-`), guard (checked by the mailroom; `observed`/`attested` per RV-13), class (A auto · C runs, Bora cc'd ·
-# B Bora must act; while Bora is absent, B is *held*, D-28), max_fires (per stage unless noted), deadline (reply or
-# expiry), on_expiry (what the mailroom does), reply (the kind expected back).
+# machine, or `-`), guard (prose; `observed`/`attested` per RV-13), require (what holds for every transition of the kind;
+# the mailroom evaluates it), args (typed; anything else is refused), class (a default and cases: A auto · C runs, Bora
+# cc'd · B Bora must act; while Bora is absent, B is *held*, D-28), max_fires (per window: stage, day, return, session),
+# deadline (reply or expiry), on_expiry (prose) and expiry (what the mailroom does), reply (the kind expected back).
+# The forms: contracts.md §4.1–§4.2.
 # Roles: bora, principal, teamlead, pool (Pool Manager), coder, reviewer, qa, deputy, retro, gardener, daemon (requested operations),
 # mailroom (a mechanism: it sends only declared effects — engagement.yaml:mailroom_declared_effects; it decides nothing, P-10).
 # Message catalogue — typed arguments, class cases, deadlines and executable requirements (contracts §4.2).
@@ -949,24 +951,8 @@ kinds:
       default: C
       cases:
       - if:
-          any:
-          - not:
-              fact: seat.name
-              of: reviewer
-              ne:
-                fact: seat.name
-                of: coder
-          - not:
-              fact: roster.rank
-              of: reviewer
-              gte:
-                fact: roster.rank
-                of: coder
-          - not:
-              fact: roster.model_rank
-              of: reviewer
-              gte:
-                fact: roster.floor_rank
+          not:
+            holds: second_key  # engagement.yaml:second_key; its `otherwise` is this B
         class: B
     max_fires: 2
     deadline: 15m

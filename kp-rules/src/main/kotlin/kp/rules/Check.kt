@@ -27,8 +27,12 @@ internal class Names {
     val destinations = mutableListOf<String>()
     /** (machine, state) for every `{fact: <machine>.state}` compared with a literal state. */
     val states = mutableListOf<Pair<String, String>>()
+    val blocks = mutableListOf<String>()
+    /** Every requirement of the rule, and every one inside an `any` or a `not` — what a repeated block is looked for in. */
+    val parts = mutableListOf<Requirement>()
 
     fun requirement(requirement: Requirement) {
+        parts += requirement
         when (requirement) {
             is Requirement.Fact -> {
                 call(requirement.fact)
@@ -45,6 +49,7 @@ internal class Names {
             is Requirement.Reply -> requirement.comparison?.let { value(it.value) }
             is Requirement.Counter -> { counters += requirement.name; counterReads += requirement.name; requirement.comparison?.let { value(it.value) } }
             is Requirement.Attest -> attestations += requirement.name
+            is Requirement.Holds -> blocks += requirement.block
             is Requirement.Operation -> operations += requirement.operation
             is Requirement.Any -> requirement.items.forEach(::requirement)
             is Requirement.Not -> requirement(requirement.item)
@@ -151,6 +156,7 @@ internal class RulesCheck(
         names.caps.filterNot { it in engagement.caps }.forEach { problem(owner, "unknown cap '$it'") }
         names.counters.filterNot { it in lifecycle.counters }.forEach { problem(owner, "unknown counter '$it'") }
         names.attestations.filterNot { it in vocabulary.attestations }.forEach { problem(owner, "unknown attestation '$it'") }
+        names.blocks.filterNot { it in engagement.blocks }.forEach { problem(owner, "unknown engagement block '$it'") }
     }
 
     private fun transitions() {
@@ -301,6 +307,14 @@ internal fun uses(lifecycle: Lifecycle, kinds: Map<String, Kind>, engagement: En
             }
     }
     return transitions + kindUses + engagementUses + robotUses
+}
+
+/** A rule that needs a block's requirements refers to the block with `{holds: …}`; it never repeats them (contracts.md §4.1). */
+internal fun checkBlocksNotRepeated(report: Report, engagement: Engagement, uses: List<Pair<Owner, Names>>) {
+    for ((owner, names) in uses) for ((block, requirements) in engagement.blocks) {
+        if (requirements.isEmpty() || owner == Owner(ENGAGEMENT, block)) continue
+        if (names.parts.containsAll(requirements)) report.add(owner.file, owner.id, "repeats the requirements of '$block' — refer to the block with {holds: $block}")
+    }
 }
 
 /** A counter is declared to be read: one that nothing reads is a problem (issue #5). */

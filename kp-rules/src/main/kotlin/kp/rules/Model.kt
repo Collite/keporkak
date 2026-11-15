@@ -132,7 +132,11 @@ data class Engagement(
     val permissions: Map<String, String>,
     /** Every scalar of the file by its dotted path — what `{engagement: <path>}` reads. */
     val values: Map<String, Literal>,
-)
+) {
+    /** The blocks of requirements a `{holds: …}` may name, by name. */
+    val blocks: Map<String, List<Requirement>>
+        get() = listOfNotNull(secondKey?.let { "second_key" to it.require }, stopGate?.let { "stop_gate" to it.require }).toMap()
+}
 
 // rules/vocabulary.yaml (contracts.md §4.4)
 

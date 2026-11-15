@@ -1,6 +1,8 @@
 # Keporkak — the stage lifecycle (P-5c). Source of truth for the mailroom's guard (D-9, D-21).
-# A transition is fired by exactly one message kind (see message-kinds.yaml); anything else is refused.
+# A transition fires `on:` a message of its kind (see message-kinds.yaml), that kind's operation result or expiry, or a
+# fact (contracts.md §4.1); anything else is refused.
 # Guards: `observed` = the daemon checks the world (CI, files, roster); `attested` = the sender asserts, logged as such (RV-13).
+# `guard` is that prose, for the reader; `require` is its machine form, the one the mailroom evaluates (contracts.md §4.1).
 # Converged 2026-11-12 from 07 (P-5/P-5b), review-261112-c2 (RV-n, U-n), D-20…D-28.
 # Stage lifecycle and five companion machines — executable contracts §4.
 version: 1
@@ -1285,7 +1287,7 @@ active_states:
 - passed
 - merged
 - released
-# The companion machines (converged in 11-c2-converged.md; kept here for the validator)
+# The companion machines (converged in 11-c2-converged.md): executable like the stage's, in the same forms
 found_item:
   states:
   - found

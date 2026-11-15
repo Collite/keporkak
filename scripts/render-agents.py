@@ -28,6 +28,7 @@ def describe(value):
     if not isinstance(value,dict):return str(value)
     if "any" in value:return "("+" or ".join(describe(item) for item in value["any"])+")"
     if "not" in value:return "not ("+describe(value["not"])+")"
+    if "holds" in value:return "engagement."+str(value["holds"])+" holds"
     operators={"eq":"=","ne":"≠","in":"in","gt":">","gte":"≥","lt":"<","lte":"≤"}
     form=next((name for name in ("fact","arg","counter","cap","roster","office","budget","engagement","robot","trigger","msg","re","signed","attest") if name in value),None)
     if form:

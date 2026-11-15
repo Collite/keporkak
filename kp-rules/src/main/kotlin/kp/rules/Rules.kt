@@ -56,6 +56,7 @@ object Rules {
         val uses = uses(lifecycle, kinds, engagement, robots)
         checkPoolValues(report, uses, values)
         checkCountersRead(report, lifecycle, uses)
+        checkBlocksNotRepeated(report, engagement, uses)
         rosterRoles(report, roster, engagement)
 
         val problems = report.problems

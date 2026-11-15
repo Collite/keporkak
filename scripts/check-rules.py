@@ -86,6 +86,8 @@ if FIXTURE:
     }})
     E = {"roles": {"coder": {}, "teamlead": {}}, "graduation": {"never": []},
          "mailroom_declared_effects": [], "caps": given.get("caps", {})}
+    if "second_key" in given:
+        E["second_key"] = given["second_key"]
     V = given.get("vocabulary", V)
     W = given.get("walks", [])
 ROBOTS = ([(f"fixture-{index}.yaml", robot) for index, robot in enumerate(given.get("robots", []))]
@@ -122,6 +124,9 @@ def sender_thresholds(senders):
     names = {part.strip() for part in str(senders or "").split("|")}
     return {name for _, robot in ROBOTS if robot.get("role") in names for name in robot.get("thresholds", {})}
 
+# The blocks of requirements a `{holds: …}` may name (contracts.md §4.1, Amendment 7).
+BLOCKS = {name: E[name].get("require", []) for name in ("second_key", "stop_gate") if isinstance(E.get(name), dict)}
+
 def check_destination(to, owner):
     if isinstance(to, str) and to not in roles | PARTIES:
         fail(f"{owner}: unknown destination '{to}'")
@@ -133,9 +138,11 @@ def check_references(value, owner, robot=None, thresholds=frozenset()):
     if isinstance(value, dict):
         namespaces = {"fact": V["facts"], "op": V["operations"],
                       "do": V["operations"], "cap": E.get("caps", {}),
-                      "kind": K, "emit": K, "attest": V.get("attestations", {}), "counter": L.get("counters", {}), "count": L.get("counters", {}), "robot": robot.get("thresholds",{}) if robot is not None else thresholds}
+                      "kind": K, "emit": K, "attest": V.get("attestations", {}), "counter": L.get("counters", {}), "count": L.get("counters", {}), "robot": robot.get("thresholds",{}) if robot is not None else thresholds,
+                      "holds": BLOCKS}
         labels = {"fact": "fact", "op": "operation", "do": "operation",
-                  "cap": "cap", "kind": "kind", "emit": "kind", "attest": "attestation", "counter": "counter", "count": "counter", "robot": "robot threshold"}
+                  "cap": "cap", "kind": "kind", "emit": "kind", "attest": "attestation", "counter": "counter", "count": "counter", "robot": "robot threshold",
+                  "holds": "engagement block"}
         for key, item in value.items():
             if key in namespaces and isinstance(item, str) and item not in namespaces[key]:
                 fail(f"{owner}: unknown {labels[key]} '{item}'")
@@ -172,7 +179,7 @@ def contains_number(value):
     return False
 
 def check_requirement_form(requirement,owner):
-    forms={"fact","arg","msg","re","counter","attest","signed","op","any","not","always"}
+    forms={"fact","arg","msg","re","counter","attest","signed","op","holds","any","not","always"}
     if not isinstance(requirement,dict) or len(set(requirement)&forms)!=1:
         fail(f"{owner}: unknown requirement form")
         return
@@ -529,6 +536,36 @@ if not fails:
     ok(f"mailroom sends only its {len(declared)} declared effects; {len(ROBOTS)} robots checked against the matrix")
     ok(f"{executed} robot rules with on/if/then; {persona} persona rules; queue and named thresholds checked")
 
+# A rule that needs a block's requirements refers to it with `{holds: …}`; it never repeats them (contracts.md §4.1).
+def requirement_parts(requirement):
+    if not isinstance(requirement, dict):
+        return
+    yield requirement
+    if isinstance(requirement.get("any"), list):
+        for item in requirement["any"]:
+            yield from requirement_parts(item)
+    elif "not" in requirement:
+        yield from requirement_parts(requirement["not"])
+
+def conditions(effects):
+    return [effect["if"] for effect in effects or [] if isinstance(effect, dict) and "if" in effect]
+
+def class_cases(kind):
+    classification = kind.get("class")
+    return [case["if"] for case in classification.get("cases", []) if isinstance(case, dict) and "if" in case] if isinstance(classification, dict) else []
+
+RULE_REQUIREMENTS = [(transition.get("id"), list(transition.get("require") or []) + conditions(transition.get("effects"))) for _, transition in all_transitions]
+RULE_REQUIREMENTS += [(name, list(kind.get("require") or []) + class_cases(kind) + conditions(kind.get("expiry"))) for name, kind in K.items()]
+for filename, robot in ROBOTS:
+    RULE_REQUIREMENTS.append((filename, [robot.get("active_when"), robot.get("queue", {}).get("next_when")]))
+    RULE_REQUIREMENTS += [(rule.get("id"), list(rule.get("if") or [])) for rule in robot.get("rules", []) if rule.get("for") != "persona"]
+for owner, requirements in RULE_REQUIREMENTS:
+    parts = [part for requirement in requirements for part in requirement_parts(requirement)]
+    for block, block_requirements in BLOCKS.items():
+        if block_requirements and all(item in parts for item in block_requirements):
+            fail(f"{owner}: repeats the requirements of '{block}' — refer to the block with {{holds: {block}}}")
+if not fails:
+    ok(f"every {{holds: …}} names a block of engagement.yaml ({', '.join(BLOCKS)}); no rule repeats a block's requirements")
 
 # Walk the public rules, using supplied observations and fake operation results only.
 # There is no I/O or action execution here: do/send/wake are checked and recorded.
@@ -654,6 +691,7 @@ class Walk:
         return {key:self.value(item) for key,item in value.items()}
     def holds(self, requirement):
         if "always" in requirement:return requirement["always"] is True
+        if "holds" in requirement:return requirement["holds"] in BLOCKS and all(self.holds(item) for item in BLOCKS[requirement["holds"]])
         if "any" in requirement:return any(self.holds(item) for item in requirement["any"])
         if "not" in requirement:return not self.holds(requirement["not"])
         if "attest" in requirement:return requirement["attest"] in self.ctx.get("args",{}).get("attest",[])
@@ -811,7 +849,7 @@ class Walk:
                 self.ctx.update(id=request_id,status="held",tick=self.index)
                 self.messages[request_id]=copy.deepcopy(self.ctx)
                 self.history.append(copy.deepcopy(self.ctx))
-                self.check_expectation(step,{**arrivals,"held":True})
+                self.check_expectation(step,{**arrivals,"held":True,"class":self.ctx["class"]})
                 if not step.get("expect",{}).get("held"):raise WalkError("message was held")
                 return
             failure=self.require(kind["require"])
@@ -832,7 +870,7 @@ class Walk:
         observed=self.robot_rules("op" if operation else "delivered",operation or kind_name)
         if not operation:
             observed={key:arrivals[key]+observed[key] for key in ("rules","sends","wakes")}
-        self.check_expectation(step,{**observed,"transitions":fired,"held":False})
+        self.check_expectation(step,{**observed,"transitions":fired,"held":False,"class":self.ctx.get("class")})
     def step(self,step):
         expected=step.get("expect",{})
         if not expected.get("refused"):
@@ -885,6 +923,12 @@ def counter_reads(value):
         for item in value:
             yield from counter_reads(item)
 read_counters = set(counter_reads([L, K, E] + [robot for _, robot in ROBOTS]))
+
+# Either reader, given the scalar plain: PyYAML with the rules' YAML 1.2 booleans, or the Kotlin loader's resolver.
+LOADER_SCALARS = re.compile(r"-?(0|[1-9][0-9]*)(\.[0-9]+([eE][-+]?[0-9]+)?)?|(?i:true|false)")
+def reads_as_number_or_boolean(value):
+    tag = RulesLoader("").resolve(yaml.ScalarNode, value, (True, False))
+    return tag in ("tag:yaml.org,2002:int", "tag:yaml.org,2002:float", "tag:yaml.org,2002:bool") or LOADER_SCALARS.fullmatch(value) is not None
 for name in L.get("counters", {}):
     if name not in read_counters: fail(f"counter '{name}' is declared but nothing reads it")
 if not FIXTURE:
@@ -897,6 +941,9 @@ if not FIXTURE:
             fail(f"{label}: a YAML anchor or alias — every rule is written out")
         if not text.startswith("#"):
             fail(f"{label}: the header comment is gone")
+        for event in yaml.parse(text, Loader=RulesLoader):
+            if isinstance(event, yaml.ScalarEvent) and event.style in ("'", '"') and reads_as_number_or_boolean(event.value):
+                fail(f"{label}: the quoted scalar '{event.value}' (line {event.start_mark.line + 1}) would read as a number or a boolean — the loader cannot see quotes")
     # What S0.1's round trip lost and S1.0 put back: a YAML dump drops comments, so edit these files as text.
     KEPT = {"rules/stage-lifecycle.yaml": ["# Guards: `observed` = the daemon checks the world"],
             "rules/message-kinds.yaml": ["# Fields: from/to (roles;", "  # ---- the start gate"],
@@ -908,7 +955,7 @@ if not FIXTURE:
             if not any(line.startswith(start) and "#" in line for line in lines):
                 fail(f"{name}: the comment on '{start.strip()}' is gone — edit the rules as text, never by a YAML round trip")
 if not fails:
-    ok("every counter is read; no anchor or alias; the legends and the caps' sources are comments")
+    ok("every counter is read; no anchor or alias; no quoted number or boolean; the legends and the caps' sources are comments")
 
 if not FIXTURE:
     W=[load_yaml(path.read_text()) for path in sorted((ROOT / "rules/walks").glob("*.yaml"))]

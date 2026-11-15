@@ -99,7 +99,7 @@ internal class Fields(val node: Node.Mapping, private val doc: Doc, private val 
     }
 }
 
-internal val requirementForms = listOf("fact", "arg", "msg", "re", "counter", "attest", "signed", "op", "any", "not", "always")
+internal val requirementForms = listOf("fact", "arg", "msg", "re", "counter", "attest", "signed", "op", "holds", "any", "not", "always")
 internal val comparisons = Operator.entries.associateBy { it.key }
 private val references = setOf("cap", "arg", "msg", "re", "roster", "office", "budget", "engagement", "robot", "trigger")
 
@@ -147,12 +147,13 @@ internal class Forms(private val doc: Doc, private val id: String?) {
     }
 
     private fun named(form: String, name: String, fields: Fields): Requirement? {
-        val comparison = if (form in setOf("attest", "signed", "op")) null else comparison(fields)
+        val comparison = if (form in setOf("attest", "signed", "op", "holds")) null else comparison(fields)
         return when (form) {
             "fact" -> Requirement.Fact(call(fields, name), comparison)
             "arg" -> Requirement.Arg(name, comparison)
             "counter" -> Requirement.Counter(name, comparison)
             "attest" -> Requirement.Attest(name)
+            "holds" -> Requirement.Holds(name)
             "msg" -> MessageField.entries.firstOrNull { it.key == name }?.let { Requirement.Message(it, comparison) }
                 .also { if (it == null) problem("unknown message field") }
             "re" -> ReplyField.entries.firstOrNull { it.key == name }?.let { Requirement.Reply(it, comparison) }

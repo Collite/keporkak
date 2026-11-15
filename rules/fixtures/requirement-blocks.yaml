@@ -1,0 +1,85 @@
+name: a requirement may name a block of engagement.yaml, and a rule never repeats a block's requirements (contracts.md §4.1, Amendment 7)
+scenarios:
+  - name: a class case refers to the block, and the walker evaluates the block both ways
+    given:
+      vocabulary:
+        facts:
+          seat.name: {params: seat or role-in-stage, returns: string, source: L+C}
+        operations: {}
+      second_key:
+        require:
+          - {fact: seat.name, of: reviewer, ne: {fact: seat.name, of: coder}}
+        otherwise: {class: B}
+      kinds:
+        started:
+          from: coder
+          to: teamlead
+          guard: '-'
+          args: {}
+          class: {default: C, cases: [{if: {not: {holds: second_key}}, class: B}]}
+          window: stage
+          max_fires: null
+          deadline: null
+          expiry: []
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, on: message, guard: '-', require: [], effects: []}
+      walks:
+        - name: the second key holds
+          initial: planned
+          steps: [{who: coder, kind: started, args: {}, facts: {seat.name: {coder: coder-1, reviewer: reviewer-1}}, expect: {class: C}}]
+          final: exited
+        - name: the second key does not hold
+          initial: planned
+          steps: [{who: coder, kind: started, args: {}, facts: {seat.name: {coder: coder-1, reviewer: coder-1}}, expect: {class: B}}]
+          final: exited
+    expect:
+      output: ["ok   walk the second key holds reached exited", "ok   walk the second key does not hold reached exited"]
+  - name: a block that is not in engagement.yaml is reported with its rule's id
+    given:
+      second_key:
+        require: [{attest: done_lines_hold}]
+        otherwise: {class: B}
+      vocabulary:
+        facts: {}
+        operations: {}
+        attestations: {done_lines_hold: 'DONE lines ticked (attested), review-request'}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, on: message, guard: '-', require: [{holds: second_keys}], effects: []}
+    expect:
+      failures: ["T-start: unknown engagement block 'second_keys'"]
+  - name: a rule that repeats the block's requirements is reported, even negated inside an any
+    given:
+      vocabulary:
+        facts:
+          seat.name: {params: seat or role-in-stage, returns: string, source: L+C}
+          roster.rank: {params: seat or role-in-stage, returns: int, source: C}
+        operations: {}
+      second_key:
+        require:
+          - {fact: seat.name, of: reviewer, ne: {fact: seat.name, of: coder}}
+          - {fact: roster.rank, of: reviewer, gte: {fact: roster.rank, of: coder}}
+        otherwise: {class: B}
+      kinds:
+        started:
+          from: coder
+          to: teamlead
+          guard: '-'
+          args: {}
+          class:
+            default: C
+            cases:
+              - if:
+                  any:
+                    - {not: {fact: seat.name, of: reviewer, ne: {fact: seat.name, of: coder}}}
+                    - {not: {fact: roster.rank, of: reviewer, gte: {fact: roster.rank, of: coder}}}
+                class: B
+          window: stage
+          max_fires: null
+          deadline: null
+          expiry: []
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, on: message, guard: '-', require: [{fact: seat.name, of: reviewer, ne: {fact: seat.name, of: coder}}], effects: []}
+    expect:
+      failures: ["started: repeats the requirements of 'second_key' — refer to the block with {holds: second_key}"]

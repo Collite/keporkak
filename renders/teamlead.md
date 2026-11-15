@@ -63,7 +63,7 @@ Anything else is refused.
 | `assign` | coder | stage assigned (approval or queue) | A | 1 / stage | started |
 | `qa-request` | qa | cites the stage, a task id and a DONE item that exist in the list (observed) · stage live: ≠ none · names what to verify, never a command (P-5) | A | 3 / stage | qa-report |
 | `review-bind` | reviewer | reviewer seat ≠ coder seat · rank(reviewer) ≥ rank(coder) (roster) · reviewer model ≥ review floor (D-45) | A | 2 / stage | verdict |
-| `merge` | daemon | Bora present (deadman) · second key (different reviewer seat, rank ≥ coder, model ≥ review floor; D-45) else B · audit: evidence lines · list ticked · no proof files · Found all triaged · no stray changes (observed) | C; B if (not (seat.name (of=reviewer) ≠ seat.name (of=coder)) or not (roster.rank (of=reviewer) ≥ roster.rank (of=coder)) or not (roster.model_rank (of=reviewer) ≥ roster.floor_rank)) | 2 / stage | - |
+| `merge` | daemon | Bora present (deadman) · second key (different reviewer seat, rank ≥ coder, model ≥ review floor; D-45) else B · audit: evidence lines · list ticked · no proof files · Found all triaged · no stray changes (observed) | C; B if not (engagement.second_key holds) | 2 / stage | - |
 | `release` | daemon | stage rolls: ≠ none · build green · tag | C | 2 / stage | - |
 | `deploy-request` | qa | stage released · live: target named · Bora present (deadman) | C | 2 / stage | deploy-done \| deploy-failed |
 | `stage-exit` | principal | STATUS per R4.9 · REGISTER rebuilt · project committed and pushed (D-27 m) · Found all triaged | A | 1 / stage | - |

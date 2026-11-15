@@ -21,6 +21,8 @@ class RuleFormsSpec : StringSpec({
         rules.kinds.getValue("merge").deadline shouldBe 15.minutes
         rules.engagement.secondKey!!.otherwise shouldBe MessageClass.B
         rules.vocabulary.facts.getValue("plan.predecessors_exited").sources shouldBe setOf(Source.P, Source.L)
+        rules.kinds.getValue("merge").classRule.cases.single().condition shouldBe Requirement.Not(Requirement.Holds("second_key"))
+        rules.engagement.blocks.keys shouldBe setOf("second_key", "stop_gate")
     }
 
     "a requirement types as its form, with its comparison" {
@@ -33,6 +35,7 @@ class RuleFormsSpec : StringSpec({
             Requirement.Counter("review_requests", Comparison(Operator.LT, Value.Cap("review_requests_per_stage")))
         transitionOf("""{not: {any: [{attest: done_lines_hold}, {signed: bora}]}}""").require.single() shouldBe
             Requirement.Not(Requirement.Any(listOf(Requirement.Attest("done_lines_hold"), Requirement.Signed("bora"))))
+        transitionOf("""{holds: second_key}""").require.single() shouldBe Requirement.Holds("second_key")
     }
 
     "a requirement, a value or an effect the contract does not list is a problem, not something skipped" {
@@ -41,6 +44,7 @@ class RuleFormsSpec : StringSpec({
         problemsOf(effects = """[{notify: bora}]""") shouldContain "rules/stage-lifecycle.yaml: T-X: unknown effect"
         problemsOf(extra = """, "colour": "blue"""") shouldContain "rules/stage-lifecycle.yaml: T-X: unknown field 'colour'"
         problemsOf(require = """[{arg: verdict, eq: PASS, ne: FAIL}]""") shouldContain "rules/stage-lifecycle.yaml: T-X: more than one comparison in one requirement"
+        problemsOf(require = """[{holds: second_key, eq: true}]""") shouldContain "rules/stage-lifecycle.yaml: T-X: unknown field 'eq'"
     }
 
     "a kind's class, window, deadline and arguments are typed" {
