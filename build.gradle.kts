@@ -9,6 +9,9 @@ fun verifyDecisionConstruction(module: String, script: File, directories: List<F
     if (output.isNotBlank()) print(output)
 }
 
+/** A module with main source but no spec yet, and when its first arrives; the stage that writes it removes the line. */
+val specsNotYetWritten = mapOf("kp-engine" to "S1.1 or S1.2 writes its first")
+
 plugins {
     base
     alias(libs.plugins.kotlin.jvm) apply false
@@ -44,6 +47,29 @@ subprojects {
         maxHeapSize = "768m"
         testLogging { events("failed", "skipped"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
     }
+    // A module whose test task executes no spec fails `check` (retro of P0, candidate 3), and the log says how many
+    // each module ran (issue #2). Counted from the test task's own reports, so an up-to-date test task counts too; an
+    // emptied test source set leaves none. A module with no main source has nothing to test yet.
+    val specsModule = name
+    val mainSources = fileTree("src/main") { include("**/*.kt", "**/*.java") }
+    val testReports = tasks.named<Test>("test").flatMap { it.reports.junitXml.outputLocation }
+    val specsRan = tasks.register("checkSpecsRan") {
+        group = "verification"
+        description = "Fails when the test task executed no spec; prints how many it executed."
+        dependsOn("test")
+        doLast {
+            val suite = Regex("<testsuite [^>]*\\btests=\"(\\d+)\" skipped=\"(\\d+)\"")
+            val executed = testReports.get().asFile.listFiles { file -> file.name.startsWith("TEST-") && file.name.endsWith(".xml") }.orEmpty()
+                .sumOf { report -> suite.find(report.readText())?.destructured?.let { (tests, skipped) -> tests.toInt() - skipped.toInt() } ?: 0 }
+            when {
+                executed > 0 -> println("$specsModule: the test task executed $executed specs")
+                mainSources.isEmpty -> println("$specsModule: no main source, no spec expected")
+                specsModule in specsNotYetWritten -> println("$specsModule: no spec expected until ${specsNotYetWritten.getValue(specsModule)}")
+                else -> throw GradleException("$specsModule: the test task executed no spec")
+            }
+        }
+    }
+    tasks.named("check") { dependsOn(specsRan) }
 }
 tasks.named("build") { dependsOn(subprojects.map { "${it.path}:build" }) }
 tasks.register("test") { dependsOn(subprojects.map { "${it.path}:test" }) }
