@@ -91,13 +91,15 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
     private val facts: MutableList<ObservedFact> = Collections.synchronizedList(mutableListOf())
     private val tokens: MutableList<SessionToken> = Collections.synchronizedList(mutableListOf())
     private val asked: MutableList<PermissionRequest> = Collections.synchronizedList(mutableListOf())
+    /** Tokens of the sessions that ended before the seat's current one; the current one is added when the walk ends. */
+    private var spentBefore = 0L
     private var spent = 0L
 
     /** The answerer: deny the command meant to be denied and anything unexpected; allow the two meant to run. */
     private val answerer = { request: PermissionRequest ->
         asked += request
         val input = request.input.toString()
-        if ("kp-allowed" in input || "sleep 45" in input) Answer.ALLOW else Answer.DENY
+        if ("kp-allowed" in input || LONG in input) Answer.ALLOW else Answer.DENY
     }
 
     private val listener = object : Listener {
@@ -170,7 +172,11 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
         }
     }
 
-    private suspend fun walk(driver: Driver, spec: SessionSpec, standIn: StandIn) {
+    /** The walk; whatever step it ends on, the tokens it spent are counted. */
+    private suspend fun walk(driver: Driver, spec: SessionSpec, standIn: StandIn) =
+        try { steps(driver, spec, standIn) } finally { spent = spentBefore + usage(driver) }
+
+    private suspend fun steps(driver: Driver, spec: SessionSpec, standIn: StandIn) {
         val configHomeEmpty = Files.list(spec.configHome).use { it.count() } == 0L
         val started = step("initialize") {
             val started = driver.start(spec).ok()
@@ -200,7 +206,8 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
         if (step("one permission request denied and one allowed, each one-time") {
                 val denied = driver.prompt(seat, "Use the Bash tool to run exactly this command, and nothing else: touch kp-denied.txt").ok()
                 val allowed = driver.prompt(seat, "Use the Bash tool to run exactly this command, and nothing else: touch kp-allowed.txt").ok()
-                val lines = transcript().filter { " permission " in it }
+                // The transcript's permission lines only — `<time> <seat> permission …` — not the agent's words that hold the word.
+                val lines = transcript().filter { it.split(' ', limit = 4).getOrNull(2) == "permission" }
                 check(lines.any { "kp-denied" in it && it.endsWith("→ reject_once") }) { "no request for kp-denied answered reject_once: $lines" }
                 check(lines.any { "kp-allowed" in it && it.endsWith("→ allow_once") }) { "no request for kp-allowed answered allow_once: $lines" }
                 check(lines.none { "_always" in it.substringAfter("→") }) { "an option that persists was chosen: $lines" }
@@ -208,9 +215,20 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
                 Unit to "${lines.size} requests: " + lines.joinToString(" | ") { it.substringAfter(" permission ") } + "; turns ended ${denied.stopReason}, ${allowed.stopReason}"
             } == null) return
         if (step("a cancel in the middle of a command, and the next prompt taken") {
+                // A script, not `sleep 45`: the Claude Code the adapter bundles (2.1.322) refuses a standalone foreground sleep.
+                work.resolve(LONG).writeText("#!/bin/sh\n# The handshake's long command: it counts to 45, one a second.\ni=0\nwhile [ \$i -lt 45 ]; do i=\$((i + 1)); echo \$i; sleep 1; done\n")
                 coroutineScope {
-                    val turn = async { driver.prompt(seat, "Use the Bash tool to run exactly this command in the foreground, not in the background, and wait for it to finish: sleep 45") }
-                    withTimeout(120.seconds) { while (!(asked.any { "sleep 45" in it.input.toString() } && driver.observe(seat, SeatFacts.TOOL_CALL_OPEN_FOR).value() != "0s")) delay(200) }
+                    val before = transcript().size
+                    val turn = async { driver.prompt(seat, "Use the Bash tool to run exactly this command in the foreground, not in the background, and wait for it to finish: sh $LONG") }
+                    withTimeout(120.seconds) {
+                        while (!(asked.any { LONG in it.input.toString() } && driver.observe(seat, SeatFacts.TOOL_CALL_OPEN_FOR).value() != "0s")) {
+                            if (turn.isCompleted) {
+                                val said = transcript().drop(before).filter { " agent: " in it }.joinToString("") { it.substringAfter(" agent: ") }
+                                error("the turn ended (${turn.await().let { (it as? Outcome.Ok)?.value?.stopReason ?: it }}) before the command ran; the agent said '$said'")
+                            }
+                            delay(200)
+                        }
+                    }
                     delay(3_000)
                     val open = driver.observe(seat, SeatFacts.TOOL_CALL_OPEN_FOR).value()
                     val sent = Instant.now()
@@ -222,7 +240,6 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
                     Unit to "cancelled with a tool call open for $open; the turn ended ${end.stopReason} ${took} ms after the cancel; the next prompt ended ${next.stopReason}"
                 }
             } == null) return
-        spent += usage(driver)
         if (step("a kill reported at once, with no process left") {
                 val tree = ProcessHandle.current().descendants().toList()
                 val sent = Instant.now()
@@ -236,7 +253,9 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
                 Unit to "${tree.size} processes in the agent's tree before; kill returned after $took ms with ${gone.fact} reported (${gone.evidence}); none left"
             } == null) return
         if (step("a load into a fresh process whose next turn recalls the first") {
+                val first = usage(driver)
                 val loaded = driver.load(spec, started.sessionId).ok()
+                spentBefore = first // the load replaced the seat's session, and its usage window with it (§4.4)
                 tokens += loaded.token
                 val replayed = transcript().count { " replay " in it }
                 val before = transcript().size
@@ -246,7 +265,6 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
                 check(loaded.token != started.token) { "the load reused the token" }
                 Unit to "session ${loaded.sessionId} loaded with a fresh token; $replayed updates replayed; mode ${loaded.mode}, model ${loaded.model}, effort ${loaded.effort} set again; the next turn (${end.stopReason}) said '$said'"
             } == null) return
-        spent += usage(driver)
         driver.kill(seat, Duration.ofSeconds(5))
     }
 
@@ -319,6 +337,8 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
         /** A name shaped like a full id that names no model: the adapter must refuse it. */
         const val MADE_UP = "claude-nosuchmodel-5-5"
         const val MODELS_SEAT = "handshake-models"
+        /** The command the cancel step interrupts: a script the handshake writes into the working directory. */
+        const val LONG = "kp-count.sh"
     }
 }
 
