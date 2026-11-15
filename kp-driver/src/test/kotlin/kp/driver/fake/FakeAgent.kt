@@ -31,7 +31,8 @@ import kotlin.system.exitProcess
  *
  * The script (JSON): `record` · `turns` — one list of steps per prompt · optional `mode`, `model`, `effort` (what a
  * session starts on), `modes`, `models`, `efforts` (what it offers), `w1` (send `auth.status` as `{}`, default true),
- * `onEof` (`exit`, `linger` or `orphan`), `loadable` (default true). Steps: `say`, `tool`, `tool_update`, `ask`, `usage`, `run`,
+ * `onEof` (`exit`, `linger` or `orphan`), `loadable` (default true), `resolve` (a model value → the offered value it
+ * is read back as, before the adapter's own rule — see [resolveModel]). Steps: `say`, `tool`, `tool_update`, `ask`, `usage`, `run`,
  * `hangup`, `leak`, `recall`, `end` — see [perform]. Steps after `end` are sent after the turn's answer.
  */
 fun main(args: Array<String>) {
@@ -53,7 +54,7 @@ private class FakeAgent(private val script: JsonObject) {
     @Volatile private var headers: List<String> = emptyList()
 
     private val modes = script.strings("modes") ?: listOf("default", "acceptEdits", "plan", "auto", "bypassPermissions")
-    private val models = script.strings("models") ?: listOf("default", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5")
+    private val models = script.strings("models") ?: listOf("default", "sonnet", "fable", "opus", "haiku")
     private val efforts = listOf("default") + (script.strings("efforts") ?: listOf("low", "medium", "high"))
     private val configHome = System.getenv("CLAUDE_CONFIG_DIR")?.let(::File)
 
@@ -151,10 +152,20 @@ private class FakeAgent(private val script: JsonObject) {
         val value = params.string("value")!!
         note("session/set_config_option", "configId" to JsonPrimitive(option), "value" to JsonPrimitive(value))
         val offered = when (option) { "mode" -> modes; "model" -> models; "effort" -> efforts; else -> emptyList() }
-        if (value !in offered) return fail(id, -32602, "Invalid value for config option $option: $value")
-        when (option) { "mode" -> mode = value; "model" -> model = value; "effort" -> effort = value }
+        val accepted = (if (option == "model") resolveModel(value) else value.takeIf { it in offered })
+            ?: return fail(id, -32602, "Invalid value for config option $option: $value")
+        when (option) { "mode" -> mode = accepted; "model" -> model = accepted; "effort" -> effort = accepted }
         answer(id, buildJsonObject { put("configOptions", configOptions()) })
     }
+
+    /**
+     * A model value as the Claude adapter resolves one (S2.1 SC-10): the script's `resolve` entry for it, if any;
+     * otherwise an offered value is itself, and another — a full id such as `claude-haiku-5-5` — is the offered value
+     * other than `default` that is one of its words; anything else is not accepted.
+     */
+    private fun resolveModel(value: String): String? = (script["resolve"] as? JsonObject)?.string(value)
+        ?: value.takeIf { it in models }
+        ?: models.firstOrNull { it != "default" && it in value.split('-') }
 
     /** A loaded session replays its history and starts again on the script's mode, model and effort (spike `06` Q6). */
     private fun load(id: JsonElement, params: JsonObject) {

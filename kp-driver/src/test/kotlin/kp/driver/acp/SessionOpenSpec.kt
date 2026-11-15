@@ -2,10 +2,12 @@ package kp.driver.acp
 
 import io.kotest.assertions.nondeterministic.eventually
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldStartWith
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import kp.driver.McpServer
 import kp.driver.Offers
 import kp.driver.Office
@@ -53,20 +55,48 @@ class SessionOpenSpec : StringSpec({
 
             driver.offers(SeatId("coder-1")) shouldBe Outcome.Ok(Offers(
                 modes = listOf("default", "acceptEdits", "plan", "auto", "bypassPermissions"),
-                models = listOf("default", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"),
+                models = listOf("default", "sonnet", "fable", "opus", "haiku"),
                 efforts = listOf("default", "low", "medium", "high", "xhigh", "max"),
             ))
             driver.offers(SeatId("coder-9")) shouldBe Outcome.Failed("seat coder-9 has no session")
         }
     }
 
-    "a model the agent does not offer fails the start, says what is offered, and leaves no process" {
+    "a full model id is set as given and read back as the value the agent offers for it; an offered value as itself" {
+        Office().use { office ->
+            val agent = office.agent("{}")
+            val driver = office.driver()
+
+            driver.start(office.session("coder-1", agent, model = "claude-opus-5-5")).ok().model shouldBe "opus"
+            driver.start(office.session("coder-2", agent, model = "sonnet")).ok().model shouldBe "sonnet"
+
+            agent.received("session/set_config_option").filter { it.getValue("configId").jsonPrimitive.content == "model" }.map { it.getValue("value").jsonPrimitive.content } shouldBe
+                listOf("claude-opus-5-5", "sonnet")
+            office.transcript("coder-1") shouldContain "2026-11-15T10:00:00Z coder-1 model set: claude-opus-5-5"
+        }
+    }
+
+    "a model read back as default, or as another value than an offered one it was set to, fails the start" {
+        Office().use { office ->
+            val agent = office.agent("""{"resolve": {"claude-sonnet-5-5": "default", "opus": "haiku"}}""")
+
+            val asDefault = office.driver().start(office.session("coder-1", agent, model = "claude-sonnet-5-5")) as Outcome.Failed
+            val asAnother = office.driver().start(office.session("coder-2", agent, model = "opus")) as Outcome.Failed
+
+            asDefault.reason shouldBe "the agent reads model claude-sonnet-5-5 back as default (offered: default, sonnet, fable, opus, haiku)"
+            asAnother.reason shouldBe "the agent reads model opus back as haiku (offered: default, sonnet, fable, opus, haiku)"
+            agent.pids().filter(::pidAlive) shouldBe emptyList()
+            office.deadTokens shouldBe emptyList()
+        }
+    }
+
+    "a model the agent does not accept fails the start, says what is offered, and leaves no process" {
         Office().use { office ->
             val agent = office.agent("{}")
 
-            val failed = office.driver().start(office.session("coder-1", agent, model = "claude-opus-9")) as Outcome.Failed
+            val failed = office.driver().start(office.session("coder-1", agent, model = "claude-nosuchmodel-5-5")) as Outcome.Failed
 
-            failed.reason shouldBe "the agent does not offer model claude-opus-9 (offered: default, claude-haiku-5-5, claude-sonnet-5-5, claude-opus-5-5)"
+            failed.reason shouldBe "the agent does not accept model claude-nosuchmodel-5-5: Invalid value for config option model: claude-nosuchmodel-5-5 (offered: default, sonnet, fable, opus, haiku)"
             agent.pids().filter(::pidAlive) shouldBe emptyList()
             office.deadTokens shouldBe emptyList()
         }

@@ -4,10 +4,10 @@
 
 It reads and reports only. It installs, creates and changes nothing, and never runs `sudo`: every command it runs is
 a version or a read-only query, and `gh` runs with DO_NOT_TRACK so it writes no state file.
-Usage: python3 scripts/office-check.py [--pool DIR] [--office NAME]   (default: the short host name)
+Usage: python3 scripts/office-check.py [--pool DIR] [--adapter DIR] [--office NAME]   (default: the short host name)
 """
 import argparse
-import mmap
+import json
 import os
 from pathlib import Path
 import pwd
@@ -22,9 +22,10 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 QUIET = {"DO_NOT_TRACK": "1", "GH_TELEMETRY": "false"}
 ROOTS = ("worktrees", "scratch", "seats", "secrets")
-# The secrets directory's layout (office/README.md): file → the stage that needs it, and what it is.
+# The secrets directory's layout (office/README.md): files → the stage that needs them (None: required now), and
+# what they are — for one required now, Bora's command when it is missing.
 SECRETS = (
-    (["claude-token"], "S2.1", "the seats' Claude token, put there by Bora before P2 (office/README.md)"),
+    (["claude-token"], None, "claude setup-token, then: install -m 0600 /dev/stdin {folder}/claude-token (office/README.md)"),
     (["apps/kp-merger.pem", "apps/kp-coder.pem", "apps/kp-reviewer.pem", "apps/kp-gardener.pem"], "S3.2", "the four GitHub Apps' keys"),
 )
 TOOLS = (  # name, version command, Bora's command when it is missing (Panda: apt for system tools, mise for the rest)
@@ -88,7 +89,7 @@ def owner(info):
         return str(info.st_uid)
 
 
-def check_runtimes(report, roster):
+def check_runtimes(report, roster, adapter):
     java = run(["java", "-XX:-UsePerfData", "-version"])
     if java and re.search(r'version "21[."]', java):
         report.ok("JDK 21", java)
@@ -99,29 +100,40 @@ def check_runtimes(report, roster):
         report.ok("Node", node)
     else:
         report.todo("Node", "mise use -g node@24")
+    check_adapter(report, roster, adapter)
+
+
+def read_json(path):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def check_adapter(report, roster, folder):
+    """The pinned adapter (contracts.md §9, §12): installed at the version the roster and its lockfile name. Whether
+    it accepts every roster model is `just handshake models`'s to check: that needs a session."""
     for vendor in roster["vendors"].values():
-        report.later(f"Claude adapter {vendor['adapter']}", "S2.1", "pins it with the handshake test and installs it")
+        name, pinned = vendor["adapter"], vendor.get("adapter_version")
+        item = f"Claude adapter {name}"
+        lockfile = read_json(folder / "package-lock.json") or {}
+        locked = lockfile.get("packages", {}).get(f"node_modules/{name}", {}).get("version")
+        installed = (read_json(folder / "node_modules" / name / "package.json") or {}).get("version")
+        if pinned is None or pinned != locked:
+            report.todo(item, f"pool/roster.yaml names {pinned or 'no version'} and office/adapter/package-lock.json {locked or 'none'}: correct the repository so they name one version (contracts.md §9)")
+        elif installed != locked:
+            report.todo(item, f"{'installed ' + installed if installed else 'not installed'}, the roster and the lockfile name {locked}: just adapter")
+        else:
+            bundled = (read_json(folder / "node_modules/@anthropic-ai/claude-agent-sdk/package.json") or {}).get("claudeCodeVersion")
+            report.ok(item, f"{installed}, as the roster and the lockfile name" + (f"; it bundles Claude Code {bundled}" if bundled else ""))
 
 
-def check_claude(report, roster):
-    models = list(dict.fromkeys(line["model"] for line in roster["order"]))
-    path = shutil.which("claude")
-    version = run(["claude", "--version"]) if path else None
+def check_claude(report):
+    version = run(["claude", "--version"])
     if version is None:
         report.todo("Claude CLI", "curl -fsSL https://claude.ai/install.sh | bash")
-        return
-    # The CLI prints no model list; its built-in catalog names each model as id:"<model>".
-    binary = Path(os.path.realpath(path))
-    with binary.open("rb") as handle:
-        size = binary.stat().st_size
-        catalog = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) if size else b""
-        missing = [model for model in models if catalog.find(f'id:"{model}"'.encode()) == -1]
-        if size:
-            catalog.close()
-    if missing:
-        report.todo("Claude CLI", f"{version}; its catalog lacks {', '.join(missing)}: claude update, or correct pool/roster.yaml")
     else:
-        report.ok("Claude CLI", f"{version}; its catalog has {', '.join(models)}")
+        report.ok("Claude CLI", version)
 
 
 def check_tools(report):
@@ -185,10 +197,27 @@ def check_secrets(report, office):
         open_to_others = " ".join(f"{folder}/{name}" for name, info in present.items() if stat.S_IMODE(info.st_mode) != 0o600)
         if foreign or open_to_others:
             report.todo(item, " && ".join(([f"sudo chown {user}: {foreign}"] if foreign else []) + ([f"chmod 0600 {open_to_others}"] if open_to_others else [])))
+        elif len(present) == len(names) and stage is None and (lines := one_line(home(folder), names)):
+            report.todo(item, f"{lines}; " + what.format(folder=folder))
         elif len(present) == len(names):
             report.ok(item)
+        elif stage is None:
+            report.todo(item, what.format(folder=folder))
         else:
             report.later(item, stage, "— " + what)
+
+
+def one_line(folder, names):
+    """For a secret that stands alone on one line (office/README.md), what is wrong with its form, if anything. Only
+    its lines are counted: the value is never shown."""
+    for name in names:
+        try:
+            lines = len(folder.joinpath(name).read_text().strip().splitlines())
+        except (OSError, UnicodeDecodeError):
+            return f"{name} cannot be read"
+        if lines != 1:
+            return f"it holds {lines} lines, not one"
+    return None
 
 
 def check_sudo(report, office):
@@ -234,6 +263,7 @@ def check_service(report, office):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--pool", type=Path, default=ROOT / "pool")
+    parser.add_argument("--adapter", type=Path, default=ROOT / "office/adapter", help="the adapter's folder: its lockfile and node_modules")
     parser.add_argument("--office", default=socket.gethostname().split(".")[0])
     args = parser.parse_args()
     try:
@@ -243,8 +273,8 @@ def main():
         print(f"office check: cannot read office '{args.office}' from {args.pool} ({error}); run `just rules`, or pass --office", file=sys.stderr)
         return 2
     report = Report()
-    check_runtimes(report, roster)
-    check_claude(report, roster)
+    check_runtimes(report, roster, args.adapter)
+    check_claude(report)
     check_tools(report)
     check_roots(report, office)
     check_project(report, office)

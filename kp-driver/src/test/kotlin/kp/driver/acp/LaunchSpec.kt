@@ -81,6 +81,19 @@ class LaunchSpec : StringSpec({
         }
     }
 
+    "a token file that holds more than one line fails the start, says so without the token, and no process starts" {
+        Office().use { office ->
+            val token = Files.readString(office.tokenFile).trim()
+            Files.writeString(office.tokenFile, token.take(20) + "\n" + token.drop(20) + "\n")
+            val agent = office.agent("{}")
+
+            val failed = office.acp().launch(office.session("coder-1", agent)) as Outcome.Failed
+
+            failed.reason shouldBe "the Claude token file ${office.tokenFile} holds 2 lines; the token stands alone on one line (office/README.md)"
+            agent.received() shouldBe emptyList()
+        }
+    }
+
     "a command that cannot be started fails with the reason, and the token is in no reason" {
         Office().use { office ->
             val spec = office.session("coder-1", office.agent("{}")).copy(command = listOf("/nonexistent/agent", office.claudeToken))

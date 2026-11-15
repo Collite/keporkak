@@ -17,7 +17,8 @@ import java.time.Clock
  * The driver's one binding in v1: the Claude adapter over ACP (`@agentclientprotocol/claude-agent-acp`, pinned in
  * `office/adapter/`). Its process gets `CLAUDE_CONFIG_DIR` set to the seat's config home, and the token read from
  * [tokenFile] in the variable the pinned adapter reads (design/06 Q10). The file is read at every start; its value is
- * never written anywhere.
+ * never written anywhere. The token stands alone on one line (office/README.md): a file that holds more is refused at
+ * start, as the adapter would refuse it only at the first prompt.
  */
 class ClaudeAdapter(private val tokenFile: Path) : AgentBinding {
     override fun environment(spec: SessionSpec): Outcome<Environment> {
@@ -27,6 +28,8 @@ class ClaudeAdapter(private val tokenFile: Path) : AgentBinding {
             return Outcome.Failed("the Claude token cannot be read from $tokenFile (${e.javaClass.simpleName})")
         }
         if (token.isEmpty()) return Outcome.Failed("the Claude token file $tokenFile is empty")
+        val lines = token.lines().size
+        if (lines > 1) return Outcome.Failed("the Claude token file $tokenFile holds $lines lines; the token stands alone on one line (office/README.md)")
         val variables = spec.environment + mapOf(CONFIG_DIR to spec.configHome.toString(), TOKEN to token)
         return Outcome.Ok(Environment(variables, secrets = setOf(token)))
     }

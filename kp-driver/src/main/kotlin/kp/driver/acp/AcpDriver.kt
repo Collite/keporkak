@@ -14,6 +14,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kp.driver.Answerer
+import kp.driver.Cancel
 import kp.driver.Driver
 import kp.driver.Listener
 import kp.driver.ObservedFact
@@ -170,7 +171,7 @@ internal class AcpDriver(
     override suspend fun prompt(seat: SeatId, text: String): Outcome<TurnEnd> =
         seats[seat]?.prompt(text) ?: Outcome.Failed("seat ${seat.value} has no session")
 
-    override suspend fun cancel(seat: SeatId): Outcome<Unit> =
+    override suspend fun cancel(seat: SeatId): Outcome<Cancel> =
         seats[seat]?.cancel() ?: Outcome.Failed("seat ${seat.value} has no session")
     /**
      * Closes the agent's input, waits [grace], then ends the process tree by force (T7). Returns when every process

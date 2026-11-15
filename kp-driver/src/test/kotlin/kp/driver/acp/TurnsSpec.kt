@@ -6,6 +6,7 @@ import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.async
+import kp.driver.Cancel
 import kp.driver.Office
 import kp.driver.Outcome
 import kp.driver.TurnEnd
@@ -45,14 +46,15 @@ class TurnsSpec : StringSpec({
         }
     }
 
-    "cancel with no turn in flight fails and sends nothing" {
+    "cancel with no turn in flight is ok, says nothing was in flight, and sends nothing" {
         Office().use { office ->
             val agent = office.agent("{}")
             val driver = office.driver()
             driver.start(office.session("coder-1", agent)).ok()
 
-            driver.cancel(seat) shouldBe Outcome.Failed("no turn is in flight for seat coder-1")
+            driver.cancel(seat) shouldBe Outcome.Ok(Cancel.NOTHING_IN_FLIGHT)
             agent.received("cancel") shouldBe emptyList()
+            office.transcript("coder-1").last() shouldBe "2026-11-15T10:00:00Z coder-1 cancel: no turn in flight, nothing sent"
         }
     }
 

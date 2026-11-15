@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location("office_specs", Path(__file__).with_name("test_s0_3_the_office.py"))
 _specs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_specs)
-FakeMachine, USER = _specs.FakeMachine, _specs.USER
+FakeMachine, USER, ADAPTER, PIN = _specs.FakeMachine, _specs.USER, _specs.ADAPTER, _specs.PIN
 
 
 class OfficeCheckTests(unittest.TestCase):
@@ -17,6 +17,8 @@ class OfficeCheckTests(unittest.TestCase):
         self.machine = FakeMachine(self, roots=["worktrees", "scratch", "seats", "secrets"], linger="yes")
         self.secrets = self.machine.home / ".config/keporkak/secrets"
         self.secrets.chmod(0o700)
+        self.machine.install_adapter()
+        self.machine.put_token()
 
     def lines(self):
         return self.machine.office_check().stdout.splitlines()
@@ -38,17 +40,30 @@ class OfficeCheckTests(unittest.TestCase):
         self.assertIn("to do  project checkout ~/Dev/keporkak/project: clone the project repository to ~/Dev/keporkak/project (docs/profiles/ names it)", lines)
         self.assertFalse(any(line.startswith(("ok     project folder", "to do  project folder")) for line in lines))
 
-    def test_a_token_in_place_is_ok_and_one_open_to_others_is_to_do(self):
+    def test_a_token_in_place_is_ok_and_one_open_to_others_on_two_lines_or_missing_is_to_do(self):
         token = self.secrets / "claude-token"
-        token.write_text("not a real token\n")
-        token.chmod(0o600)
         self.assertIn("ok     secret claude-token", self.lines())
         token.chmod(0o644)
         self.assertIn("to do  secret claude-token: chmod 0600 ~/.config/keporkak/secrets/claude-token", self.lines())
+        token.chmod(0o600)
+        token.write_text("not a real\ntoken\n")
+        self.assertIn("to do  secret claude-token: it holds 2 lines, not one; claude setup-token, then: install -m 0600 /dev/stdin ~/.config/keporkak/secrets/claude-token (office/README.md)", self.lines())
+        token.unlink()
+        self.assertIn("to do  secret claude-token: claude setup-token, then: install -m 0600 /dev/stdin ~/.config/keporkak/secrets/claude-token (office/README.md)", self.lines())
 
-    def test_a_roster_model_missing_from_the_cli_catalog_is_to_do(self):
-        self.machine.stub("claude", 'echo "2.1.325 (Claude Code)"\n# {id:"claude-haiku-5-5"} {id:"claude-sonnet-5-5"}')
-        self.assertIn("to do  Claude CLI: 2.1.325 (Claude Code); its catalog lacks claude-opus-5-5: claude update, or correct pool/roster.yaml", self.lines())
+    def test_the_adapter_installed_at_the_pin_is_ok_and_at_another_version_is_to_do(self):
+        self.assertIn(f"ok     Claude adapter {ADAPTER}: {PIN}, as the roster and the lockfile name; it bundles Claude Code 2.1.322", self.lines())
+        self.machine.install_adapter("0.0.1")
+        self.assertIn(f"to do  Claude adapter {ADAPTER}: installed 0.0.1, the roster and the lockfile name {PIN}: just adapter", self.lines())
+
+    def test_a_roster_and_a_lockfile_that_name_different_adapter_versions_is_to_do(self):
+        roster = self.machine.pool / "roster.yaml"
+        roster.write_text(roster.read_text().replace(f'adapter_version: "{PIN}"', 'adapter_version: "0.0.1"'))
+        self.assertIn(f"to do  Claude adapter {ADAPTER}: pool/roster.yaml names 0.0.1 and office/adapter/package-lock.json {PIN}: correct the repository so they name one version (contracts.md §9)", self.lines())
+
+    def test_a_missing_claude_cli_is_to_do(self):
+        (self.machine.bin / "claude").unlink()
+        self.assertIn("to do  Claude CLI: curl -fsSL https://claude.ai/install.sh | bash", self.lines())
 
     def test_a_jdk_other_than_21_is_to_do(self):
         self.machine.stub("java", "echo 'openjdk version \"17.0.9\" 2023-10-17' >&2")

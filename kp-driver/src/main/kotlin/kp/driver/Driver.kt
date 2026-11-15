@@ -21,8 +21,8 @@ interface Driver : AutoCloseable {
     /** One turn: returns when the agent ends it, with the agent's stop reason (T4). A second prompt while a turn is in flight fails. */
     suspend fun prompt(seat: SeatId, text: String): Outcome<TurnEnd>
 
-    /** Asks the agent to end the turn in flight; the turn then ends `cancelled` (T4). */
-    suspend fun cancel(seat: SeatId): Outcome<Unit>
+    /** Asks the agent to end the turn in flight, which then ends `cancelled` (T4); with none in flight, sends nothing (§4.4). */
+    suspend fun cancel(seat: SeatId): Outcome<Cancel>
 
     /** Closes the agent's input, waits [grace], then ends the process tree by force (T7). */
     suspend fun kill(seat: SeatId, grace: Duration): Outcome<Unit>
@@ -48,7 +48,8 @@ sealed interface Outcome<out T> {
 
 /**
  * What the caller gives for one session (contracts.md §10): the agent's command, its working directory, the seat's
- * config home, model and effort, the MCP servers, and the environment — built by the caller, never inherited.
+ * config home, model (a full id, §9) and effort, the MCP servers, and the environment — built by the caller, never
+ * inherited.
  */
 data class SessionSpec(
     val seat: SeatId,
@@ -79,7 +80,10 @@ class SessionToken(val value: String) {
 internal fun sha256(text: String): String =
     MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
 
-/** A session the driver started or loaded, with the mode, model and effort as the agent reports them back. */
+/**
+ * A session the driver started or loaded, with the mode, model and effort as the agent reports them back — the model
+ * as the value the agent offers for the full id it was given (§9), which may be a shorter name.
+ */
 data class Started(
     val seat: SeatId,
     val sessionId: String,
@@ -88,6 +92,9 @@ data class Started(
     val model: String,
     val effort: String,
 )
+
+/** What a cancel did (contracts.md §4.4): asked the agent to end the turn in flight, or nothing — none was in flight. */
+enum class Cancel { SENT, NOTHING_IN_FLIGHT }
 
 /** A turn's end: the agent's stop reason, passed on as the agent gave it, and the usage it reported, if any. */
 data class TurnEnd(val stopReason: String, val usage: Usage?)

@@ -30,7 +30,7 @@ class TheDriverSpec : StringSpec({
             val started = office.driver().start(office.session("coder-1", agent, model = "claude-haiku-5-5", effort = "low")).ok()
 
             started.seat shouldBe SeatId("coder-1")
-            listOf(started.mode, started.model, started.effort) shouldBe listOf("default", "claude-haiku-5-5", "low")
+            listOf(started.mode, started.model, started.effort) shouldBe listOf("default", "haiku", "low")
             val process = agent.received("start").single()
             process["cwd"] shouldBe JsonPrimitive(office.worktree.toString())
             process["CLAUDE_CONFIG_DIR"] shouldBe JsonPrimitive(office.seats.resolve("coder-1").toString())
@@ -117,7 +117,7 @@ class TheDriverSpec : StringSpec({
 
             val cancelled = async { driver.prompt(seat, "run the long command") }
             eventually(10.seconds) { agent.received("child") shouldHaveSize 1 }
-            driver.cancel(seat) shouldBe Outcome.Ok(Unit)
+            driver.cancel(seat) shouldBe Outcome.Ok(Cancel.SENT)
             cancelled.await().ok().stopReason shouldBe "cancelled"
             driver.prompt(seat, "go on").ok().stopReason shouldBe "end_turn"
 

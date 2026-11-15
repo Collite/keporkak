@@ -50,17 +50,27 @@ import kotlin.time.Duration.Companion.seconds
  * `just check`, and CI never runs it. Its evidence — tokens removed, and searched for before it is written — goes to
  * the file it names on its last line. Exit 0 when every step passed.
  *
- * Usage: HandshakeKt --root <keporkak checkout> [--adapter <dir with package-lock.json and node_modules>] [--office <name>]
+ * The models step runs first, and spends no tokens: every roster model — a full id (contracts.md §9, Amendment 11) —
+ * is set on a fresh session and must read back as a value the adapter offers other than `default`, and a made-up
+ * name must be refused. `just handshake models` runs that step alone.
+ *
+ * Usage: HandshakeKt --root <keporkak checkout> [--adapter <dir with package-lock.json and node_modules>] [--office <name>] [models]
  */
 fun main(args: Array<String>) {
-    val options = args.toList().chunked(2).associate { (key, value) -> key to value }
+    val (flags, words) = args.withIndex().partition { (i, arg) -> arg.startsWith("--") || (i > 0 && args[i - 1].startsWith("--")) }
+    val options = flags.map { it.value }.chunked(2).associate { (key, value) -> key to value }
+    val modelsOnly = when (words.map { it.value }) {
+        emptyList<String>() -> false
+        listOf("models") -> true
+        else -> { System.err.println("usage: just handshake [models]"); exitProcess(2) }
+    }
     val root = Path.of(options["--root"] ?: ".").toAbsolutePath().normalize()
     val adapter = Path.of(options["--adapter"] ?: root.resolve("office/adapter").toString()).toAbsolutePath().normalize()
     val office = options["--office"] ?: InetAddress.getLocalHost().hostName.substringBefore('.')
-    exitProcess(if (runBlocking { Handshake(root, adapter, office).run() }) 0 else 1)
+    exitProcess(if (runBlocking { Handshake(root, adapter, office, modelsOnly).run() }) 0 else 1)
 }
 
-private class Handshake(private val root: Path, private val adapter: Path, office: String) {
+private class Handshake(private val root: Path, private val adapter: Path, office: String, private val modelsOnly: Boolean) {
     private val roster = Yaml.default.parseToYamlNode(root.resolve("pool/roster.yaml").readText()).yamlMap
     private val offices = Yaml.default.parseToYamlNode(root.resolve("pool/offices.yaml").readText()).yamlMap
     private val secrets = Path.of(offices.get<YamlMap>("offices")!!.get<YamlMap>(office)!!.get<YamlMap>("roots")!!.getScalar("secrets")!!.content.replaceFirst("~", System.getProperty("user.home")))
@@ -68,7 +78,8 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
     private val cheapest = roster.get<YamlList>("order")!!.items.first().yamlMap
     private val model = cheapest.getScalar("model")!!.content
     private val effort = cheapest.getScalar("effort")!!.content
-    private val rosterModels = roster.get<YamlList>("order")!!.items.map { it.yamlMap.getScalar("model")!!.content }.distinct()
+    /** Each roster model with the effort of its lowest pair. */
+    private val rosterModels = roster.get<YamlList>("order")!!.items.map { it.yamlMap.getScalar("model")!!.content to it.yamlMap.getScalar("effort")!!.content }.distinctBy { it.first }
     private val rosterAdapter = (roster.get<YamlMap>("vendors")!!.get<YamlMap>("claude")!!.get<YamlNode>("adapter_version") as? YamlScalar)?.content
     private val seat = SeatId("handshake")
     private val word = "osprey-" + (1000 + SecureRandom().nextInt(9000))
@@ -100,7 +111,8 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
         val bundled = adapter.resolve("node_modules/@anthropic-ai/claude-agent-sdk/package.json").takeIf { it.exists() }
             ?.let { Json.parseToJsonElement(it.readText()).jsonObject["claudeCodeVersion"]?.jsonPrimitive?.content }
         val node = System.getenv("PATH").split(':').map { Path.of(it, "node") }.firstOrNull { Files.isExecutable(it) }
-        val header = "adapter $ADAPTER: installed ${installed ?: "nothing"} · lockfile $lockfile · roster ${rosterAdapter ?: "not pinned"} — bundles Claude Code ${bundled ?: "?"}"
+        val header = "adapter $ADAPTER: installed ${installed ?: "nothing"} · lockfile $lockfile · roster ${rosterAdapter ?: "not pinned"} — bundles Claude Code ${bundled ?: "?"}" +
+            if (modelsOnly) "\nthe models step alone: no prompt is sent" else ""
         println(header)
         val standIn = StandIn()
         val driver = ClaudeAdapter.driver(tokenFile, seats, Clock.systemUTC(), answerer, listener)
@@ -108,7 +120,7 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             if (installed == null || installed != lockfile || node == null) {
                 steps += Triple("install", false, "installed ${installed ?: "nothing"}, lockfile $lockfile, node ${node ?: "not on PATH"}: run `just adapter`")
             } else {
-                walk(driver, spec(node, standIn), standIn)
+                if (models(driver, node) != null && !modelsOnly) walk(driver, spec(node, standIn), standIn)
             }
         } finally {
             driver.close()
@@ -117,16 +129,46 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
         return report(header)
     }
 
-    private fun spec(node: Path, standIn: StandIn) = SessionSpec(
+    private fun spec(node: Path, standIn: StandIn) = spec(node, seat, model, effort, listOf(McpServer("kp-standin", standIn.url, carriesToken = true)))
+
+    private fun spec(node: Path, seat: SeatId, model: String, effort: String, servers: List<McpServer>) = SessionSpec(
         seat = seat,
         command = listOf(node.toString(), adapter.resolve("node_modules/$ADAPTER/dist/index.js").toString()),
         workingDirectory = work,
         configHome = seats.resolve(seat.value).createDirectories(),
         model = model,
         effort = effort,
-        servers = listOf(McpServer("kp-standin", standIn.url, carriesToken = true)),
+        servers = servers,
         environment = mapOf("PATH" to "${node.parent}:/usr/local/bin:/usr/bin:/bin", "HOME" to home.toString(), "LANG" to "C.UTF-8"),
     )
+
+    /**
+     * Every roster model set on a fresh session of its own and read back (§9, Amendment 11) — the driver fails a start
+     * whose model does not read back as a value the adapter offers other than `default` — and a made-up name beside
+     * them, which must fail. No prompt is sent.
+     */
+    private suspend fun models(driver: Driver, node: Path) = step("every roster model accepted and read back as a value the adapter offers, and a made-up name not") {
+        val seat = SeatId(MODELS_SEAT)
+        val read = rosterModels.map { (name, effort) ->
+            val started = when (val outcome = driver.start(spec(node, seat, name, effort, emptyList()))) {
+                is Outcome.Ok -> outcome.value
+                is Outcome.Failed -> error("$name: ${outcome.reason}")
+            }
+            tokens += started.token
+            val offered = driver.offers(seat).ok().models
+            driver.kill(seat, Duration.ofSeconds(5)).ok()
+            check(started.model != "default" && started.model in offered) { "$name read back as ${started.model} (offered: $offered)" }
+            "$name → ${started.model}"
+        }
+        when (val madeUp = driver.start(spec(node, seat, MADE_UP, effort, emptyList()))) {
+            is Outcome.Ok -> {
+                tokens += madeUp.value.token
+                driver.kill(seat, Duration.ofSeconds(5))
+                error("the made-up name $MADE_UP was accepted, read back as ${madeUp.value.model}")
+            }
+            is Outcome.Failed -> Unit to "${read.joinToString(", ")}; $MADE_UP refused: ${madeUp.reason}"
+        }
+    }
 
     private suspend fun walk(driver: Driver, spec: SessionSpec, standIn: StandIn) {
         val configHomeEmpty = Files.list(spec.configHome).use { it.count() } == 0L
@@ -144,8 +186,11 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
                     "; requests without it: ${standIn.seen.count { it.authorization != wanted }}"
             } == null) return
         if (step("model and effort set and read back") {
-                check(started.mode == "default" && started.model == model && started.effort == effort) { "read back mode ${started.mode}, model ${started.model}, effort ${started.effort}" }
-                Unit to "mode ${started.mode}, model ${started.model}, effort ${started.effort}"
+                val offered = driver.offers(seat).ok().models
+                check(started.mode == "default" && started.model != "default" && started.model in offered && started.effort == effort) {
+                    "read back mode ${started.mode}, model ${started.model}, effort ${started.effort} (models offered: $offered)"
+                }
+                Unit to "mode ${started.mode}; model $model read back as ${started.model} (offered: ${offered.joinToString(", ")}); effort ${started.effort}"
             } == null) return
         if (step("one prompt ending with a stop reason and its usage") {
                 val end = driver.prompt(seat, "Remember this code word for later: $word. For now, reply with only the word: ok").ok()
@@ -183,7 +228,7 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
                 val sent = Instant.now()
                 driver.kill(seat, Duration.ofSeconds(5)).ok()
                 val took = Duration.between(sent, Instant.now()).toMillis()
-                val gone = facts.firstOrNull { it.fact == SeatFacts.PROCESS_GONE }
+                val gone = facts.firstOrNull { it.fact == SeatFacts.PROCESS_GONE && it.subject == seat }
                 checkNotNull(gone) { "seat.process_gone was not reported when kill returned" }
                 delay(500)
                 val left = tree.filter { it.isAlive }.map { "${it.pid()} ${it.info().command().orElse("?")}" }
@@ -201,12 +246,6 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
                 check(loaded.token != started.token) { "the load reused the token" }
                 Unit to "session ${loaded.sessionId} loaded with a fresh token; $replayed updates replayed; mode ${loaded.mode}, model ${loaded.model}, effort ${loaded.effort} set again; the next turn (${end.stopReason}) said '$said'"
             } == null) return
-        step("every roster model among those the adapter offers") {
-            val offered = (driver.offers(seat) as Outcome.Ok).value.models
-            val missing = rosterModels - offered.toSet()
-            check(missing.isEmpty()) { "not offered: $missing (offered: $offered)" }
-            Unit to "roster ${rosterModels.joinToString(", ")}; offered ${offered.joinToString(", ")}"
-        }
         spent += usage(driver)
         driver.kill(seat, Duration.ofSeconds(5))
     }
@@ -221,30 +260,35 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
         return outcome.getOrNull()?.first
     }
 
-    private fun transcript(): List<String> = seats.resolve("_transcripts/${seat.value}.log").let { if (it.exists()) it.readLines() else emptyList() }
+    private fun transcript(name: String = seat.value): List<String> = seats.resolve("_transcripts/$name.log").let { if (it.exists()) it.readLines() else emptyList() }
 
     /** Writes the evidence with every token replaced, searches it for them, and names the file. */
     private fun report(header: String): Boolean {
-        val passed = steps.size == STEPS && steps.all { it.second }
+        val expected = if (modelsOnly) 1 else STEPS
+        val passed = steps.size == expected && steps.all { it.second }
         val at = Instant.now().truncatedTo(ChronoUnit.SECONDS)
         val evidence = buildString {
-            appendLine("# Handshake — ${if (passed) "PASS" else "FAIL"} — $at")
+            appendLine("# Handshake${if (modelsOnly) " (models)" else ""} — ${if (passed) "PASS" else "FAIL"} — $at")
             appendLine()
             appendLine(header)
-            appendLine("model $model, effort $effort (the roster's cheapest pair); tokens spent: $spent")
+            appendLine("model $model, effort $effort (the roster's cheapest pair); roster models ${rosterModels.joinToString(", ") { it.first }}; tokens spent: $spent")
             appendLine()
             appendLine("| step | result | detail |")
             appendLine("|---|---|---|")
             steps.forEach { (name, ok, detail) -> appendLine("| $name | ${if (ok) "ok" else "FAILED"} | ${detail.replace("|", "\\|")} |") }
-            if (steps.size < STEPS) appendLine("| … | not run | ${STEPS - steps.size} steps after the first that failed |")
+            if (steps.size < expected) appendLine("| … | not run | ${expected - steps.size} steps after the first that failed |")
             appendLine()
-            appendLine("## The seat's transcript")
-            appendLine("```")
-            transcript().forEach(::appendLine)
-            appendLine("```")
+            for (name in listOf(MODELS_SEAT, seat.value)) {
+                val lines = transcript(name)
+                if (lines.isEmpty()) continue
+                appendLine("## The transcript of seat $name")
+                appendLine("```")
+                lines.forEach(::appendLine)
+                appendLine("```")
+            }
         }
         val hidden = hide(evidence)
-        val file = root.resolve("build/handshake/handshake-${installedOrLock()}-${at.toString().replace(":", "")}.md")
+        val file = root.resolve("build/handshake/handshake-${if (modelsOnly) "models-" else ""}${installedOrLock()}-${at.toString().replace(":", "")}.md")
         file.parent.createDirectories()
         file.writeText(hidden)
         val leaked = secretValues().any { file.readText().contains(it) }
@@ -272,6 +316,9 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
     companion object {
         const val ADAPTER = "@agentclientprotocol/claude-agent-acp"
         const val STEPS = 9
+        /** A name shaped like a full id that names no model: the adapter must refuse it. */
+        const val MADE_UP = "claude-nosuchmodel-5-5"
+        const val MODELS_SEAT = "handshake-models"
     }
 }
 

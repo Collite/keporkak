@@ -19,12 +19,15 @@ import com.agentclientprotocol.model.StopReason
 import com.agentclientprotocol.model.PermissionOptionId
 import com.agentclientprotocol.model.PermissionOptionKind
 import com.agentclientprotocol.model.ToolKind
+import com.agentclientprotocol.protocol.AcpExpectedError
+import com.agentclientprotocol.protocol.JsonRpcException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.serialization.json.JsonNull
 import kp.driver.Answer
 import kp.driver.Answerer
+import kp.driver.Cancel
 import kp.driver.OfferedOption
 import kp.driver.PermissionRequest
 import java.util.concurrent.ConcurrentHashMap
@@ -197,14 +200,20 @@ internal class SeatSession(
         }
     }
 
-    /** Asks the agent to end the turn in flight; the turn then ends with the stop reason the agent gives. */
-    suspend fun cancel(): Outcome<Unit> {
-        if (!turnInFlight.get()) return Outcome.Failed("no turn is in flight for seat ${seat.value}")
+    /**
+     * Asks the agent to end the turn in flight; the turn then ends with the stop reason the agent gives. With no turn
+     * in flight there is nothing to cancel: nothing is sent, and the result says so (§4.4).
+     */
+    suspend fun cancel(): Outcome<Cancel> {
+        if (!turnInFlight.get()) {
+            note("cancel: no turn in flight, nothing sent")
+            return Outcome.Ok(Cancel.NOTHING_IN_FLIGHT)
+        }
         note("cancel sent")
         asking.forEach { it.cancel() }
         return try {
             session.cancel()
-            Outcome.Ok(Unit)
+            Outcome.Ok(Cancel.SENT)
         } catch (e: Exception) {
             if (e is CancellationException) currentCoroutineContext().ensureActive()
             Outcome.Failed("the cancel could not be sent: ${e.message ?: e.javaClass.simpleName}")
@@ -289,26 +298,45 @@ internal class SeatSession(
         listener.tokenDead(seat, token)
     }
 
-    /** Mode `default`, then model, then effort, each set as the agent offers it and read back (§10). */
+    /**
+     * Mode `default`, then model, then effort, each set and read back (§10). Mode and effort must be among the values
+     * the agent offers, and read back as set. The model is a full id, which the agent need not list (§9, Amendment
+     * 11): it is set as given, and must read back as one of the values the agent offers other than `default` — as
+     * itself, when the agent lists it.
+     */
     @OptIn(UnstableApi::class)
     suspend fun configure(): Outcome<Settings> {
         for ((what, wanted) in listOf(MODE to DEFAULT_MODE, MODEL to spec.model, EFFORT to spec.effort)) {
             val offered = offered(what)
-            if (wanted !in offered) return Outcome.Failed("the agent does not offer $what $wanted (offered: ${offered.joinToString(", ").ifEmpty { "none" }})")
+            if (what != MODEL && wanted !in offered) return Outcome.Failed("the agent does not offer $what $wanted (offered: ${list(offered)})")
             val option = option(what)
-            when {
-                option != null -> session.setConfigOption(option.id, SessionConfigOptionValue.of(wanted))
-                what == MODE -> session.setMode(SessionModeId(wanted))
-                what == MODEL -> session.setModel(ModelId(wanted))
-                else -> return Outcome.Failed("the agent offers no way to set the $what")
+            try {
+                when {
+                    option != null -> session.setConfigOption(option.id, SessionConfigOptionValue.of(wanted))
+                    what == MODE -> session.setMode(SessionModeId(wanted))
+                    what == MODEL -> session.setModel(ModelId(wanted))
+                    else -> return Outcome.Failed("the agent offers no way to set the $what")
+                }
+            } catch (e: Exception) {
+                // The agent answered with an error: the SDK throws one of these two for it, by the error's code.
+                if (e !is AcpExpectedError && e !is JsonRpcException) throw e
+                return Outcome.Failed("the agent does not accept $what $wanted: ${e.message} (offered: ${list(offered)})")
             }
             note("$what set: $wanted")
         }
         val settings = Settings(current(MODE), current(MODEL), current(EFFORT))
-        val wanted = Settings(DEFAULT_MODE, spec.model, spec.effort)
-        if (settings != wanted) return Outcome.Failed("the agent reports mode ${settings.mode}, model ${settings.model}, effort ${settings.effort} after they were set to $DEFAULT_MODE, ${spec.model}, ${spec.effort}")
+        if (settings.mode != DEFAULT_MODE || settings.effort != spec.effort) {
+            return Outcome.Failed("the agent reports mode ${settings.mode}, effort ${settings.effort} after they were set to $DEFAULT_MODE, ${spec.effort}")
+        }
+        val models = offered(MODEL)
+        val readBack = settings.model
+        if (readBack == null || readBack == DEFAULT_MODEL || readBack !in models || (spec.model in models && readBack != spec.model)) {
+            return Outcome.Failed("the agent reads model ${spec.model} back as $readBack (offered: ${list(models)})")
+        }
         return Outcome.Ok(settings)
     }
+
+    private fun list(values: List<String>) = values.joinToString(", ").ifEmpty { "none" }
 
     /** What the agent offers now, by the values it accepts. */
     fun offers() = Offers(modes = offered(MODE), models = offered(MODEL), efforts = offered(EFFORT))
@@ -364,6 +392,8 @@ internal class SeatSession(
 
     companion object {
         const val DEFAULT_MODE = "default"
+        /** The model value that names no model: the agent's own choice, which moves with the agent (§9). */
+        const val DEFAULT_MODEL = "default"
         private const val MODE = "mode"
         private const val MODEL = "model"
         private const val EFFORT = "effort"
