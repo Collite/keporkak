@@ -32,7 +32,7 @@ import kotlin.system.exitProcess
  * The script (JSON): `record` · `turns` — one list of steps per prompt · optional `mode`, `model`, `effort` (what a
  * session starts on), `modes`, `models`, `efforts` (what it offers), `w1` (send `auth.status` as `{}`, default true),
  * `onEof` (`exit` or `linger`), `loadable` (default true). Steps: `say`, `tool`, `tool_update`, `ask`, `usage`, `run`,
- * `recall`, `end` — see [perform]. Steps after `end` are sent after the turn's answer.
+ * `hangup`, `recall`, `end` — see [perform]. Steps after `end` are sent after the turn's answer.
  */
 fun main(args: Array<String>) {
     FakeAgent(Json.parseToJsonElement(File(args[0]).readText()).jsonObject).run()
@@ -203,6 +203,11 @@ private class FakeAgent(private val script: JsonObject) {
                 put("sessionUpdate", "usage_update"); put("used", step.long("used")); put("size", step.long("size"))
             })
             "ask" -> ask(step)
+            // Closes stdout and stays: the protocol closes while the process lives.
+            "hangup" -> {
+                System.out.close()
+                Thread.sleep(Long.MAX_VALUE)
+            }
             "run" -> runCommand(step)
             "recall" -> {
                 val first = historyFile(session!!)!!.readLines().map { Json.parseToJsonElement(it).jsonObject }

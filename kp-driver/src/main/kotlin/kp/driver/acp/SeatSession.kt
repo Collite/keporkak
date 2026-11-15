@@ -40,6 +40,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kp.driver.Listener
+import kp.driver.ObservedFact
 import kp.driver.Offers
 import kp.driver.Outcome
 import kp.driver.SessionSpec
@@ -77,6 +78,7 @@ internal class SeatSession(
     private val turnInFlight = AtomicBoolean(false)
     private val events = Channel<Item>(Channel.UNLIMITED)
     @Volatile private var turn: Turn? = null
+    val observations = Observations(seat, clock)
     private val inputs = ConcurrentHashMap<String, JsonElement>()
     private val asking = ConcurrentHashMap.newKeySet<Deferred<Answer>>()
 
@@ -131,6 +133,7 @@ internal class SeatSession(
     /** The tap: what the collector takes from the wire, and the prompt's request id. */
     val wire = object : Wire {
         override fun incoming(line: String) {
+            observations.heard(clock.instant())
             runCatching {
                 val message = ACPJson.parseToJsonElement(line).jsonObject
                 val method = (message["method"] as? JsonPrimitive)?.contentOrNull
@@ -166,6 +169,7 @@ internal class SeatSession(
         val current = Turn().also { turn = it }
         try {
             note("prompt: $text")
+            observations.turnStarted(clock.instant())
             try {
                 session.prompt(listOf(ContentBlock.Text(text))).collect { }
             } catch (e: CancellationException) {
@@ -196,6 +200,7 @@ internal class SeatSession(
     }
 
     private suspend fun turnFailed(reason: String): Outcome.Failed {
+        observations.turnEnded(null, null, clock.instant())
         note("turn failed: $reason")
         return Outcome.Failed(transcript.hidden(reason))
     }
@@ -224,14 +229,15 @@ internal class SeatSession(
     private fun take(item: Item) {
         try {
             when (item) {
-                is Item.Update -> transcript.write(
-                    runCatching { Lines.of(ACPJson.decodeFromJsonElement(SessionUpdate.serializer(), item.update)) }
-                        .getOrElse { "update not understood: ${item.update}" },
-                    item.at,
-                )
+                is Item.Update -> {
+                    val update = runCatching { ACPJson.decodeFromJsonElement(SessionUpdate.serializer(), item.update) }.getOrNull()
+                    update?.let { observations.update(it, item.at) }
+                    transcript.write(update?.let(Lines::of) ?: "update not understood: ${item.update}", item.at)
+                }
                 is Item.Line -> transcript.write(item.text, item.at)
                 is Item.Answer -> {
                     val end = runCatching { answer(item.message) }.getOrElse { Outcome.Failed("the prompt's answer is not understood: ${it.message}") }
+                    observations.turnEnded((end as? Outcome.Ok)?.value?.stopReason, (end as? Outcome.Ok)?.value?.usage, item.at)
                     transcript.write(
                         when (end) {
                             is Outcome.Ok -> Lines.turnEnded(end.value.stopReason, end.value.usage)
@@ -247,9 +253,22 @@ internal class SeatSession(
         }
     }
 
-    fun protocolClosed() = end("the protocol closed")
+    /** The protocol closed: the fact is reported at once, and the session ends. */
+    fun protocolClosed() {
+        observations.closed(clock.instant())?.let(::report)
+        end("the protocol closed")
+    }
 
-    fun processGone(exitCode: Int) = end("the agent's process ended with exit code $exitCode")
+    /** The process ended: the fact is reported at once, and the session ends. */
+    fun processGone(exitCode: Int) {
+        observations.gone(exitCode, clock.instant())?.let(::report)
+        end("the agent's process ended with exit code $exitCode")
+    }
+
+    private fun report(fact: ObservedFact) {
+        listener.observed(fact)
+        events.trySend(Item.Line("observed ${fact.fact} ${fact.value}: ${fact.evidence}", clock.instant()))
+    }
 
     private fun end(why: String) {
         if (!ended.compareAndSet(false, true) || !handedOut) return

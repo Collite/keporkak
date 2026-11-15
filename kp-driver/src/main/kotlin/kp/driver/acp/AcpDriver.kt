@@ -17,6 +17,7 @@ import kp.driver.Listener
 import kp.driver.ObservedFact
 import kp.driver.Offers
 import kp.driver.Outcome
+import kp.driver.SeatFacts
 import kp.driver.SessionSpec
 import kp.driver.SessionToken
 import kp.driver.Started
@@ -92,6 +93,7 @@ internal class AcpDriver(
             is Outcome.Failed -> return result
         }
         seat.launched = launched
+        seat.observations.started(launched.process.pid)
         launched.process.exit.thenAccept { seat.processGone(it.exitValue()) }
         val parameters = SessionCreationParameters(spec.workingDirectory.toString(), servers(spec, seat.token))
         seat.session = try {
@@ -141,7 +143,10 @@ internal class AcpDriver(
     override suspend fun load(spec: SessionSpec, sessionId: String): Outcome<Started> = TODO("S2.1 T7")
     override fun offers(seat: SeatId): Outcome<Offers> =
         seats[seat]?.let { Outcome.Ok(it.offers()) } ?: Outcome.Failed("seat ${seat.value} has no session")
-    override fun observe(seat: SeatId, fact: String, window: UsageWindow?): Outcome<ObservedFact> = TODO("S2.1 T6")
+    override fun observe(seat: SeatId, fact: String, window: UsageWindow?): Outcome<ObservedFact> {
+        if (fact !in SeatFacts.names) return Outcome.Failed("the driver observes no fact named $fact")
+        return seats[seat]?.observations?.observe(fact, window) ?: Outcome.Failed("seat ${seat.value} has no session")
+    }
 
     override fun close() {
         launched.forEach { it.end(Duration.ZERO) }
