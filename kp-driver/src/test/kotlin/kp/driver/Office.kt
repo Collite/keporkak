@@ -17,6 +17,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.Collections
 import java.util.HexFormat
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -37,6 +38,8 @@ class Office : AutoCloseable {
     val clock = MutableClock(Instant.parse("2026-11-15T10:00:00Z"))
     val facts: MutableList<ObservedFact> = Collections.synchronizedList(mutableListOf())
     val deadTokens: MutableList<SessionToken> = Collections.synchronizedList(mutableListOf())
+    /** The records of this office's fake agents; they live in FakeAgents' folder, not under [root]. */
+    val records: MutableList<Path> = Collections.synchronizedList(mutableListOf())
     private val drivers = mutableListOf<Driver>()
     private var agents = 0
 
@@ -56,11 +59,10 @@ class Office : AutoCloseable {
 
     /** A fake agent following [script] (JSON, without its `record`); its command and what it received. */
     fun agent(script: String): FakeAgentProcess {
-        val record = root.resolve("agent-${++agents}.received.jsonl")
-        val file = root.resolve("agent-$agents.script.json")
+        val record = FakeAgents.record().also { records.add(it) }
+        val file = root.resolve("agent-${++agents}.script.json")
         val fields = Json.parseToJsonElement(script).jsonObject + ("record" to JsonPrimitive(record.absolutePathString()))
         file.writeText(JsonObject(fields).toString())
-        FakeAgents.records.add(record)
         return FakeAgentProcess(fakeAgentCommand(file), record)
     }
 
@@ -96,10 +98,23 @@ class FakeAgentProcess(val command: List<String>, private val record: Path) {
     fun pids(): List<Long> = received().mapNotNull { (it["pid"] as? JsonPrimitive)?.content?.toLong() }
 }
 
-/** Every fake agent the specs started; checked when the specs end (ProjectConfig). */
+/**
+ * Every fake agent the specs started, by its record. The records live for the whole run in a folder of their own — not
+ * in a spec's office, which [Office.close] deletes — so the check when the specs end (ProjectConfig) reads every one.
+ */
 object FakeAgents {
-    val records: MutableList<Path> = Collections.synchronizedList(mutableListOf())
-    fun alive(): List<Long> = records.flatMap { FakeAgentProcess(emptyList(), it).pids() }.filter { pid -> ProcessHandle.of(pid).map { it.isAlive }.orElse(false) }
+    private val folder: Path = Files.createTempDirectory("kp-driver-fakes-")
+    private val records: MutableList<Path> = Collections.synchronizedList(mutableListOf())
+    private val count = AtomicInteger()
+
+    /** A new fake agent's record file, kept until the specs end. */
+    fun record(): Path = folder.resolve("agent-${count.incrementAndGet()}.received.jsonl").also { records.add(it) }
+
+    /** The pids, from every record, of the fakes and the commands they started that are still running. */
+    fun alive(): List<Long> = synchronized(records) { records.toList() }.flatMap { FakeAgentProcess(emptyList(), it).pids() }.filter(::pidAlive)
+
+    /** The records removed, once the check has read them. */
+    fun clear() { folder.toFile().deleteRecursively() }
 }
 
 fun fakeAgentCommand(script: Path): List<String> = listOf(

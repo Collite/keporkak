@@ -51,11 +51,12 @@ class NoTokenSpec : StringSpec({
                 said += office.facts.map { it.toString() }
                 val secrets = listOf(office.claudeToken, started.token.value, loaded.token.value)
                 val transcripts = Files.walk(office.seats.resolve("_transcripts")).use { it.filter { f -> f.isRegularFile() }.toList() }
-                val records = Files.walk(office.root).use { it.filter { f -> f.fileName.toString().endsWith(".received.jsonl") }.toList() }
+                val records = office.records.toList()
+                records.filter { it.isRegularFile() } shouldHaveSize 2
                 office.transcript("coder-1").count { it.contains("my token is ${Transcript_HIDDEN} and my headers are Bearer $Transcript_HIDDEN") } shouldBe 3 // the first turn, its replay, the turn after the load
 
                 val found = secrets.indices.flatMap { i ->
-                    (transcripts + records).filter { it.readText().contains(secrets[i]) }.map { "secret $i in ${office.root.relativize(it)}" } +
+                    (transcripts + records).filter { it.readText().contains(secrets[i]) }.map { "secret $i in ${it.fileName}" } +
                         said.filter { it.contains(secrets[i]) }.map { "secret $i in a result" } +
                         listOfNotNull(if (output.toString().contains(secrets[i])) "secret $i in the output" else null)
                 }

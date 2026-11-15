@@ -7,6 +7,7 @@ import kp.driver.FakeAgents
 object ProjectConfig : AbstractProjectConfig() {
     override suspend fun afterProject() {
         val alive = FakeAgents.alive()
+        FakeAgents.clear()
         check(alive.isEmpty()) { "fake agents or their commands still running after the specs: pids $alive" }
     }
 }
