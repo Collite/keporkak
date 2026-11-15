@@ -154,16 +154,34 @@ class SeatFactsSpec : StringSpec({
     }
 
     "the driver's source compares no observation with a limit" {
-        // Every comparison with a number or a named constant in the driver's source. The two there guard an input,
-        // not an observation: a context size the fraction cannot be computed from, and the token file's lines.
-        val comparison = Regex("""[\w.)\]]+\s*(<=|>=|<|>)\s*-?(\d|[A-Z][A-Z_]+\b)|\b(compareTo|isAfter|isBefore|coerceAtMost|coerceAtLeast)\(""")
-        val found = Files.walk(root("kp-driver/src/main")).use { files -> files.filter { it.extension == "kt" }.toList() }.sorted()
-            .flatMap { file ->
-                file.readText().lines().filterNot { it.trimStart().startsWith("*") || it.trimStart().startsWith("//") }
-                    .flatMap { line -> comparison.findAll(line).map { "${file.fileName}: ${it.value}" }.toList() }
-            }
+        // Every comparison in the driver's source, in any form, is listed by name with what it compares: a new one —
+        // an observation against a limit among them — turns this red until it is listed, and a reviewer reads why.
+        val found = Files.walk(root("kp-driver/src/main")).use { files -> files.filter { it.extension == "kt" }.toList() }
+            .flatMap { file -> comparisons(file.readText()).map { "${file.fileName}: $it" } }
 
-        found shouldBe listOf("Observations.kt: size <= 0", "ClaudeAdapter.kt: lines > 1")
+        found.sorted() shouldBe NOT_A_LIMIT.keys.sorted()
+    }
+
+    "the source scan finds a comparison in any form, and takes no type argument or arrow for one" {
+        // review-008, B1: a Duration threshold and a comparison with a lowercase name went unseen.
+        comparisons("        if (silent > Duration.ofMinutes(20)) return fact(SeatFacts.SILENT_FOR, duration(silent), \"over\")") shouldBe
+            listOf("silent > Duration.ofMinutes(20)")
+        comparisons("if (silent >= limit) return null") shouldBe listOf("silent >= limit")
+        comparisons("val over = used.compareTo(limit) > 0") shouldBe listOf("used.compareTo(limit) > 0", "used.compareTo")
+        comparisons("if (Duration.between(heard, now).isAfter(limit)) x") shouldBe listOf("Duration.between(heard, now).isAfter")
+        comparisons("val capped = silent.coerceAtMost(limit); val most = maxOf(used, limit)") shouldBe listOf("silent.coerceAtMost", "maxOf")
+        comparisons("if (silent in Duration.ZERO..limit) y; for (i in 0 until n) z") shouldBe listOf("Duration.ZERO..limit", "0 until n")
+        comparisons("if (silent<limit || used>=cap) w") shouldBe listOf("silent<limit", "used>=cap")
+        comparisons(
+            """
+            private val open: MutableMap<String, Pair<Instant, List<Long>>> = mutableMapOf()
+            fun observe(fact: String): Outcome<ObservedFact> = when (fact) { else -> Outcome.Failed("x") }
+            open.forEach { (id, at) -> note(id, at) }
+            val until = System.nanoTime() + grace.toNanos()
+            /** silent > limit, in a comment */
+            // used >= limit, in a comment
+            """.trimIndent(),
+        ) shouldBe emptyList()
     }
 
     "the transcript is <roots.seats>/_transcripts/<seat>.log, appended across the seat's sessions" {
@@ -181,3 +199,32 @@ class SeatFactsSpec : StringSpec({
 })
 
 private fun root(path: String): Path = Path.of(System.getProperty("kp.root")).resolve(path)
+
+/** Every comparison in the driver's source, by file and as written, and why none is an observation against a limit. */
+private val NOT_A_LIMIT = mapOf(
+    "AgentProcess.kt: System.nanoTime() < until" to "kill's grace period, which the caller gives (T7)",
+    "ClaudeAdapter.kt: lines > 1" to "the token file's lines — an input, not an observation",
+    "Observations.kt: listOfNotNull(since, lastHeard).max" to "the later of two instants: when the turn began, when the agent was last heard",
+    "Observations.kt: open.entries.minByOrNull" to "the oldest open tool call, whose age is reported",
+    "Observations.kt: size <= 0" to "a context size the fraction cannot be computed from — an input",
+)
+
+private const val OPERAND = """-?[\w.]+(?:\([^()]*\))?"""
+
+/** What can compare one value with another in Kotlin source: an order operator, spaced or not; a range; a call. */
+private val COMPARISONS = listOf(
+    Regex("""$OPERAND\s+(?:<=|>=|<|>)\s+$OPERAND"""),
+    Regex("""$OPERAND(?:<=|>=)$OPERAND"""),
+    Regex("""\b[a-z][\w.]*(?:\([^()]*\))?[<>][a-z0-9][\w.]*(?:\([^()]*\))?"""), // a<b: a type argument starts with a capital
+    Regex("""$OPERAND\s*\.\.<?\s*$OPERAND"""),
+    Regex("""$OPERAND\s+(?:until|downTo|rangeTo|rangeUntil)\s+$OPERAND"""),
+    Regex("""(?:[\w.]+(?:\([^()]*\))?)?\.(?:compareTo|isAfter|isBefore|isLongerThan|isShorterThan|isNegative|isZero|coerceAtMost|coerceAtLeast|coerceIn|max|min|maxOrNull|minOrNull|maxBy|minBy|maxByOrNull|minByOrNull|maxOf|minOf)\b"""),
+    Regex("""(?<![\w.])(?:minOf|maxOf|compareValues)(?=\()"""),
+)
+
+/** The comparisons in [source], in the order they are written; comment lines are skipped, and an arrow is no comparison. */
+private fun comparisons(source: String): List<String> = source.lines()
+    .filterNot { it.trimStart().let { line -> line.startsWith("*") || line.startsWith("//") || line.startsWith("/*") } }
+    .flatMap { line ->
+        COMPARISONS.flatMap { it.findAll(line).toList() }.sortedWith(compareBy({ it.range.first }, { -it.value.length })).map { it.value.trim() }
+    }
