@@ -60,9 +60,6 @@ class Decision private constructor(
      */
     val answers: String?,
 ) {
-    /** Only for the construction fence's probes, which construct with no arguments (kp-model's EngineBoundarySpec). */
-    private constructor() : this(Outcome.NOTHING, null, null, null, emptyList(), emptyList(), emptyMap(), emptyList(), null, false, null, emptyMap(), emptyList(), null)
-
     override fun toString(): String =
         "Decision($outcome, rule=$rule, requirement=$requirement, failed=$failed, unsupplied=$unsupplied, moves=$moves, counted=$counted, " +
             "effects=$effects, class=$messageClass, waitsForBora=$waitsForBora, deadline=$deadline, observed=$observed, attested=$attested, answers=$answers)"

@@ -49,4 +49,7 @@ class CatchUpRulesSpec : StringSpec({
             "rules/engagement.yaml: profile 'supervisd' is not in autonomy_profiles"
         problemsAfter("rules/engagement.yaml", "profile: supervised", "profiles: supervised") shouldContain "rules/engagement.yaml: missing profile"
     }
+    "a missing offices file is one problem in the loader, not a cascade" {
+        Rules.load(filesOnMaster() - "pool/offices.yaml").problems.map { it.toString() } shouldBe listOf("pool/offices.yaml: missing")
+    }
 })

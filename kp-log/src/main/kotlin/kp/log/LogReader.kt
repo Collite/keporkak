@@ -16,7 +16,7 @@ class LogReader(private val project: Path, private val office: OfficeId) {
      * moves its stage to `exited` or `closed` is skipped; its lines' `seq` still count, so they are not a gap.
      */
     fun read(): LogRead {
-        val (closed, open) = Layout.stageFiles(project).map(ParsedFile::of).partition { file -> file.last?.let { Layout.closes(it.entry) } == true }
+        val (closed, open) = Layout.stageFiles(project).map(ParsedFile::of).partition { file -> file.last?.let { Layout.closes(it.entry, Layout.stageOf(file.file)) } == true }
         val officeFiles = Layout.officeFiles(project, office)
         val since = open.mapNotNull { it.lines.firstOrNull() }.minOfOrNull { Layout.month(it.entry.at.value) }
         val offices = if (since == null) listOfNotNull(officeFiles.lastOrNull()) else officeFiles.filter { Layout.officeFileMonth(it) >= since }

@@ -152,7 +152,8 @@ internal fun readOffices(doc: Doc, node: Node, vendors: Set<String>?): Map<Strin
 
 /** pool/budgets.yaml (contracts.md §9): slot limits per dimension and warning thresholds. */
 /** [vendors]: the roster's, or null when the roster could not be read — then no subscription is checked. */
-internal fun readBudgets(doc: Doc, node: Node, vendors: Set<String>?, offices: Set<String>): Budgets? {
+/** [vendors] and [offices] are null when their file is missing: then no name is checked against it — one problem, not a cascade. */
+internal fun readBudgets(doc: Doc, node: Node, vendors: Set<String>?, offices: Set<String>?): Budgets? {
     val fields = doc.fields(doc.mapping(node, null, "the budgets file") ?: return null, null)
     doc.version(fields)
     val slots = (fields["slots"] as? Node.Mapping)?.entries.orEmpty()

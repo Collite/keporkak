@@ -69,6 +69,14 @@ class LogReaderSpec : StringSpec({
         read.seqs() shouldBe listOf(1, 2, 2, 3)
         read.texts() shouldBe listOf("$office:1: seq 2 is used again")
     }
+    "a seq that goes backwards in a file is reported where it does, in a stage file and in a hand log" {
+        val project = throwawayProject()
+        val stage = project.file("mail/KP/p1-s1.1.jsonl", fact(1, "2026-11-01T10:00:00Z"), fact(3, "2026-11-01T10:00:01Z"), fact(2, "2026-11-01T10:00:02Z"))
+        val hand = project.file("mail/KP/_hand/p1-s1.1.jsonl", fact(2, "2026-11-01T10:00:00Z"), fact(1, "2026-11-01T10:00:01Z"))
+
+        LogReader(project, panda).read().texts() shouldBe listOf("$stage:3: seq 2 comes after 3 — it goes backwards")
+        LogReader(project, panda).readHand(EffortId("KP")).texts() shouldBe listOf("$hand:2: seq 1 comes after 2 — it goes backwards")
+    }
     "a line repeating the seq of a closed stage's line is reported too" {
         val project = throwawayProject()
         project.file("mail/KP/p0-s0.3.jsonl", fact(1, "2026-11-01T10:00:00Z"), exited(2, "2026-11-01T10:00:01Z"))

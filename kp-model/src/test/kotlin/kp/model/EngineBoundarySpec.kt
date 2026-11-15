@@ -36,15 +36,31 @@ class EngineBoundarySpec : StringSpec({
         result.exitCode shouldBe 1
         result.output.contains("kp-engine dependency is forbidden: io.kotest:kotest-runner-junit5") shouldBe true
     }
-    "a Kotlin module outside the engine cannot construct a decision" {
+    "a Kotlin module outside the engine cannot construct a decision, though it can read one" {
+        val reads = constructorProbe("kp-log", "kotlin", "package probe; fun reads(decision: kp.engine.Decision) = decision.outcome")
         val result = constructorProbe("kp-log", "kotlin", "package probe; fun counterfeit() = kp.engine.Decision()")
+        reads.exitCode shouldBe 0
         result.exitCode shouldBe 1
-        result.output.contains("private") shouldBe true
+        result.output.contains(Regex("""e: \S*Counterfeit\.kt:1:""")) shouldBe true
     }
-    "a Java module outside the engine cannot construct a decision" {
+    "a Java module outside the engine cannot construct a decision, though it can read one" {
+        val reads = constructorProbe("kp-log", "java", "package probe; public class Counterfeit { public Object reads(kp.engine.Decision decision) { return decision.getOutcome(); } }")
         val result = constructorProbe("kp-log", "java", "package probe; public class Counterfeit { public Object make() { return new kp.engine.Decision(); } }")
+        reads.exitCode shouldBe 0
         result.exitCode shouldBe 1
-        result.output.contains("private access") shouldBe true
+        result.output.contains(Regex("""Counterfeit\.java:1: error:""")) shouldBe true
+    }
+    "the probes' inputs: a change to the engine's sources, its build file or the construction check runs kp-model's tests again" {
+        val fixture = engineFixture()
+        val init = File(fixture, "build/probes/inputs.init.gradle").apply { parentFile.mkdirs() }
+        init.writeText("gradle.projectsEvaluated { def p = rootProject.project(':kp-model'); p.tasks.register('printTestInputs') { " +
+            "doLast { p.tasks.named('test').get().inputs.files.files.each { println('INPUT ' + it.path) } } } }")
+        val result = runCommand(listOf("./gradlew", "--console=plain", "--max-workers=1", "-q", "-I", init.path, ":kp-model:printTestInputs"), fixture)
+        val inputs = result.output.lines().filter { it.startsWith("INPUT ") }.map { it.removePrefix("INPUT ") }
+        result.exitCode shouldBe 0
+        inputs.contains(File(fixture, "kp-engine/src/main/kotlin/kp/engine/Decision.kt").path) shouldBe true
+        inputs.contains(File(fixture, "kp-engine/build.gradle.kts").path) shouldBe true
+        inputs.contains(File(fixture, "build-support/check_decision_construction.py").path) shouldBe true
     }
     "a Java module outside the engine cannot call the decision factory" {
         val result = constructorProbe("kp-log", "java", "package probe; public class Counterfeit { public Object make() { return kp.engine.Decision.Companion.create(); } }")

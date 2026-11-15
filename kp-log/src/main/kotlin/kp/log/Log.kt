@@ -25,6 +25,11 @@ data class Gap(val after: Long, val next: Long, val file: Path? = null) : Proble
     override fun toString() = (file?.let { "$it: " } ?: "") + "seq jumps from $after to $next"
 }
 
+/** A line whose `seq` is below that of the line before it in the same file: lines were swapped (issue #10). */
+data class Backwards(val file: Path, val line: Int, val seq: Long, val after: Long) : Problem {
+    override fun toString() = "$file:$line: seq $seq comes after $after — it goes backwards"
+}
+
 data class Repeat(val seq: Long, val file: Path, val line: Int) : Problem {
     override fun toString() = "$file:$line: seq $seq is used again"
 }
