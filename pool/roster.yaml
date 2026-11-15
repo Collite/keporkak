@@ -1,15 +1,17 @@
 # The models, their order, and what a level means (contracts.md §9; values: plan.md §4.1, D-45, D-47, D-48).
-# Model names are the ids the Claude CLI on Panda carries: Claude Code 2.1.325, its model catalog's latest per family
-# (it has no command that prints them). `just office-check` reads the same catalog on the office.
+# Model names are full model ids — claude-opus-5-5, never an alias such as opus, which means another model when the
+# adapter's pin moves. The pinned adapter must accept each: set as its model option, the name reads back as one of the
+# values the adapter offers, other than default. `just handshake models` checks every one, with a made-up name beside.
 version: 1
 vendors:
   claude:
     adapter: "@agentclientprotocol/claude-agent-acp"
-    # S2.1 pins the adapter with the handshake test: 0.106.0 if it passes, otherwise 0.104.1 (architecture.md §6, Q-8).
-    adapter_version: null
+    # Pinned by S2.1's handshake test (D-48). office/adapter/package-lock.json names the same version; `just office-check`
+    # fails when the two, or what is installed, differ.
+    adapter_version: "0.106.0"
     # master's pin in gradle/libs.versions.toml (`acp`); check-rules.py fails when the two differ.
     sdk: "com.agentclientprotocol:acp:0.34.0"
-# low → high; one line per (model, effort) pair; model before effort (D-45). Efforts: every one the CLI offers.
+# low → high; one line per (model, effort) pair; model before effort (D-45). Efforts: every one the adapter offers but default.
 order:
   - {vendor: claude, model: claude-haiku-5-5, effort: low}
   - {vendor: claude, model: claude-haiku-5-5, effort: medium}
@@ -27,7 +29,7 @@ order:
   - {vendor: claude, model: claude-opus-5-5, effort: xhigh}
   - {vendor: claude, model: claude-opus-5-5, effort: max}
 # skill × thinking → a line of `order`. Senior → the top model, junior → the cheapest;
-# thinking: S the lowest effort the CLI offers, M medium, L high, XL the highest it offers.
+# thinking: S the lowest effort the adapter offers, M medium, L high, XL the highest it offers.
 levels:
   junior:
     S: {vendor: claude, model: claude-haiku-5-5, effort: low}

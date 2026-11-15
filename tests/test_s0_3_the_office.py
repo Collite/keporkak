@@ -6,8 +6,10 @@ answer as Panda's did on 2026-11-14 (FakeMachine, at the bottom of this file).
 """
 import getpass
 import hashlib
+import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -16,6 +18,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 USER = getpass.getuser()
+ADAPTER = "@agentclientprotocol/claude-agent-acp"
+PIN = re.search(r'adapter_version: "?([^"\s]+)', (ROOT / "pool/roster.yaml").read_text()).group(1)
 
 
 class TheOffice(unittest.TestCase):
@@ -54,8 +58,8 @@ class TheOffice(unittest.TestCase):
         self.assertEqual(today.stdout, f"""\
 ok     JDK 21: openjdk version "21.0.12.1" 2026-08-18 LTS
 ok     Node: v24.22.0
-later  Claude adapter @agentclientprotocol/claude-agent-acp: S2.1 pins it with the handshake test and installs it
-ok     Claude CLI: 2.1.325 (Claude Code); its catalog has claude-haiku-5-5, claude-sonnet-5-5, claude-opus-5-5
+to do  Claude adapter {ADAPTER}: not installed, the roster and the lockfile name {PIN}: just adapter
+ok     Claude CLI: 2.1.325 (Claude Code)
 ok     git: git version 2.43.0
 ok     gh: gh version 2.102.0 (2026-09-30)
 ok     just: just 1.59.0
@@ -69,7 +73,7 @@ to do  root secrets ~/.config/keporkak/secrets: mkdir -p -m 0700 ~/.config/kepor
 ok     project checkout ~/Dev/keporkak/project
 ok     project folder KP ~/Dev/keporkak/project
 ok     project folder TOY ~/Dev/keporkak/project/toy
-later  secret claude-token: S2.1 — the seats' Claude token, put there by Bora before P2 (office/README.md)
+to do  secret claude-token: claude setup-token, then: install -m 0600 /dev/stdin ~/.config/keporkak/secrets/claude-token (office/README.md)
 later  secrets apps/kp-merger.pem, apps/kp-coder.pem, apps/kp-reviewer.pem, apps/kp-gardener.pem: S3.2 — the four GitHub Apps' keys
 later  kp root-owned and not writable by {USER}: S1.5 installs kp
 later  sudo asks every time for kp: S1.5 — Bora installs office/sudoers.d/zz-keporkak-kp before it (office/README.md)
@@ -78,12 +82,12 @@ later  kubectl context bp-dsk: S4.1
 later  systemd user service keporkak.service: S1.5 delivers it (template office/systemd/keporkak.service)
 to do  lingering for {USER}: sudo loginctl enable-linger {USER}
 later  no vendor global configuration reachable from a seat's config home: S2.2
-RESULT: NOT READY — 3 to do, 9 later, 14 ok
+RESULT: NOT READY — 5 to do, 7 later, 14 ok
 """)
-        machine.bora_does_the_three_to_dos()
+        machine.bora_does_the_to_dos()
         done = machine.office_check()
-        self.assertEqual(done.returncode, 0)
-        self.assertEqual(done.stdout.splitlines()[-1], "RESULT: READY — 0 to do, 9 later, 17 ok")
+        self.assertEqual(done.returncode, 0, done.stdout)
+        self.assertEqual(done.stdout.splitlines()[-1], "RESULT: READY — 0 to do, 7 later, 19 ok")
 
     def test_the_office_check_changes_nothing_on_the_machine(self):
         machine = FakeMachine(self, roots=["worktrees", "scratch"], linger="no")
@@ -112,7 +116,7 @@ class PandaPool:
 STUBS = {
     "java": "echo 'openjdk version \"21.0.12.1\" 2026-08-18 LTS' >&2",
     "node": "echo v24.22.0",
-    "claude": 'echo "2.1.325 (Claude Code)"\n# its catalog: {id:"claude-haiku-5-5"} {id:"claude-sonnet-5-5"} {id:"claude-opus-5-5"} {id:"claude-fable-5-2"}',
+    "claude": 'echo "2.1.325 (Claude Code)"',
     "git": "echo git version 2.43.0",
     "gh": "echo 'gh version 2.102.0 (2026-09-30)'",
     "just": "echo just 1.59.0",
@@ -131,10 +135,13 @@ class FakeMachine:
     def __init__(self, test, roots, linger):
         self.base = Path(tempfile.mkdtemp(dir=ROOT / "build"))
         test.addCleanup(shutil.rmtree, self.base)
-        self.home, self.bin, self.pool = self.base / "home", self.base / "bin", self.base / "pool"
+        self.home, self.bin, self.pool, self.adapter = self.base / "home", self.base / "bin", self.base / "pool", self.base / "adapter"
         self.home.mkdir()
         self.bin.mkdir()
         shutil.copytree(ROOT / "pool", self.pool)
+        self.adapter.mkdir()
+        for name in ("package.json", "package-lock.json"):
+            shutil.copy(ROOT / "office/adapter" / name, self.adapter / name)
         offices = self.pool / "offices.yaml"
         offices.write_text(offices.read_text().replace("user: bora", f"user: {USER}"))
         for name, script in STUBS.items():
@@ -148,14 +155,26 @@ class FakeMachine:
         path = self.bin / name
         path.write_text("#!/bin/sh\n" + script + "\n")
         path.chmod(0o755)
-    def bora_does_the_three_to_dos(self):
+    def bora_does_the_to_dos(self):
         (self.home / ROOTS["seats"]).mkdir(parents=True)
         (self.home / ROOTS["secrets"]).mkdir(parents=True, mode=0o700)
         (self.home / ROOTS["secrets"]).chmod(0o700)
         self.stub("loginctl", "echo yes")
+        self.install_adapter()
+        self.put_token()
+    def install_adapter(self, version=PIN):
+        """What `just adapter` leaves behind, as far as the check reads it: the adapter's and its SDK's package files."""
+        for name, fields in ((ADAPTER, {"version": version}), ("@anthropic-ai/claude-agent-sdk", {"claudeCodeVersion": "2.1.322"})):
+            folder = self.adapter / "node_modules" / name
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / "package.json").write_text(json.dumps({"name": name, **fields}))
+    def put_token(self):
+        token = self.home / ROOTS["secrets"] / "claude-token"
+        token.write_text("not a real token\n")
+        token.chmod(0o600)
     def office_check(self):
         environment = {"HOME": str(self.home), "PATH": str(self.bin), "LANG": "C.UTF-8"}
-        return subprocess.run([sys.executable, str(ROOT / "scripts/office-check.py"), "--pool", str(self.pool), "--office", "panda"], cwd=ROOT, env=environment, text=True, capture_output=True)
+        return subprocess.run([sys.executable, str(ROOT / "scripts/office-check.py"), "--pool", str(self.pool), "--adapter", str(self.adapter), "--office", "panda"], cwd=ROOT, env=environment, text=True, capture_output=True)
     def snapshot(self):
         entries = {}
         for folder, directories, files in os.walk(self.base):

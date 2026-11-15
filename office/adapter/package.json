@@ -1,0 +1,9 @@
+{
+  "name": "kp-office-adapter",
+  "private": true,
+  "description": "The Claude adapter the seats run on, at one exact version (contracts.md §9). `just adapter` installs it from package-lock.json.",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.106.0"
+  }
+}
