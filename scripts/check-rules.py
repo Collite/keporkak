@@ -11,7 +11,9 @@ Checks (each a line of output; exit 1 if any FAIL):
   - P-10: the mailroom sends only declared effects, the daemon sends nothing; every robot rule sends a kind its role may send
   - pool/ (contracts.md §9): the three files' shapes; every level is a line of the order; the review floor is a model of
     it; office and subscription names; every {roster: …}, {office: …} and {budget: …} value the rules use resolves
-Usage: python3 scripts/check-rules.py [--pool DIR] [--render out.md] [--self-test]
+Usage: python3 scripts/check-rules.py [--pool DIR] [--render out.md] [--self-test] [--trace WALK]
+  --trace WALK  also prints the named walk as a `WALK <json>` line and, after each step, a `TRACE <json>` line: whether
+                it was refused, the transitions it fired and every stage's state — the engine's second opinion (S1.2)
 """
 import sys, re, yaml, pathlib, itertools, subprocess, json, copy, tomllib
 
@@ -68,6 +70,7 @@ K = load_yaml((ROOT / "rules/message-kinds.yaml").read_text())["kinds"]
 E = load_yaml((ROOT / "rules/engagement.yaml").read_text())
 
 FIXTURE = "--fixture" in sys.argv
+TRACE = sys.argv[sys.argv.index("--trace") + 1] if "--trace" in sys.argv else None
 W = []
 V = load_yaml((ROOT / "rules/vocabulary.yaml").read_text()) if not FIXTURE else {"facts": {}, "operations": {}}
 if FIXTURE:
@@ -812,6 +815,7 @@ class Walk:
                 try:edge=self.robot_rules("presence",current_presence)
                 finally:self.shared["presence"]=current_presence
                 actual={key:actual[key]+edge[key] for key in ("rules","sends","wakes")}
+            self.fired=fired
             if not actual["rules"] and not fired:raise WalkError("observation has no robot or lifecycle arrow")
             self.check_expectation(step,{**actual,"transitions":fired})
             return
@@ -863,6 +867,7 @@ class Walk:
             self.ctx.update(id=request_id,status="delivered",tick=self.index)
             self.messages[request_id]=copy.deepcopy(self.ctx)
         fired=self.transitions(event,kind_name,request_id)
+        self.fired=fired
         if not fired and not operation and any(t.get("kind")==kind_name and t.get("on","message")==event for _,t in all_transitions):
             raise WalkError(f"no arrow from {self.state('stage')} for {kind_name}")
         if not operation:self.history.append(copy.deepcopy(self.ctx))
@@ -892,11 +897,15 @@ class Walk:
             return
         raise WalkError("expected refusal, but the message was delivered")
     def run(self):
+        if TRACE:print("WALK "+json.dumps(self.definition,sort_keys=True))
         for self.index,step in enumerate(self.definition["steps"],1):
+            self.fired=[]
             try:self.step(step)
             except WalkError as error:
                 fail(f"walk {self.name} step {self.index}: {error}")
                 return
+            if TRACE:print("TRACE "+json.dumps({"step":self.index,"refused":bool(step.get("expect",{}).get("refused")),"fired":self.fired,
+                "stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()}},sort_keys=True))
         expected=self.definition["final"]
         actual={stage:context["states"]["stage"] for stage,context in self.contexts.items()} if isinstance(expected,dict) else self.state("stage")
         if actual!=expected:
@@ -960,7 +969,7 @@ if not fails:
 if not FIXTURE:
     W=[load_yaml(path.read_text()) for path in sorted((ROOT / "rules/walks").glob("*.yaml"))]
 for walk in W:
-    Walk(walk).run()
+    if TRACE is None or walk["name"]==TRACE:Walk(walk).run()
 if W and not fails:ok(f"the walks pass ({len(W)} walks)")
 
 # 8. pool/: the office's three files (contracts.md §9) and every pool value the rules use
