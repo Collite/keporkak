@@ -4,6 +4,7 @@ import com.agentclientprotocol.agent.AgentInfo
 import com.agentclientprotocol.common.SessionCreationParameters
 import com.agentclientprotocol.model.HttpHeader
 import com.agentclientprotocol.model.McpServer
+import com.agentclientprotocol.model.SessionId
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -11,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kp.driver.Answerer
 import kp.driver.Driver
 import kp.driver.Listener
@@ -85,6 +87,44 @@ internal class AcpDriver(
     }
 
     override suspend fun start(spec: SessionSpec): Outcome<Started> {
+        val seat = when (val launched = fresh(spec)) {
+            is Outcome.Ok -> launched.value
+            is Outcome.Failed -> return launched
+        }
+        val parameters = SessionCreationParameters(spec.workingDirectory.toString(), servers(spec, seat.token))
+        seat.session = try {
+            seat.launched.connection.client.newSession(parameters) { _, _ -> seat.operations }
+        } catch (e: Exception) {
+            return abandon(seat, "session/new failed", e)
+        }
+        seat.note("session ${seat.session.sessionId.value} opened in ${spec.workingDirectory} with ${spec.servers.joinToString(", ") { it.name }.ifEmpty { "no MCP server" }}")
+        return opened(seat)
+    }
+
+    /**
+     * Loads [sessionId] into a fresh process (T7): `session/load` with the servers injected again under a fresh token
+     * (§5); the agent replays the history, marked `replay` in the transcript; mode, model and effort are set again.
+     * A session that cannot be loaded fails with the reason; starting a new one instead is the caller's decision.
+     */
+    override suspend fun load(spec: SessionSpec, sessionId: String): Outcome<Started> {
+        val seat = when (val launched = fresh(spec)) {
+            is Outcome.Ok -> launched.value
+            is Outcome.Failed -> return launched
+        }
+        if (!seat.launched.info.capabilities.loadSession) return abandon(seat, "the agent does not offer session/load", null)
+        val parameters = SessionCreationParameters(spec.workingDirectory.toString(), servers(spec, seat.token))
+        seat.note("loading session $sessionId")
+        seat.session = try {
+            seat.launched.connection.client.loadSession(SessionId(sessionId), parameters, seat.operations)
+        } catch (e: Exception) {
+            return abandon(seat, "session/load of $sessionId failed", e)
+        }
+        seat.note("session $sessionId loaded in ${spec.workingDirectory} with ${spec.servers.joinToString(", ") { it.name }.ifEmpty { "no MCP server" }}")
+        return opened(seat)
+    }
+
+    /** A fresh process for the seat, initialized, with a fresh token; refused while the seat has a live session. */
+    private suspend fun fresh(spec: SessionSpec): Outcome<SeatSession> {
         seats[spec.seat]?.takeIf { it.live }?.let { return Outcome.Failed("seat ${spec.seat.value} has a live session ${it.session.sessionId.value}") }
         val seat = SeatSession(spec.seat, spec, mint(), transcript(spec.seat), clock, listener, answerer, scope)
         seat.transcript.hide(seat.token.value)
@@ -95,14 +135,7 @@ internal class AcpDriver(
         seat.launched = launched
         seat.observations.started(launched.process.pid)
         launched.process.exit.thenAccept { seat.processGone(it.exitValue()) }
-        val parameters = SessionCreationParameters(spec.workingDirectory.toString(), servers(spec, seat.token))
-        seat.session = try {
-            launched.connection.client.newSession(parameters) { _, _ -> seat.operations }
-        } catch (e: Exception) {
-            return abandon(seat, "session/new failed", e)
-        }
-        seat.note("session ${seat.session.sessionId.value} opened in ${spec.workingDirectory} with ${spec.servers.joinToString(", ") { it.name }.ifEmpty { "no MCP server" }}")
-        return opened(seat)
+        return Outcome.Ok(seat)
     }
 
     /** Mode, model and effort set; the seat registered; its token handed to the caller. */
@@ -139,8 +172,19 @@ internal class AcpDriver(
 
     override suspend fun cancel(seat: SeatId): Outcome<Unit> =
         seats[seat]?.cancel() ?: Outcome.Failed("seat ${seat.value} has no session")
-    override suspend fun kill(seat: SeatId, grace: Duration): Outcome<Unit> = TODO("S2.1 T7")
-    override suspend fun load(spec: SessionSpec, sessionId: String): Outcome<Started> = TODO("S2.1 T7")
+    /**
+     * Closes the agent's input, waits [grace], then ends the process tree by force (T7). Returns when every process
+     * of the tree is gone and `seat.process_gone` has been reported.
+     */
+    override suspend fun kill(seat: SeatId, grace: Duration): Outcome<Unit> {
+        val session = seats[seat] ?: return Outcome.Failed("seat ${seat.value} has no session")
+        val process = session.launched.process
+        session.note("kill: input closed; grace ${Observations.duration(grace).content}, then the process tree by force")
+        withContext(Dispatchers.IO) { process.end(grace) }
+        session.processGone(process.exitCode() ?: -1)
+        session.launched.connection.close()
+        return Outcome.Ok(Unit)
+    }
     override fun offers(seat: SeatId): Outcome<Offers> =
         seats[seat]?.let { Outcome.Ok(it.offers()) } ?: Outcome.Failed("seat ${seat.value} has no session")
     override fun observe(seat: SeatId, fact: String, window: UsageWindow?): Outcome<ObservedFact> {

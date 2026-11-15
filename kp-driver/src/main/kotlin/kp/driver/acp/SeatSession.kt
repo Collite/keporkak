@@ -78,6 +78,8 @@ internal class SeatSession(
     private val turnInFlight = AtomicBoolean(false)
     private val events = Channel<Item>(Channel.UNLIMITED)
     @Volatile private var turn: Turn? = null
+    @Volatile private var loading: JsonElement? = null
+    @Volatile private var replaying = false
     val observations = Observations(seat, clock)
     private val inputs = ConcurrentHashMap<String, JsonElement>()
     private val asking = ConcurrentHashMap.newKeySet<Deferred<Answer>>()
@@ -144,7 +146,11 @@ internal class SeatSession(
                         val input = update["rawInput"]?.takeUnless { it == JsonNull }
                         val toolCallId = (update["toolCallId"] as? JsonPrimitive)?.contentOrNull
                         if (input != null && toolCallId != null) inputs[toolCallId] = input
-                        events.trySend(Item.Update(update, clock.instant()))
+                        events.trySend(Item.Update(update, clock.instant(), replay = replaying))
+                    }
+                    method == null && id != null && id == loading -> {
+                        replaying = false
+                        loading = null
                     }
                     method == null && id != null && id == turn?.requestId -> {
                         turn?.answered?.set(true)
@@ -157,7 +163,13 @@ internal class SeatSession(
         override fun outgoing(line: String) {
             runCatching {
                 val message = ACPJson.parseToJsonElement(line).jsonObject
-                if ((message["method"] as? JsonPrimitive)?.contentOrNull == "session/prompt") turn?.requestId = message["id"]
+                when ((message["method"] as? JsonPrimitive)?.contentOrNull) {
+                    "session/prompt" -> turn?.requestId = message["id"]
+                    "session/load" -> {
+                        loading = message["id"]
+                        replaying = true
+                    }
+                }
             }
         }
     }
@@ -231,8 +243,9 @@ internal class SeatSession(
             when (item) {
                 is Item.Update -> {
                     val update = runCatching { ACPJson.decodeFromJsonElement(SessionUpdate.serializer(), item.update) }.getOrNull()
-                    update?.let { observations.update(it, item.at) }
-                    transcript.write(update?.let(Lines::of) ?: "update not understood: ${item.update}", item.at)
+                    if (!item.replay) update?.let { observations.update(it, item.at) }
+                    val line = update?.let(Lines::of) ?: "update not understood: ${item.update}"
+                    transcript.write(if (item.replay) "replay $line" else line, item.at)
                 }
                 is Item.Line -> transcript.write(item.text, item.at)
                 is Item.Answer -> {
@@ -337,7 +350,7 @@ internal class SeatSession(
         val at: Instant
         val written: CompletableDeferred<Unit>? get() = null
 
-        class Update(val update: JsonElement, override val at: Instant) : Item
+        class Update(val update: JsonElement, override val at: Instant, val replay: Boolean = false) : Item
         class Answer(val message: JsonObject, override val at: Instant) : Item
         class Line(val text: String, override val at: Instant, override val written: CompletableDeferred<Unit>? = null) : Item
     }

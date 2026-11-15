@@ -31,8 +31,8 @@ import kotlin.system.exitProcess
  *
  * The script (JSON): `record` · `turns` — one list of steps per prompt · optional `mode`, `model`, `effort` (what a
  * session starts on), `modes`, `models`, `efforts` (what it offers), `w1` (send `auth.status` as `{}`, default true),
- * `onEof` (`exit` or `linger`), `loadable` (default true). Steps: `say`, `tool`, `tool_update`, `ask`, `usage`, `run`,
- * `hangup`, `recall`, `end` — see [perform]. Steps after `end` are sent after the turn's answer.
+ * `onEof` (`exit`, `linger` or `orphan`), `loadable` (default true). Steps: `say`, `tool`, `tool_update`, `ask`, `usage`, `run`,
+ * `hangup`, `leak`, `recall`, `end` — see [perform]. Steps after `end` are sent after the turn's answer.
  */
 fun main(args: Array<String>) {
     FakeAgent(Json.parseToJsonElement(File(args[0]).readText()).jsonObject).run()
@@ -50,6 +50,7 @@ private class FakeAgent(private val script: JsonObject) {
     private var prompts = 0
     @Volatile private var cancelled = false
     @Volatile private var child: Process? = null
+    @Volatile private var headers: List<String> = emptyList()
 
     private val modes = script.strings("modes") ?: listOf("default", "acceptEdits", "plan", "auto", "bypassPermissions")
     private val models = script.strings("models") ?: listOf("default", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5")
@@ -72,7 +73,8 @@ private class FakeAgent(private val script: JsonObject) {
         }
         note("eof")
         if (script.string("onEof") == "linger") Thread.sleep(Long.MAX_VALUE)
-        child?.destroyForcibly()
+        // `orphan`: leave on EOF without ending the running command.
+        if (script.string("onEof") != "orphan") child?.destroyForcibly()
         exitProcess(0)
     }
 
@@ -93,8 +95,10 @@ private class FakeAgent(private val script: JsonObject) {
                 answer(id, initializeResult())
             }
             method == "session/new" -> {
+                headers = headerValues(params.getValue("mcpServers"))
                 note("session/new", "cwd" to params.getValue("cwd"), "mcpServers" to hidden(params.getValue("mcpServers")))
                 session = UUID.randomUUID().toString()
+                historyFile(session!!)?.apply { parentFile.mkdirs(); createNewFile() }
                 answer(id, sessionState(withId = true))
             }
             method == "session/load" -> load(id, params)
@@ -154,6 +158,7 @@ private class FakeAgent(private val script: JsonObject) {
 
     /** A loaded session replays its history and starts again on the script's mode, model and effort (spike `06` Q6). */
     private fun load(id: JsonElement, params: JsonObject) {
+        headers = headerValues(params.getValue("mcpServers"))
         val wanted = params.string("sessionId")!!
         note("session/load", "sessionId" to JsonPrimitive(wanted), "cwd" to params.getValue("cwd"), "mcpServers" to hidden(params.getValue("mcpServers")))
         val history = historyFile(wanted)
@@ -203,6 +208,11 @@ private class FakeAgent(private val script: JsonObject) {
                 put("sessionUpdate", "usage_update"); put("used", step.long("used")); put("size", step.long("size"))
             })
             "ask" -> ask(step)
+            // An agent that repeats its secrets: the token in its environment and the headers it was given.
+            "leak" -> emit(buildJsonObject {
+                put("sessionUpdate", "agent_message_chunk")
+                put("content", text("my token is ${System.getenv("CLAUDE_CODE_OAUTH_TOKEN")} and my headers are ${headers.joinToString(" ")}"))
+            })
             // Closes stdout and stays: the protocol closes while the process lives.
             "hangup" -> {
                 System.out.close()
@@ -291,6 +301,10 @@ private class FakeAgent(private val script: JsonObject) {
     @Synchronized
     private fun note(event: String, vararg fields: Pair<String, JsonElement>) {
         record.appendText(JsonObject(mapOf("event" to JsonPrimitive(event)) + fields).toString() + "\n")
+    }
+
+    private fun headerValues(servers: JsonElement) = servers.jsonArray.flatMap { server ->
+        (server.jsonObject["headers"]?.jsonArray ?: JsonArray(emptyList())).map { it.jsonObject.string("value")!! }
     }
 
     /** MCP servers as received, each header's value replaced by its SHA-256. */
