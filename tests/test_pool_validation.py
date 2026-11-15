@@ -80,9 +80,12 @@ class PoolValidationTests(unittest.TestCase):
         self.edit("offices.yaml", "project: {checkout: ~/Dev/keporkak/project, efforts: {KP: \".\", TOY: ../toy}}", "project: {KP: ~/Dev/keporkak/project}")
         self.assertEqual(self.failures(), ["pool/offices.yaml: panda: project must name a checkout and a folder per effort", "pool/offices.yaml: panda: unknown field 'project.KP'"])
 
-    def test_a_missing_pool_file_fails(self):
-        (self.pool / "budgets.yaml").unlink()
-        self.assertIn("pool/budgets.yaml: missing", self.failures())
+    def test_a_missing_pool_file_fails_with_one_line(self):
+        for name in ("roster.yaml", "offices.yaml", "budgets.yaml"):
+            with self.subTest(name):
+                moved = (self.pool / name).rename(self.pool.parent / name)
+                self.assertEqual(self.failures(), [f"pool/{name}: missing"])
+                moved.rename(self.pool / name)
 
 
 if __name__ == "__main__":

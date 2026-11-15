@@ -970,15 +970,16 @@ ROOTS = ("worktrees", "scratch", "seats", "secrets")
 SIZES = ("S", "M", "L", "XL")
 LISTENER = re.compile(r"^127\.0\.0\.1:([1-9][0-9]{0,4})$")
 
+# A pool file that is missing or not version 1 is one line; nothing is checked in it, or against it (issue #8).
 def pool_file(name):
     path = POOL / name
     if not path.is_file():
         fail(f"pool/{name}: missing")
-        return {}
+        return None
     data = load_yaml(path.read_text())
     if not isinstance(data, dict) or data.get("version") != 1:
         fail(f"pool/{name}: version must be 1")
-        return {}
+        return None
     return data
 
 def positive(value):
@@ -988,6 +989,8 @@ def text(value):
     return isinstance(value, str) and value.strip() != ""
 
 def check_roster(roster):
+    if roster is None:
+        return None
     label = "pool/roster.yaml"
     vendors = roster.get("vendors") if isinstance(roster.get("vendors"), dict) else {}
     if not vendors: fail(f"{label}: vendors must name at least one vendor")
@@ -1032,6 +1035,8 @@ def relative_folder(value):
     return text(value) and not value.startswith(("/", "~")) and ".." not in value.split("/")
 
 def check_offices(offices, vendors):
+    if offices is None:
+        return None
     label = "pool/offices.yaml"
     entries = offices.get("offices") if isinstance(offices.get("offices"), dict) else {}
     if not entries: fail(f"{label}: offices must name at least one office")
@@ -1057,7 +1062,7 @@ def check_offices(offices, vendors):
         if not isinstance(targets, list) or not all(text(target) for target in targets): fail(f"{label}: {name}: live_targets must be a list of names")
         if office.get("computer_use") not in COMPUTER_USE: fail(f"{label}: {name}: unknown computer_use class '{office.get('computer_use')}'")
         qa = office.get("qa") if isinstance(office.get("qa"), dict) else {}
-        if qa.get("vendor") not in vendors: fail(f"{label}: {name}: qa vendor '{qa.get('vendor')}' is not a roster vendor")
+        if vendors is not None and qa.get("vendor") not in vendors: fail(f"{label}: {name}: qa vendor '{qa.get('vendor')}' is not a roster vendor")
         listen = office.get("listen") if isinstance(office.get("listen"), dict) else {}
         ports = []
         for listener in ("mcp", "board"):
@@ -1069,6 +1074,8 @@ def check_offices(offices, vendors):
     return entries
 
 def check_budgets(budgets, vendors, entries):
+    if budgets is None:
+        return
     label = "pool/budgets.yaml"
     slots = budgets.get("slots") if isinstance(budgets.get("slots"), dict) else {}
     for key in ("total", "stages_in_flight_per_effort"):
@@ -1077,7 +1084,7 @@ def check_budgets(budgets, vendors, entries):
         limits = slots.get(key) if isinstance(slots.get(key), dict) else {}
         if not limits: fail(f"{label}: slots.{key} must name at least one {noun}")
         for name, limit in limits.items():
-            if name not in known: fail(f"{label}: {key} names unknown {noun} '{name}'")
+            if known is not None and name not in known: fail(f"{label}: {key} names unknown {noun} '{name}'")
             if not positive(limit): fail(f"{label}: {key}.{name} must be a positive integer")
     warn = budgets.get("warn")
     if not isinstance(warn, list) or not warn or not all(isinstance(value, (int, float)) and not isinstance(value, bool) and 0 < value < 1 for value in warn) or warn != sorted(set(warn)):
@@ -1102,7 +1109,9 @@ if not FIXTURE:
     used = pool_values([L, K, E] + [robot for _, robot in ROBOTS], [])
     for value in used:
         namespace, path = next(iter(value.items()))
-        sources = {"roster": [roster_data], "budget": [budgets_data], "office": list(pool_offices.values())}[namespace]
+        sources = {"roster": roster_data and [roster_data], "budget": budgets_data and [budgets_data], "office": pool_offices and list(pool_offices.values())}[namespace]
+        if sources is None:
+            continue
         if not sources or any(path_value(source, path) is MISSING for source in sources):
             fail(f"pool: {{{namespace}: {path}}} used by the rules does not resolve")
     ok(f"pool values the rules use resolve: {len(used)} ({', '.join('{' + next(iter(v)) + ': ' + str(next(iter(v.values()))) + '}' for v in used) or 'none'})")

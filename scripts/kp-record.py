@@ -3,10 +3,11 @@
 
 Two ways in:
   kp-record.py <kind> --from <party> --to <party> [--stage <stage> | --effort <effort>] [--args key=value …] [--re <id>]
+              [--subject "…"] [--body "…"] [--pointer <pointer>]…
       The recorder assigns what the mailroom would: the id m-hand-<6 digits> (unique across the project's hand logs),
       the thread (its own id, or the thread of the message it answers, which must be in the same hand log), the
       sequence number (running per hand log), `at` and `created`; `by` is hand:<the sender's role>. The subject is
-      the kind and the stage. An --args value is JSON when it parses as JSON, otherwise a string.
+      --subject, or else the kind and the stage. An --args value is JSON when it parses as JSON, otherwise a string.
   kp-record.py [--effort <effort>] < message.json
       One complete message, with its own ids, sequence number and timestamps.
 Either way the message is validated before any path is created, appended once under a lock and synced to disk, and
@@ -29,6 +30,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 HAND_ID = re.compile(r"^m-hand-([0-9]{6,})$")
+STAGE = re.compile(r"([A-Z][A-Z0-9-]*)/P([0-9]+)/S([0-9]+\.[0-9]+)")
 
 def integer(_checker, value):
     if isinstance(value, bool):
@@ -174,20 +176,25 @@ def from_command_line(args):
         raise ValueError(f"unknown kind '{args.kind}' (rules/message-kinds.yaml)")
     if not (args.sender and args.to):
         raise ValueError("a recorded message needs --from and --to")
+    if args.stage and not STAGE.fullmatch(args.stage):
+        raise ValueError(f"malformed --stage '{args.stage}': a stage is <EFFORT>/P<n>/S<n>.<n>, e.g. KP/P1/S1.0")
     message = {"v": 1, "seq": 1, "at": "", "id": "", "thread": "", "from": args.sender, "to": args.to, "kind": args.kind}
     if args.answers:
         message["re"] = args.answers
     if args.stage:
         message["stage"] = args.stage
-    message["subject"] = " ".join(filter(None, [args.kind, args.stage]))
+    message["subject"] = args.subject if args.subject is not None else " ".join(filter(None, [args.kind, args.stage]))
+    if args.body is not None:
+        message["body"] = args.body
+    if args.pointers:
+        message["pointers"] = args.pointers
     if args.args:
         message["args"] = typed(args.args)
     message["created"] = ""
     message["by"] = "hand:" + role_of(args.sender)
     effort = args.effort
     if args.stage:
-        match = re.fullmatch(r"([A-Z][A-Z0-9-]*)/P[0-9]+/S[0-9]+\.[0-9]+", args.stage)
-        effort = match.group(1) if match else effort
+        effort = STAGE.fullmatch(args.stage).group(1)
     project = project_of(args, effort)
     path = assign(message, project, args.effort, args.answers)
     checked(message)
@@ -223,6 +230,10 @@ def main():
     parser.add_argument("--stage")
     parser.add_argument("--args", nargs="+", action="extend", default=[], metavar="KEY=VALUE")
     parser.add_argument("--re", dest="answers", metavar="ID")
+    parser.add_argument("--subject", help="default: the kind and the stage")
+    parser.add_argument("--body")
+    parser.add_argument("--pointer", dest="pointers", action="append", default=[], metavar="POINTER",
+                        help="pr:<owner>/<name>#<n>, project:<path>, … (contracts.md §1); repeat for more than one")
     parser.add_argument("--project", type=Path)
     parser.add_argument("--effort", help="required only when the message has no stage")
     parser.add_argument("--pool", type=Path, default=ROOT / "pool")
