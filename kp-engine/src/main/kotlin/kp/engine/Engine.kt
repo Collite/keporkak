@@ -73,8 +73,13 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         return Decision.create(
             Outcome.DELIVER, rule = fired.rule(), unsupplied = evaluation.unsupplied.toList(), moves = fired.moves, counted = evaluation.moved.toMap(),
             effects = fired.effects, messageClass = messageClass, waitsForBora = messageClass == MessageClass.B, deadline = deadline,
-            observed = evaluation.observed.toMap(), attested = evaluation.attested(),
+            observed = evaluation.observed.toMap(), attested = evaluation.attested(), answers = answers(kind, message),
         )
+    }
+
+    /** The waiting message this delivery answers (contracts.md §4.2): the one its `re` names, when it waits and its kind lists this one in `replies`. */
+    private fun answers(kind: Kind, message: View): String? = message.re?.takeIf { re ->
+        state.deadlines[re]?.let { wait -> kind.name in rules.kinds[wait.kind]?.replies.orEmpty() } == true
     }
 
     /**

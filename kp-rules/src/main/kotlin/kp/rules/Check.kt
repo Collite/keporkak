@@ -184,6 +184,7 @@ internal class RulesCheck(
                 kind.require.forEach(::requirement)
                 kind.classRule.cases.forEach { requirement(it.condition) }
                 kind.expiry.forEach(::effect)
+                kinds += kind.replies
             }
             resolve(owner, names, thresholdsOf(kind.from))
             names.args.distinct().filterNot { it in kind.args }.forEach { problem(owner, "undeclared argument '$it'") }

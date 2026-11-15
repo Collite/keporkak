@@ -354,6 +354,7 @@ private fun kind(doc: Doc, name: String, node: Node): Kind? {
     val to = destination(doc, name, fields["to"])
     val cc = fields["cc"]?.let { doc.texts(it, name, "cc") } ?: emptyList()
     val prose = listOf("fires", "guard", "reply", "note", "on_expiry").associateWith { fields[it]?.let { node -> doc.text(node, name, it) } }
+    val replies = fields["replies"]?.let { doc.texts(it, name, "replies") } ?: emptyList()
     val args = doc.mapping(fields["args"], name, "args")?.entries?.mapNotNull { (arg, spec) -> argSpec(doc, name, arg, spec)?.let { arg to it } }?.toMap() ?: emptyMap()
     val classRule = classRule(doc, name, forms, fields["class"])
     val maxFires = fields["max_fires"]?.let { if ((it as? Node.Scalar)?.literal == Literal.Null) null else doc.whole(it, name, "max_fires") }
@@ -364,7 +365,7 @@ private fun kind(doc: Doc, name: String, node: Node): Kind? {
     val require = if (fields.has("require")) forms.requirements(fields["require"]) else emptyList()
     fields.close()
     if (from == null || to == null || classRule == null || window == null) return null
-    return Kind(name, from, to, cc, prose["fires"], prose["guard"], prose["reply"], prose["note"], prose["on_expiry"],
+    return Kind(name, from, to, cc, prose["fires"], prose["guard"], prose["reply"], replies, prose["note"], prose["on_expiry"],
         args, classRule, maxFires, window, deadline, expiry, require)
 }
 

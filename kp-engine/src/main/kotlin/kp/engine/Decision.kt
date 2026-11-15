@@ -51,16 +51,18 @@ class Decision private constructor(
     val observed: Map<String, Datum>,
     /** What the sender attested (`args.attest`). */
     val attested: List<String>,
+    /**
+     * The waiting message this delivery answers — the `delivered` record's `answers` (contracts.md §2.2, §4.2): the
+     * one its `re` names, when that message waits and its kind's `replies` lists this kind.
+     */
+    val answers: String?,
 ) {
-    /** The waiting message this delivery answers (contracts.md §2.2, §4.2). */
-    val answers: String? get() = null
-
     /** Only for the construction fence's probes, which construct with no arguments (kp-model's EngineBoundarySpec). */
-    private constructor() : this(Outcome.NOTHING, null, null, null, emptyList(), emptyList(), emptyMap(), emptyList(), null, false, null, emptyMap(), emptyList())
+    private constructor() : this(Outcome.NOTHING, null, null, null, emptyList(), emptyList(), emptyMap(), emptyList(), null, false, null, emptyMap(), emptyList(), null)
 
     override fun toString(): String =
         "Decision($outcome, rule=$rule, requirement=$requirement, failed=$failed, unsupplied=$unsupplied, moves=$moves, counted=$counted, " +
-            "effects=$effects, class=$messageClass, waitsForBora=$waitsForBora, deadline=$deadline, observed=$observed, attested=$attested)"
+            "effects=$effects, class=$messageClass, waitsForBora=$waitsForBora, deadline=$deadline, observed=$observed, attested=$attested, answers=$answers)"
 
     internal companion object {
         @JvmOverloads
@@ -78,7 +80,8 @@ class Decision private constructor(
             deadline: String? = null,
             observed: Map<String, Datum> = emptyMap(),
             attested: List<String> = emptyList(),
-        ): Decision = Decision(outcome, rule, requirement, failed, unsupplied, moves, counted, effects, messageClass, waitsForBora, deadline, observed, attested)
+            answers: String? = null,
+        ): Decision = Decision(outcome, rule, requirement, failed, unsupplied, moves, counted, effects, messageClass, waitsForBora, deadline, observed, attested, answers)
     }
 }
 

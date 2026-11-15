@@ -78,7 +78,10 @@ data class Kind(
     val cc: List<String>,
     val fires: String?,
     val guard: String?,
+    /** The prose of who answers, with its conditions ("if FIX FIRST", "optional"). */
     val reply: String?,
+    /** The kinds that answer this one (contracts.md §4.2): a delivery of one that names a waiting message of this kind in `re` answers it. */
+    val replies: List<String>,
     val note: String?,
     /** The prose companion of [expiry]. */
     val onExpiry: String?,

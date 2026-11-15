@@ -23,6 +23,9 @@ kinds:
     deadline: 24h
     on_expiry: back to planned; principal pinged
     reply: approval | decline
+    replies:
+    - approval
+    - decline
     note: never graduates to C (D-27 d)
     args:
       attest:
@@ -204,6 +207,8 @@ kinds:
     deadline: 15m
     on_expiry: seat-gone check by the Pool Manager
     reply: started
+    replies:
+    - started
     args:
       attest:
         type: array
@@ -259,6 +264,8 @@ kinds:
     deadline: 4h
     on_expiry: escalate to Bora (B)
     reply: triage
+    replies:
+    - triage
     note: replaces `question` (D-27 i); the 3rd stop per stage needs Bora
     args:
       attest:
@@ -293,6 +300,8 @@ kinds:
     deadline: null
     on_expiry: '-'
     reply: triage
+    replies:
+    - triage
     args:
       attest:
         type: array
@@ -381,6 +390,8 @@ kinds:
     deadline: 2h
     on_expiry: stop SC-9 for the asker
     reply: qa-report
+    replies:
+    - qa-report
     note: one QA job at a time per office; tail jobs first, then FIFO (D-31)
     args:
       attest:
@@ -490,6 +501,8 @@ kinds:
     deadline: 2h
     on_expiry: held while absent; expired → stop SC-9 for the asker
     reply: approval (where B)
+    replies:
+    - approval
     note: 'D-36 c: only computer use is governed, even on the Mac'
     args:
       attest:
@@ -545,6 +558,8 @@ kinds:
     deadline: 1h
     on_expiry: nudge teamlead; 2nd expiry → Bora (C)
     reply: review-bind
+    replies:
+    - review-bind
     args:
       attest:
         type: array
@@ -596,6 +611,8 @@ kinds:
     deadline: 8h
     on_expiry: re-bind once, then Bora (C)
     reply: verdict
+    replies:
+    - verdict
     args:
       attest:
         type: array
@@ -657,6 +674,8 @@ kinds:
     deadline: null
     on_expiry: '-'
     reply: repair-done (if FIX FIRST)
+    replies:
+    - repair-done
     args:
       attest:
         type: array
@@ -704,6 +723,8 @@ kinds:
     deadline: 8h
     on_expiry: nudge reviewer; 2nd → teamlead
     reply: re-verdict
+    replies:
+    - re-verdict
     args:
       attest:
         type: array
@@ -828,6 +849,8 @@ kinds:
     deadline: 4h
     on_expiry: recut
     reply: grant
+    replies:
+    - grant
     args:
       attest:
         type: array
@@ -916,6 +939,8 @@ kinds:
     deadline: 24h
     on_expiry: held while absent; expired → reported
     reply: ruling
+    replies:
+    - ruling
     args:
       attest:
         type: array
@@ -1022,6 +1047,9 @@ kinds:
     deadline: 2h
     on_expiry: tail_failed
     reply: deploy-done | deploy-failed
+    replies:
+    - deploy-done
+    - deploy-failed
     note: the TeamLead requests; QA executes and verifies (D-30)
     args:
       attest:
@@ -1384,6 +1412,8 @@ kinds:
     deadline: 24h
     on_expiry: held while absent; expired → reported
     reply: ruling
+    replies:
+    - ruling
     args:
       attest:
         type: array
@@ -1551,6 +1581,8 @@ kinds:
     deadline: null
     on_expiry: '-'
     reply: reverse (optional)
+    replies:
+    - reverse
     note: held items · anomaly stops · shadow-ledger entries
     args:
       attest:
@@ -1653,6 +1685,8 @@ kinds:
     deadline: 30m
     on_expiry: nudge
     reply: session-report
+    replies:
+    - session-report
     args:
       attest:
         type: array
@@ -2109,6 +2143,8 @@ kinds:
     deadline: null
     on_expiry: '-'
     reply: triage
+    replies:
+    - triage
     args:
       attest:
         type: array
@@ -2143,6 +2179,8 @@ kinds:
     deadline: null
     on_expiry: held while absent
     reply: approval
+    replies:
+    - approval
     args:
       attest:
         type: array

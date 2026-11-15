@@ -378,6 +378,14 @@ for name, kind in K.items():
     for argument, definition in kind.get("args",{}).items():
         if not isinstance(definition,dict) or not set(definition)&{"type","enum"}:
             fail(f"{name}: untyped argument '{argument}'")
+    # The kinds that answer this one (contracts.md §4.2): each is a kind.
+    if "replies" in kind:
+        if not isinstance(kind["replies"], list):
+            fail(f"{name}: replies must be a list")
+        else:
+            for reply in kind["replies"]:
+                if not isinstance(reply, str): fail(f"{name}: replies's item must be text")
+                elif reply not in K: fail(f"{name}: unknown kind '{reply}'")
     thresholds = sender_thresholds(kind.get("from"))
     check_requirements(kind.get("require", []), name, thresholds=thresholds)
     for effect in kind.get("expiry",[]):
@@ -687,7 +695,7 @@ class Walk:
             return sum(record.get("kind")==kind and record.get("status")=="delivered" and all(record.get("args",{}).get(key,MISSING)==value for key,value in where.items()) for record in records)
         if name=="request.open":
             kind=params.get("kind")
-            replies=set(re.findall(r"[a-z][a-z-]+",K.get(kind,{}).get("reply","")))
+            replies=set(K.get(kind,{}).get("replies",[]))
             return any(record.get("kind")==kind and record.get("stage")==self.stage and record.get("status")=="delivered" and not any(reply.get("reply_id")==record.get("id") and reply.get("status")=="delivered" and reply.get("kind") in replies for reply in self.history) for record in self.history)
         if name=="review.open_blockers":
             verdicts=[record for record in self.history if record.get("stage")==self.stage and record.get("kind") in ("verdict","re-verdict") and record.get("status")=="delivered"]
