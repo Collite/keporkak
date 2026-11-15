@@ -64,7 +64,7 @@ sealed interface Requirement {
 
 enum class MessageClass { A, B, C }
 
-/** An effect of a transition (`emit`, `do`, `count`) or of a kind's expiry (`emit`, `report`, `transition`, `do`). */
+/** An effect of a transition (`emit`, `do`, `count`) or of a kind's expiry (`emit`, `report`, `transition`, `do`, `wait`). */
 sealed interface Effect {
     val condition: Requirement?
     data class Emit(val kind: String, val to: Value, val args: Map<String, Value>, override val condition: Requirement?) : Effect
@@ -72,4 +72,9 @@ sealed interface Effect {
     data class Count(val counter: String, override val condition: Requirement?) : Effect
     data class Report(val to: String, val messageClass: MessageClass, override val condition: Requirement?) : Effect
     data class Transition(val id: String, override val condition: Requirement?) : Effect
+    /**
+     * `{wait: again, if: …}` — the wait starts again for the kind's deadline, counted from the expiry (contracts.md
+     * §4.2). Its `if` reads a counter against a cap; without a wait that holds, the wait is over.
+     */
+    data class Wait(override val condition: Requirement?) : Effect
 }

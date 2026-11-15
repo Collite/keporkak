@@ -13,8 +13,9 @@ import kp.rules.RuleSet
 import kp.rules.Scope
 import kp.rules.Source
 import kp.rules.Value
+import kp.rules.duration
 import java.math.BigDecimal
-import kotlin.time.Duration
+import kotlin.time.DurationUnit
 
 /**
  * One judgement's reading of the rules (contracts.md §4.1): requirements and values against the context, the state
@@ -37,7 +38,7 @@ internal class Evaluation(val rules: RuleSet, val state: State, val context: Con
         is Requirement.Reply -> compare(reply(requirement.field), requirement.comparison)
         is Requirement.Counter -> compare(Datum.of(counter(requirement.name)), requirement.comparison)
         is Requirement.Attest -> requirement.name in attested()
-        is Requirement.Signed -> context.signed && context.message?.from == requirement.signer
+        is Requirement.Signed -> context.message?.signed == true && context.message.from == requirement.signer
         is Requirement.Operation -> context.operation == requirement.operation && context.ok == (requirement.outcome == kp.rules.Outcome.OK)
         is Requirement.Any -> requirement.items.any { holds(it, blocks) }
         is Requirement.Not -> !holds(requirement.item, blocks)
@@ -163,9 +164,16 @@ internal fun truthy(value: Datum): Boolean = when (value) {
     Datum.Null -> false
 }
 
-/** Two sets are the same set (contracts.md §4.1); anything else is the same value. */
-private fun same(actual: Datum, expected: Datum): Boolean =
-    if (actual is Datum.Items && expected is Datum.Items) actual.items.toSet() == expected.items.toSet() else actual == expected
+/**
+ * Two sets are the same set (contracts.md §4.1); a duration is the same as another of its length, or as a number of
+ * seconds — `0s` is `0` (§4.4); anything else is the same value.
+ */
+private fun same(actual: Datum, expected: Datum): Boolean = when {
+    actual is Datum.Items && expected is Datum.Items -> actual.items.toSet() == expected.items.toSet()
+    actual == expected -> true
+    actual is Datum.Text || expected is Datum.Text -> seconds(actual)?.let { left -> seconds(expected)?.let { left.compareTo(it) == 0 } } == true
+    else -> false
+}
 
 /** For a set, every member is in the value; for one value, it is one of the value's. */
 private fun member(actual: Datum, expected: Datum): Boolean {
@@ -188,6 +196,6 @@ private fun order(actual: Datum, expected: Datum): Int? {
 
 private fun seconds(value: Datum): BigDecimal? = when (value) {
     is Datum.Number -> value.value
-    is Datum.Text -> Duration.parseOrNull(value.value)?.let { BigDecimal.valueOf(it.inWholeSeconds) }
+    is Datum.Text -> duration(value.value)?.let { BigDecimal.valueOf(it.toDouble(DurationUnit.SECONDS)) }
     else -> null
 }

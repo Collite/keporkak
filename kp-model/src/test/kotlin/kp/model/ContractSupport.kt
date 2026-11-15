@@ -39,8 +39,9 @@ fun engineDependencyProbe(notation: String): CommandResult {
     return runCommand(listOf("./gradlew", "--console=plain", "--max-workers=1", "-I", init.path, ":kp-engine:build"), fixture)
 }
 
-private val fixtureDirectory: File by lazy {
-    val directory = File(root, "build/engine-fixture").apply { mkdirs() }
+/** A copy of the build — its Gradle files, the build support and every module's main sources — under build/[name]. */
+private fun copyOfTheBuild(name: String): File {
+    val directory = File(root, "build/$name").apply { mkdirs() }
     listOf("settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat").forEach {
         File(root, it).copyTo(File(directory, it), overwrite = true)
     }
@@ -53,9 +54,25 @@ private val fixtureDirectory: File by lazy {
         val source = File(module, "src/main")
         if (source.exists()) source.copyRecursively(File(target, "src/main"), overwrite = true)
     }
-    directory
+    return directory
 }
+private val fixtureDirectory: File by lazy { copyOfTheBuild("engine-fixture") }
 fun engineFixture(): File = fixtureDirectory
+
+private val variants = mutableMapOf<String, File>()
+/**
+ * A second fixture build, build/engine-fixture-[name], whose [path] differs from the checkout's by one edit: [old],
+ * which must occur in it exactly once, becomes [new]. A probe run in it shows what the probe sees when the source is
+ * not as the fence needs it.
+ */
+fun engineFixtureWith(name: String, path: String, old: String, new: String): File = variants.getOrPut(name) {
+    copyOfTheBuild("engine-fixture-$name").also { directory ->
+        val file = File(directory, path)
+        val text = file.readText()
+        check(text.split(old).size == 2) { "$path: '$old' must occur exactly once" }
+        file.writeText(text.replace(old, new))
+    }
+}
 
 fun assertSharedExamplesConform(examples: List<Example>) {
     require(examples.isNotEmpty()) { "shared examples must not be empty" }

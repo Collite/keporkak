@@ -45,7 +45,8 @@ object Rules {
         // Without a roster there are no vendors to check against: a missing roster is one problem, not one per vendor named.
         val offices = officesNode?.let { readOffices(Doc(OFFICES, report), it, roster?.vendors?.keys) }
         val budgetsNode = parsed(BUDGETS)
-        val budgets = budgetsNode?.let { readBudgets(Doc(BUDGETS, report), it, roster?.vendors?.keys, offices?.keys.orEmpty()) }
+        // Without the offices file there are no offices to check against: a missing file is one problem, not one per office named.
+        val budgets = budgetsNode?.let { readBudgets(Doc(BUDGETS, report), it, roster?.vendors?.keys, offices?.keys) }
         if (lifecycle == null || kinds == null || engagement == null || vocabulary == null || roster == null || offices == null || budgets == null) {
             return Loaded.Invalid(report.problems)
         }

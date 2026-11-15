@@ -21,11 +21,11 @@ private fun pythonWalk(name: String): List<String> {
 
 /** The walk as the Python walker read it from `rules/walks/` (its `WALK` line). */
 fun walkDefinition(name: String): Datum.Fields =
-    Datum.parse(pythonWalk(name).single { it.startsWith("WALK ") }.removePrefix("WALK ")) as Datum.Fields
+    parseDatum(pythonWalk(name).single { it.startsWith("WALK ") }.removePrefix("WALK ")) as Datum.Fields
 
 /** The Python walker's own steps (`check-rules.py --trace`): the second opinion. */
 fun walkerTrace(name: String): List<TraceStep> = pythonWalk(name).filter { it.startsWith("TRACE ") }.map { line ->
-    val step = (Datum.parse(line.removePrefix("TRACE ")) as Datum.Fields).fields
+    val step = (parseDatum(line.removePrefix("TRACE ")) as Datum.Fields).fields
     TraceStep(
         (step.getValue("step") as Datum.Number).value.toInt(),
         (step.getValue("refused") as Datum.Bool).value,
@@ -129,11 +129,12 @@ private class WalkThrough(private val walk: Datum.Fields) {
             Destination.AnySeat -> args.fields()["seat"].text() ?: who
         }
         val by = step["by"].text() ?: if (who == "bora") "bora-cli" else "seat:$who"
-        val optional = listOfNotNull(replyTo?.let { """"re":"${it.id.value}"""" }, step["body"]?.let { """"body":${it.json()}""" })
+        val optional = listOfNotNull(replyTo?.let { """"re":"${it.id.value}"""" }, step["body"]?.let { """"body":${it.json()}""" },
+            """"signed":true""".takeIf { step["signed"].text() == "bora" })
         val message = write("""{"id":"$id","thread":"${replyTo?.thread?.value ?: id}","from":"$who","to":"$to","kind":"$kind","stage":"$stageId",""" +
             """"subject":"$kind","created":"${now()}","by":"$by","args":${args.json()}${optional.joinToString("") { ",$it" }}}""") as Message
         messages[id] = message
-        val trigger = Trigger.Arrival(message, signed = step["signed"].text() == "bora")
+        val trigger = Trigger.Arrival(message)
         val decision = engine.judge(state, trigger, Facts.collect(engine.needs(state, trigger), ::observe))
         if (decision.outcome == Outcome.REFUSE) write(refusedRecord(decision, id))
         else {
@@ -154,7 +155,7 @@ private class WalkThrough(private val walk: Datum.Fields) {
 
 /** The walks under `rules/walks/` that need no robot: no step sent by a robot, no observed event, no robot's send, wake, rule or hold expected. */
 fun walksThatNeedNoRobot(): List<String> = File(root, "rules/walks").listFiles { file -> file.name.endsWith(".yaml") }!!.sorted().mapNotNull { file ->
-    val definition = Datum.parse(pythonWalk(file.readText().lines().first { it.startsWith("name: ") }.removePrefix("name: ")).single { it.startsWith("WALK ") }.removePrefix("WALK ")) as Datum.Fields
+    val definition = parseDatum(pythonWalk(file.readText().lines().first { it.startsWith("name: ") }.removePrefix("name: ")).single { it.startsWith("WALK ") }.removePrefix("WALK ")) as Datum.Fields
     val steps = (definition.fields["steps"] as Datum.Items).items.map { it.fields() }
     val robotic = steps.any { step -> step["by"].text()?.startsWith("robot:") == true || step["event"] != null || step["expect"].fields().keys.any { it in setOf("sends", "wakes", "rules", "held") } }
     definition.fields["name"].text().takeUnless { robotic }

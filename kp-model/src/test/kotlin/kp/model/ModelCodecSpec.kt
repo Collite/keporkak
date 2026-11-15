@@ -36,6 +36,27 @@ class ModelCodecSpec : StringSpec({
         over.deadline shouldBe null
         transition.counted shouldBe mapOf("review_request_expiries" to 1.toBigInteger())
     }
+    "the fields of Amendments 8 and 12: a message's signed, delivered's answers and deadline, held's suspended deadline, refused's failed requirement" {
+        val signed = parseLine("""{"v":1,"seq":1,"at":"2026-11-15T12:00:00Z","id":"m-panda-000001","thread":"m-panda-000001","from":"bora","to":"teamlead","kind":"decline","subject":"no","created":"2026-11-15T12:00:00Z","signed":true,"by":"bora-cli"}""") as Message
+        val delivered = parseLine("""{"v":1,"seq":2,"at":"2026-11-15T12:00:00Z","event":"delivered","id":"m-panda-000002","to":["teamlead"],"class":"B","answers":"m-panda-000001","deadline":"2026-11-15T13:00:00Z"}""") as Delivered
+        val held = parseLine("""{"v":1,"seq":3,"at":"2026-11-15T12:00:00Z","event":"held","id":"m-panda-000003","by":"robot:DEP-1","until":"presence","deadline":null}""") as Held
+        val refused = parseLine("""{"v":1,"seq":4,"at":"2026-11-15T12:00:00Z","event":"refused","id":"m-panda-000004","rule":"T-13","requirement":"counter resumes ≤ 2","failed":{"counter":"resumes","lt":{"cap":"resumes_per_stage"}}}""") as Refused
+
+        listOf(signed.signed, (parseLine(validMessage().toString()) as Message).signed) shouldBe listOf(true, false)
+        listOf(delivered.answers, delivered.deadline?.value, delivered.carriesDeadline) shouldBe listOf("m-panda-000001", "2026-11-15T13:00:00Z", true)
+        listOf(held.deadline, held.carriesDeadline) shouldBe listOf(null, true)
+        refused.failed.toString() shouldBe """{"counter":"resumes","lt":{"cap":"resumes_per_stage"}}"""
+        shouldThrowAny { Message.read(JsonObject(validMessage() + ("signed" to JsonPrimitive("bora")))) }
+    }
+    "a line's plain view is standard-library values: numbers exact, null kept apart from absent" {
+        val line = parseLine("""{"v":1,"seq":1,"at":"2026-11-15T12:00:00Z","id":"m-panda-000001","thread":"m-panda-000001","re":null,"from":"teamlead","to":"coder-1","kind":"assign","subject":"go","created":"2026-11-15T12:00:00Z","by":"seat:teamlead","args":{"seat":"coder-1","tries":[1,2.50],"open":true,"none":null,"of":{"x":"y"}}}""") as Message
+
+        line.plainArgs shouldBe mapOf("seat" to "coder-1", "tries" to listOf("1".toBigDecimal(), "2.50".toBigDecimal()), "open" to true, "none" to null, "of" to mapOf("x" to "y"))
+        line.plain().containsKey("re") shouldBe true
+        line.plain()["re"] shouldBe null
+        line.plain().containsKey("cc") shouldBe false
+        plain("""[1, "a", null]""") shouldBe listOf("1".toBigDecimal(), "a", null)
+    }
     "a line is a message when it has kind and a record when it has event, and writes back as the same one line" {
         val text = """{"v":1,"seq":1,"at":"2026-11-13T12:00:00Z","id":"m-panda-000001","thread":"m-panda-000001","from":"coder-1","to":"teamlead","kind":"started","subject":"Skeleton","created":"2026-11-13T12:00:00Z","by":"hand:coder","body":"two\nlines"}"""
         (parseLine(text) is Message) shouldBe true

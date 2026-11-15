@@ -16,6 +16,9 @@ class RuleSet internal constructor(
     val personaModes: Map<String, Set<String>>,
 )
 
+/** The parties that are not seats (contracts.md §1): a `to:` may name one, and none of them is a seat. */
+val PARTIES: Set<String> = setOf("bora", "daemon", "mailroom", "ledger", "board")
+
 // rules/stage-lifecycle.yaml (contracts.md §4.1)
 
 enum class Event(val key: String) { MESSAGE("message"), OP_RESULT("op-result"), EXPIRY("expiry"), FACT("fact") }
@@ -78,7 +81,10 @@ data class Kind(
     val cc: List<String>,
     val fires: String?,
     val guard: String?,
+    /** The prose of who answers, with its conditions ("if FIX FIRST", "optional"). */
     val reply: String?,
+    /** The kinds that answer this one (contracts.md §4.2): a delivery of one that names a waiting message of this kind in `re` answers it. */
+    val replies: List<String>,
     val note: String?,
     /** The prose companion of [expiry]. */
     val onExpiry: String?,
@@ -124,6 +130,8 @@ data class Engagement(
     val presence: Presence?,
     val mailroomDeclaredEffects: List<String>,
     val secondKey: SecondKey?,
+    /** The autonomy profile in force (contracts.md §4.3): a name of [autonomyProfiles]. */
+    val profile: String,
     val autonomyProfiles: Map<String, Map<String, Literal>>,
     val qa: EngagementQa?,
     val identity: Map<String, String>,

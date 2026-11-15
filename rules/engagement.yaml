@@ -156,6 +156,7 @@ second_key:  # U-6: the autonomous merge guard
       fact: roster.floor_rank
   otherwise:
     class: B
+profile: supervised  # the autonomy profile in force (contracts.md §4.3); changing it is an edit of this file, recorded like any reload
 autonomy_profiles:  # F1 γ presets over the classes (chosen per effort on the board; v1 = supervised)
   supervised:
     assignment-proposal: B

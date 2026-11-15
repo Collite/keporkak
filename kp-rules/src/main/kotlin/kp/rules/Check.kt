@@ -101,7 +101,7 @@ internal class Names {
             }
             is Effect.Do -> { operations += effect.operation; effect.with.values.forEach(::value) }
             is Effect.Count -> counters += effect.counter
-            is Effect.Report, is Effect.Transition -> Unit
+            is Effect.Report, is Effect.Transition, is Effect.Wait -> Unit
         }
     }
 }
@@ -116,7 +116,6 @@ internal class RulesCheck(
     private val robots: Map<String, Robot>,
     private val personaModes: Map<String, Set<String>>,
 ) {
-    private val parties = setOf("bora", "daemon", "mailroom", "ledger", "board")
     private val reservedStates = setOf("*", "*active", "*previous")
     private val transitionIds = lifecycle.machines.values.flatMap { machine -> machine.transitions.map { it.id } }.toSet()
 
@@ -143,7 +142,7 @@ internal class RulesCheck(
     fun resolve(owner: Owner, names: Names, thresholds: Set<String>, modes: Set<String> = personaModes.values.flatten().toSet(), ownModes: Boolean = false) {
         names.engagementPaths.filterNot { path -> engagement.values.keys.any { it == path || it.startsWith("$path.") } }
             .forEach { problem(owner, "unknown engagement value '$it'") }
-        names.destinations.filterNot { it in engagement.roles || it in parties }.forEach { problem(owner, "unknown destination '$it'") }
+        names.destinations.filterNot { it in engagement.roles || it in PARTIES }.forEach { problem(owner, "unknown destination '$it'") }
         names.thresholds.filterNot { it in thresholds }.forEach { problem(owner, "unknown robot threshold '$it'") }
         names.modes.filterNot { it in modes }.forEach { problem(owner, if (ownModes) "unknown own persona mode '$it'" else "unknown persona mode '$it'") }
         for ((machine, state) in names.states) {
@@ -184,12 +183,14 @@ internal class RulesCheck(
                 kind.require.forEach(::requirement)
                 kind.classRule.cases.forEach { requirement(it.condition) }
                 kind.expiry.forEach(::effect)
+                kinds += kind.replies
             }
             resolve(owner, names, thresholdsOf(kind.from))
             names.args.distinct().filterNot { it in kind.args }.forEach { problem(owner, "undeclared argument '$it'") }
             for (effect in kind.expiry) {
                 if (effect is Effect.Transition && effect.id !in transitionIds) problem(owner, "expiry names unknown transition '${effect.id}'")
                 if (effect is Effect.Emit && effect.kind !in engagement.mailroomDeclaredEffects) problem(owner, "undeclared expiry emit '${effect.kind}'")
+                if (effect is Effect.Wait && !readsCounterAgainstCap(effect.condition)) problem(owner, "{wait: again} has no if that reads a counter against a cap")
             }
             val toDaemon = (kind.to as? Destination.Parties)?.names == listOf("daemon")
             val bound = lifecycle.machines.values.any { machine -> machine.transitions.any { it.kind == kind.name && it.effects.any { effect -> effect is Effect.Do } } }
@@ -205,6 +206,10 @@ internal class RulesCheck(
             if (gate.require.isNotEmpty()) problem(owner, "requirements belong to S2.2 (Amendment 2)")
         }
     }
+
+    /** A wait goes on only under a cap (contracts.md §4.2): its `if` is a counter compared with `{cap: …}`. */
+    private fun readsCounterAgainstCap(condition: Requirement?): Boolean =
+        condition is Requirement.Counter && condition.comparison?.value is Value.Cap
 
     /** A kind whose `fires` names a stage arrow `a→b` has that arrow in the lifecycle. */
     private fun firesCrossChecked() {

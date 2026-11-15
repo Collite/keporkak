@@ -51,7 +51,7 @@ class FactsSpec : StringSpec({
         val decision = supervised().judge(building, Arrival(review), table("now" to NOW, "pr.ready" to true, "pr.head" to "abc", "list.tasks_open" to 0))
 
         decision.outcome shouldBe Outcome.REFUSE
-        decision.failed shouldBe "{fact: ci.state, of: {fact: pr.head}, eq: green}"
+        decision.failed?.flow() shouldBe "{fact: ci.state, of: {fact: pr.head}, eq: green}"
         decision.unsupplied shouldBe listOf(ref("ci.state(of=abc)"))
         decision.observed["ci.state(of=abc)"] shouldBe UNKNOWN_FACT
     }

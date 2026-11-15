@@ -59,7 +59,7 @@ internal class Doc(val file: String, private val report: Report) {
         val text = (node as? Node.Scalar)?.text
         return when {
             node == null || (node as? Node.Scalar)?.literal == Literal.Null -> null
-            text != null && parseDuration(text) != null -> parseDuration(text)
+            text != null && duration(text) != null -> duration(text)
             else -> null.also { problem(id, "$what must be a duration such as 15m, 4h or 1d") }
         }
     }
@@ -75,7 +75,11 @@ internal class Doc(val file: String, private val report: Report) {
 
 private val durationForm = Regex("([0-9]+(?:\\.[0-9]+)?)(s|m|h|d)")
 
-internal fun parseDuration(text: String): Duration? = durationForm.matchEntire(text)?.let { match ->
+/**
+ * A duration as the rules — and every fact that returns one — write it (contracts.md §4.4): a number and a unit,
+ * `0s`, `42.5s`, `15m`, `4h`, `1d`. Null for anything else; a bare number is not this form.
+ */
+fun duration(text: String): Duration? = durationForm.matchEntire(text)?.let { match ->
     val amount = match.groupValues[1].toDouble()
     when (match.groupValues[2]) {
         "s" -> amount.seconds
@@ -215,12 +219,12 @@ internal class Forms(private val doc: Doc, private val id: String?) {
     /** A transition's effect: `emit`, `do` or `count`, each with an optional `if:`. */
     fun effect(node: Node): Effect? = effectOf(node, setOf("emit", "do", "count"), "unknown effect")
 
-    /** A kind's expiry effect: `emit`, `report`, `transition` or `do`. */
-    fun expiry(node: Node): Effect? = effectOf(node, setOf("emit", "report", "transition", "do"), "invalid expiry effect")
+    /** A kind's expiry effect: `emit`, `report`, `transition`, `do` or `wait`. */
+    fun expiry(node: Node): Effect? = effectOf(node, setOf("emit", "report", "transition", "do", "wait"), "invalid expiry effect")
 
     private fun effectOf(node: Node, allowed: Set<String>, refusal: String): Effect? {
         val mapping = node as? Node.Mapping
-        val kinds = mapping?.entries?.keys?.filter { it in setOf("emit", "do", "count", "report", "transition") }.orEmpty()
+        val kinds = mapping?.entries?.keys?.filter { it in setOf("emit", "do", "count", "report", "transition", "wait") }.orEmpty()
         if (mapping == null || kinds.size != 1 || kinds.single() !in allowed) return null.also { problem(refusal) }
         val fields = Fields(mapping, doc, id)
         val condition = fields["if"]?.let(::single)
@@ -236,6 +240,7 @@ internal class Forms(private val doc: Doc, private val id: String?) {
             "count" -> Effect.Count(name, condition)
             "report" -> MessageClass.entries.firstOrNull { it.name == (fields["class"] as? Node.Scalar)?.text }
                 ?.let { Effect.Report(name, it, condition) }.also { if (it == null) problem("a report names its class: A, B or C") }
+            "wait" -> if (name == "again") Effect.Wait(condition) else null.also { problem("wait must be again") }
             else -> Effect.Transition(name, condition)
         }
         fields.close()
@@ -354,6 +359,7 @@ private fun kind(doc: Doc, name: String, node: Node): Kind? {
     val to = destination(doc, name, fields["to"])
     val cc = fields["cc"]?.let { doc.texts(it, name, "cc") } ?: emptyList()
     val prose = listOf("fires", "guard", "reply", "note", "on_expiry").associateWith { fields[it]?.let { node -> doc.text(node, name, it) } }
+    val replies = fields["replies"]?.let { doc.texts(it, name, "replies") } ?: emptyList()
     val args = doc.mapping(fields["args"], name, "args")?.entries?.mapNotNull { (arg, spec) -> argSpec(doc, name, arg, spec)?.let { arg to it } }?.toMap() ?: emptyMap()
     val classRule = classRule(doc, name, forms, fields["class"])
     val maxFires = fields["max_fires"]?.let { if ((it as? Node.Scalar)?.literal == Literal.Null) null else doc.whole(it, name, "max_fires") }
@@ -364,7 +370,7 @@ private fun kind(doc: Doc, name: String, node: Node): Kind? {
     val require = if (fields.has("require")) forms.requirements(fields["require"]) else emptyList()
     fields.close()
     if (from == null || to == null || classRule == null || window == null) return null
-    return Kind(name, from, to, cc, prose["fires"], prose["guard"], prose["reply"], prose["note"], prose["on_expiry"],
+    return Kind(name, from, to, cc, prose["fires"], prose["guard"], prose["reply"], replies, prose["note"], prose["on_expiry"],
         args, classRule, maxFires, window, deadline, expiry, require)
 }
 
@@ -414,7 +420,7 @@ internal fun readEngagement(doc: Doc, node: Node): Engagement? {
     val mapping = doc.mapping(node, null, "the engagement file") ?: return null
     val fields = doc.fields(mapping, null)
     doc.version(fields)
-    listOf("roles", "graduation", "mailroom_declared_effects").filterNot { fields.has(it) }.forEach { doc.problem(null, "missing $it") }
+    listOf("roles", "graduation", "mailroom_declared_effects", "profile").filterNot { fields.has(it) }.forEach { doc.problem(null, "missing $it") }
     val principles = fields["principles"]?.let { doc.texts(it, null, "principles") } ?: emptyList()
     val roles = doc.mapping(fields["roles"], null, "roles")?.entries?.map { (role, definition) ->
         val prose = doc.mapping(definition, role, "a role")?.let { doc.fields(it, role) }
@@ -446,6 +452,8 @@ internal fun readEngagement(doc: Doc, node: Node): Engagement? {
     val profiles = doc.mapping(fields["autonomy_profiles"], null, "autonomy_profiles")?.entries?.entries?.associate { (profile, settings) ->
         profile to (doc.mapping(settings, null, "autonomy profile $profile")?.entries?.mapNotNull { (key, value) -> doc.literal(value, null, "$profile.$key")?.let { key to it } }?.toMap() ?: emptyMap())
     } ?: emptyMap()
+    val profile = fields["profile"]?.let { doc.text(it, null, "profile") }
+    if (profile != null && profile !in profiles) doc.problem(null, "profile '$profile' is not in autonomy_profiles")
     val qa = doc.mapping(fields["qa"], null, "qa")?.let { doc.fields(it, null) }?.let { read ->
         EngagementQa(read["instances_per_office"]?.let { doc.whole(it, null, "qa.instances_per_office") } ?: 1,
             read["queue"]?.let { doc.text(it, null, "qa.queue") }, read["computer_use"]?.let { doc.textMap(it, null, "qa.computer_use") } ?: emptyMap(),
@@ -462,7 +470,7 @@ internal fun readEngagement(doc: Doc, node: Node): Engagement? {
     }
     val permissions = fields["permissions"]?.let { doc.textMap(it, null, "permissions") } ?: emptyMap()
     fields.close()
-    return Engagement(principles, roles, classes, graduation, caps, presence, declared, secondKey, profiles, qa, identity, unguarded,
+    return Engagement(principles, roles, classes, graduation, caps, presence, declared, secondKey, profile.orEmpty(), profiles, qa, identity, unguarded,
         stopGate, permissions, flatten(mapping))
 }
 

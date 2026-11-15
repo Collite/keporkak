@@ -29,8 +29,14 @@ class Message private constructor(override val json: JsonObject) : Envelope {
     val body get() = json.optionalString("body")
     val pointers get() = json.strings("pointers")?.map(::Pointer)
     val args get() = json["args"]?.jsonObject
+    /** `args` as standard-library values (see [plain]): what a reader with no JSON library reads — the engine. */
+    val plainArgs: Map<String, Any?> get() = json["args"]?.let { plainValue(it) as Map<String, Any?> }.orEmpty()
     val deadline get() = json.optionalString("deadline")?.let(::Timestamp)
+    /** Whether the line carries `deadline`, null included: a wait's deadline is the last one a line carries (§2.2). */
+    val carriesDeadline get() = "deadline" in json
     val created get() = Timestamp(json.string("created"))
+    /** Set by the mailroom: the message came from `kp` over a root peer (§2.1, §6). Absent is false. */
+    val signed get() = json["signed"]?.jsonPrimitive?.boolean ?: false
     val by get() = json.string("by")
     companion object {
         fun read(value: JsonObject): Message {
@@ -72,12 +78,20 @@ class Delivered internal constructor(value: JsonObject) : Record(value) {
     val counted get() = json["counted"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content.toBigDecimal().toBigIntegerExact() }
     val observed get() = json["observed"]?.jsonObject
     val attested get() = json.strings("attested")
+    /** The waiting message this delivery answers: it closes that wait and its ticket (Amendment 8). */
+    val answers get() = json.optionalString("answers")
+    /** The deadline that applies from this delivery — a held message's, counted from its release (Amendment 8). */
+    val deadline get() = json.optionalString("deadline")?.let(::Timestamp)
+    val carriesDeadline get() = "deadline" in json
 }
 @Serializable(with = RefusedSerializer::class)
 class Refused internal constructor(value: JsonObject) : Record(value) {
     val id get() = json.string("id")
     val rule get() = json.string("rule")
+    /** The rule's guard in the rules' own prose. */
     val requirement get() = json.string("requirement")
+    /** The first requirement that failed, in its file form (Amendment 12). */
+    val failed get() = json["failed"]?.jsonObject
     val observed get() = json["observed"]?.jsonObject
     val refusalsToday get() = json.number("refusals_today")
 }
@@ -87,6 +101,9 @@ class Held internal constructor(value: JsonObject) : Record(value) {
     val by get() = json.string("by")
     val until get() = json.string("until")
     val ticket get() = json.number("ticket")
+    /** Null while held: holding a message suspends its deadline (Amendment 8). */
+    val deadline get() = json.optionalString("deadline")?.let(::Timestamp)
+    val carriesDeadline get() = "deadline" in json
 }
 @Serializable(with = ExpiredSerializer::class)
 class Expired internal constructor(value: JsonObject) : Record(value) {

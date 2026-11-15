@@ -3,6 +3,8 @@ package kp.engine
 import kp.model.utc
 import kp.rules.ArgSpec
 import kp.rules.ArgType
+import kp.rules.Destination
+import kp.rules.PARTIES
 import kp.rules.Effect
 import kp.rules.Event
 import kp.rules.FactCall
@@ -20,10 +22,10 @@ import kotlin.time.Duration
 
 /**
  * The mailroom's guard (architecture.md §1): the rule set applied to a trigger. Pure — it reads no file, no clock
- * and no world; "now" is a fact like any other. [profile] names the autonomy profile in force (`engagement.yaml:
- * autonomy_profiles`), which the rules do not choose.
+ * and no world; "now" is a fact like any other. The autonomy profile in force is the rule set's (`engagement.yaml:
+ * profile`, contracts.md §4.3).
  */
-class Engine(private val rules: RuleSet, private val profile: String) {
+class Engine(private val rules: RuleSet) {
     /**
      * The facts [judge] will read that the table must supply (contracts.md §4.4): every fact its requirements, class
      * cases and effects may read, but those of source L, which the engine answers from the state — and `now`.
@@ -36,7 +38,7 @@ class Engine(private val rules: RuleSet, private val profile: String) {
     /** What is to happen: deliver or refuse, which transitions fire, which counters move, which effects are requested, under which class. */
     fun judge(state: State, trigger: Trigger, facts: Facts): Decision {
         val context = Context.of(trigger, state) ?: return Decision.create(Outcome.NOTHING)
-        return Judgement(rules, state, context, facts, profile).run()
+        return Judgement(rules, state, context, facts).run()
     }
 }
 
@@ -45,14 +47,14 @@ private const val BODY_LINES = "body_lines"
 private const val HOPS = "hops_per_thread"
 private const val MAX_FIRES_DEFAULT = "max_fires_default"
 
-private class Judgement(private val rules: RuleSet, private val state: State, private val context: Context, facts: Facts, private val profile: String) {
+private class Judgement(private val rules: RuleSet, private val state: State, private val context: Context, facts: Facts) {
     private val evaluation = Evaluation(rules, state, context, facts)
     private val machines = Machines(rules, state)
 
     fun run(): Decision = if (context.event == Event.MESSAGE) arrival() else fire()
 
     private fun refuse(rule: String, requirement: String, failed: Requirement? = null) = Decision.create(
-        Outcome.REFUSE, rule = rule, requirement = requirement, failed = failed?.let(::render) ?: requirement,
+        Outcome.REFUSE, rule = rule, requirement = requirement, failed = failed?.let(::form),
         unsupplied = evaluation.unsupplied.toList(), observed = evaluation.observed.toMap(), attested = evaluation.attested(),
     )
 
@@ -73,14 +75,19 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         return Decision.create(
             Outcome.DELIVER, rule = fired.rule(), unsupplied = evaluation.unsupplied.toList(), moves = fired.moves, counted = evaluation.moved.toMap(),
             effects = fired.effects, messageClass = messageClass, waitsForBora = messageClass == MessageClass.B, deadline = deadline,
-            observed = evaluation.observed.toMap(), attested = evaluation.attested(),
+            observed = evaluation.observed.toMap(), attested = evaluation.attested(), answers = answers(kind, message),
         )
+    }
+
+    /** The waiting message this delivery answers (contracts.md §4.2): the one its `re` names, when it waits and its kind lists this one in `replies`. */
+    private fun answers(kind: Kind, message: View): String? = message.re?.takeIf { re ->
+        state.deadlines[re]?.let { wait -> kind.name in rules.kinds[wait.kind]?.replies.orEmpty() } == true
     }
 
     /**
      * What the engine enforces for every kind with no requirement written (contracts.md §4.1, §2.1): the sender's
      * role owns the kind, `args` against the declaration, the body's line cap, the thread's hop cap, `max_fires`
-     * within the window. A refusal quotes the rule file's field.
+     * within the window — `null` is `caps.max_fires_default` — and the addressee. A refusal quotes the rule file's field.
      */
     private fun everyKind(kind: Kind, message: View): Pair<String, Requirement?>? {
         if (kind.from.none { roleOwns(it, message.from) }) return "from: ${kind.from.joinToString(" | ")}" to null
@@ -94,7 +101,24 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
             val written = if (kind.maxFires != null) "max_fires: ${kind.maxFires}" else "caps.$MAX_FIRES_DEFAULT: ${maximum.toPlainString()}"
             return "$written, window: ${kind.window.key}" to null
         }
+        if (!addressed(kind.to, message)) return "to: ${destination(kind.to)}" to null
         return null
+    }
+
+    /**
+     * The addressee is a party the kind's `to` names (contracts.md §4.1): a seat of one of its roles, or one of its
+     * parties; the sender of the message this one answers, for `{re: from}`; any seat — not a party — for `a seat`.
+     */
+    private fun addressed(to: Destination, message: View): Boolean = when (to) {
+        is Destination.Parties -> to.names.any { roleOwns(it, message.to) }
+        is Destination.Reply -> (evaluation.value(Value.Reply(to.field)) as? Datum.Text)?.value == message.to
+        Destination.AnySeat -> message.to !in PARTIES && rules.engagement.roles.keys.any { roleOwns(it, message.to) }
+    }
+
+    private fun destination(to: Destination): String = when (to) {
+        is Destination.Parties -> to.names.joinToString(" | ")
+        is Destination.Reply -> "{re: ${to.field.key}}"
+        Destination.AnySeat -> "a seat"
     }
 
     private fun cap(name: String) = (rules.engagement.caps[name] as? Literal.Number)?.value
@@ -110,7 +134,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
             Window.STAGE -> earlier.count { it.stage == message.stage }
             Window.DAY -> now()?.let { day(it) }?.let { today -> bySender.count { day(it.at) == today } } ?: bySender.size
             Window.RETURN -> state.machine(PRESENCE_MACHINE, BORA)?.since?.let { since -> bySender.count { !before(it.at, since) } } ?: bySender.size
-            Window.SESSION -> context.session?.let { since -> bySender.count { !before(it.at, since) } } ?: bySender.size
+            Window.SESSION -> state.sessions[message.from]?.let { since -> bySender.count { !before(it.at, since) } } ?: bySender.size
         }
     }
 
@@ -143,26 +167,42 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
 
     private fun describe(spec: ArgSpec): String = spec.enum?.joinToString(" | ", "one of ") { render(it) } ?: spec.type?.key ?: "valid"
 
-    /** A kind's class: its first case that holds; else the autonomy profile in force, where it names the kind; else its default. */
+    /**
+     * A kind's class, in contracts.md §4.2's order: its first case that holds; else the class the profile in force
+     * gives the kind; else its default. A profile's word that is not a class (`queue`) leaves the default.
+     */
     private fun classify(kind: Kind): MessageClass {
         kind.classRule.cases.firstOrNull { evaluation.holds(it.condition) }?.let { return it.messageClass }
-        val preset = (rules.engagement.autonomyProfiles[profile]?.get(kind.name) as? Literal.Text)?.value
+        val preset = (rules.engagement.autonomyProfiles[rules.engagement.profile]?.get(kind.name) as? Literal.Text)?.value
         return MessageClass.entries.firstOrNull { it.name == preset } ?: kind.classRule.default
     }
 
-    /** `on: op-result`, `on: expiry`, `on: fact` — the same evaluation; an expiry adds its kind's `expiry` effects. */
+    /**
+     * `on: op-result`, `on: expiry`, `on: fact` — the same evaluation; an expiry adds its kind's `expiry` effects, and
+     * says whether the wait goes on: its new deadline, or null when it is over.
+     */
     private fun fire(): Decision {
         val kind = context.kind?.let(rules.kinds::get)
         val fired = fireMachines(kind)
-        val expiry = if (context.event == Event.EXPIRY && kind != null) effects(kind.expiry.filter { it !is Effect.Transition }, kind.name) else emptyList()
+        val expiry = if (context.event == Event.EXPIRY && kind != null) effects(kind.expiry.filter { it !is Effect.Transition && it !is Effect.Wait }, kind.name) else emptyList()
+        val deadline = kind?.takeIf { context.event == Event.EXPIRY }?.let(::waitAgain)
         val effects = fired.effects + expiry
         val reported = expiry.filterIsInstance<Requested.Report>().firstOrNull()
         return Decision.create(
             if (fired.moves.isEmpty() && effects.isEmpty()) Outcome.NOTHING else Outcome.FIRE,
             rule = fired.rule() ?: kind?.name?.takeIf { effects.isNotEmpty() }, unsupplied = evaluation.unsupplied.toList(),
             moves = fired.moves, counted = evaluation.moved.toMap(), effects = effects, messageClass = reported?.messageClass,
-            waitsForBora = reported != null, observed = evaluation.observed.toMap(),
+            waitsForBora = reported != null, deadline = deadline, observed = evaluation.observed.toMap(),
         )
+    }
+
+    /**
+     * `{wait: again}` (contracts.md §4.2): when one of the kind's holds, read after the expiry's transitions moved their
+     * counters, the wait starts again for the kind's deadline, counted from now. Otherwise — or with no `now` — it is over.
+     */
+    private fun waitAgain(kind: Kind): String? {
+        if (kind.expiry.filterIsInstance<Effect.Wait>().none { it.condition?.let(evaluation::holds) ?: true }) return null
+        return kind.deadline?.let { duration -> now()?.let { plus(it, duration) } }
     }
 
     private class Fired(val moves: List<Move>, val effects: List<Requested>, val first: Pair<Transition, String>?) {
@@ -202,7 +242,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
             is Effect.Emit -> Requested.Emit(rule, effect.kind, (evaluation.value(effect.to) as? Datum.Text)?.value, resolved(effect.args))
             is Effect.Do -> Requested.Do(rule, effect.operation, resolved(effect.with))
             is Effect.Report -> Requested.Report(rule, effect.to, effect.messageClass)
-            is Effect.Transition -> null
+            is Effect.Transition, is Effect.Wait -> null
         }
     }
 

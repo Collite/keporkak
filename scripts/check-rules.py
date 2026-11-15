@@ -88,7 +88,8 @@ if FIXTURE:
         "class": {"default": "A"}, "window": "stage", "max_fires": None, "deadline": None, "expiry": [], "require": [],
     }})
     E = {"roles": {"coder": {}, "teamlead": {}}, "graduation": {"never": []},
-         "mailroom_declared_effects": [], "caps": given.get("caps", {})}
+         "mailroom_declared_effects": [], "caps": given.get("caps", {}),
+         "profile": given.get("profile", "supervised"), "autonomy_profiles": given.get("autonomy_profiles", {"supervised": {}})}
     if "second_key" in given:
         E["second_key"] = given["second_key"]
     V = given.get("vocabulary", V)
@@ -378,14 +379,29 @@ for name, kind in K.items():
     for argument, definition in kind.get("args",{}).items():
         if not isinstance(definition,dict) or not set(definition)&{"type","enum"}:
             fail(f"{name}: untyped argument '{argument}'")
+    # The kinds that answer this one (contracts.md §4.2): each is a kind.
+    if "replies" in kind:
+        if not isinstance(kind["replies"], list):
+            fail(f"{name}: replies must be a list")
+        else:
+            for reply in kind["replies"]:
+                if not isinstance(reply, str): fail(f"{name}: replies's item must be text")
+                elif reply not in K: fail(f"{name}: unknown kind '{reply}'")
     thresholds = sender_thresholds(kind.get("from"))
     check_requirements(kind.get("require", []), name, thresholds=thresholds)
     for effect in kind.get("expiry",[]):
         check_references(effect,name,thresholds=thresholds)
         if isinstance(effect, dict) and "emit" in effect:
             check_destination(effect.get("to"), name)
-        if not isinstance(effect,dict) or not set(effect)&{"emit","report","transition","do"}:
+        if not isinstance(effect,dict) or not set(effect)&{"emit","report","transition","do","wait"}:
             fail(f"{name}: invalid expiry effect")
+        # The wait goes on only under a cap (contracts.md §4.2): `{wait: again}`'s if is a counter compared with {cap: …}.
+        if isinstance(effect, dict) and "wait" in effect:
+            if effect["wait"] != "again": fail(f"{name}: wait must be again")
+            condition = effect.get("if")
+            if not (isinstance(condition, dict) and isinstance(condition.get("counter"), str)
+                    and any(isinstance(condition.get(operator), dict) and set(condition[operator]) == {"cap"} for operator in COMPARISONS)):
+                fail(f"{name}: {{wait: again}} has no if that reads a counter against a cap")
         if "transition" in effect and effect["transition"] not in seen_ids:
             fail(f"{name}: expiry names unknown transition '{effect['transition']}'")
         if "emit" in effect and effect["emit"] not in E["mailroom_declared_effects"]:
@@ -477,7 +493,9 @@ for n in sorted(states):
 for c in loops: fail(f"uncapped cycle without a Bora gate: {' → '.join(c)}")
 ok(f"no cycle survives once the {len(capped)} capped edges and {len(gate)} Bora-gate states are removed")
 
-# 6. engagement references
+# 6. engagement references; the profile in force is one of autonomy_profiles (contracts.md §4.3)
+if "profile" not in E: fail("missing profile")
+elif E["profile"] not in (E.get("autonomy_profiles") or {}): fail(f"profile '{E['profile']}' is not in autonomy_profiles")
 for kname in E["graduation"]["never"]:
     if kname not in K: fail(f"graduation.never names unknown kind '{kname}'")
 ok("engagement.yaml references resolve")
@@ -602,7 +620,12 @@ def compare(actual, operator, expected):
     if operator in ("eq","ne"):
         if isinstance(actual,list) and isinstance(expected,list):
             same={json.dumps(item,sort_keys=True) for item in actual}=={json.dumps(item,sort_keys=True) for item in expected}
-        else: same=actual==expected
+        else:
+            same=actual==expected
+            # A duration is the same as another of its length, or as a number of seconds: `0s` is `0` (contracts.md §4.4).
+            left,right=comparable(actual),comparable(expected)
+            if not same and (isinstance(actual,str) or isinstance(expected,str)) and all(isinstance(side,(int,float)) and not isinstance(side,bool) for side in (left,right)):
+                same=left==right
         return same if operator=="eq" else not same
     if operator=="in":
         try: return all(item in expected for item in actual) if isinstance(actual,list) else actual in expected
@@ -687,7 +710,7 @@ class Walk:
             return sum(record.get("kind")==kind and record.get("status")=="delivered" and all(record.get("args",{}).get(key,MISSING)==value for key,value in where.items()) for record in records)
         if name=="request.open":
             kind=params.get("kind")
-            replies=set(re.findall(r"[a-z][a-z-]+",K.get(kind,{}).get("reply","")))
+            replies=set(K.get(kind,{}).get("replies",[]))
             return any(record.get("kind")==kind and record.get("stage")==self.stage and record.get("status")=="delivered" and not any(reply.get("reply_id")==record.get("id") and reply.get("status")=="delivered" and reply.get("kind") in replies for reply in self.history) for record in self.history)
         if name=="review.open_blockers":
             verdicts=[record for record in self.history if record.get("stage")==self.stage and record.get("kind") in ("verdict","re-verdict") and record.get("status")=="delivered"]
@@ -880,6 +903,8 @@ class Walk:
             window=kind.get("window","stage")
             key=(kind_name,self.stage if window=="stage" else (who,step.get("session","default")) if window=="session" else (who,window))
             maximum=kind.get("max_fires")
+            # `max_fires: null` is caps.max_fires_default: no kind is without a cap (contracts.md §4.2).
+            if maximum is None:maximum=E.get("caps",{}).get("max_fires_default")
             if isinstance(maximum,int) and self.kind_fires.get(key,0)>=maximum:raise WalkError(f"kind {kind_name} cap exhausted")
             self.kind_fires[key]=self.kind_fires.get(key,0)+1
             if len(step.get("body","").splitlines())>E.get("caps",{}).get("body_lines",float("inf")):raise WalkError("body line cap exhausted")

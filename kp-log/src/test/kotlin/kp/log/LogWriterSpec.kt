@@ -158,6 +158,18 @@ class LogWriterSpec : StringSpec({
         }
         project.resolve("mail/KP/p1-s1.2.jsonl").seqs() shouldBe listOf(2)
     }
+    "a stage's file is closed by that stage's own exit only: another stage's exit appended to it closes nothing, now or after a restart" {
+        val project = throwawayProject()
+        val otherExits = json("""{"v":1,"at":"2026-11-14T10:00:00Z","event":"transition","machine":"stage","subject":"KP/P1/S1.2","from":"merged","to":"exited","cause":"m-panda-000009"}""")
+        LogWriter.open(project, panda).use { log ->
+            log.append(otherExits, stage)
+            log.append(record(), stage)
+            log.append(otherExits, stage)
+        }
+        LogWriter.open(project, panda).use { log -> log.append(message("m-panda-000004")) }
+        project.resolve("mail/KP/p1-s1.1.jsonl").seqs() shouldBe listOf(1, 2, 3, 4)
+        LogReader(project, panda).read().lines.map { it.entry.seq.toInt() } shouldBe listOf(1, 2, 3, 4)
+    }
     "a log whose last line is torn is not written to; the writer refuses to start" {
         val project = throwawayProject()
         val file = project.resolve("mail/KP/p1-s1.1.jsonl")

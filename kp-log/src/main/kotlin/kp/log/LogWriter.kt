@@ -66,7 +66,7 @@ class LogWriter private constructor(
 
         write(file, (entry.toLine() + "\n").toByteArray(Charsets.UTF_8))
         last += 1
-        if (owner != null && Layout.closes(entry)) closed.add(file)
+        if (owner != null && Layout.closes(entry, owner.value)) closed.add(file)
         return entry
     }
 
@@ -113,7 +113,7 @@ class LogWriter private constructor(
                     if (parsed.count == 0) continue
                     val final = parsed.last ?: throw LogRefusal("${parsed.problems.last()}; the writer cannot continue its seq")
                     last = maxOf(last, final.seq)
-                    if (file in stageFiles && Layout.closes(final.entry)) closed.add(file)
+                    if (file in stageFiles && Layout.closes(final.entry, Layout.stageOf(file))) closed.add(file)
                 }
                 return LogWriter(project, office, lock, last, closed, channels)
             } catch (error: Throwable) {

@@ -31,8 +31,11 @@ class Decision private constructor(
     val rule: String?,
     /** A refusal's requirement, in the rule file's own prose (contracts.md §4: what a refusal quotes). */
     val requirement: String?,
-    /** The first requirement that failed, in the rule file's own form. */
-    val failed: String?,
+    /**
+     * The first requirement that failed, in its file form — the `refused` record's `failed` (contracts.md §2.2). Null
+     * when what failed is one the engine enforces for every kind with no requirement written: [requirement] names it.
+     */
+    val failed: Datum?,
     /** Facts the judgement read that the table did not supply: unknown, so what read them failed. */
     val unsupplied: List<FactRef>,
     val moves: List<Move>,
@@ -42,19 +45,24 @@ class Decision private constructor(
     val messageClass: MessageClass?,
     /** Class B: the outcome waits for Bora (a ticket). */
     val waitsForBora: Boolean,
-    /** The deadline a delivery sets, when its kind has one. */
+    /**
+     * The deadline a delivery sets, when its kind has one. For an expiry: the wait's new deadline when it goes on, null
+     * when it is over (the `expired` record's `deadline`, contracts.md §2.2).
+     */
     val deadline: String?,
     /** Every fact the judgement read, by [FactRef]'s written form; a fact not supplied is [UNKNOWN_FACT]. */
     val observed: Map<String, Datum>,
     /** What the sender attested (`args.attest`). */
     val attested: List<String>,
+    /**
+     * The waiting message this delivery answers — the `delivered` record's `answers` (contracts.md §2.2, §4.2): the
+     * one its `re` names, when that message waits and its kind's `replies` lists this kind.
+     */
+    val answers: String?,
 ) {
-    /** Only for the construction fence's probes, which construct with no arguments (kp-model's EngineBoundarySpec). */
-    private constructor() : this(Outcome.NOTHING, null, null, null, emptyList(), emptyList(), emptyMap(), emptyList(), null, false, null, emptyMap(), emptyList())
-
     override fun toString(): String =
         "Decision($outcome, rule=$rule, requirement=$requirement, failed=$failed, unsupplied=$unsupplied, moves=$moves, counted=$counted, " +
-            "effects=$effects, class=$messageClass, waitsForBora=$waitsForBora, deadline=$deadline, observed=$observed, attested=$attested)"
+            "effects=$effects, class=$messageClass, waitsForBora=$waitsForBora, deadline=$deadline, observed=$observed, attested=$attested, answers=$answers)"
 
     internal companion object {
         @JvmOverloads
@@ -62,7 +70,7 @@ class Decision private constructor(
             outcome: Outcome = Outcome.NOTHING,
             rule: String? = null,
             requirement: String? = null,
-            failed: String? = null,
+            failed: Datum? = null,
             unsupplied: List<FactRef> = emptyList(),
             moves: List<Move> = emptyList(),
             counted: Map<String, Long> = emptyMap(),
@@ -72,7 +80,8 @@ class Decision private constructor(
             deadline: String? = null,
             observed: Map<String, Datum> = emptyMap(),
             attested: List<String> = emptyList(),
-        ): Decision = Decision(outcome, rule, requirement, failed, unsupplied, moves, counted, effects, messageClass, waitsForBora, deadline, observed, attested)
+            answers: String? = null,
+        ): Decision = Decision(outcome, rule, requirement, failed, unsupplied, moves, counted, effects, messageClass, waitsForBora, deadline, observed, attested, answers)
     }
 }
 

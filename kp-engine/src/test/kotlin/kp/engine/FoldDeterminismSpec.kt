@@ -9,7 +9,9 @@ import kp.model.parseLine
 import kp.model.utc
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kp.model.Delivered
 import kp.model.Expired
+import kp.model.Held
 import kp.model.Message
 import kp.model.Record
 import kotlin.random.Random
@@ -50,7 +52,11 @@ private class LogGenerator(seed: Int) {
                 if (!again) waiting -= id
             }
             5 -> delivered.keys.randomOrNull(random)?.let { id -> line(""""event":"read","seat":"${delivered.getValue(id)}","ids":["$id"]""") }
-            6 -> messages.randomOrNull(random)?.let { id -> line(""""event":"op","op":"git.merge","phase":"${pick(listOf("requested", "ok", "failed"))}","cause":"$id"""") }
+            6 -> messages.randomOrNull(random)?.let { id ->
+                val op = pick(listOf("git.merge", "seat.start"))
+                val result = if (op == "seat.start") ""","result":{"seat":"${pick(seats)}"}""" else ""
+                line(""""event":"op","op":"$op","phase":"${pick(listOf("requested", "ok", "failed"))}","cause":"$id","with":{"seat":"${pick(seats)}"}$result""")
+            }
             7 -> line(""""event":"rules","hash":"${random.nextInt().toString(16)}","files":{"rules/engagement.yaml":"x"}""")
             else -> line(""""event":"fact","fact":"bora.present","subject":"bora","value":${random.nextBoolean()}""")
         }
@@ -68,13 +74,16 @@ private class LogGenerator(seed: Int) {
         when (random.nextInt(4)) {
             0 -> line(""""event":"refused","id":"$id","rule":"k","requirement":"r"${if (maybe(50)) ""","refusals_today":${random.nextInt(1, 4)}""" else ""}""")
             1 -> {
-                line(""""event":"held","id":"$id","by":"robot:DEP-1","until":"presence"${ticketField()}""")
+                line(""""event":"held","id":"$id","by":"robot:DEP-1","until":"presence"${ticketField()}${if (maybe(50)) ""","deadline":null""" else ""}""")
                 if (deadline.isNotEmpty()) waiting += id
             }
             2 -> {
-                line(""""event":"delivered","id":"$id","to":["$to"],"class":"A"${if (maybe(30)) "," + counted() else ""}${ticketField()}""")
+                val answers = re?.takeIf { it in waiting && maybe(60) }
+                val released = if (maybe(20)) ""","deadline":"${time(150)}"""" else ""
+                line(""""event":"delivered","id":"$id","to":["$to"],"class":"A"${if (maybe(30)) "," + counted() else ""}${ticketField()}$released${answers?.let { ""","answers":"$it"""" } ?: ""}""")
                 delivered[id] = to
-                if (deadline.isNotEmpty()) waiting += id
+                answers?.let { waiting -= it }
+                if (deadline.isNotEmpty() || released.isNotEmpty()) waiting += id
             }
             else -> Unit
         }
@@ -84,7 +93,7 @@ private class LogGenerator(seed: Int) {
 /** Every time the state holds: when it was last folded, since when each machine is in its state, waits, holds, tickets. */
 private fun State.times(): List<String> = listOfNotNull(at) +
     machines.values.flatMap { subjects -> subjects.values.map { it.since } } +
-    deadlines.values.map { it.deadline } + held.values.map { it.since } + tickets.values.map { it.at }
+    deadlines.values.mapNotNull { it.deadline } + held.values.map { it.since } + tickets.values.map { it.at } + sessions.values + operations.map { it.since }
 
 class FoldDeterminismSpec : StringSpec({
     "a valid log cut at every line, folded in two parts, gives the state of folding it whole — and folding it twice changes nothing" {
@@ -101,7 +110,9 @@ class FoldDeterminismSpec : StringSpec({
         (1..150).forEach { seed ->
             val lines = LogGenerator(seed).generate(size = 10 + seed % 50)
             val state = fold(lines)
-            val logged = lines.flatMap { listOfNotNull(it.at.value, (it as? Message)?.deadline?.value, (it as? Expired)?.deadline?.value) }
+            val logged = lines.flatMap {
+                listOfNotNull(it.at.value, (it as? Message)?.deadline?.value, (it as? Expired)?.deadline?.value, (it as? Delivered)?.deadline?.value, (it as? Held)?.deadline?.value)
+            }
             withClue("seed $seed") {
                 logged shouldContainAll state.times()
                 lines.map { utc(it.at.value).toLocalDate().toString() } shouldContainAll state.refusals.values.map { it.day }
@@ -120,6 +131,10 @@ class FoldDeterminismSpec : StringSpec({
             folded.any { it.unread.isNotEmpty() },
             folded.any { it.refusals.isNotEmpty() },
             folded.any { it.counters.isNotEmpty() },
-        ) shouldBe List(6) { true }
+            folded.any { it.deadlines.values.any { wait -> wait.deadline == null } },
+            folded.any { it.answered.isNotEmpty() },
+            folded.any { it.operations.isNotEmpty() },
+            folded.any { it.sessions.isNotEmpty() },
+        ) shouldBe List(10) { true }
     }
 })

@@ -75,12 +75,12 @@ class TriggersSpec : StringSpec({
 
         engine.judge(stopped, Arrival(message("triage", from = "principal", to = "coder", args = """{"outcome": "issue", "found": "F1", "since": "t0"}""")),
             table("now" to NOW, "list.sections_changed(since=t0)" to listOf("Found while doing"))).fired() shouldBe listOf("FOUND_ITEM-01 found $STAGE#F1: found → triaged")
-        engine.judge(classifying, Arrival(message("ruling", from = "bora", to = "reviewer-1", thread = "m-panda-000040", re = "m-panda-000040", args = """{"outcome": "x"}"""), signed = true),
+        engine.judge(classifying, Arrival(message("ruling", from = "bora", to = "reviewer-1", thread = "m-panda-000040", re = "m-panda-000040", args = """{"outcome": "x"}""", signed = true)),
             table("now" to NOW)).fired() shouldBe listOf("FLAG_THREAD-01 flag m-panda-000040: asked → ruled")
         engine.judge(fold(log(move("stage", STAGE, "planned", "assigned"), move("seat", "coder-1", "provisioned", "ready"))), Arrival(message("assign", from = "teamlead", to = "coder", args = """{"seat": "coder-1"}""")),
             table("now" to NOW)).fired() shouldBe listOf("SEAT-03 seat coder-1: ready → busy")
         engine.judge(retro, Arrival(message("phase-exit-request", from = "teamlead", to = "bora", args = """{"attest": ["floors_checked"]}""")), phaseExit).fired() shouldBe
             listOf("PHASE-01 phase KP/P1: open → exit_pending")
-        engine.judge(State(), Arrival(message("away", from = "bora", to = "mailroom"), signed = true), table("now" to NOW)).fired() shouldBe listOf("PRESENCE-01 presence bora: present → absent")
+        engine.judge(State(), Arrival(message("away", from = "bora", to = "mailroom", signed = true)), table("now" to NOW)).fired() shouldBe listOf("PRESENCE-01 presence bora: present → absent")
     }
 })

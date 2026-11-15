@@ -2,6 +2,7 @@ package kp.engine
 
 import kp.model.Message
 import kp.model.parseLine
+import kp.model.plain
 import kp.rules.Loaded
 import kp.rules.RuleSet
 import kp.rules.Rules
@@ -37,8 +38,8 @@ fun ruleSet(vararg edits: Edit): RuleSet {
 
 val master: RuleSet by lazy { ruleSet() }
 
-/** The engine under v1's autonomy profile. */
-fun supervised(rules: RuleSet = master) = Engine(rules, "supervised")
+/** The engine on [rules] — under the profile they name: on master v1's, `supervised`. */
+fun supervised(rules: RuleSet = master) = Engine(rules)
 
 const val STAGE = "KP/P1/S1.2"
 const val NOW = "2026-11-15T10:00:00Z"
@@ -47,8 +48,10 @@ const val NOW = "2026-11-15T10:00:00Z"
 fun message(
     kind: String, from: String, args: String = "{}", id: String = "m-panda-000100", thread: String = id, re: String? = null,
     body: String? = null, stage: String? = STAGE, to: String = "teamlead", by: String = if (from == "bora") "bora-cli" else "seat:$from",
+    signed: Boolean = false,
 ): Message {
-    val optional = listOfNotNull(re?.let { """"re":"$it"""" }, body?.let { """"body":${Datum.Text(it).json()}""" }, stage?.let { """"stage":"$it"""" })
+    val optional = listOfNotNull(re?.let { """"re":"$it"""" }, body?.let { """"body":${Datum.Text(it).json()}""" }, stage?.let { """"stage":"$it"""" },
+        """"signed":true""".takeIf { signed })
     val line = """{"v":1,"seq":1,"at":"$NOW","id":"$id","thread":"$thread","from":"$from","to":"$to","kind":"$kind","subject":"$kind",""" +
         """"created":"$NOW","by":"$by","args":$args${optional.joinToString("") { ",$it" }}}"""
     return parseLine(line) as Message
@@ -61,11 +64,24 @@ fun sent(id: String, kind: String, from: String, to: String = "teamlead", args: 
     """{"event":"delivered","id":"$id","to":["$to"],"class":"A"}""",
 )
 
+/** One JSON text as a datum, read by kp-model's plain view as the engine reads a line. */
+fun parseDatum(json: String): Datum = Datum.of(plain(json))
+
+/** A datum written as the rules files write a value in flow style: `{counter: resumes, lt: {cap: resumes_per_stage}}`. */
+fun Datum.flow(): String = when (this) {
+    is Datum.Fields -> fields.entries.joinToString(", ", "{", "}") { (key, value) -> "$key: ${value.flow()}" }
+    is Datum.Items -> items.joinToString(", ", "[", "]") { it.flow() }
+    is Datum.Text -> value
+    is Datum.Number -> value.toPlainString()
+    is Datum.Bool -> value.toString()
+    Datum.Null -> "null"
+}
+
 /** A fact by its written form — `pr.ready`, `ci.state(of=abc)` — as [FactRef.toString] writes it; a parameter is text, or JSON when it is a list or a map. */
 fun ref(written: String): FactRef {
     val name = written.substringBefore('(')
     val params = written.substringAfter('(', "").removeSuffix(")").split(", ").filter { it.isNotEmpty() }
-        .associate { it.substringBefore('=') to it.substringAfter('=').let { value -> if (value.startsWith("[") || value.startsWith("{")) Datum.parse(value) else Datum.Text(value) } }
+        .associate { it.substringBefore('=') to it.substringAfter('=').let { value -> if (value.startsWith("[") || value.startsWith("{")) parseDatum(value) else Datum.Text(value) } }
     return FactRef(name, params)
 }
 
@@ -80,6 +96,7 @@ fun deliveredRecord(decision: Decision, id: String, to: String): String {
     val fields = listOfNotNull(
         decision.rule?.let { """"rule":"$it"""" },
         decision.deadline?.let { """"deadline":"$it"""" },
+        decision.answers?.let { """"answers":"$it"""" },
         """"counted":${Datum.of(decision.counted).json()}""",
         """"observed":${Datum.Fields(decision.observed).json()}""",
         """"attested":${Datum.of(decision.attested).json()}""",
@@ -87,9 +104,30 @@ fun deliveredRecord(decision: Decision, id: String, to: String): String {
     return """{"event":"delivered","id":"$id","to":["$to"],"class":"${decision.messageClass}",${fields.joinToString(",")}}"""
 }
 
-/** The `refused` record a mailroom writes from a refusal's decision. */
+/** The `refused` record a mailroom writes from a refusal's decision: the rule's guard as `requirement`, and the requirement that failed as `failed`. */
 fun refusedRecord(decision: Decision, id: String): String =
-    """{"event":"refused","id":"$id","rule":"${decision.rule}","requirement":${Datum.Text(decision.requirement!!).json()},"observed":${Datum.Fields(decision.observed).json()}}"""
+    """{"event":"refused","id":"$id","rule":"${decision.rule}","requirement":${Datum.Text(decision.requirement!!).json()},""" +
+        (decision.failed?.let { """"failed":${it.json()},""" } ?: "") + """"observed":${Datum.Fields(decision.observed).json()}}"""
+
+/** The `expired` record a mailroom writes from an expiry's decision: its rule, and the new deadline — null when the wait is over. */
+fun expiredRecord(decision: Decision, id: String): String =
+    """{"event":"expired","id":"$id"${decision.rule?.let { ""","rule":"$it"""" }.orEmpty()},"deadline":${decision.deadline?.let { "\"$it\"" } ?: "null"}}"""
+
+/** A line as the log holds it: [line], given `v`, `seq` and `at`. */
+fun stamped(line: String, seq: Int = 7): String = """{"v":1,"seq":$seq,"at":"$NOW",""" + line.removePrefix("{")
+
+/** [message] as a line of the log, less `v`, `seq` and `at`. */
+fun unstamped(message: Message): String = Datum.of(message.plain() - setOf("v", "seq", "at")).json()
+
+/** What a mailroom writes for [message] and its [decision] — the message, its record, its transitions — read back through kp-model and folded onto this state. */
+fun State.recorded(message: Message, decision: Decision): State {
+    val record = if (decision.outcome == Outcome.REFUSE) refusedRecord(decision, message.id.value) else deliveredRecord(decision, message.id.value, message.to.value)
+    return fold(after(this, unstamped(message), record, *transitionRecords(decision, message.id.value).toTypedArray()), this)
+}
+
+/** What a mailroom writes when the deadline of [id] passed and the engine decided [decision]: the `expired` record and its transitions, folded. */
+fun State.expired(id: String, decision: Decision): State =
+    fold(after(this, expiredRecord(decision, id), *transitionRecords(decision, id).toTypedArray()), this)
 
 /** One `transition` record per machine the decision moves, caused by [cause]. */
 fun transitionRecords(decision: Decision, cause: String): List<String> = decision.moves.map { move ->

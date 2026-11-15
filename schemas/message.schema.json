@@ -22,6 +22,7 @@
     "args":     {"type": "object"},
     "deadline": {"type": ["string", "null"], "format": "date-time"},
     "created":  {"type": "string", "format": "date-time"},
+    "signed":   {"type": "boolean"},
     "by":       {"type": "string", "pattern": "^(seat:[a-z][a-z0-9-]*|robot:[A-Z]+-[0-9]+|bora-cli|effect:T-[0-9]+|hand:[a-z][a-z0-9-]*)$"}
   },
   "$defs": {

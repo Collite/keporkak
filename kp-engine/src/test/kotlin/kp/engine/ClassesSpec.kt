@@ -23,7 +23,7 @@ class ClassesSpec : StringSpec({
 
         supervised().judge(assigned, Arrival(message("started", from = "coder-1")), table("now" to NOW, "git.branch_exists" to true)).cls() shouldBe (MessageClass.A to false)
         supervised().judge(building, Arrival(message("stop", from = "coder-1", to = "principal", args = """{"sc": "SC-3"}""")), table("now" to NOW, "list.stop_conditions" to listOf("SC-3"))).cls() shouldBe (MessageClass.C to false)
-        supervised().judge(proposed, Arrival(message("decline", from = "bora"), signed = true), table("now" to NOW)).cls() shouldBe (MessageClass.B to true)
+        supervised().judge(proposed, Arrival(message("decline", from = "bora", signed = true)), table("now" to NOW)).cls() shouldBe (MessageClass.B to true)
     }
     "a kind's first case that holds gives its class" {
         val stopped = fold(log(move("stage", STAGE, "building", "stopped")))
@@ -38,9 +38,10 @@ class ClassesSpec : StringSpec({
         supervised().judge(passed, merge, secondKeyHolds).cls() shouldBe (MessageClass.C to false)
         supervised().judge(passed, merge, sameSeatReviewed).cls() shouldBe (MessageClass.B to true)
     }
-    "the autonomy profile in force sets a kind's class where no case holds; a case still decides where it holds" {
-        val assisted = Engine(master, "assisted")
+    "the profile the rule set names is in force: naming assisted makes a merge class A with no change to the engine; a case still decides where it holds" {
+        val assisted = Engine(ruleSet(Edit("rules/engagement.yaml", "profile: supervised", "profile: assisted")))
 
+        Engine(master).judge(passed, merge, secondKeyHolds).cls() shouldBe (MessageClass.C to false)
         assisted.judge(passed, merge, secondKeyHolds).cls() shouldBe (MessageClass.A to false)
         assisted.judge(passed, merge, sameSeatReviewed).cls() shouldBe (MessageClass.B to true)
     }
@@ -50,6 +51,6 @@ class ClassesSpec : StringSpec({
         val facts = table("now" to NOW, "plan.predecessors_exited" to true, "pool.seat_available(level=senior, role=coder)" to true, "budget.slot_open(dimension=office)" to true,
             "budget.slot_open(dimension=subscription)" to true, "budget.slot_open(dimension=effort)" to true, "list.fence_complete" to true, "list.tasks_total" to 8, "list.lines" to 90)
 
-        Engine(master, "autonomous").judge(planned, proposal, facts).cls() shouldBe (MessageClass.B to true)
+        Engine(ruleSet(Edit("rules/engagement.yaml", "profile: supervised", "profile: autonomous"))).judge(planned, proposal, facts).cls() shouldBe (MessageClass.B to true)
     }
 })

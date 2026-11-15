@@ -20,6 +20,7 @@ internal object Layout {
     private val stageId = Regex("^([A-Z][A-Z0-9-]*)/P([0-9]+)/S([0-9]+\\.[0-9]+)$")
     private val effortId = Regex("^[A-Z][A-Z0-9-]*$")
     private val stageFileName = Regex("^p[0-9]+-s[0-9]+\\.[0-9]+\\.jsonl$")
+    private val stageFileParts = Regex("^p([0-9]+)-s([0-9]+\\.[0-9]+)\\.jsonl$")
 
     fun mail(project: Path): Path = project.resolve("mail")
 
@@ -49,8 +50,18 @@ internal object Layout {
     fun handFiles(project: Path, effort: EffortId): List<Path> =
         mail(project).resolve(effort.value).resolve("_hand").children { it.name.endsWith(".jsonl") }
 
-    /** The last state of a stage file is `exited` or `closed`: the file takes no more lines (§3, Rotation). */
-    fun closes(entry: Envelope): Boolean = entry is Transition && entry.machine == "stage" && entry.to in setOf("exited", "closed")
+    /**
+     * A stage file ends with its own stage's `exited` or `closed` and then takes no more lines (§3, Rotation). A stage
+     * transition whose subject is another stage closes nothing (issue #10).
+     */
+    fun closes(entry: Envelope, stage: String): Boolean =
+        entry is Transition && entry.machine == "stage" && entry.subject == stage && entry.to in setOf("exited", "closed")
+
+    /** The stage whose file [file] is: `mail/<effort>/p<n>-s<n.m>.jsonl` is `<effort>/P<n>/S<n.m>`. */
+    fun stageOf(file: Path): String {
+        val (phase, number) = stageFileParts.matchEntire(file.name)!!.destructured
+        return "${file.parent.name}/P$phase/S$number"
+    }
 
     private fun Path.children(keep: (Path) -> Boolean): List<Path> =
         if (!isDirectory()) emptyList() else listDirectoryEntries().filter(keep).sortedBy { it.name }
@@ -83,8 +94,12 @@ internal class ParsedFile(val file: Path, val lines: List<LogLine>, val problems
                 }
                 start = end + 1
             }
-            return ParsedFile(file, lines, problems, number)
+            return ParsedFile(file, lines, problems + backwards(lines), number)
         }
+
+        /** The writer appends in `seq` order, so in one file each line's `seq` is above the one before it (§2.2). */
+        private fun backwards(lines: List<LogLine>): List<Problem> =
+            lines.zipWithNext().filter { (before, line) -> line.seq < before.seq }.map { (before, line) -> Backwards(line.file, line.number, line.seq, before.seq) }
 
         private fun ByteArray.indexOf(byte: Byte, from: Int): Int = (from until size).firstOrNull { this[it] == byte } ?: -1
 

@@ -1,0 +1,68 @@
+name: 'what S1.7 wrote into the rules — replies, {wait: again}, the profile (contracts.md §4.2, §4.3, Amendment 12)'
+scenarios:
+  - name: a replies that names an unknown kind is reported
+    given:
+      kinds:
+        started:
+          from: coder
+          to: teamlead
+          guard: '-'
+          reply: started-ack
+          replies: [started-ack]
+          args: {}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: null
+          expiry: []
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+    expect:
+      failures: ["started: unknown kind 'started-ack'"]
+  - name: 'a {wait: again} with no if that reads a counter against a cap is reported'
+    given:
+      counters: {started_expiries: {scope: stage}}
+      caps: {expiries_before_escalation: 2}
+      kinds:
+        started:
+          from: coder
+          to: teamlead
+          guard: '-'
+          on_expiry: nudge; 2nd expiry → Bora
+          args: {}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: 1h
+          expiry:
+            - {wait: again}
+            - {wait: again, if: {counter: started_expiries, lt: {cap: expiries_before_escalation}}}
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+    expect:
+      failures: ["started: {wait: again} has no if that reads a counter against a cap"]
+  - name: a profile that is not one of autonomy_profiles is reported
+    given:
+      profile: supervisd
+      autonomy_profiles: {supervised: {merge: C}, assisted: {merge: A}}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+    expect:
+      failures: ["profile 'supervisd' is not in autonomy_profiles"]
+  - name: a kind with max_fires null is capped by caps.max_fires_default, in the walker too
+    given:
+      caps: {max_fires_default: 1}
+      states: {planned: {bora_gate: true}, exited: {terminal: true}}
+      transitions:
+        - {id: T-again, from: planned, to: planned, kind: started, 'on': message, guard: '-', require: [], effects: []}
+      walks:
+        - name: the second started is past the default cap
+          initial: planned
+          steps:
+            - {who: coder, kind: started, args: {}}
+            - {who: coder, kind: started, args: {}, expect: {refused: true, refusal_contains: cap exhausted}}
+          final: planned
+    expect:
+      output: ["ok   walk the second started is past the default cap reached planned"]
