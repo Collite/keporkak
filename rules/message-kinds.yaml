@@ -597,6 +597,11 @@ kinds:
         counter: review_request_expiries
         gte:
           cap: expiries_before_escalation
+    - wait: again
+      if:
+        counter: review_request_expiries
+        lt:
+          cap: expiries_before_escalation
   review-bind:
     from: teamlead
     to: reviewer
@@ -659,6 +664,11 @@ kinds:
       if:
         counter: review_bind_expiries
         gte:
+          cap: expiries_before_escalation
+    - wait: again
+      if:
+        counter: review_bind_expiries
+        lt:
           cap: expiries_before_escalation
   verdict:
     from: reviewer
@@ -757,6 +767,11 @@ kinds:
       if:
         counter: repair_expiries
         gte:
+          cap: expiries_before_escalation
+    - wait: again
+      if:
+        counter: repair_expiries
+        lt:
           cap: expiries_before_escalation
   re-verdict:
     from: reviewer

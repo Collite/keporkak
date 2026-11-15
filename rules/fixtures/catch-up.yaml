@@ -20,3 +20,26 @@ scenarios:
         - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
     expect:
       failures: ["started: unknown kind 'started-ack'"]
+  - name: 'a {wait: again} with no if that reads a counter against a cap is reported'
+    given:
+      counters: {started_expiries: {scope: stage}}
+      caps: {expiries_before_escalation: 2}
+      kinds:
+        started:
+          from: coder
+          to: teamlead
+          guard: '-'
+          on_expiry: nudge; 2nd expiry → Bora
+          args: {}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: 1h
+          expiry:
+            - {wait: again}
+            - {wait: again, if: {counter: started_expiries, lt: {cap: expiries_before_escalation}}}
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+    expect:
+      failures: ["started: {wait: again} has no if that reads a counter against a cap"]

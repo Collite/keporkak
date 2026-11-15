@@ -215,12 +215,12 @@ internal class Forms(private val doc: Doc, private val id: String?) {
     /** A transition's effect: `emit`, `do` or `count`, each with an optional `if:`. */
     fun effect(node: Node): Effect? = effectOf(node, setOf("emit", "do", "count"), "unknown effect")
 
-    /** A kind's expiry effect: `emit`, `report`, `transition` or `do`. */
-    fun expiry(node: Node): Effect? = effectOf(node, setOf("emit", "report", "transition", "do"), "invalid expiry effect")
+    /** A kind's expiry effect: `emit`, `report`, `transition`, `do` or `wait`. */
+    fun expiry(node: Node): Effect? = effectOf(node, setOf("emit", "report", "transition", "do", "wait"), "invalid expiry effect")
 
     private fun effectOf(node: Node, allowed: Set<String>, refusal: String): Effect? {
         val mapping = node as? Node.Mapping
-        val kinds = mapping?.entries?.keys?.filter { it in setOf("emit", "do", "count", "report", "transition") }.orEmpty()
+        val kinds = mapping?.entries?.keys?.filter { it in setOf("emit", "do", "count", "report", "transition", "wait") }.orEmpty()
         if (mapping == null || kinds.size != 1 || kinds.single() !in allowed) return null.also { problem(refusal) }
         val fields = Fields(mapping, doc, id)
         val condition = fields["if"]?.let(::single)
@@ -236,6 +236,7 @@ internal class Forms(private val doc: Doc, private val id: String?) {
             "count" -> Effect.Count(name, condition)
             "report" -> MessageClass.entries.firstOrNull { it.name == (fields["class"] as? Node.Scalar)?.text }
                 ?.let { Effect.Report(name, it, condition) }.also { if (it == null) problem("a report names its class: A, B or C") }
+            "wait" -> if (name == "again") Effect.Wait(condition) else null.also { problem("wait must be again") }
             else -> Effect.Transition(name, condition)
         }
         fields.close()

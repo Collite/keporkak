@@ -155,19 +155,32 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         return MessageClass.entries.firstOrNull { it.name == preset } ?: kind.classRule.default
     }
 
-    /** `on: op-result`, `on: expiry`, `on: fact` — the same evaluation; an expiry adds its kind's `expiry` effects. */
+    /**
+     * `on: op-result`, `on: expiry`, `on: fact` — the same evaluation; an expiry adds its kind's `expiry` effects, and
+     * says whether the wait goes on: its new deadline, or null when it is over.
+     */
     private fun fire(): Decision {
         val kind = context.kind?.let(rules.kinds::get)
         val fired = fireMachines(kind)
-        val expiry = if (context.event == Event.EXPIRY && kind != null) effects(kind.expiry.filter { it !is Effect.Transition }, kind.name) else emptyList()
+        val expiry = if (context.event == Event.EXPIRY && kind != null) effects(kind.expiry.filter { it !is Effect.Transition && it !is Effect.Wait }, kind.name) else emptyList()
+        val deadline = kind?.takeIf { context.event == Event.EXPIRY }?.let(::waitAgain)
         val effects = fired.effects + expiry
         val reported = expiry.filterIsInstance<Requested.Report>().firstOrNull()
         return Decision.create(
             if (fired.moves.isEmpty() && effects.isEmpty()) Outcome.NOTHING else Outcome.FIRE,
             rule = fired.rule() ?: kind?.name?.takeIf { effects.isNotEmpty() }, unsupplied = evaluation.unsupplied.toList(),
             moves = fired.moves, counted = evaluation.moved.toMap(), effects = effects, messageClass = reported?.messageClass,
-            waitsForBora = reported != null, observed = evaluation.observed.toMap(),
+            waitsForBora = reported != null, deadline = deadline, observed = evaluation.observed.toMap(),
         )
+    }
+
+    /**
+     * `{wait: again}` (contracts.md §4.2): when one of the kind's holds, read after the expiry's transitions moved their
+     * counters, the wait starts again for the kind's deadline, counted from now. Otherwise — or with no `now` — it is over.
+     */
+    private fun waitAgain(kind: Kind): String? {
+        if (kind.expiry.filterIsInstance<Effect.Wait>().none { it.condition?.let(evaluation::holds) ?: true }) return null
+        return kind.deadline?.let { duration -> now()?.let { plus(it, duration) } }
     }
 
     private class Fired(val moves: List<Move>, val effects: List<Requested>, val first: Pair<Transition, String>?) {
@@ -207,7 +220,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
             is Effect.Emit -> Requested.Emit(rule, effect.kind, (evaluation.value(effect.to) as? Datum.Text)?.value, resolved(effect.args))
             is Effect.Do -> Requested.Do(rule, effect.operation, resolved(effect.with))
             is Effect.Report -> Requested.Report(rule, effect.to, effect.messageClass)
-            is Effect.Transition -> null
+            is Effect.Transition, is Effect.Wait -> null
         }
     }
 

@@ -20,4 +20,14 @@ class RepliesAndWaitsSpec : StringSpec({
         supervised().judge(over, Arrival(started), branch).answers shouldBe null
         supervised().judge(waiting, Arrival(message("started", from = "coder-1")), branch).answers shouldBe null
     }
+    "an expiry of a kind with no {wait: again} ends the wait, and so does one at its cap" {
+        val stop = """{"id":"m-panda-000040","thread":"m-panda-000040","from":"coder-1","to":"principal","kind":"stop","stage":"$STAGE","subject":"s","deadline":"2026-11-15T10:00:00Z","created":"$NOW","by":"seat:coder-1","args":{"sc":"SC-3"}}"""
+        val stopped = fold(log(move("stage", STAGE, "building", "stopped"), stop, """{"event":"delivered","id":"m-panda-000040","to":["principal"],"class":"C"}"""))
+        val repaired = fold(log(move("stage", STAGE, "re_review", "re_review", extra = ""","counted":{"repair_expiries":1}"""),
+            *sent("m-panda-000041", "repair-done", from = "coder-1", to = "reviewer-1")))
+
+        supervised().judge(stopped, Trigger.Expiry("m-panda-000040"), table("now" to NOW, "bora.present" to true)).deadline shouldBe null
+        supervised().judge(repaired, Trigger.Expiry("m-panda-000041"), table("now" to NOW)).deadline shouldBe null
+        supervised().judge(repaired, Trigger.Expiry("m-panda-000041"), table("now" to NOW)).counted shouldBe mapOf("repair_expiries" to 2L)
+    }
 })

@@ -392,8 +392,15 @@ for name, kind in K.items():
         check_references(effect,name,thresholds=thresholds)
         if isinstance(effect, dict) and "emit" in effect:
             check_destination(effect.get("to"), name)
-        if not isinstance(effect,dict) or not set(effect)&{"emit","report","transition","do"}:
+        if not isinstance(effect,dict) or not set(effect)&{"emit","report","transition","do","wait"}:
             fail(f"{name}: invalid expiry effect")
+        # The wait goes on only under a cap (contracts.md §4.2): `{wait: again}`'s if is a counter compared with {cap: …}.
+        if isinstance(effect, dict) and "wait" in effect:
+            if effect["wait"] != "again": fail(f"{name}: wait must be again")
+            condition = effect.get("if")
+            if not (isinstance(condition, dict) and isinstance(condition.get("counter"), str)
+                    and any(isinstance(condition.get(operator), dict) and set(condition[operator]) == {"cap"} for operator in COMPARISONS)):
+                fail(f"{name}: {{wait: again}} has no if that reads a counter against a cap")
         if "transition" in effect and effect["transition"] not in seen_ids:
             fail(f"{name}: expiry names unknown transition '{effect['transition']}'")
         if "emit" in effect and effect["emit"] not in E["mailroom_declared_effects"]:

@@ -101,7 +101,7 @@ internal class Names {
             }
             is Effect.Do -> { operations += effect.operation; effect.with.values.forEach(::value) }
             is Effect.Count -> counters += effect.counter
-            is Effect.Report, is Effect.Transition -> Unit
+            is Effect.Report, is Effect.Transition, is Effect.Wait -> Unit
         }
     }
 }
@@ -191,6 +191,7 @@ internal class RulesCheck(
             for (effect in kind.expiry) {
                 if (effect is Effect.Transition && effect.id !in transitionIds) problem(owner, "expiry names unknown transition '${effect.id}'")
                 if (effect is Effect.Emit && effect.kind !in engagement.mailroomDeclaredEffects) problem(owner, "undeclared expiry emit '${effect.kind}'")
+                if (effect is Effect.Wait && !readsCounterAgainstCap(effect.condition)) problem(owner, "{wait: again} has no if that reads a counter against a cap")
             }
             val toDaemon = (kind.to as? Destination.Parties)?.names == listOf("daemon")
             val bound = lifecycle.machines.values.any { machine -> machine.transitions.any { it.kind == kind.name && it.effects.any { effect -> effect is Effect.Do } } }
@@ -206,6 +207,10 @@ internal class RulesCheck(
             if (gate.require.isNotEmpty()) problem(owner, "requirements belong to S2.2 (Amendment 2)")
         }
     }
+
+    /** A wait goes on only under a cap (contracts.md §4.2): its `if` is a counter compared with `{cap: …}`. */
+    private fun readsCounterAgainstCap(condition: Requirement?): Boolean =
+        condition is Requirement.Counter && condition.comparison?.value is Value.Cap
 
     /** A kind whose `fires` names a stage arrow `a→b` has that arrow in the lifecycle. */
     private fun firesCrossChecked() {

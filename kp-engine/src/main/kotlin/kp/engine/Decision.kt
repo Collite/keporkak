@@ -45,7 +45,10 @@ class Decision private constructor(
     val messageClass: MessageClass?,
     /** Class B: the outcome waits for Bora (a ticket). */
     val waitsForBora: Boolean,
-    /** The deadline a delivery sets, when its kind has one. */
+    /**
+     * The deadline a delivery sets, when its kind has one. For an expiry: the wait's new deadline when it goes on, null
+     * when it is over (the `expired` record's `deadline`, contracts.md §2.2).
+     */
     val deadline: String?,
     /** Every fact the judgement read, by [FactRef]'s written form; a fact not supplied is [UNKNOWN_FACT]. */
     val observed: Map<String, Datum>,

@@ -24,4 +24,23 @@ class CatchUpRulesSpec : StringSpec({
         problemsAfter("rules/message-kinds.yaml", "    replies:\n    - review-bind\n", "    replies: review-bind\n") shouldContain
             "rules/message-kinds.yaml: review-request: replies must be a list"
     }
+    "{wait: again} stands in the three kinds whose expiry prose keeps the wait going, each under its counter's cap" {
+        val waits = master.kinds.values.filter { kind -> kind.expiry.any { it is Effect.Wait } }.associate { kind ->
+            kind.name to kind.expiry.filterIsInstance<Effect.Wait>().single().condition
+        }
+        val under = { counter: String -> Requirement.Counter(counter, Comparison(Operator.LT, Value.Cap("expiries_before_escalation"))) }
+
+        waits shouldBe mapOf("review-request" to under("review_request_expiries"), "review-bind" to under("review_bind_expiries"), "repair-done" to under("repair_expiries"))
+        master.kinds.getValue("review-bind").onExpiry shouldBe "re-bind once, then Bora (C)"
+    }
+    "a {wait: again} that is not under a counter's cap, or a wait that is not again, is reported" {
+        val wait = "    - wait: again\n      if:\n        counter: review_request_expiries\n        lt:\n          cap: expiries_before_escalation\n"
+
+        problemsAfter("rules/message-kinds.yaml", wait, "    - wait: again\n") shouldContain
+            "rules/message-kinds.yaml: review-request: {wait: again} has no if that reads a counter against a cap"
+        problemsAfter("rules/message-kinds.yaml", wait, "    - wait: again\n      if:\n        fact: bora.present\n") shouldContain
+            "rules/message-kinds.yaml: review-request: {wait: again} has no if that reads a counter against a cap"
+        problemsAfter("rules/message-kinds.yaml", wait, wait.replace("wait: again", "wait: later")) shouldContain
+            "rules/message-kinds.yaml: review-request: wait must be again"
+    }
 })
