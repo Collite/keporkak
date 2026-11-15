@@ -61,11 +61,11 @@ fun sent(id: String, kind: String, from: String, to: String = "teamlead", args: 
     """{"event":"delivered","id":"$id","to":["$to"],"class":"A"}""",
 )
 
-/** A fact by its written form — `pr.ready`, `ci.state(of=abc)` — as [FactRef.toString] writes it; parameters are text. */
+/** A fact by its written form — `pr.ready`, `ci.state(of=abc)` — as [FactRef.toString] writes it; a parameter is text, or JSON when it is a list or a map. */
 fun ref(written: String): FactRef {
     val name = written.substringBefore('(')
     val params = written.substringAfter('(', "").removeSuffix(")").split(", ").filter { it.isNotEmpty() }
-        .associate { it.substringBefore('=') to Datum.Text(it.substringAfter('=')) as Datum }
+        .associate { it.substringBefore('=') to it.substringAfter('=').let { value -> if (value.startsWith("[") || value.startsWith("{")) Datum.parse(value) else Datum.Text(value) } }
     return FactRef(name, params)
 }
 

@@ -10,6 +10,7 @@ import kp.model.Read
 import kp.model.Refused
 import kp.model.Rules
 import kp.model.Transition
+import kp.model.toLine
 import kp.model.utc
 
 /** A machine's subject's current state; [previous] is the state before it (what `*previous` names). */
@@ -28,7 +29,19 @@ data class Ticket(val item: String, val raisedBy: String, val at: String, val an
 data class Refusals(val day: String, val count: Long)
 
 /** A message written and not yet delivered or refused — what its records need to know of it. */
-data class Pending(val kind: String, val from: String, val to: String, val stage: String?, val thread: String, val re: String?, val deadline: String?)
+data class Pending(
+    val kind: String, val from: String, val to: String, val stage: String?, val thread: String, val re: String?, val deadline: String?,
+    val by: String = "", val args: Datum.Fields = Datum.Fields(emptyMap()),
+)
+
+/**
+ * A delivered message, as the engine reads it back: what `log.count`, `request.open`, a `{re: …}` requirement and a
+ * kind's `max_fires` window count or compare. [at] is when it was delivered; [messageClass] the class it went under.
+ */
+data class Delivery(
+    val id: String, val kind: String, val from: String, val to: String, val stage: String?, val thread: String, val re: String?,
+    val by: String, val args: Datum.Fields, val messageClass: String, val at: String,
+)
 
 /**
  * The state the mailroom works from — a fold of the log (architecture.md §3). It applies recorded outcomes and
@@ -56,6 +69,10 @@ data class State(
     val hops: Map<String, Int> = emptyMap(),
     /** seat → its refusals on the day of its last refusal. */
     val refusals: Map<String, Refusals> = emptyMap(),
+    /** Every delivered message, by id, in delivery order. */
+    val delivered: Map<String, Delivery> = emptyMap(),
+    /** The ids of delivered messages a later `delivered` record `answers` (contracts.md §2.2, Amendment 8). */
+    val answered: Set<String> = emptySet(),
 ) {
     fun stage(id: String): String? = machine("stage", id)?.state
     fun machine(machine: String, subject: String): MachineState? = machines[machine]?.get(subject)
@@ -88,7 +105,10 @@ private class Folding(state: State) {
     fun apply(line: Envelope): Folding = apply {
         val at = line.at.value
         when (line) {
-            is Message -> s = s.copy(pending = s.pending + (line.id.value to Pending(line.kind, line.from.value, line.to.value, line.stage?.value, line.thread.value, line.re?.value, line.deadline?.value)))
+            is Message -> {
+                val args = Datum.parse(line.toLine()).let { it as Datum.Fields }.fields["args"] as? Datum.Fields ?: Datum.Fields(emptyMap())
+                s = s.copy(pending = s.pending + (line.id.value to Pending(line.kind, line.from.value, line.to.value, line.stage?.value, line.thread.value, line.re?.value, line.deadline?.value, line.by, args)))
+            }
             is Transition -> {
                 val before = s.machine(line.machine, line.subject)
                 val previous = if (line.from != line.to) line.from else before?.previous
@@ -101,11 +121,14 @@ private class Folding(state: State) {
                 message?.stage?.let { count(it, line.counted) }
                 raise(line.ticket, line.id, line.event, at)
                 if (message != null) {
+                    val delivery = Delivery(line.id, message.kind, message.from, message.to, message.stage, message.thread, message.re, message.by, message.args, line.deliveryClass, at)
+                    s = s.copy(delivered = s.delivered + (line.id to delivery))
                     wait(line.id, message)
                     message.re?.let { answered -> if (s.deadlines[answered]?.to == message.from) s = s.copy(deadlines = s.deadlines - answered) }
                     if (message.from == BORA && message.re != null) answer(message.re, line.id)
-                    s = s.copy(hops = s.hops + (message.thread to s.hops(message.thread) + 1))
+                    s = s.copy(hops = s.hops + (message.thread to s.hops(message.thread).inc()))
                 }
+                ((Datum.parse(line.toLine()) as Datum.Fields).fields["answers"] as? Datum.Text)?.let { s = s.copy(answered = s.answered + it.value) }
                 s = s.copy(
                     pending = s.pending - line.id,
                     held = s.held - line.id,
@@ -116,7 +139,7 @@ private class Folding(state: State) {
                 s.pending[line.id]?.let { message ->
                     val day = utc(at).toLocalDate().toString()
                     val earlier = s.refusals[message.from]?.takeIf { it.day == day }?.count ?: 0L
-                    s = s.copy(refusals = s.refusals + (message.from to Refusals(day, line.refusalsToday?.longValueExact() ?: (earlier + 1))))
+                    s = s.copy(refusals = s.refusals + (message.from to Refusals(day, line.refusalsToday?.longValueExact() ?: earlier.inc())))
                 }
                 s = s.copy(pending = s.pending - line.id, held = s.held - line.id)
             }
@@ -131,7 +154,7 @@ private class Folding(state: State) {
                 val open = s.deadlines[line.id]
                 s = when {
                     next == null -> s.copy(deadlines = s.deadlines - line.id, held = s.held - line.id, pending = if (line.id in s.held) s.pending - line.id else s.pending)
-                    open != null -> s.copy(deadlines = s.deadlines + (line.id to open.copy(deadline = next, expiries = open.expiries + 1)))
+                    open != null -> s.copy(deadlines = s.deadlines + (line.id to open.copy(deadline = next, expiries = open.expiries.inc())))
                     else -> s
                 }
             }
@@ -171,4 +194,3 @@ private class Folding(state: State) {
     fun done(seq: Long, at: String): State = s.copy(seq = seq, at = at)
 }
 
-private const val BORA = "bora"
