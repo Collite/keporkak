@@ -16,7 +16,18 @@ import com.agentclientprotocol.model.SessionConfigSelectOptions
 import com.agentclientprotocol.model.SessionModeId
 import com.agentclientprotocol.model.SessionUpdate
 import com.agentclientprotocol.model.StopReason
+import com.agentclientprotocol.model.PermissionOptionId
+import com.agentclientprotocol.model.PermissionOptionKind
+import com.agentclientprotocol.model.ToolKind
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.serialization.json.JsonNull
+import kp.driver.Answer
+import kp.driver.Answerer
+import kp.driver.OfferedOption
+import kp.driver.PermissionRequest
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
@@ -56,7 +67,8 @@ internal class SeatSession(
     val transcript: Transcript,
     private val clock: Clock,
     private val listener: Listener,
-    scope: CoroutineScope,
+    private val answerer: Answerer,
+    private val scope: CoroutineScope,
 ) {
     lateinit var launched: Launched
     lateinit var session: ClientSession
@@ -65,6 +77,8 @@ internal class SeatSession(
     private val turnInFlight = AtomicBoolean(false)
     private val events = Channel<Item>(Channel.UNLIMITED)
     @Volatile private var turn: Turn? = null
+    private val inputs = ConcurrentHashMap<String, JsonElement>()
+    private val asking = ConcurrentHashMap.newKeySet<Deferred<Answer>>()
 
     val live: Boolean get() = !ended.get()
 
@@ -72,13 +86,46 @@ internal class SeatSession(
         scope.launch { for (item in events) take(item) }
     }
 
-    /** What the agent sends without being asked, outside a turn's stream. */
+    /** What the agent asks of the client: permission requests (T5). Updates are taken from the [wire]. */
     val operations = object : ClientSessionOperations {
         override suspend fun requestPermissions(toolCall: SessionUpdate.ToolCallUpdate, permissions: List<PermissionOption>, _meta: JsonElement?) =
-            RequestPermissionResponse(RequestPermissionOutcome.Cancelled)
+            permission(toolCall, permissions)
 
         // The wire tap has taken it already, in order.
         override suspend fun notify(notification: SessionUpdate, _meta: JsonElement?) {}
+    }
+
+    /**
+     * One permission request, handed whole — the tool, its input, the options offered — to the caller's answerer.
+     * Its input is the request's own, or else the one the tool call carried on the wire. A request still waiting
+     * for its answer when the turn is cancelled is answered `cancelled`.
+     */
+    private suspend fun permission(toolCall: SessionUpdate.ToolCallUpdate, permissions: List<PermissionOption>): RequestPermissionResponse {
+        val id = toolCall.toolCallId.value
+        val input = toolCall.rawInput?.takeUnless { it == JsonNull } ?: inputs[id]
+        val offered = permissions.map { OfferedOption(it.optionId.value, it.name, Lines.wire(it.kind, PermissionOptionKind.serializer())) }
+        val request = PermissionRequest(seat, id, toolCall.title ?: "", toolCall.kind?.let { Lines.wire(it, ToolKind.serializer()) }, input, offered)
+        val asked = scope.async { answerer.answer(request) }
+        asking += asked
+        val answer = try {
+            asked.await()
+        } catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            null
+        } catch (e: Exception) {
+            note("permission $id: the answerer failed: ${e.message ?: e.javaClass.simpleName}")
+            Answer.DENY
+        } finally {
+            asking -= asked
+        }
+        val asks = "permission $id: ${request.tool}${input?.let { " $it" } ?: ""}"
+        if (answer == null) {
+            note("$asks → cancelled: the turn was cancelled")
+            return RequestPermissionResponse(RequestPermissionOutcome.Cancelled)
+        }
+        val choice = Permissions.choose(answer, offered)
+        note("$asks → ${choice.words}")
+        return RequestPermissionResponse(choice.option?.let { RequestPermissionOutcome.Selected(PermissionOptionId(it.id)) } ?: RequestPermissionOutcome.Cancelled)
     }
 
     /** The tap: what the collector takes from the wire, and the prompt's request id. */
@@ -89,7 +136,13 @@ internal class SeatSession(
                 val method = (message["method"] as? JsonPrimitive)?.contentOrNull
                 val id = message["id"]
                 when {
-                    method == "session/update" -> events.trySend(Item.Update(message.getValue("params").jsonObject.getValue("update"), clock.instant()))
+                    method == "session/update" -> {
+                        val update = message.getValue("params").jsonObject.getValue("update").jsonObject
+                        val input = update["rawInput"]?.takeUnless { it == JsonNull }
+                        val toolCallId = (update["toolCallId"] as? JsonPrimitive)?.contentOrNull
+                        if (input != null && toolCallId != null) inputs[toolCallId] = input
+                        events.trySend(Item.Update(update, clock.instant()))
+                    }
                     method == null && id != null && id == turn?.requestId -> {
                         turn?.answered?.set(true)
                         events.trySend(Item.Answer(message, clock.instant()))
@@ -132,6 +185,7 @@ internal class SeatSession(
     suspend fun cancel(): Outcome<Unit> {
         if (!turnInFlight.get()) return Outcome.Failed("no turn is in flight for seat ${seat.value}")
         note("cancel sent")
+        asking.forEach { it.cancel() }
         return try {
             session.cancel()
             Outcome.Ok(Unit)

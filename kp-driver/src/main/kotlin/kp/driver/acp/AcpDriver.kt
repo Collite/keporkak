@@ -85,7 +85,7 @@ internal class AcpDriver(
 
     override suspend fun start(spec: SessionSpec): Outcome<Started> {
         seats[spec.seat]?.takeIf { it.live }?.let { return Outcome.Failed("seat ${spec.seat.value} has a live session ${it.session.sessionId.value}") }
-        val seat = SeatSession(spec.seat, spec, mint(), transcript(spec.seat), clock, listener, scope)
+        val seat = SeatSession(spec.seat, spec, mint(), transcript(spec.seat), clock, listener, answerer, scope)
         seat.transcript.hide(seat.token.value)
         val launched = when (val result = launch(spec, onClosed = seat::protocolClosed, wire = seat.wire)) {
             is Outcome.Ok -> result.value
