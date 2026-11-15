@@ -16,6 +16,9 @@ junit-platform = "1.13.4"
 # Checked 2026-11-14: Maven Central kaml-jvm maven-metadata.xml (0.104.0 is the latest) and its POM (kotlinx-serialization-core
 # 1.9.0, kotlin-stdlib 2.2.21; resolved up to this catalog's pins); API from context7 /charleskorn/kaml. The YAML reader of S1.0.
 kaml = "0.104.0"
+# Checked 2026-11-15: Maven Central slf4j-api maven-metadata.xml (2.0.18 is the newest that is not an alpha) and the version
+# the MCP SDK 0.16.0 resolves on kp-model's test classpath. The ACP SDK's kotlin-logging needs an SLF4J API at run time (S2.1).
+slf4j = "2.0.18"
 
 [libraries]
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
@@ -25,6 +28,7 @@ mcp = { module = "io.modelcontextprotocol:kotlin-sdk", version.ref = "mcp" }
 kotest = { module = "io.kotest:kotest-runner-junit5", version.ref = "kotest" }
 kotest-assertions = { module = "io.kotest:kotest-assertions-core", version.ref = "kotest" }
 kaml = { module = "com.charleskorn.kaml:kaml", version.ref = "kaml" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform" }
 
 [plugins]
