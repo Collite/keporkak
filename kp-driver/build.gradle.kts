@@ -17,3 +17,22 @@ tasks.named<Test>("test") {
     val classpath = sourceSets["test"].runtimeClasspath
     jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dkp.driver.fake.classpath=${classpath.asPath}") })
 }
+
+// `just handshake` (S2.1 T8): the driver against the real, pinned adapter. A source set of its own, outside the
+// driver's main source; `check` compiles it and never runs it, and CI never runs it — it spends tokens.
+val handshake: SourceSet = sourceSets.create("handshake") {
+    compileClasspath += sourceSets["main"].output
+    runtimeClasspath += sourceSets["main"].output
+}
+configurations["handshakeImplementation"].extendsFrom(configurations["implementation"])
+configurations["handshakeRuntimeOnly"].extendsFrom(configurations["runtimeOnly"])
+dependencies { "handshakeImplementation"(libs.kaml) }
+tasks.named("check") { dependsOn(handshake.classesTaskName) }
+tasks.register("handshakeClasspath") {
+    description = "Writes the handshake's run-time classpath to build/handshake.classpath for `just handshake`."
+    dependsOn(handshake.classesTaskName)
+    val out = layout.buildDirectory.file("handshake.classpath")
+    val classpath = handshake.runtimeClasspath
+    outputs.file(out)
+    doLast { out.get().asFile.writeText(classpath.asPath) }
+}
