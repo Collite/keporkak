@@ -43,3 +43,11 @@ scenarios:
         - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
     expect:
       failures: ["started: {wait: again} has no if that reads a counter against a cap"]
+  - name: a profile that is not one of autonomy_profiles is reported
+    given:
+      profile: supervisd
+      autonomy_profiles: {supervised: {merge: C}, assisted: {merge: A}}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+    expect:
+      failures: ["profile 'supervisd' is not in autonomy_profiles"]

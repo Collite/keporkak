@@ -20,10 +20,10 @@ import kotlin.time.Duration
 
 /**
  * The mailroom's guard (architecture.md §1): the rule set applied to a trigger. Pure — it reads no file, no clock
- * and no world; "now" is a fact like any other. [profile] names the autonomy profile in force (`engagement.yaml:
- * autonomy_profiles`), which the rules do not choose.
+ * and no world; "now" is a fact like any other. The autonomy profile in force is the rule set's (`engagement.yaml:
+ * profile`, contracts.md §4.3).
  */
-class Engine(private val rules: RuleSet, private val profile: String) {
+class Engine(private val rules: RuleSet) {
     /**
      * The facts [judge] will read that the table must supply (contracts.md §4.4): every fact its requirements, class
      * cases and effects may read, but those of source L, which the engine answers from the state — and `now`.
@@ -36,7 +36,7 @@ class Engine(private val rules: RuleSet, private val profile: String) {
     /** What is to happen: deliver or refuse, which transitions fire, which counters move, which effects are requested, under which class. */
     fun judge(state: State, trigger: Trigger, facts: Facts): Decision {
         val context = Context.of(trigger, state) ?: return Decision.create(Outcome.NOTHING)
-        return Judgement(rules, state, context, facts, profile).run()
+        return Judgement(rules, state, context, facts).run()
     }
 }
 
@@ -45,7 +45,7 @@ private const val BODY_LINES = "body_lines"
 private const val HOPS = "hops_per_thread"
 private const val MAX_FIRES_DEFAULT = "max_fires_default"
 
-private class Judgement(private val rules: RuleSet, private val state: State, private val context: Context, facts: Facts, private val profile: String) {
+private class Judgement(private val rules: RuleSet, private val state: State, private val context: Context, facts: Facts) {
     private val evaluation = Evaluation(rules, state, context, facts)
     private val machines = Machines(rules, state)
 
@@ -148,10 +148,13 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
 
     private fun describe(spec: ArgSpec): String = spec.enum?.joinToString(" | ", "one of ") { render(it) } ?: spec.type?.key ?: "valid"
 
-    /** A kind's class: its first case that holds; else the autonomy profile in force, where it names the kind; else its default. */
+    /**
+     * A kind's class, in contracts.md §4.2's order: its first case that holds; else the class the profile in force
+     * gives the kind; else its default. A profile's word that is not a class (`queue`) leaves the default.
+     */
     private fun classify(kind: Kind): MessageClass {
         kind.classRule.cases.firstOrNull { evaluation.holds(it.condition) }?.let { return it.messageClass }
-        val preset = (rules.engagement.autonomyProfiles[profile]?.get(kind.name) as? Literal.Text)?.value
+        val preset = (rules.engagement.autonomyProfiles[rules.engagement.profile]?.get(kind.name) as? Literal.Text)?.value
         return MessageClass.entries.firstOrNull { it.name == preset } ?: kind.classRule.default
     }
 

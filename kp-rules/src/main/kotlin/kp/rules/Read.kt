@@ -416,7 +416,7 @@ internal fun readEngagement(doc: Doc, node: Node): Engagement? {
     val mapping = doc.mapping(node, null, "the engagement file") ?: return null
     val fields = doc.fields(mapping, null)
     doc.version(fields)
-    listOf("roles", "graduation", "mailroom_declared_effects").filterNot { fields.has(it) }.forEach { doc.problem(null, "missing $it") }
+    listOf("roles", "graduation", "mailroom_declared_effects", "profile").filterNot { fields.has(it) }.forEach { doc.problem(null, "missing $it") }
     val principles = fields["principles"]?.let { doc.texts(it, null, "principles") } ?: emptyList()
     val roles = doc.mapping(fields["roles"], null, "roles")?.entries?.map { (role, definition) ->
         val prose = doc.mapping(definition, role, "a role")?.let { doc.fields(it, role) }
@@ -448,6 +448,8 @@ internal fun readEngagement(doc: Doc, node: Node): Engagement? {
     val profiles = doc.mapping(fields["autonomy_profiles"], null, "autonomy_profiles")?.entries?.entries?.associate { (profile, settings) ->
         profile to (doc.mapping(settings, null, "autonomy profile $profile")?.entries?.mapNotNull { (key, value) -> doc.literal(value, null, "$profile.$key")?.let { key to it } }?.toMap() ?: emptyMap())
     } ?: emptyMap()
+    val profile = fields["profile"]?.let { doc.text(it, null, "profile") }
+    if (profile != null && profile !in profiles) doc.problem(null, "profile '$profile' is not in autonomy_profiles")
     val qa = doc.mapping(fields["qa"], null, "qa")?.let { doc.fields(it, null) }?.let { read ->
         EngagementQa(read["instances_per_office"]?.let { doc.whole(it, null, "qa.instances_per_office") } ?: 1,
             read["queue"]?.let { doc.text(it, null, "qa.queue") }, read["computer_use"]?.let { doc.textMap(it, null, "qa.computer_use") } ?: emptyMap(),
@@ -464,7 +466,7 @@ internal fun readEngagement(doc: Doc, node: Node): Engagement? {
     }
     val permissions = fields["permissions"]?.let { doc.textMap(it, null, "permissions") } ?: emptyMap()
     fields.close()
-    return Engagement(principles, roles, classes, graduation, caps, presence, declared, secondKey, profiles, qa, identity, unguarded,
+    return Engagement(principles, roles, classes, graduation, caps, presence, declared, secondKey, profile.orEmpty(), profiles, qa, identity, unguarded,
         stopGate, permissions, flatten(mapping))
 }
 

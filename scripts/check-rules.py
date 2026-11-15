@@ -88,7 +88,8 @@ if FIXTURE:
         "class": {"default": "A"}, "window": "stage", "max_fires": None, "deadline": None, "expiry": [], "require": [],
     }})
     E = {"roles": {"coder": {}, "teamlead": {}}, "graduation": {"never": []},
-         "mailroom_declared_effects": [], "caps": given.get("caps", {})}
+         "mailroom_declared_effects": [], "caps": given.get("caps", {}),
+         "profile": given.get("profile", "supervised"), "autonomy_profiles": given.get("autonomy_profiles", {"supervised": {}})}
     if "second_key" in given:
         E["second_key"] = given["second_key"]
     V = given.get("vocabulary", V)
@@ -492,7 +493,9 @@ for n in sorted(states):
 for c in loops: fail(f"uncapped cycle without a Bora gate: {' → '.join(c)}")
 ok(f"no cycle survives once the {len(capped)} capped edges and {len(gate)} Bora-gate states are removed")
 
-# 6. engagement references
+# 6. engagement references; the profile in force is one of autonomy_profiles (contracts.md §4.3)
+if "profile" not in E: fail("missing profile")
+elif E["profile"] not in (E.get("autonomy_profiles") or {}): fail(f"profile '{E['profile']}' is not in autonomy_profiles")
 for kname in E["graduation"]["never"]:
     if kname not in K: fail(f"graduation.never names unknown kind '{kname}'")
 ok("engagement.yaml references resolve")

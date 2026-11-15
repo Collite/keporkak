@@ -38,8 +38,8 @@ fun ruleSet(vararg edits: Edit): RuleSet {
 
 val master: RuleSet by lazy { ruleSet() }
 
-/** The engine under v1's autonomy profile. */
-fun supervised(rules: RuleSet = master) = Engine(rules, "supervised")
+/** The engine on [rules] — under the profile they name: on master v1's, `supervised`. */
+fun supervised(rules: RuleSet = master) = Engine(rules)
 
 const val STAGE = "KP/P1/S1.2"
 const val NOW = "2026-11-15T10:00:00Z"

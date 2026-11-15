@@ -43,4 +43,10 @@ class CatchUpRulesSpec : StringSpec({
         problemsAfter("rules/message-kinds.yaml", wait, wait.replace("wait: again", "wait: later")) shouldContain
             "rules/message-kinds.yaml: review-request: wait must be again"
     }
+    "the profile in force is named in engagement.yaml — supervised on master — and must be one of autonomy_profiles" {
+        master.engagement.profile shouldBe "supervised"
+        problemsAfter("rules/engagement.yaml", "profile: supervised", "profile: supervisd") shouldContain
+            "rules/engagement.yaml: profile 'supervisd' is not in autonomy_profiles"
+        problemsAfter("rules/engagement.yaml", "profile: supervised", "profiles: supervised") shouldContain "rules/engagement.yaml: missing profile"
+    }
 })

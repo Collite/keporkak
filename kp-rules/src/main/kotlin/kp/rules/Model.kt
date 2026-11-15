@@ -127,6 +127,8 @@ data class Engagement(
     val presence: Presence?,
     val mailroomDeclaredEffects: List<String>,
     val secondKey: SecondKey?,
+    /** The autonomy profile in force (contracts.md §4.3): a name of [autonomyProfiles]. */
+    val profile: String,
     val autonomyProfiles: Map<String, Map<String, Literal>>,
     val qa: EngagementQa?,
     val identity: Map<String, String>,
