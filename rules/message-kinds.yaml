@@ -1,6 +1,16 @@
+# Keporkak — the message catalogue (P-6b). Every kind a seat may send; anything not here is refused (default deny).
+# Fields: from/to (roles; `cc` are informational copies), fires (a transition of stage-lifecycle.yaml or a companion
+# machine, or `-`), guard (prose; `observed`/`attested` per RV-13), require (what holds for every transition of the kind;
+# the mailroom evaluates it), args (typed; anything else is refused), class (a default and cases: A auto · C runs, Bora
+# cc'd · B Bora must act; while Bora is absent, B is *held*, D-28), max_fires (per window: stage, day, return, session),
+# deadline (reply or expiry), on_expiry (prose) and expiry (what the mailroom does), reply (the kind expected back).
+# The forms: contracts.md §4.1–§4.2.
+# Roles: bora, principal, teamlead, pool (Pool Manager), coder, reviewer, qa, deputy, retro, gardener, daemon (requested operations),
+# mailroom (a mechanism: it sends only declared effects — engagement.yaml:mailroom_declared_effects; it decides nothing, P-10).
 # Message catalogue — typed arguments, class cases, deadlines and executable requirements (contracts §4.2).
 version: 1
 kinds:
+  # ---- the start gate
   assignment-proposal:
     from: teamlead
     to: bora
@@ -234,6 +244,7 @@ kinds:
     require:
     - fact: git.branch_exists
     expiry: []
+  # ---- building
   stop:
     from: coder
     to: principal
@@ -356,6 +367,7 @@ kinds:
       in:
       - Found while doing
     expiry: []
+  # ---- QA: the only seat on the live target and in a browser (D-30, D-31)
   qa-request:
     from: coder | teamlead
     to: qa
@@ -926,6 +938,7 @@ kinds:
       class: C
       if:
         fact: bora.present
+  # ---- the tail (through the daemon)
   merge:
     from: teamlead
     to: daemon
@@ -938,24 +951,8 @@ kinds:
       default: C
       cases:
       - if:
-          any:
-          - not:
-              fact: seat.name
-              of: reviewer
-              ne:
-                fact: seat.name
-                of: coder
-          - not:
-              fact: roster.rank
-              of: reviewer
-              gte:
-                fact: roster.rank
-                of: coder
-          - not:
-              fact: roster.model_rank
-              of: reviewer
-              gte:
-                fact: roster.floor_rank
+          not:
+            holds: second_key  # engagement.yaml:second_key; its `otherwise` is this B
         class: B
     max_fires: 2
     deadline: 15m
@@ -1273,6 +1270,7 @@ kinds:
       class: C
       if:
         fact: bora.present
+  # ---- Principal ↔ TeamLead (RV-10)
   parallelism:
     from: principal
     to: teamlead
@@ -1373,6 +1371,7 @@ kinds:
         arg: stage
       eq: false
     expiry: []
+  # ---- rulings and Bora's own kinds
   ruling-request:
     from: principal | teamlead | pool | mailroom
     to: bora
@@ -1504,6 +1503,7 @@ kinds:
     window: stage
     require: []
     expiry: []
+  # ---- absent mode: the Deputy's kinds (D-28, D-33, D-35; rules in robots/deputy.yaml)
   hold:
     from: deputy
     to:
@@ -1640,6 +1640,7 @@ kinds:
     - fact: thread.state
       eq: held
     expiry: []
+  # ---- seats and offices
   session-request:
     from: teamlead
     to: pool
@@ -2030,6 +2031,7 @@ kinds:
     window: day
     require: []
     expiry: []
+  # ---- reporting and the read-only seats
   status-report:
     from: principal | teamlead | pool
     to: bora
@@ -2168,6 +2170,7 @@ kinds:
       class: C
       if:
         fact: bora.present
+  # ---- the mailroom's own
   nudge:
     from: mailroom
     to:

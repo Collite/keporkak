@@ -5,7 +5,7 @@ scenarios:
       vocabulary:
         facts: {request.open: {params: [stage, kind], returns: bool, source: L}}
         operations: {}
-      counters: [attempts]
+      counters: {attempts: {scope: stage}}
       transitions:
         - id: T-unknown
           from: planned

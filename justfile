@@ -8,13 +8,14 @@ _python-env:
 build: _python-env
     ./gradlew --console=plain build
 
-# Unit/component specs; all collaborators are fixtures.
+# Unit/component specs; all collaborators are fixtures. A suite that executes no test fails.
 test: _python-env
-    build/python/bin/python -m unittest discover -s tests -p 'test_*.py'
+    build/python/bin/python scripts/run-python-tests.py
     ./gradlew --console=plain test
 
 # S0.1 owns these scripts and generated personas.
 rules: _python-env
+    build/python/bin/python scripts/check-rules.py --self-test
     build/python/bin/python scripts/check-rules.py
     build/python/bin/python scripts/render-agents.py
 

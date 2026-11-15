@@ -1,0 +1,117 @@
+name: every name a rule uses resolves, in the places issue 4 found unchecked
+scenarios:
+  - name: every name resolves
+    given:
+      vocabulary:
+        facts:
+          log.count: {params: kind, returns: int, source: L}
+          stage.state: {params: stage, returns: state, source: L}
+          seat.silent_for: {params: seat, returns: duration, source: O}
+        operations: {}
+      caps: {silence: 1h}
+      kinds:
+        started:
+          from: coder
+          to: teamlead
+          guard: '-'
+          args: {}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: null
+          expiry: []
+          require:
+            - {fact: seat.silent_for, gt: {robot: patience}}
+            - {fact: stage.state, in: [planned, exited]}
+            - {fact: seat.silent_for, lt: {engagement: caps.silence}}
+      transitions:
+        - id: T-since
+          from: planned
+          to: exited
+          kind: started
+          on: message
+          guard: a kind in since
+          require: [{fact: log.count, kind: started, scope: stage, since: started, eq: 0}]
+          effects: []
+      robots:
+        - role: coder
+          active_when: {always: true}
+          intercepts: []
+          rules:
+            - id: TEST-1
+              when: a stage starts
+              'on': {delivered: started}
+              if: [{fact: log.count, kind: started, scope: stage, since: {wake: build}, eq: 0}]
+              then: [{send: started, to: teamlead, args: {}}, {wake: build}]
+          thresholds: {patience: 1h}
+    expect: {}
+  - name: a misspelt name in each place is reported with its rule's id
+    given:
+      vocabulary:
+        facts:
+          log.count: {params: kind, returns: int, source: L}
+          stage.state: {params: stage, returns: state, source: L}
+          seat.silent_for: {params: seat, returns: duration, source: O}
+        operations: {}
+      transitions:
+        - id: T-since
+          from: planned
+          to: exited
+          kind: started
+          on: message
+          guard: a kind in since
+          require: [{fact: log.count, kind: started, scope: stage, since: startd, eq: 0}]
+          effects: []
+        - id: T-path
+          from: planned
+          to: exited
+          kind: started
+          on: fact
+          guard: an engagement path
+          require: [{fact: seat.silent_for, gte: {engagement: caps.silense}}]
+          effects: []
+        - id: T-state
+          from: planned
+          to: exited
+          kind: started
+          on: expiry
+          guard: a state of the stage machine
+          require: [{fact: stage.state, eq: exitted}]
+          effects: []
+        - id: T-star
+          from: '*any'
+          to: exited
+          kind: started
+          on: expiry
+          guard: a reserved state name
+          require: []
+          effects: []
+      robots:
+        - role: coder
+          active_when: {always: true}
+          intercepts: []
+          rules:
+            - id: TEST-2
+              when: a stage starts
+              'on': {delivered: started}
+              if: [{fact: log.count, kind: started, scope: stage, since: {wake: buil}, eq: 0}]
+              then: [{send: started, to: teamleed, args: {}}]
+          thresholds: {patience: 1h}
+        - role: teamlead
+          active_when: {always: true}
+          intercepts: []
+          rules:
+            - id: TEST-3
+              when: a seat is silent
+              'on': {fact: seat.silent_for}
+              if: [{fact: seat.silent_for, gt: {robot: patience}}]
+              then: [{wake: bind}]
+    expect:
+      failures:
+        - "T-since: unknown kind 'startd'"
+        - "T-path: unknown engagement value 'caps.silense'"
+        - "T-state: unknown state 'exitted' in stage"
+        - "T-star: unknown state '*any' in stage"
+        - "TEST-2: unknown own persona mode 'buil'"
+        - "TEST-2: unknown destination 'teamleed'"
+        - "TEST-3: unknown robot threshold 'patience'"

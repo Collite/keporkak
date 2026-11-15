@@ -28,6 +28,7 @@ def describe(value):
     if not isinstance(value,dict):return str(value)
     if "any" in value:return "("+" or ".join(describe(item) for item in value["any"])+")"
     if "not" in value:return "not ("+describe(value["not"])+")"
+    if "holds" in value:return "engagement."+str(value["holds"])+" holds"
     operators={"eq":"=","ne":"≠","in":"in","gt":">","gte":"≥","lt":"<","lte":"≤"}
     form=next((name for name in ("fact","arg","counter","cap","roster","office","budget","engagement","robot","trigger","msg","re","signed","attest") if name in value),None)
     if form:
@@ -46,6 +47,15 @@ def classification(value):
     return "; ".join([value["default"]]+[case["class"]+" if "+describe(case["if"]) for case in value.get("cases",[])])
 
 def cell(value):return str(value).replace("|", "\\|").replace("\n","<br>")
+
+def trigger(value):
+    """What a robot rule waits on (contracts.md §8) — split rules differ only here, so the line must say it (issue #6)."""
+    if "fact" in value:return value["fact"]+" changes"
+    if "op" in value:return value["op"]+" is "+str(value.get("eq"))
+    for form,verb in (("delivered","is delivered"),("arrives","arrives"),("expired","expires")):
+        if form in value:return value[form]+" "+verb
+    if "presence" in value:return "presence turns "+value["presence"]
+    return describe(value)
 
 def actions(values):
     return "; ".join("wake your "+value["wake"]+" mode" if "wake" in value else "send "+value["send"]+" to "+recipient(value["to"]) for value in values)
@@ -108,12 +118,17 @@ for r in sorted(have & seat_roles):
             queue=robot["queue"]
             lines += ["Queue: one job at a time; "+" before ".join(queue["order"])+"; FIFO within a kind. Next job requires "+describe(queue["next_when"])+".", ""]
             lines += [f"- **{item['id']}** when {item['when']} → {item['note']}" for item in queue.get("prose",[])]
+        rendered = {}
         for item in robot["rules"]:
             if item.get("for")=="persona":
-                lines.append(f"- **{item['id']} (persona)** when {item['when']} → {item.get('note','')}")
+                text=f"when {item['when']} → {item.get('note','')}"
+                lines.append(f"- **{item['id']} (persona)** {text}")
             else:
                 conditions="; if "+" and ".join(describe(value) for value in item["if"]) if item["if"] else ""
-                lines.append(f"- **{item['id']}** when {item['when']}{conditions} → {actions(item['then'])}")
+                text=f"on {trigger(item['on'])}: when {item['when']}{conditions} → {actions(item['then'])}"
+                lines.append(f"- **{item['id']}** {text}")
+            if text in rendered: fail(f"{r}: robot rules {rendered[text]} and {item['id']} render as the same line")
+            rendered.setdefault(text, item["id"])
     lines += ["", "## Messages that reach you", ", ".join(f"`{n}`" for n in R) or "-", ""]
     (out / f"{r}.md").write_text("\n".join(lines))
     print(f"ok   {r} [{fm.get('engine')}]: {len(fm['modes'])} modes · sends {len(S)} kinds · receives {len(R)} · level {fm['level']}")

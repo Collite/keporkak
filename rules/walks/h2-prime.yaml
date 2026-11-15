@@ -220,7 +220,7 @@ steps:
     - anomaly-stop
 - id: anomaly
   who: deputy
-  by: robot:DEP-16
+  by: robot:DEP-4
   kind: anomaly-stop
   args:
     rule: DEP-4

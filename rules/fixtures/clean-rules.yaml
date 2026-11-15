@@ -1,0 +1,18 @@
+name: the rules read clean — no negated negation, no counter that nothing reads
+scenarios:
+  - name: a negation of a negation
+    given:
+      vocabulary:
+        facts: {pr.ready: {params: stage, returns: bool, source: O}}
+        operations: {}
+      transitions:
+        - {id: T-double, from: planned, to: exited, kind: started, on: message, guard: twice not, require: [{not: {not: {fact: pr.ready}}}], effects: []}
+    expect:
+      failures: ["T-double: a requirement negates a negation"]
+  - name: a counter that is counted but never read
+    given:
+      counters: {attempts: {scope: stage}, retries: {scope: stage}}
+      transitions:
+        - {id: T-count, from: planned, to: exited, kind: started, on: message, guard: counted, require: [{counter: attempts, eq: 0}], effects: [{count: retries}]}
+    expect:
+      failures: ["counter 'retries' is declared but nothing reads it"]

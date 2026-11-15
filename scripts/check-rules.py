@@ -86,6 +86,8 @@ if FIXTURE:
     }})
     E = {"roles": {"coder": {}, "teamlead": {}}, "graduation": {"never": []},
          "mailroom_declared_effects": [], "caps": given.get("caps", {})}
+    if "second_key" in given:
+        E["second_key"] = given["second_key"]
     V = given.get("vocabulary", V)
     W = given.get("walks", [])
 ROBOTS = ([(f"fixture-{index}.yaml", robot) for index, robot in enumerate(given.get("robots", []))]
@@ -98,22 +100,72 @@ def ok(m): print("ok  ", m)
 states = set(L["states"])
 trans = L["transitions"]
 roles = set(E["roles"])
+PARTIES = {"bora", "daemon", "mailroom", "ledger", "board"}   # contracts.md §1
+RESERVED_STATES = {"*", "*active", "*previous"}             # contracts.md §4.1, and `*` (any state) on master
 
-# All executable names are resolved against the closed vocabulary and rule owners.
-def check_references(value, owner, robot=None):
+MISSING = object()
+def path_value(root, path):
+    value=root
+    for part in str(path).split("."):
+        if isinstance(value,dict): value=value.get(part,MISSING)
+        elif isinstance(value,list) and part.isdigit() and int(part)<len(value): value=value[int(part)]
+        else: return MISSING
+    return value
+
+def persona_modes(role):
+    source = ROOT / "agents" / role / "AGENT.md"
+    if not source.is_file():
+        return {}
+    return load_yaml(re.match(r"---\n(.*?)\n---", source.read_text(), re.S).group(1)).get("modes", {}) or {}
+ALL_MODES = {mode for persona in sorted((ROOT / "agents").glob("*/AGENT.md")) for mode in persona_modes(persona.parent.name)}
+
+def sender_thresholds(senders):
+    """A `{robot: …}` outside a robot names a threshold of the robot file of the kind's own sender (contracts.md §4.1)."""
+    names = {part.strip() for part in str(senders or "").split("|")}
+    return {name for _, robot in ROBOTS if robot.get("role") in names for name in robot.get("thresholds", {})}
+
+# The blocks of requirements a `{holds: …}` may name (contracts.md §4.1, Amendment 7).
+BLOCKS = {name: E[name].get("require", []) for name in ("second_key", "stop_gate") if isinstance(E.get(name), dict)}
+
+def check_destination(to, owner):
+    if isinstance(to, str) and to not in roles | PARTIES:
+        fail(f"{owner}: unknown destination '{to}'")
+
+# All executable names are resolved against the closed vocabulary and rule owners (issue #4).
+# `{robot: …}` resolves against one robot's thresholds: the robot's own, or — outside a robot — those of the robot
+# file of the rule's sender (`thresholds`). A `since:` names a kind or `{wake: <mode>}` of a persona: the robot's own.
+def check_references(value, owner, robot=None, thresholds=frozenset()):
     if isinstance(value, dict):
         namespaces = {"fact": V["facts"], "op": V["operations"],
                       "do": V["operations"], "cap": E.get("caps", {}),
-                      "kind": K, "emit": K, "attest": V.get("attestations", {}), "counter": L.get("counters", {}), "count": L.get("counters", {}), "robot": robot.get("thresholds",{}) if robot is not None else ROBOT_THRESHOLDS}
+                      "kind": K, "emit": K, "attest": V.get("attestations", {}), "counter": L.get("counters", {}), "count": L.get("counters", {}), "robot": robot.get("thresholds",{}) if robot is not None else thresholds,
+                      "holds": BLOCKS}
         labels = {"fact": "fact", "op": "operation", "do": "operation",
-                  "cap": "cap", "kind": "kind", "emit": "kind", "attest": "attestation", "counter": "counter", "count": "counter", "robot": "robot threshold"}
+                  "cap": "cap", "kind": "kind", "emit": "kind", "attest": "attestation", "counter": "counter", "count": "counter", "robot": "robot threshold",
+                  "holds": "engagement block"}
         for key, item in value.items():
             if key in namespaces and isinstance(item, str) and item not in namespaces[key]:
                 fail(f"{owner}: unknown {labels[key]} '{item}'")
-            check_references(item, owner, robot)
+            if key == "since" and isinstance(item, str) and item not in K:
+                fail(f"{owner}: unknown kind '{item}'")
+            if key == "since" and isinstance(item, dict) and isinstance(item.get("wake"), str):
+                modes = persona_modes(robot["role"]) if robot is not None else ALL_MODES
+                if item["wake"] not in modes:
+                    fail(f"{owner}: unknown {'own ' if robot is not None else ''}persona mode '{item['wake']}'")
+            if key == "engagement" and isinstance(item, str) and path_value(E, item) is MISSING:
+                fail(f"{owner}: unknown engagement value '{item}'")
+            if key == "fact" and isinstance(item, str) and item.endswith(".state") and item.removesuffix(".state") in machines:
+                known = set(machines[item.removesuffix(".state")]["states"])
+                for comparison in ("eq", "ne", "in"):
+                    compared = value.get(comparison)
+                    for state in (compared if isinstance(compared, list) else [compared]):
+                        if isinstance(state, str) and state not in known:
+                            fail(f"{owner}: unknown state '{state}' in {item.removesuffix('.state')}")
+            if key not in ("since",) or not isinstance(item, dict):
+                check_references(item, owner, robot, thresholds)
     elif isinstance(value, list):
         for item in value:
-            check_references(item, owner, robot)
+            check_references(item, owner, robot, thresholds)
 
 def contains_number(value):
     if isinstance(value, bool):
@@ -127,7 +179,7 @@ def contains_number(value):
     return False
 
 def check_requirement_form(requirement,owner):
-    forms={"fact","arg","msg","re","counter","attest","signed","op","any","not","always"}
+    forms={"fact","arg","msg","re","counter","attest","signed","op","holds","any","not","always"}
     if not isinstance(requirement,dict) or len(set(requirement)&forms)!=1:
         fail(f"{owner}: unknown requirement form")
         return
@@ -136,7 +188,9 @@ def check_requirement_form(requirement,owner):
         if not isinstance(requirement[form],list):fail(f"{owner}: any must contain requirements")
         else:
             for item in requirement[form]:check_requirement_form(item,owner)
-    elif form=="not":check_requirement_form(requirement[form],owner)
+    elif form=="not":
+        if isinstance(requirement[form],dict) and "not" in requirement[form]:fail(f"{owner}: a requirement negates a negation")
+        check_requirement_form(requirement[form],owner)
     elif form=="always":
         if not isinstance(requirement[form],bool):fail(f"{owner}: always must be boolean")
     elif not isinstance(requirement[form],str):fail(f"{owner}: requirement name must be a string")
@@ -145,12 +199,12 @@ def check_requirement_form(requirement,owner):
     elif form=="signed" and requirement[form]!="bora":fail(f"{owner}: unknown signer")
     elif form=="op" and requirement.get("eq") not in ("ok","failed"):fail(f"{owner}: unknown operation result")
 
-def check_requirements(requirements, owner, robot=None):
+def check_requirements(requirements, owner, robot=None, thresholds=frozenset()):
     if not isinstance(requirements,list):
         fail(f"{owner}: require must be a list")
         return
     for requirement in requirements:check_requirement_form(requirement,owner)
-    check_references(requirements, owner, robot)
+    check_references(requirements, owner, robot, thresholds)
     if contains_number(requirements):
         fail(f"{owner}: literal number inside a requirement")
 
@@ -176,21 +230,24 @@ for machine, transition in all_transitions:
         fail(f"{owner}: unknown trigger '{event}'")
     if event != "fact" and transition.get("kind") not in K:
         fail(f"{owner}: unknown kind '{transition.get('kind')}'")
-    check_requirements(transition["require"], owner)
-    check_references(transition.get("effects", []), owner)
+    thresholds = sender_thresholds(K.get(transition.get("kind"), {}).get("from"))
+    check_requirements(transition["require"], owner, thresholds=thresholds)
+    check_references(transition.get("effects", []), owner, thresholds=thresholds)
     for effect in transition.get("effects", []):
         if not isinstance(effect, dict) or not set(effect) & {"do", "emit", "count"}:
             fail(f"{owner}: unknown effect")
         if "emit" in effect and effect["emit"] not in E["mailroom_declared_effects"]:
             fail(f"{owner}: undeclared mailroom emit '{effect['emit']}'")
+        if isinstance(effect, dict) and "emit" in effect:
+            check_destination(effect.get("to"), owner)
         if "if" in effect:
-            check_requirements([effect["if"]], owner)
+            check_requirements([effect["if"]], owner, thresholds=thresholds)
     for requirement in transition["require"]:
         if "op" in requirement and event != "op-result":
             fail(f"{owner}: operation result outside op-result trigger")
     known_states = set(machines[machine]["states"])
     for state in (transition["from"], transition["to"]):
-        if state not in known_states and not state.startswith("*"):
+        if state not in known_states and state not in RESERVED_STATES:
             fail(f"{owner}: unknown state '{state}' in {machine}")
 if not fails:
     ok(f"every guard has a machine form: {len(all_transitions)} transitions with id, on, require and effects")
@@ -302,9 +359,12 @@ for name, kind in K.items():
     for argument, definition in kind.get("args",{}).items():
         if not isinstance(definition,dict) or not set(definition)&{"type","enum"}:
             fail(f"{name}: untyped argument '{argument}'")
-    check_requirements(kind.get("require", []), name)
+    thresholds = sender_thresholds(kind.get("from"))
+    check_requirements(kind.get("require", []), name, thresholds=thresholds)
     for effect in kind.get("expiry",[]):
-        check_references(effect,name)
+        check_references(effect,name,thresholds=thresholds)
+        if isinstance(effect, dict) and "emit" in effect:
+            check_destination(effect.get("to"), name)
         if not isinstance(effect,dict) or not set(effect)&{"emit","report","transition","do"}:
             fail(f"{name}: invalid expiry effect")
         if "transition" in effect and effect["transition"] not in seen_ids:
@@ -312,11 +372,11 @@ for name, kind in K.items():
         if "emit" in effect and effect["emit"] not in E["mailroom_declared_effects"]:
             fail(f"{name}: undeclared expiry emit '{effect['emit']}'")
         if "if" in effect:
-            check_requirements([effect["if"]],name)
+            check_requirements([effect["if"]],name,thresholds=thresholds)
     if kind.get("to")=="daemon" and not any(t.get("kind")==name and any("do" in effect for effect in t.get("effects",[])) for _,t in all_transitions):
         fail(f"{name}: daemon request has no operation binding")
     for case in (kind.get("class", {}).get("cases", []) if isinstance(kind.get("class"), dict) else []):
-        check_requirements([case["if"]], name)
+        check_requirements([case["if"]], name, thresholds=thresholds)
 if not fails:
     ok(f"{len(K)} kinds with typed args, class cases, window, expiry and require")
 ok(f"closed vocabulary loaded: {len(V['facts'])} facts, {len(V['operations'])} operations")
@@ -333,11 +393,7 @@ if "stop_gate" in E and E["stop_gate"].get("require") != []:
 if not fails:
     ok("engagement second key, cap references and empty v1 stop gate checked")
 
-# 1. transitions → kinds
-for t in trans:
-    if t["kind"] not in K: fail(f"transition {t['from']}→{t['to']} fires unknown kind '{t['kind']}'")
-    for s in (t["from"], t["to"]):
-        if not s.startswith("*") and s not in states: fail(f"transition {t['from']}→{t['to']} references unknown state '{s}'")
+# 1. transitions → kinds (each transition's kind and states are checked above, with its id)
 ok(f"{len(trans)} stage transitions checked against {len(K)} kinds")
 
 # 2. kinds → transitions (only those that name a stage transition 'a→b')
@@ -463,7 +519,9 @@ for filename, robot in ROBOTS:
                 fail(f"{owner}: robot then must only send or wake")
                 continue
             check_references(action.get("args",{}),owner,robot)
+            check_references(action.get("to"),owner,robot)
             if "send" in action:
+                check_destination(action.get("to"), owner)
                 kind=action["send"]
                 if kind not in K: fail(f"{owner}: unknown send kind '{kind}'")
                 elif kind not in may: fail(f"{owner}: role '{role}' may not send '{kind}'")
@@ -473,24 +531,44 @@ for filename, robot in ROBOTS:
                     for name,definition in K[kind].get("args",{}).items():
                         if definition.get("required") and name not in action.get("args",{}): fail(f"{owner}: missing send argument '{name}'")
             if "wake" in action:
-                source=(ROOT / "agents" / role / "AGENT.md").read_text()
-                frontmatter=load_yaml(re.match(r"---\n(.*?)\n---",source,re.S).group(1))
-                if action["wake"] not in frontmatter.get("modes",{}): fail(f"{owner}: unknown own persona mode '{action['wake']}'")
+                if action["wake"] not in persona_modes(role): fail(f"{owner}: unknown own persona mode '{action['wake']}'")
 if not fails:
     ok(f"mailroom sends only its {len(declared)} declared effects; {len(ROBOTS)} robots checked against the matrix")
     ok(f"{executed} robot rules with on/if/then; {persona} persona rules; queue and named thresholds checked")
 
+# A rule that needs a block's requirements refers to it with `{holds: …}`; it never repeats them (contracts.md §4.1).
+def requirement_parts(requirement):
+    if not isinstance(requirement, dict):
+        return
+    yield requirement
+    if isinstance(requirement.get("any"), list):
+        for item in requirement["any"]:
+            yield from requirement_parts(item)
+    elif "not" in requirement:
+        yield from requirement_parts(requirement["not"])
+
+def conditions(effects):
+    return [effect["if"] for effect in effects or [] if isinstance(effect, dict) and "if" in effect]
+
+def class_cases(kind):
+    classification = kind.get("class")
+    return [case["if"] for case in classification.get("cases", []) if isinstance(case, dict) and "if" in case] if isinstance(classification, dict) else []
+
+RULE_REQUIREMENTS = [(transition.get("id"), list(transition.get("require") or []) + conditions(transition.get("effects"))) for _, transition in all_transitions]
+RULE_REQUIREMENTS += [(name, list(kind.get("require") or []) + class_cases(kind) + conditions(kind.get("expiry"))) for name, kind in K.items()]
+for filename, robot in ROBOTS:
+    RULE_REQUIREMENTS.append((filename, [robot.get("active_when"), robot.get("queue", {}).get("next_when")]))
+    RULE_REQUIREMENTS += [(rule.get("id"), list(rule.get("if") or [])) for rule in robot.get("rules", []) if rule.get("for") != "persona"]
+for owner, requirements in RULE_REQUIREMENTS:
+    parts = [part for requirement in requirements for part in requirement_parts(requirement)]
+    for block, block_requirements in BLOCKS.items():
+        if block_requirements and all(item in parts for item in block_requirements):
+            fail(f"{owner}: repeats the requirements of '{block}' — refer to the block with {{holds: {block}}}")
+if not fails:
+    ok(f"every {{holds: …}} names a block of engagement.yaml ({', '.join(BLOCKS)}); no rule repeats a block's requirements")
 
 # Walk the public rules, using supplied observations and fake operation results only.
 # There is no I/O or action execution here: do/send/wake are checked and recorded.
-MISSING = object()
-def path_value(root, path):
-    value=root
-    for part in str(path).split("."):
-        if isinstance(value,dict): value=value.get(part,MISSING)
-        elif isinstance(value,list) and part.isdigit() and int(part)<len(value): value=value[int(part)]
-        else: return MISSING
-    return value
 
 def comparable(value):
     if isinstance(value,str):
@@ -613,6 +691,7 @@ class Walk:
         return {key:self.value(item) for key,item in value.items()}
     def holds(self, requirement):
         if "always" in requirement:return requirement["always"] is True
+        if "holds" in requirement:return requirement["holds"] in BLOCKS and all(self.holds(item) for item in BLOCKS[requirement["holds"]])
         if "any" in requirement:return any(self.holds(item) for item in requirement["any"])
         if "not" in requirement:return not self.holds(requirement["not"])
         if "attest" in requirement:return requirement["attest"] in self.ctx.get("args",{}).get("attest",[])
@@ -770,7 +849,7 @@ class Walk:
                 self.ctx.update(id=request_id,status="held",tick=self.index)
                 self.messages[request_id]=copy.deepcopy(self.ctx)
                 self.history.append(copy.deepcopy(self.ctx))
-                self.check_expectation(step,{**arrivals,"held":True})
+                self.check_expectation(step,{**arrivals,"held":True,"class":self.ctx["class"]})
                 if not step.get("expect",{}).get("held"):raise WalkError("message was held")
                 return
             failure=self.require(kind["require"])
@@ -791,7 +870,7 @@ class Walk:
         observed=self.robot_rules("op" if operation else "delivered",operation or kind_name)
         if not operation:
             observed={key:arrivals[key]+observed[key] for key in ("rules","sends","wakes")}
-        self.check_expectation(step,{**observed,"transitions":fired,"held":False})
+        self.check_expectation(step,{**observed,"transitions":fired,"held":False,"class":self.ctx.get("class")})
     def step(self,step):
         expected=step.get("expect",{})
         if not expected.get("refused"):
@@ -833,6 +912,51 @@ class Walk:
                 return
         ok(f"walk {self.name} reached {expected}")
 
+# The rules data reads clean (issues #5, #6): no counter that nothing reads, no anchor, the comments a round trip loses.
+def counter_reads(value):
+    if isinstance(value, dict):
+        if isinstance(value.get("counter"), str):
+            yield value["counter"]
+        for item in value.values():
+            yield from counter_reads(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from counter_reads(item)
+read_counters = set(counter_reads([L, K, E] + [robot for _, robot in ROBOTS]))
+
+# Either reader, given the scalar plain: PyYAML with the rules' YAML 1.2 booleans, or the Kotlin loader's resolver.
+LOADER_SCALARS = re.compile(r"-?(0|[1-9][0-9]*)(\.[0-9]+([eE][-+]?[0-9]+)?)?|(?i:true|false)")
+def reads_as_number_or_boolean(value):
+    tag = RulesLoader("").resolve(yaml.ScalarNode, value, (True, False))
+    return tag in ("tag:yaml.org,2002:int", "tag:yaml.org,2002:float", "tag:yaml.org,2002:bool") or LOADER_SCALARS.fullmatch(value) is not None
+for name in L.get("counters", {}):
+    if name not in read_counters: fail(f"counter '{name}' is declared but nothing reads it")
+if not FIXTURE:
+    RULE_FILES = [ROOT / "rules" / name for name in ("stage-lifecycle.yaml", "message-kinds.yaml", "engagement.yaml", "vocabulary.yaml")]
+    RULE_FILES += sorted((ROOT / "robots").glob("*.yaml")) + sorted((ROOT / "pool").glob("*.yaml"))
+    for path in RULE_FILES:
+        text = path.read_text()
+        label = path.relative_to(ROOT)
+        if any(isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None) for event in yaml.parse(text, Loader=RulesLoader)):
+            fail(f"{label}: a YAML anchor or alias — every rule is written out")
+        if not text.startswith("#"):
+            fail(f"{label}: the header comment is gone")
+        for event in yaml.parse(text, Loader=RulesLoader):
+            if isinstance(event, yaml.ScalarEvent) and event.style in ("'", '"') and reads_as_number_or_boolean(event.value):
+                fail(f"{label}: the quoted scalar '{event.value}' (line {event.start_mark.line + 1}) would read as a number or a boolean — the loader cannot see quotes")
+    # What S0.1's round trip lost and S1.0 put back: a YAML dump drops comments, so edit these files as text.
+    KEPT = {"rules/stage-lifecycle.yaml": ["# Guards: `observed` = the daemon checks the world"],
+            "rules/message-kinds.yaml": ["# Fields: from/to (roles;", "  # ---- the start gate"],
+            "rules/engagement.yaml": ["# Default deny:"] + [f"  {cap}: " for cap in ("refusals_per_seat_per_day", "fix_rounds_autonomous",
+                "resumes_per_stage", "seat_gone_events_per_stage", "proposals_per_stage", "tail_retries", "qa_requests_per_stage")]}
+    for name, kept in KEPT.items():
+        lines = (ROOT / name).read_text().splitlines()
+        for start in kept:
+            if not any(line.startswith(start) and "#" in line for line in lines):
+                fail(f"{name}: the comment on '{start.strip()}' is gone — edit the rules as text, never by a YAML round trip")
+if not fails:
+    ok("every counter is read; no anchor or alias; no quoted number or boolean; the legends and the caps' sources are comments")
+
 if not FIXTURE:
     W=[load_yaml(path.read_text()) for path in sorted((ROOT / "rules/walks").glob("*.yaml"))]
 for walk in W:
@@ -846,15 +970,16 @@ ROOTS = ("worktrees", "scratch", "seats", "secrets")
 SIZES = ("S", "M", "L", "XL")
 LISTENER = re.compile(r"^127\.0\.0\.1:([1-9][0-9]{0,4})$")
 
+# A pool file that is missing or not version 1 is one line; nothing is checked in it, or against it (issue #8).
 def pool_file(name):
     path = POOL / name
     if not path.is_file():
         fail(f"pool/{name}: missing")
-        return {}
+        return None
     data = load_yaml(path.read_text())
     if not isinstance(data, dict) or data.get("version") != 1:
         fail(f"pool/{name}: version must be 1")
-        return {}
+        return None
     return data
 
 def positive(value):
@@ -864,6 +989,8 @@ def text(value):
     return isinstance(value, str) and value.strip() != ""
 
 def check_roster(roster):
+    if roster is None:
+        return None
     label = "pool/roster.yaml"
     vendors = roster.get("vendors") if isinstance(roster.get("vendors"), dict) else {}
     if not vendors: fail(f"{label}: vendors must name at least one vendor")
@@ -903,7 +1030,13 @@ def check_roster(roster):
     ok(f"{label}: {len(pairs)} (model, effort) pairs of {len(models)} models; {len(levels)} levels × {len(SIZES)} sizes on the order; review floor {floor}")
     return vendors
 
+def relative_folder(value):
+    """A folder of the project checkout, written relative to it: not absolute, not from home, never above it."""
+    return text(value) and not value.startswith(("/", "~")) and ".." not in value.split("/")
+
 def check_offices(offices, vendors):
+    if offices is None:
+        return None
     label = "pool/offices.yaml"
     entries = offices.get("offices") if isinstance(offices.get("offices"), dict) else {}
     if not entries: fail(f"{label}: offices must name at least one office")
@@ -917,16 +1050,19 @@ def check_offices(offices, vendors):
             if not text(roots.get(root)): fail(f"{label}: {name}: roots lack '{root}'")
         for root in sorted(set(roots) - set(ROOTS)): fail(f"{label}: {name}: unknown root '{root}'")
         project = office.get("project") if isinstance(office.get("project"), dict) else {}
-        if not project: fail(f"{label}: {name}: project must map efforts to checkouts")
-        for effort, path in project.items():
-            if not re.fullmatch(r"[A-Z][A-Z0-9-]*", str(effort)) or not text(path): fail(f"{label}: {name}: project '{effort}' must be an effort id with a path")
+        efforts = project.get("efforts") if isinstance(project.get("efforts"), dict) else {}
+        if not text(project.get("checkout")) or not efforts: fail(f"{label}: {name}: project must name a checkout and a folder per effort")
+        for key in sorted(set(project) - {"checkout", "efforts"}): fail(f"{label}: {name}: unknown field 'project.{key}'")
+        for effort, folder in efforts.items():
+            if not re.fullmatch(r"[A-Z][A-Z0-9-]*", str(effort)) or not relative_folder(folder):
+                fail(f"{label}: {name}: project effort '{effort}' must be an effort id with a folder inside the checkout")
         repos = office.get("repos") if isinstance(office.get("repos"), dict) else {}
         if not repos or not all(text(path) for path in repos.values()): fail(f"{label}: {name}: repos must map repo names to checkouts")
         targets = office.get("live_targets")
         if not isinstance(targets, list) or not all(text(target) for target in targets): fail(f"{label}: {name}: live_targets must be a list of names")
         if office.get("computer_use") not in COMPUTER_USE: fail(f"{label}: {name}: unknown computer_use class '{office.get('computer_use')}'")
         qa = office.get("qa") if isinstance(office.get("qa"), dict) else {}
-        if qa.get("vendor") not in vendors: fail(f"{label}: {name}: qa vendor '{qa.get('vendor')}' is not a roster vendor")
+        if vendors is not None and qa.get("vendor") not in vendors: fail(f"{label}: {name}: qa vendor '{qa.get('vendor')}' is not a roster vendor")
         listen = office.get("listen") if isinstance(office.get("listen"), dict) else {}
         ports = []
         for listener in ("mcp", "board"):
@@ -938,6 +1074,8 @@ def check_offices(offices, vendors):
     return entries
 
 def check_budgets(budgets, vendors, entries):
+    if budgets is None:
+        return
     label = "pool/budgets.yaml"
     slots = budgets.get("slots") if isinstance(budgets.get("slots"), dict) else {}
     for key in ("total", "stages_in_flight_per_effort"):
@@ -946,7 +1084,7 @@ def check_budgets(budgets, vendors, entries):
         limits = slots.get(key) if isinstance(slots.get(key), dict) else {}
         if not limits: fail(f"{label}: slots.{key} must name at least one {noun}")
         for name, limit in limits.items():
-            if name not in known: fail(f"{label}: {key} names unknown {noun} '{name}'")
+            if known is not None and name not in known: fail(f"{label}: {key} names unknown {noun} '{name}'")
             if not positive(limit): fail(f"{label}: {key}.{name} must be a positive integer")
     warn = budgets.get("warn")
     if not isinstance(warn, list) or not warn or not all(isinstance(value, (int, float)) and not isinstance(value, bool) and 0 < value < 1 for value in warn) or warn != sorted(set(warn)):
@@ -971,7 +1109,9 @@ if not FIXTURE:
     used = pool_values([L, K, E] + [robot for _, robot in ROBOTS], [])
     for value in used:
         namespace, path = next(iter(value.items()))
-        sources = {"roster": [roster_data], "budget": [budgets_data], "office": list(pool_offices.values())}[namespace]
+        sources = {"roster": roster_data and [roster_data], "budget": budgets_data and [budgets_data], "office": pool_offices and list(pool_offices.values())}[namespace]
+        if sources is None:
+            continue
         if not sources or any(path_value(source, path) is MISSING for source in sources):
             fail(f"pool: {{{namespace}: {path}}} used by the rules does not resolve")
     ok(f"pool values the rules use resolve: {len(used)} ({', '.join('{' + next(iter(v)) + ': ' + str(next(iter(v.values()))) + '}' for v in used) or 'none'})")

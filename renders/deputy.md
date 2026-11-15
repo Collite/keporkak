@@ -72,22 +72,21 @@ Executable rules run under your name. Rules marked persona are your instructions
 
 Named thresholds: flap_events = 2 · flap_window = 1h · median_factor = 2
 
-- **DEP-1** when a class-B kind addressed to Bora arrives; if msg.to = bora and not (not ((not (queue.names) or not (stage.cut_at ≤ bora.absent_since) or not (log.count (kind=reverse, scope=office, where=severity: serious, since=queue-approval) = 0)))) → send hold to trigger.from; wake your shadow mode
-- **DEP-9** when a class-B kind addressed to Bora arrives; if msg.to = bora → send hold to trigger.from; wake your shadow mode
-- **DEP-10** when a class-B kind addressed to Bora arrives; if msg.to = bora → send hold to trigger.from; wake your shadow mode
-- **DEP-11** when a class-B kind addressed to Bora arrives; if msg.to = bora → send hold to trigger.from; wake your shadow mode
-- **DEP-12** when a class-B kind addressed to Bora arrives; if msg.to = bora → send hold to trigger.from; wake your shadow mode
-- **DEP-13** when a class-B kind addressed to Bora arrives; if msg.to = bora and office.computer_use = B → send hold to trigger.from; wake your shadow mode
-- **DEP-2** when an assignment-proposal arrives and the stage is named in a queue-approval signed by Bora for the current wave; if queue.names and stage.cut_at ≤ bora.absent_since and log.count (kind=reverse, scope=office, where=severity: serious, since=queue-approval) = 0 → send queued-approval to teamlead
-- **DEP-3** when a merge, release or deploy-request arrives → send hold to teamlead; wake your shadow mode
-- **DEP-14** when a merge, release or deploy-request arrives → send hold to teamlead; wake your shadow mode
-- **DEP-15** when a merge, release or deploy-request arrives → send hold to teamlead; wake your shadow mode
-- **DEP-4** when two FIX FIRST in a row on one stage; if arg.verdict = FIX FIRST and fix_rounds ≥ cap.fix_rounds_autonomous → send anomaly-stop to teamlead
-- **DEP-16** when two FIX FIRST in a row on one stage; if arg.verdict = FIX FIRST and fix_rounds ≥ cap.fix_rounds_autonomous → send anomaly-stop to teamlead
-- **DEP-5** when two seat-gone events within an hour; if log.count (kind=seat-gone, scope=seat, window=robot.flap_window) ≥ robot.flap_events → send anomaly-stop to pool
-- **DEP-6** when consumption above twice the daily median; if budget.vs_daily_median (subscription=trigger.subscription) > robot.median_factor → send anomaly-stop to pool
-- **DEP-7** when a stray change is observed in a main checkout; if git.stray_changes > 0 → send anomaly-stop to teamlead
-- **DEP-8** when presence turns present → send digest to bora
+- **DEP-1** on assignment-proposal arrives: when a class-B kind addressed to Bora arrives; if msg.to = bora and (not (queue.names) or not (stage.cut_at ≤ bora.absent_since) or not (log.count (kind=reverse, scope=office, where=severity: serious, since=queue-approval) = 0)) → send hold to trigger.from; wake your shadow mode
+- **DEP-9** on classify-request arrives: when a class-B kind addressed to Bora arrives; if msg.to = bora → send hold to trigger.from; wake your shadow mode
+- **DEP-10** on ruling-request arrives: when a class-B kind addressed to Bora arrives; if msg.to = bora → send hold to trigger.from; wake your shadow mode
+- **DEP-11** on phase-exit-request arrives: when a class-B kind addressed to Bora arrives; if msg.to = bora → send hold to trigger.from; wake your shadow mode
+- **DEP-12** on recut-notice arrives: when a class-B kind addressed to Bora arrives; if msg.to = bora → send hold to trigger.from; wake your shadow mode
+- **DEP-13** on computer-use-session arrives: when a class-B kind addressed to Bora arrives; if msg.to = bora and office.computer_use = B → send hold to trigger.from; wake your shadow mode
+- **DEP-2** on assignment-proposal arrives: when an assignment-proposal arrives and the stage is named in a queue-approval signed by Bora for the current wave; if queue.names and stage.cut_at ≤ bora.absent_since and log.count (kind=reverse, scope=office, where=severity: serious, since=queue-approval) = 0 → send queued-approval to teamlead
+- **DEP-3** on merge arrives: when a merge, release or deploy-request arrives → send hold to teamlead; wake your shadow mode
+- **DEP-14** on release arrives: when a merge, release or deploy-request arrives → send hold to teamlead; wake your shadow mode
+- **DEP-15** on deploy-request arrives: when a merge, release or deploy-request arrives → send hold to teamlead; wake your shadow mode
+- **DEP-4** on re-verdict is delivered: when two FIX FIRST in a row on one stage; if arg.verdict = FIX FIRST and fix_rounds ≥ cap.fix_rounds_autonomous → send anomaly-stop to teamlead
+- **DEP-5** on seat-gone is delivered: when two seat-gone events within an hour; if log.count (kind=seat-gone, scope=seat, window=robot.flap_window) ≥ robot.flap_events → send anomaly-stop to pool
+- **DEP-6** on budget.vs_daily_median changes: when consumption above twice the daily median; if budget.vs_daily_median (subscription=trigger.subscription) > robot.median_factor → send anomaly-stop to pool
+- **DEP-7** on git.stray_changes changes: when a stray change is observed in a main checkout; if git.stray_changes > 0 → send anomaly-stop to teamlead
+- **DEP-8** on presence turns present: when presence turns present → send digest to bora
 
 ## Messages that reach you
 `qa-report`, `ruling`, `reverse`, `hold`, `pause`, `resume`, `compact`, `kill`, `retire`, `nudge`

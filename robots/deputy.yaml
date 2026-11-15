@@ -1,9 +1,10 @@
+# The Deputy's robot half (D-28, D-33, D-35). Its LLM half only writes shadow rulings (agents/deputy/AGENT.md).
 # Deputy robot — absent-mode interception and declared sends only.
 role: deputy
 active_when:
   fact: bora.present
   eq: false
-intercepts:
+intercepts:  # while absent the mailroom routes these here instead of to their addressee (a declared effect)
 - class: B
   to: bora
 - merge
@@ -18,23 +19,21 @@ rules:
   if:
   - msg: to
     eq: bora
-  - not:
-      not:
-        any:
-        - not: &id001
-            fact: queue.names
-        - not: &id002
-            fact: stage.cut_at
-            lte:
-              fact: bora.absent_since
-        - not: &id003
-            fact: log.count
-            kind: reverse
-            scope: office
-            where:
-              severity: serious
-            since: queue-approval
-            eq: 0
+  - any:
+    - not:
+        fact: queue.names
+    - not:
+        fact: stage.cut_at
+        lte:
+          fact: bora.absent_since
+    - not:
+        fact: log.count
+        kind: reverse
+        scope: office
+        where:
+          severity: serious
+        since: queue-approval
+        eq: 0
   then:
   - send: hold
     to:
@@ -120,9 +119,17 @@ rules:
   'on':
     arrives: assignment-proposal
   if:
-  - *id001
-  - *id002
-  - *id003
+  - fact: queue.names
+  - fact: stage.cut_at
+    lte:
+      fact: bora.absent_since
+  - fact: log.count
+    kind: reverse
+    scope: office
+    where:
+      severity: serious
+    since: queue-approval
+    eq: 0
   then:
   - send: queued-approval
     to: teamlead
@@ -161,26 +168,6 @@ rules:
     args: {}
   - wake: shadow
 - id: DEP-4
-  when: two FIX FIRST in a row on one stage
-  note: send anomaly-stop to the TeamLead (the stage pauses)
-  'on':
-    delivered: verdict
-  if:
-  - arg: verdict
-    eq: FIX FIRST
-  - counter: fix_rounds
-    gte:
-      cap: fix_rounds_autonomous
-  then:
-  - send: anomaly-stop
-    to: teamlead
-    args:
-      rule: DEP-4
-      target: stage
-      seat:
-        fact: seat.name
-        of: coder
-- id: DEP-16
   when: two FIX FIRST in a row on one stage
   note: send anomaly-stop to the TeamLead (the stage pauses)
   'on':

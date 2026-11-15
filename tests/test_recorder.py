@@ -154,10 +154,28 @@ class RecorderCommandLineTests(unittest.TestCase):
     def test_the_project_defaults_to_the_offices_checkout_in_the_pool(self):
         pool = Path(self.temp.name) / "pool"
         pool.mkdir()
-        (pool / "offices.yaml").write_text(f"version: 1\noffices:\n  panda:\n    project: {{KP: {self.project}}}\n")
-        result = self.record("started", "--from", "coder", "--to", "teamlead", "--stage", "KP/P0/S0.3", "--pool", str(pool), "--office", "panda", project=False)
+        (pool / "offices.yaml").write_text(f"version: 1\noffices:\n  panda:\n    project: {{checkout: {self.project}, efforts: {{KP: '.', TOY: toy}}}}\n")
+        result = self.record("started", "--from", "coder", "--to", "teamlead", "--stage", "TOY/P0/S0.3", "--pool", str(pool), "--office", "panda", project=False)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(self.lines()), 1)
+        self.assertEqual(len(self.lines(self.project / "mail/TOY/_hand/p0-s0.3.jsonl")), 1)
+        result = self.record("started", "--from", "coder", "--to", "teamlead", "--stage", "XY/P0/S0.3", "--pool", str(pool), "--office", "panda", project=False)
+        self.assertIn("refused: effort 'XY' has no folder in office 'panda's project checkout (pool/offices.yaml); pass --project", result.stderr)
+        self.assertFalse((self.project / "mail/XY").exists())
+    def test_a_subject_a_body_and_pointers_are_carried_and_the_default_subject_is_the_kind_and_the_stage(self):
+        result = self.record("review-request", "--from", "coder", "--to", "teamlead", "--stage", "KP/P1/S1.0", "--subject", "S1.0 is ready for review",
+                             "--body", "Two Found lines.\nCI green.", "--pointer", "pr:Collite/keporkak#7", "--pointer", "project:tasks-p1-s1.0-rules-load.md", via_just=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.record("started", "--from", "coder", "--to", "teamlead", "--stage", "KP/P1/S1.0")
+        carried, plain = self.lines(self.project / "mail/KP/_hand/p1-s1.0.jsonl")
+        schema = json.loads((ROOT / "schemas/message.schema.json").read_text())
+        Draft202012Validator(schema, format_checker=FormatChecker()).validate(carried)
+        self.assertEqual((carried["subject"], carried["body"], carried["pointers"]), ("S1.0 is ready for review", "Two Found lines.\nCI green.", ["pr:Collite/keporkak#7", "project:tasks-p1-s1.0-rules-load.md"]))
+        self.assertEqual((plain["subject"], "body" in plain, "pointers" in plain), ("started KP/P1/S1.0", False, False))
+    def test_a_malformed_stage_is_refused_with_one_line_before_any_path_is_created(self):
+        result = self.record("started", "--from", "coder", "--to", "teamlead", "--stage", "KP/P1")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, "refused: malformed --stage 'KP/P1': a stage is <EFFORT>/P<n>/S<n>.<n>, e.g. KP/P1/S1.0\n")
+        self.assertFalse((self.project / "mail").exists())
     def test_the_sequence_continues_after_a_line_recorded_from_stdin(self):
         carried = {**MESSAGE, "stage": "KP/P0/S0.3", "seq": 5}
         stdin = subprocess.run([sys.executable, "scripts/kp-record.py", "--project", str(self.project)], input=json.dumps(carried), text=True, capture_output=True, cwd=ROOT)

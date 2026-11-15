@@ -1,3 +1,6 @@
+# Keporkak — rules of engagement: roles, their borders, the caps, the absent-mode policy, presence.
+# The arrows themselves live in message-kinds.yaml (one row per kind); this file holds what is *about* roles and limits.
+# Default deny: a seat may send only the kinds whose `from` names its role. Converged 2026-11-12 (D-20…D-28).
 # Rules of engagement — machine limits and v1 second key; roles, principles and profiles preserved.
 version: 1
 principles:
@@ -85,24 +88,24 @@ classes:
 graduation:
   rule: a kind moves B → C, or into the Deputy's hands, only by a D-n, proposed by the shadow ledger after N consecutive
     recorded agreements
-  N: 10
-  never:
+  N: 10  # Q-15 default
+  never:  # D-27 d, D.7
   - assignment-proposal
   - ruling
   - reverse
   - approval
   - queue-approval
   - phase-exit-request
-caps:
+caps:  # defaults; message-kinds.yaml may narrow, never widen
   max_fires_default: 3
   hops_per_thread: 8
-  refusals_per_seat_per_day: 3
-  fix_rounds_autonomous: 2
-  resumes_per_stage: 2
-  seat_gone_events_per_stage: 3
-  proposals_per_stage: 2
-  tail_retries: 1
-  qa_requests_per_stage: 3
+  refusals_per_seat_per_day: 3  # 3rd → nudge cc Bora + pause (F5 δ)
+  fix_rounds_autonomous: 2  # 3rd by Principal grant, 4th by Bora (D-23)
+  resumes_per_stage: 2  # 3rd needs Bora (RV-15)
+  seat_gone_events_per_stage: 3  # then pause for Bora (RV-16)
+  proposals_per_stage: 2  # then back to planned + Principal ping (RV-17)
+  tail_retries: 1  # merge, build, roll each once more; then tail_failed (B)
+  qa_requests_per_stage: 3  # then stop SC-9 (D-31)
   review_requests_per_stage: 3
   open_flag_threads_per_subject: 1
   deadline_default: 24h
@@ -121,19 +124,19 @@ caps:
   task_days_min: 0.5
   task_days_max: 1
   spec_behaviours: 5
-presence:
+presence:  # a fact the daemon reports; what absence *means* is the Deputy's (D-28, D-35)
   idle_hours_to_absent: 4h
   signals:
   - any signed sudo kp command
   - sudo kp away (immediate)
   while_absent: the Deputy's rules apply — robots/deputy.yaml
   on_return: the Deputy sends the digest (DEP-8)
-mailroom_declared_effects:
-- nudge
-- found-batch
-- grant-request
-- ruling-request
-second_key:
+mailroom_declared_effects:  # the only kinds the mailroom itself sends; each is a consequence written in the rules, never a choice
+- nudge  # a refusal: the rule id and the failed guard
+- found-batch  # fan-out of the Found lines carried by a review-request
+- grant-request  # the third FIX FIRST (stage-lifecycle: re_review → grant_pending)
+- ruling-request  # the fourth FIX FIRST (re_review → ruling_pending)
+second_key:  # U-6: the autonomous merge guard
   rule: 'v1 (D-45): a different seat, a fresh session, (model, effort) at or above the coder''s, model at least
     the roster''s review floor'
   require:
@@ -153,7 +156,7 @@ second_key:
       fact: roster.floor_rank
   otherwise:
     class: B
-autonomy_profiles:
+autonomy_profiles:  # F1 γ presets over the classes (chosen per effort on the board; v1 = supervised)
   supervised:
     assignment-proposal: B
     merge: C
@@ -172,12 +175,12 @@ autonomy_profiles:
     deploy-request: A
     phase-exit-request: B
     presence.pause_tail: false
-qa:
+qa:  # D-30, D-31
   instances_per_office: 1
   queue: QA's own rules — robots/qa.yaml
-  computer_use:
+  computer_use:  # configured per office in pool/offices.yaml: A | B | C | off
     default: C
-    bora-mac: B
+    bora-mac: B  # every computer-use-session needs Bora's approval; scripted browsers (Playwright) are not governed (D-36 c)
   candidates: temp pods in a qa-<stage> namespace, outside GitOps; dropped at the end of the job
   durable_roll: a GitOps change through the daemon (roll), verified by QA's smoke
   rollback: QA reverts its own failed roll to the previous pin by itself; the stage is then tail_failed (B)
@@ -187,7 +190,7 @@ identity:
   bora: 'required: sudo kp authenticated as a root peer; unsigned reads never change presence (D-43)'
   seats: bound to the ACP session the daemon opened where the driver allows; otherwise an accepted v1 risk named
     in D-19
-what_no_guard_holds:
+what_no_guard_holds:  # RV-14, stated so nobody assumes otherwise
 - R5.6 (no steering) inside a verdict body
 - Design-Roles borders inside a triage body
 - 'read-exfiltration by a seat (06b): reads are unrestricted in every vendor mode'

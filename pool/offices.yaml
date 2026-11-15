@@ -13,8 +13,8 @@ offices:
       seats: ~/.local/share/keporkak/seats
       # mode 0700; its files 0600 (architecture.md §4)
       secrets: ~/.config/keporkak/secrets
-    # The toy's plan is under toy/ in the same project checkout.
-    project: {KP: ~/Dev/keporkak/project, TOY: ~/Dev/keporkak/project}
+    # One project checkout, a folder per effort relative to it (the toy's plan is under toy/); `mail/` is at its root.
+    project: {checkout: ~/Dev/keporkak/project, efforts: {KP: ".", TOY: toy}}
     repos: {keporkak: ~/Dev/keporkak/keporkak, kp-toy: ~/Dev/keporkak/kp-toy}
     live_targets: [bp-dsk]
     # A | B | C | off
