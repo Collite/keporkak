@@ -7,20 +7,21 @@ private fun send(id: String, kind: String, from: String, to: String, re: String?
     """{"id":"$id","thread":"$thread",""" + (re?.let { """"re":"$it",""" } ?: "") +
         """"from":"$from","to":"$to","kind":"$kind","stage":"KP/P1/S1.1","subject":"$kind",""" +
         (deadline?.let { """"deadline":"$it",""" } ?: "") + """"created":"2026-11-14T09:00:00Z","by":"seat:$from"}"""
-private fun delivered(id: String, vararg to: String, ticket: Int? = null) =
-    """{"event":"delivered","id":"$id","to":[${to.joinToString(",") { "\"$it\"" }}],"class":"A"""" + (ticket?.let { ""","ticket":$it""" } ?: "") + "}"
+private fun delivered(id: String, vararg to: String, ticket: Int? = null, answers: String? = null) =
+    """{"event":"delivered","id":"$id","to":[${to.joinToString(",") { "\"$it\"" }}],"class":"A"""" + (ticket?.let { ""","ticket":$it""" } ?: "") +
+        (answers?.let { ""","answers":"$it"""" } ?: "") + "}"
 private fun expired(id: String, deadline: String?, extra: String = "") =
     """{"event":"expired","id":"$id","rule":"T-74"""" + (deadline?.let { ""","deadline":"$it"""" } ?: "") + "$extra}"
 
 class FoldWaitsSpec : StringSpec({
-    "a delivered message with a deadline waits; its addressee's reply ends the wait, another party's reply does not" {
+    "a delivered message with a deadline waits; the delivered record that answers it ends the wait, a reply that does not answer it leaves it" {
         val lines = log(
             send("m-panda-000001", "assign", "teamlead", "coder-1", deadline = "2026-11-14T09:15:00Z"),
             delivered("m-panda-000001", "coder-1"),
             send("m-panda-000002", "nudge", "mailroom", "teamlead", re = "m-panda-000001"),
             delivered("m-panda-000002", "teamlead"),
             send("m-panda-000003", "started", "coder-1", "teamlead", re = "m-panda-000001"),
-            delivered("m-panda-000003", "teamlead"),
+            delivered("m-panda-000003", "teamlead", answers = "m-panda-000001"),
         )
         fold(lines.take(4)).deadlines shouldBe mapOf("m-panda-000001" to Wait("assign", "KP/P1/S1.1", "teamlead", "coder-1", "2026-11-14T09:15:00Z", 0))
         fold(lines).deadlines shouldBe emptyMap()
@@ -62,19 +63,39 @@ class FoldWaitsSpec : StringSpec({
         fold(lines).held shouldBe emptyMap()
         fold(lines).deadlines.keys shouldBe setOf("m-panda-000001")
     }
-    "a ticket is raised by the record that carries it and answered by Bora's delivered reply to its item" {
+    "a ticket is raised by the record that carries it and answered by the delivered record that answers its item; another reply of Bora's leaves it open" {
         val lines = log(
-            send("m-panda-000001", "stop", "coder-1", "principal", deadline = "2026-11-14T13:00:00Z"),
-            delivered("m-panda-000001", "principal"),
-            expired("m-panda-000001", null, extra = ""","report":"bora","class":"B","ticket":7"""),
-            send("m-panda-000002", "triage", "principal", "coder-1", re = "m-panda-000001"),
-            delivered("m-panda-000002", "coder-1"),
-            send("m-panda-000003", "ruling", "bora", "coder-1", re = "m-panda-000001"),
-            delivered("m-panda-000003", "coder-1"),
+            send("m-panda-000001", "classify-request", "reviewer-1", "bora", deadline = "2026-11-15T09:00:00Z"),
+            delivered("m-panda-000001", "bora", ticket = 7),
+            send("m-panda-000002", "away", "bora", "mailroom", re = "m-panda-000001"),
+            delivered("m-panda-000002", "mailroom"),
+            send("m-panda-000003", "ruling", "bora", "reviewer-1", re = "m-panda-000001"),
+            delivered("m-panda-000003", "reviewer-1", answers = "m-panda-000001"),
         )
-        fold(lines.take(5)).openTickets() shouldBe mapOf(7L to Ticket(item = "m-panda-000001", raisedBy = "expired", at = "2026-11-14T09:02:00Z"))
-        fold(lines).tickets shouldBe mapOf(7L to Ticket(item = "m-panda-000001", raisedBy = "expired", at = "2026-11-14T09:02:00Z", answeredBy = "m-panda-000003"))
+        fold(lines.take(4)).openTickets() shouldBe mapOf(7L to Ticket(item = "m-panda-000001", raisedBy = "delivered", at = "2026-11-14T09:01:00Z"))
+        fold(lines).tickets shouldBe mapOf(7L to Ticket(item = "m-panda-000001", raisedBy = "delivered", at = "2026-11-14T09:01:00Z", answeredBy = "m-panda-000003"))
         fold(lines).openTickets() shouldBe emptyMap()
+    }
+    "holding a message suspends its deadline; its release carries the deadline that then applies — the last one any line about it carries" {
+        val lines = log(
+            send("m-panda-000001", "classify-request", "reviewer-1", "bora", deadline = "2026-11-15T09:00:00Z"),
+            """{"event":"held","id":"m-panda-000001","by":"robot:DEP-1","until":"presence","deadline":null}""",
+            """{"event":"delivered","id":"m-panda-000001","to":["bora"],"class":"B","deadline":"2026-11-16T10:00:00Z"}""",
+        )
+        fold(lines.take(2)).deadlines.getValue("m-panda-000001").deadline shouldBe null
+        fold(lines).deadlines.getValue("m-panda-000001").deadline shouldBe "2026-11-16T10:00:00Z"
+    }
+    "the operations in flight: each requested and with no result yet, in the order requested" {
+        val lines = log(
+            """{"event":"op","op":"git.merge","phase":"requested","cause":"m-panda-000001","with":{"sha":"abc"}}""",
+            """{"event":"op","op":"worktree.create","phase":"requested","cause":"m-panda-000002"}""",
+            """{"event":"op","op":"git.merge","phase":"failed","cause":"m-panda-000001","reason":"interrupted"}""",
+        )
+        fold(lines.take(2)).operations shouldBe listOf(
+            InFlight("git.merge", "m-panda-000001", Datum.Fields(mapOf("sha" to Datum.Text("abc"))), "2026-11-14T09:00:00Z"),
+            InFlight("worktree.create", "m-panda-000002", Datum.Fields(emptyMap()), "2026-11-14T09:01:00Z"),
+        )
+        fold(lines).operations.map { it.op } shouldBe listOf("worktree.create")
     }
     "per seat, what was delivered and not read, in the order it was delivered" {
         val state = fold(log(

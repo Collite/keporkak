@@ -76,7 +76,7 @@ class TheLogAndTheFoldSpec : StringSpec({
             counters = mapOf("KP/P1/S1.1" to mapOf("stops" to 1L, "resumes" to 1L, "review_requests" to 1L, "review_request_expiries" to 1L)),
             // every message on the log was delivered
             pending = emptyMap(),
-            // the assign's and the stop's waits ended with their replies; the mailroom's nudge does not end the review-request's
+            // the assign's and the stop's waits ended with the replies that answer them; the mailroom's nudge does not end the review-request's
             deadlines = mapOf(
                 "m-panda-000105" to Wait(kind = "review-request", stage = "KP/P1/S1.1", from = "coder-1", to = "teamlead", deadline = "2026-11-14T17:00:00Z", expiries = 1),
             ),
@@ -98,8 +98,8 @@ class TheLogAndTheFoldSpec : StringSpec({
                 "m-panda-000105" to Delivery("m-panda-000105", "review-request", "coder-1", "teamlead", "KP/P1/S1.1", "m-panda-000105", null, "seat:coder-1", Datum.Fields(mapOf("attest" to Datum.Items(listOf(Datum.Text("done_lines_hold"))))), "A", "2026-11-14T15:00:00Z"),
                 "m-panda-000106" to Delivery("m-panda-000106", "nudge", "mailroom", "teamlead", "KP/P1/S1.1", "m-panda-000105", "m-panda-000105", "effect:T-74", Datum.Fields(mapOf("rule" to Datum.Text("T-74"))), "A", "2026-11-14T16:00:00Z"),
             ),
-            // no delivered record answers another (contracts.md §2.2, Amendment 8)
-            answered = emptySet(),
+            // started answers the assign, triage the stop (contracts.md §2.2, Amendment 8)
+            answered = setOf("m-panda-000101", "m-panda-000103"),
         )
     }
 

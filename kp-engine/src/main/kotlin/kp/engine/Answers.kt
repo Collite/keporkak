@@ -2,7 +2,7 @@ package kp.engine
 
 import kp.model.utc
 import kp.rules.FactCall
-import kotlin.time.Duration
+import kp.rules.duration
 
 /**
  * The facts whose source is exactly L (contracts.md §4.4): the engine answers them itself, from the folded state.
@@ -71,7 +71,7 @@ internal class Answers(private val evaluation: Evaluation) {
             // `{wake: <mode>}` counts from a wake, an `op` record the state does not keep yet (robots, S1.4).
             else -> return null
         }
-        val window = ref.params["window"]?.let { (it as? Datum.Text)?.value?.let(Duration::parseOrNull) ?: return null }
+        val window = ref.params["window"]?.let { (it as? Datum.Text)?.value?.let(::duration) ?: return null }
         val inWindow = if (window == null) since else {
             val now = now()?.let(::utc) ?: return null
             since.filter { !utc(it.at).isBefore(now.minusSeconds(window.inWholeSeconds)) }

@@ -620,7 +620,12 @@ def compare(actual, operator, expected):
     if operator in ("eq","ne"):
         if isinstance(actual,list) and isinstance(expected,list):
             same={json.dumps(item,sort_keys=True) for item in actual}=={json.dumps(item,sort_keys=True) for item in expected}
-        else: same=actual==expected
+        else:
+            same=actual==expected
+            # A duration is the same as another of its length, or as a number of seconds: `0s` is `0` (contracts.md §4.4).
+            left,right=comparable(actual),comparable(expected)
+            if not same and (isinstance(actual,str) or isinstance(expected,str)) and all(isinstance(side,(int,float)) and not isinstance(side,bool) for side in (left,right)):
+                same=left==right
         return same if operator=="eq" else not same
     if operator=="in":
         try: return all(item in expected for item in actual) if isinstance(actual,list) else actual in expected

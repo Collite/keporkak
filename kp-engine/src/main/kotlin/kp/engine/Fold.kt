@@ -16,8 +16,14 @@ import kp.model.utc
 /** A machine's subject's current state; [previous] is the state before it (what `*previous` names). */
 data class MachineState(val state: String, val previous: String?, val since: String, val cause: String, val rule: String?)
 
-/** A message that waits for an answer by its `deadline`. */
-data class Wait(val kind: String, val stage: String?, val from: String, val to: String, val deadline: String, val expiries: Int)
+/**
+ * A message that waits for an answer by its [deadline]: the last one any line about the message carries (contracts.md
+ * §2.2) — null while it is held, which suspends it.
+ */
+data class Wait(val kind: String, val stage: String?, val from: String, val to: String, val deadline: String?, val expiries: Int)
+
+/** An operation requested and not yet `ok` or `failed`: which, for which message ([cause]), with what, since when. */
+data class InFlight(val op: String, val cause: String, val with: Datum.Fields, val since: String)
 
 /** A held message: which robot held it, what releases it, since when. */
 data class Hold(val by: String, val until: String, val since: String)
@@ -75,6 +81,8 @@ data class State(
     val answered: Set<String> = emptySet(),
     /** seat → when its last `seat.start` ended `ok`: where its `session` window begins (contracts.md §4.2). */
     val sessions: Map<String, String> = emptyMap(),
+    /** The operations in flight, in the order they were requested (contracts.md §4.4). */
+    val operations: List<InFlight> = emptyList(),
 ) {
     fun stage(id: String): String? = machine("stage", id)?.state
     fun machine(machine: String, subject: String): MachineState? = machines[machine]?.get(subject)
@@ -97,9 +105,9 @@ fun fold(lines: Iterable<Envelope>, from: State = State()): State = lines.fold(f
 }
 
 /**
- * One line's changes to the state. What ends a wait, from the records alone: a delivered reply (`re`) from the waiting
- * message's addressee — every kind's declared reply comes from there, and what the mailroom itself sends does not; an `ok` or
- * `failed` operation the message caused, for a request to the daemon; an expiry without a new deadline.
+ * One line's changes to the state. What ends a wait, from the records alone (contracts.md §2.2): the `delivered`
+ * record that `answers` it — which also answers its ticket; an `ok` or `failed` operation the message caused, for a
+ * request to the daemon; an expiry without a new deadline. A wait's deadline is the last one a line about it carries.
  */
 private class Folding(state: State) {
     private var s = state
@@ -125,12 +133,13 @@ private class Folding(state: State) {
                 if (message != null) {
                     val delivery = Delivery(line.id, message.kind, message.from, message.to, message.stage, message.thread, message.re, message.by, message.args, line.deliveryClass, at, message.signed)
                     s = s.copy(delivered = s.delivered + (line.id to delivery))
-                    wait(line.id, message)
-                    message.re?.let { answered -> if (s.deadlines[answered]?.to == message.from) s = s.copy(deadlines = s.deadlines - answered) }
-                    if (message.from == BORA && message.re != null) answer(message.re, line.id)
+                    wait(line.id, message, if (line.carriesDeadline) Carried(line.deadline?.value) else null)
                     s = s.copy(hops = s.hops + (message.thread to s.hops(message.thread).inc()))
                 }
-                line.answers?.let { s = s.copy(answered = s.answered + it) }
+                line.answers?.let { answered ->
+                    s = s.copy(answered = s.answered + answered, deadlines = s.deadlines - answered)
+                    answer(answered, line.id)
+                }
                 s = s.copy(
                     pending = s.pending - line.id,
                     held = s.held - line.id,
@@ -148,7 +157,7 @@ private class Folding(state: State) {
             is Held -> {
                 s = s.copy(held = s.held + (line.id to Hold(line.by, line.until, at)))
                 raise(line.ticket, line.id, line.event, at)
-                s.pending[line.id]?.let { wait(line.id, it) }
+                s.pending[line.id]?.let { wait(line.id, it, if (line.carriesDeadline) Carried(line.deadline?.value) else null) }
             }
             is Expired -> {
                 raise(line.ticket, line.id, line.event, at)
@@ -161,7 +170,8 @@ private class Folding(state: State) {
                 }
             }
             is Op -> {
-                if (line.phase != REQUESTED) s = s.copy(deadlines = s.deadlines - line.cause)
+                s = if (line.phase == REQUESTED) s.copy(operations = s.operations + InFlight(line.op, line.cause, Datum.of(line.plain()[WITH] ?: emptyMap<String, Any?>()) as Datum.Fields, at))
+                else s.copy(deadlines = s.deadlines - line.cause, operations = s.operations.minusFirst { it.op == line.op && it.cause == line.cause })
                 if (line.op == SEAT_START && line.phase == OK) seatUp(line)?.let { seat -> s = s.copy(sessions = s.sessions + (seat to at)) }
             }
             is Read -> {
@@ -174,10 +184,15 @@ private class Folding(state: State) {
         }
     }
 
-    /** A delivered or held message with a deadline starts to wait, unless it already does. */
-    private fun wait(id: String, message: Pending) {
-        val deadline = message.deadline ?: return
-        if (id !in s.deadlines) s = s.copy(deadlines = s.deadlines + (id to Wait(message.kind, message.stage, message.from, message.to, deadline, 0)))
+    /**
+     * A delivered or held message with a deadline waits. The deadline in force is the last one a line carries:
+     * [carried] — the record's own, a time or null (held: suspended) — else the wait's, else the message's.
+     */
+    private fun wait(id: String, message: Pending, carried: Carried?) {
+        val open = s.deadlines[id]
+        val deadline = if (carried != null) carried.deadline else if (open != null) open.deadline else message.deadline
+        if (open == null && deadline == null && message.deadline == null) return
+        s = s.copy(deadlines = s.deadlines + (id to (open?.copy(deadline = deadline) ?: Wait(message.kind, message.stage, message.from, message.to, deadline, 0))))
     }
 
     private fun raise(ticket: java.math.BigInteger?, item: String, event: String, at: String) {
@@ -185,7 +200,7 @@ private class Folding(state: State) {
         if (number !in s.tickets) s = s.copy(tickets = s.tickets + (number to Ticket(item, event, at)))
     }
 
-    /** A ticket is answered once: Bora's first delivered reply to its item. */
+    /** A ticket is answered once: by the first `delivered` record that `answers` its item. */
     private fun answer(item: String, by: String) {
         s = s.copy(tickets = s.tickets.mapValues { (_, ticket) -> if (ticket.item == item && ticket.answeredBy == null) ticket.copy(answeredBy = by) else ticket })
     }
@@ -203,6 +218,12 @@ private const val SEAT_START = "seat.start"
 private const val REQUESTED = "requested"
 private const val OK = "ok"
 private const val SEAT = "seat"
+private const val WITH = "with"
+
+/** A deadline a line carries: a time, or null — which, on a `held` record, suspends the wait. */
+private class Carried(val deadline: String?)
+
+private fun <T> List<T>.minusFirst(match: (T) -> Boolean): List<T> = indexOfFirst(match).let { if (it < 0) this else take(it) + drop(it.inc()) }
 
 /** The seat a `seat.start` brought up: its result's `seat` (`ok(seat)`, contracts.md §4.4), else the `seat` it was asked `with`. */
 private fun seatUp(line: Op): String? {

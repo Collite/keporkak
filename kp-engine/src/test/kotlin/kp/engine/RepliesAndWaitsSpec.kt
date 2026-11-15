@@ -30,4 +30,12 @@ class RepliesAndWaitsSpec : StringSpec({
         supervised().judge(repaired, Trigger.Expiry("m-panda-000041"), table("now" to NOW)).deadline shouldBe null
         supervised().judge(repaired, Trigger.Expiry("m-panda-000041"), table("now" to NOW)).counted shouldBe mapOf("repair_expiries" to 2L)
     }
+    "a fact whose value is a duration compares as one: 0s satisfies eq: 0, and 1d is the 24h of a cap" {
+        val zero = requiring("{fact: seat.silent_for, seat: coder-1, eq: 0}")
+        val day = requiring("{fact: seat.silent_for, seat: coder-1, eq: {cap: deadline_default}}")
+
+        zero.failure(table("now" to NOW, "seat.silent_for(seat=coder-1)" to "0s")) shouldBe null
+        zero.failure(table("now" to NOW, "seat.silent_for(seat=coder-1)" to "0.5s")) shouldBe "{fact: seat.silent_for, seat: coder-1, eq: 0}"
+        day.failure(table("now" to NOW, "seat.silent_for(seat=coder-1)" to "1d")) shouldBe null
+    }
 })

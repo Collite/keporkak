@@ -59,7 +59,7 @@ internal class Doc(val file: String, private val report: Report) {
         val text = (node as? Node.Scalar)?.text
         return when {
             node == null || (node as? Node.Scalar)?.literal == Literal.Null -> null
-            text != null && parseDuration(text) != null -> parseDuration(text)
+            text != null && duration(text) != null -> duration(text)
             else -> null.also { problem(id, "$what must be a duration such as 15m, 4h or 1d") }
         }
     }
@@ -75,7 +75,11 @@ internal class Doc(val file: String, private val report: Report) {
 
 private val durationForm = Regex("([0-9]+(?:\\.[0-9]+)?)(s|m|h|d)")
 
-internal fun parseDuration(text: String): Duration? = durationForm.matchEntire(text)?.let { match ->
+/**
+ * A duration as the rules — and every fact that returns one — write it (contracts.md §4.4): a number and a unit,
+ * `0s`, `42.5s`, `15m`, `4h`, `1d`. Null for anything else; a bare number is not this form.
+ */
+fun duration(text: String): Duration? = durationForm.matchEntire(text)?.let { match ->
     val amount = match.groupValues[1].toDouble()
     when (match.groupValues[2]) {
         "s" -> amount.seconds
