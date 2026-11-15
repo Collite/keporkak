@@ -16,3 +16,6 @@ fun parseLine(text: String): Envelope =
 
 /** The line's text: compact JSON on one line, without its line end. */
 fun Envelope.toLine(): String = Json.encodeToString(JsonObject.serializer(), json)
+
+/** The line as standard-library values — for a reader with no JSON library. */
+fun Envelope.plain(): Map<String, Any?> = TODO("S1.7 T2")

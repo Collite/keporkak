@@ -49,6 +49,9 @@ class Decision private constructor(
     /** What the sender attested (`args.attest`). */
     val attested: List<String>,
 ) {
+    /** The waiting message this delivery answers (contracts.md §2.2, §4.2). */
+    val answers: String? get() = null
+
     /** Only for the construction fence's probes, which construct with no arguments (kp-model's EngineBoundarySpec). */
     private constructor() : this(Outcome.NOTHING, null, null, null, emptyList(), emptyList(), emptyMap(), emptyList(), null, false, null, emptyMap(), emptyList())
 
