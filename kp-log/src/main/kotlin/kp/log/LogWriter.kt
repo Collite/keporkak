@@ -14,11 +14,21 @@ import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
 import java.nio.file.Files
+import java.nio.file.OpenOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption.APPEND
 import java.nio.file.StandardOpenOption.CREATE
 import java.nio.file.StandardOpenOption.READ
 import java.nio.file.StandardOpenOption.WRITE
+
+/** How the writer opens the files and directories it writes and syncs; a spec watches the writes and syncs through it. */
+internal fun interface Channels {
+    fun open(path: Path, vararg options: OpenOption): FileChannel
+
+    companion object {
+        val files = Channels { path, options -> FileChannel.open(path, *options) }
+    }
+}
 
 /**
  * The office's only writer of `mail/` (contracts.md §3). It holds a lock on `mail/.writer.lock` while open, so a
@@ -31,6 +41,7 @@ class LogWriter private constructor(
     private val lock: FileLock,
     private var last: Long,
     private val closed: MutableSet<Path>,
+    private val channels: Channels,
 ) : AutoCloseable {
 
     /**
@@ -66,20 +77,22 @@ class LogWriter private constructor(
 
     private fun write(file: Path, bytes: ByteArray) {
         val created = !Files.exists(file)
-        if (created) createDirectories(file.parent)
-        FileChannel.open(file, CREATE, WRITE, APPEND).use { channel ->
+        if (created) createDirectories(file.parent, channels)
+        channels.open(file, CREATE, WRITE, APPEND).use { channel ->
             val buffer = ByteBuffer.wrap(bytes)
             while (buffer.hasRemaining()) channel.write(buffer)
             channel.force(true)
         }
-        if (created) sync(file.parent)
+        if (created) sync(file.parent, channels)
     }
 
     companion object {
         /** Opens the writer for [office] on [project]; refused while another writer holds it or a file is torn. */
-        fun open(project: Path, office: OfficeId): LogWriter {
+        fun open(project: Path, office: OfficeId): LogWriter = open(project, office, Channels.files)
+
+        internal fun open(project: Path, office: OfficeId, channels: Channels): LogWriter {
             val mail = Layout.mail(project)
-            createDirectories(mail)
+            createDirectories(mail, channels)
             val channel = FileChannel.open(mail.resolve(".writer.lock"), CREATE, WRITE)
             val lock = try {
                 channel.tryLock()
@@ -102,7 +115,7 @@ class LogWriter private constructor(
                     last = maxOf(last, final.seq)
                     if (file in stageFiles && Layout.closes(final.entry)) closed.add(file)
                 }
-                return LogWriter(project, office, lock, last, closed)
+                return LogWriter(project, office, lock, last, closed, channels)
             } catch (error: Throwable) {
                 lock.release()
                 channel.close()
@@ -119,13 +132,13 @@ class LogWriter private constructor(
         }
 
         /** Creates the missing directories and syncs each new entry into its parent. */
-        private fun createDirectories(directory: Path) {
+        private fun createDirectories(directory: Path, channels: Channels) {
             if (Files.isDirectory(directory)) return
-            createDirectories(directory.parent)
+            createDirectories(directory.parent, channels)
             Files.createDirectory(directory)
-            sync(directory.parent)
+            sync(directory.parent, channels)
         }
 
-        private fun sync(directory: Path) = FileChannel.open(directory, READ).use { it.force(true) }
+        private fun sync(directory: Path, channels: Channels) = channels.open(directory, READ).use { it.force(true) }
     }
 }
