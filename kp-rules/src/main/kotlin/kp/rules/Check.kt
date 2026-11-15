@@ -116,7 +116,6 @@ internal class RulesCheck(
     private val robots: Map<String, Robot>,
     private val personaModes: Map<String, Set<String>>,
 ) {
-    private val parties = setOf("bora", "daemon", "mailroom", "ledger", "board")
     private val reservedStates = setOf("*", "*active", "*previous")
     private val transitionIds = lifecycle.machines.values.flatMap { machine -> machine.transitions.map { it.id } }.toSet()
 
@@ -143,7 +142,7 @@ internal class RulesCheck(
     fun resolve(owner: Owner, names: Names, thresholds: Set<String>, modes: Set<String> = personaModes.values.flatten().toSet(), ownModes: Boolean = false) {
         names.engagementPaths.filterNot { path -> engagement.values.keys.any { it == path || it.startsWith("$path.") } }
             .forEach { problem(owner, "unknown engagement value '$it'") }
-        names.destinations.filterNot { it in engagement.roles || it in parties }.forEach { problem(owner, "unknown destination '$it'") }
+        names.destinations.filterNot { it in engagement.roles || it in PARTIES }.forEach { problem(owner, "unknown destination '$it'") }
         names.thresholds.filterNot { it in thresholds }.forEach { problem(owner, "unknown robot threshold '$it'") }
         names.modes.filterNot { it in modes }.forEach { problem(owner, if (ownModes) "unknown own persona mode '$it'" else "unknown persona mode '$it'") }
         for ((machine, state) in names.states) {

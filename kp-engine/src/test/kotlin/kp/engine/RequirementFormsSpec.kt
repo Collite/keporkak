@@ -26,7 +26,7 @@ fun requiring(vararg requirements: String): Engine = supervised(ruleSet(
 
 /** A probe from [from] with [args], judged on [state] with [facts]: what failed, or null when T-90 fired. */
 fun Engine.failure(facts: Facts = table("now" to NOW), args: String = "{}", state: State = State(), from: String = "coder-1", re: String? = null, signed: Boolean = false): String? {
-    val decision = judge(state, Trigger.Arrival(message("probe", from = from, args = args, re = re), signed = signed), facts)
+    val decision = judge(state, Trigger.Arrival(message("probe", from = from, args = args, re = re, signed = signed)), facts)
     return if (decision.outcome == Outcome.DELIVER && decision.rule == "T-90") null else decision.failed?.flow()
 }
 

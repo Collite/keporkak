@@ -28,7 +28,7 @@ class EveryKindSpec : StringSpec({
     "max_fires within the day: the sender's deliveries of the kind on the UTC day of now" {
         val queuedYesterday = fold(log(*sent("m-panda-000050", "queue-approval", from = "bora", args = """{"stages": ["$STAGE"]}""")))
         val wave = arrayOf("plan.in_current_wave(stage=[\"$STAGE\"])" to true)
-        val queue = Arrival(message("queue-approval", from = "bora", args = """{"stages": ["$STAGE"]}"""), signed = true)
+        val queue = Arrival(message("queue-approval", from = "bora", args = """{"stages": ["$STAGE"]}""", signed = true))
 
         supervised().judge(queuedYesterday, queue, table("now" to "2026-11-14T23:59:00Z", *wave)).refusal() shouldBe ("queue-approval" to "max_fires: 1, window: day")
         supervised().judge(queuedYesterday, queue, table("now" to "2026-11-15T00:00:00Z", *wave)).outcome shouldBe Outcome.DELIVER
@@ -42,17 +42,22 @@ class EveryKindSpec : StringSpec({
         supervised().judge(digested, digest, table("now" to NOW)).refusal() shouldBe ("digest" to "max_fires: 1, window: return")
         supervised().judge(awayAgain, digest, table("now" to NOW)).outcome shouldBe Outcome.DELIVER
     }
-    "max_fires within a session: the sender's deliveries of the kind since its session began" {
-        val reported = fold(log(*sent("m-panda-000050", "retro-report", from = "retro", to = "principal", args = """{"mode": "stage-retro", "report": "r", "candidates": []}""")))
-        val report = message("retro-report", from = "retro", to = "principal", args = """{"mode": "stage-retro", "report": "r", "candidates": []}""")
+    "max_fires within a session: the sender's deliveries of the kind since its last seat.start that is ok in the log — from the beginning when there is none" {
+        val args = """{"mode": "stage-retro", "report": "r", "candidates": []}"""
+        val reported = sent("m-panda-000050", "retro-report", from = "retro", to = "principal", args = args)
+        val started = """{"event":"op","op":"seat.start","phase":"ok","cause":"m-panda-000049","result":{"seat":"retro"}}"""
+        val failedStart = """{"event":"op","op":"seat.start","phase":"failed","cause":"m-panda-000049","with":{"seat":"retro"}}"""
+        val report = Arrival(message("retro-report", from = "retro", to = "principal", args = args))
 
-        supervised().judge(reported, Arrival(report, session = "2026-11-14T08:00:00Z"), table("now" to NOW)).refusal() shouldBe ("retro-report" to "max_fires: 1, window: session")
-        supervised().judge(reported, Arrival(report, session = "2026-11-14T09:30:00Z"), table("now" to NOW)).outcome shouldBe Outcome.DELIVER
+        supervised().judge(fold(log(started, *reported)), report, table("now" to NOW)).refusal() shouldBe ("retro-report" to "max_fires: 1, window: session")
+        supervised().judge(fold(log(*reported, started)), report, table("now" to NOW)).outcome shouldBe Outcome.DELIVER
+        supervised().judge(fold(log(*reported, failedStart)), report, table("now" to NOW)).refusal() shouldBe ("retro-report" to "max_fires: 1, window: session")
+        supervised().judge(fold(log(*reported)), report, table("now" to NOW)).refusal() shouldBe ("retro-report" to "max_fires: 1, window: session")
     }
     "a kind with no max_fires of its own is capped by caps.max_fires_default" {
         val threeAways = fold(log(*sent("m-panda-000051", "away", from = "bora", to = "mailroom"), *sent("m-panda-000052", "away", from = "bora", to = "mailroom"),
             *sent("m-panda-000053", "away", from = "bora", to = "mailroom")))
-        supervised().judge(threeAways, Arrival(message("away", from = "bora", to = "mailroom"), signed = true), table("now" to NOW)).refusal() shouldBe
+        supervised().judge(threeAways, Arrival(message("away", from = "bora", to = "mailroom", signed = true)), table("now" to NOW)).refusal() shouldBe
             ("away" to "caps.max_fires_default: 3, window: stage")
     }
     "a delivery sets the kind's deadline, counted from now; a kind with none sets none" {
@@ -84,5 +89,17 @@ class EveryKindSpec : StringSpec({
         triage("""{"found": "F1"}""") shouldBe ("triage" to "args: 'outcome' is required")
         triage("""{"outcome": "drop", "found": 7}""") shouldBe ("triage" to "args: 'found' is not string")
         triage("""{"outcome": "maybe"}""") shouldBe ("triage" to "args: 'outcome' is not one of resume | recut | issue | stage | drop")
+    }
+    "the addressee is a party the kind names: a seat of its role, the sender of the message answered for {re: from}, any seat — never a party — for a seat" {
+        val absent = fold(log(move("presence", "bora", "present", "absent"), *sent("m-panda-000060", "merge", from = "teamlead", to = "daemon")))
+        fun hold(to: String) = Arrival(message("hold", from = "deputy", to = to, re = "m-panda-000060", thread = "m-panda-000060"))
+        fun compact(to: String) = Arrival(message("compact", from = "pool", to = to, args = """{"seat": "coder-1"}"""))
+        val crowded = table("now" to NOW, "seat.context_used(seat=coder-1)" to 0.9)
+
+        supervised().judge(absent, hold("teamlead"), table("now" to NOW)).outcome shouldBe Outcome.DELIVER
+        supervised().judge(absent, hold("coder-1"), table("now" to NOW)).refusal() shouldBe ("hold" to "to: {re: from}")
+        supervised().judge(State(), compact("coder-1"), crowded).outcome shouldBe Outcome.DELIVER
+        supervised().judge(State(), compact("bora"), crowded).refusal() shouldBe ("compact" to "to: a seat")
+        supervised().judge(assigned, Arrival(message("started", from = "coder-1", to = "teamlead-panda")), branch).outcome shouldBe Outcome.DELIVER
     }
 })

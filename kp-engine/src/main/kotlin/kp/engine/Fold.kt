@@ -10,6 +10,7 @@ import kp.model.Read
 import kp.model.Refused
 import kp.model.Rules
 import kp.model.Transition
+import kp.model.plain
 import kp.model.utc
 
 /** A machine's subject's current state; [previous] is the state before it (what `*previous` names). */
@@ -30,7 +31,7 @@ data class Refusals(val day: String, val count: Long)
 /** A message written and not yet delivered or refused — what its records need to know of it. */
 data class Pending(
     val kind: String, val from: String, val to: String, val stage: String?, val thread: String, val re: String?, val deadline: String?,
-    val by: String = "", val args: Datum.Fields = Datum.Fields(emptyMap()),
+    val by: String = "", val args: Datum.Fields = Datum.Fields(emptyMap()), val signed: Boolean = false,
 )
 
 /**
@@ -39,7 +40,7 @@ data class Pending(
  */
 data class Delivery(
     val id: String, val kind: String, val from: String, val to: String, val stage: String?, val thread: String, val re: String?,
-    val by: String, val args: Datum.Fields, val messageClass: String, val at: String,
+    val by: String, val args: Datum.Fields, val messageClass: String, val at: String, val signed: Boolean = false,
 )
 
 /**
@@ -72,6 +73,8 @@ data class State(
     val delivered: Map<String, Delivery> = emptyMap(),
     /** The ids of delivered messages a later `delivered` record `answers` (contracts.md §2.2, Amendment 8). */
     val answered: Set<String> = emptySet(),
+    /** seat → when its last `seat.start` ended `ok`: where its `session` window begins (contracts.md §4.2). */
+    val sessions: Map<String, String> = emptyMap(),
 ) {
     fun stage(id: String): String? = machine("stage", id)?.state
     fun machine(machine: String, subject: String): MachineState? = machines[machine]?.get(subject)
@@ -106,7 +109,7 @@ private class Folding(state: State) {
         when (line) {
             is Message -> {
                 val args = Datum.of(line.plainArgs) as Datum.Fields
-                s = s.copy(pending = s.pending + (line.id.value to Pending(line.kind, line.from.value, line.to.value, line.stage?.value, line.thread.value, line.re?.value, line.deadline?.value, line.by, args)))
+                s = s.copy(pending = s.pending + (line.id.value to Pending(line.kind, line.from.value, line.to.value, line.stage?.value, line.thread.value, line.re?.value, line.deadline?.value, line.by, args, line.signed)))
             }
             is Transition -> {
                 val before = s.machine(line.machine, line.subject)
@@ -120,7 +123,7 @@ private class Folding(state: State) {
                 message?.stage?.let { count(it, line.counted) }
                 raise(line.ticket, line.id, line.event, at)
                 if (message != null) {
-                    val delivery = Delivery(line.id, message.kind, message.from, message.to, message.stage, message.thread, message.re, message.by, message.args, line.deliveryClass, at)
+                    val delivery = Delivery(line.id, message.kind, message.from, message.to, message.stage, message.thread, message.re, message.by, message.args, line.deliveryClass, at, message.signed)
                     s = s.copy(delivered = s.delivered + (line.id to delivery))
                     wait(line.id, message)
                     message.re?.let { answered -> if (s.deadlines[answered]?.to == message.from) s = s.copy(deadlines = s.deadlines - answered) }
@@ -157,7 +160,10 @@ private class Folding(state: State) {
                     else -> s
                 }
             }
-            is Op -> if (line.phase != "requested") s = s.copy(deadlines = s.deadlines - line.cause)
+            is Op -> {
+                if (line.phase != REQUESTED) s = s.copy(deadlines = s.deadlines - line.cause)
+                if (line.op == SEAT_START && line.phase == OK) seatUp(line)?.let { seat -> s = s.copy(sessions = s.sessions + (seat to at)) }
+            }
             is Read -> {
                 val seen = line.ids.toSet()
                 val left = s.unread(line.seat).filterNot { it in seen }
@@ -191,5 +197,17 @@ private class Folding(state: State) {
     }
 
     fun done(seq: Long, at: String): State = s.copy(seq = seq, at = at)
+}
+
+private const val SEAT_START = "seat.start"
+private const val REQUESTED = "requested"
+private const val OK = "ok"
+private const val SEAT = "seat"
+
+/** The seat a `seat.start` brought up: its result's `seat` (`ok(seat)`, contracts.md §4.4), else the `seat` it was asked `with`. */
+private fun seatUp(line: Op): String? {
+    val plain = line.plain()
+    fun seat(field: String) = ((plain[field] as? Map<*, *>)?.get(SEAT) as? String)
+    return seat("result") ?: seat("with")
 }
 

@@ -16,6 +16,9 @@ class RuleSet internal constructor(
     val personaModes: Map<String, Set<String>>,
 )
 
+/** The parties that are not seats (contracts.md §1): a `to:` may name one, and none of them is a seat. */
+val PARTIES: Set<String> = setOf("bora", "daemon", "mailroom", "ledger", "board")
+
 // rules/stage-lifecycle.yaml (contracts.md §4.1)
 
 enum class Event(val key: String) { MESSAGE("message"), OP_RESULT("op-result"), EXPIRY("expiry"), FACT("fact") }

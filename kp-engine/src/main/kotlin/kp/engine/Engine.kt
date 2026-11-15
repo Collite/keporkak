@@ -3,6 +3,8 @@ package kp.engine
 import kp.model.utc
 import kp.rules.ArgSpec
 import kp.rules.ArgType
+import kp.rules.Destination
+import kp.rules.PARTIES
 import kp.rules.Effect
 import kp.rules.Event
 import kp.rules.FactCall
@@ -85,7 +87,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
     /**
      * What the engine enforces for every kind with no requirement written (contracts.md §4.1, §2.1): the sender's
      * role owns the kind, `args` against the declaration, the body's line cap, the thread's hop cap, `max_fires`
-     * within the window. A refusal quotes the rule file's field.
+     * within the window — `null` is `caps.max_fires_default` — and the addressee. A refusal quotes the rule file's field.
      */
     private fun everyKind(kind: Kind, message: View): Pair<String, Requirement?>? {
         if (kind.from.none { roleOwns(it, message.from) }) return "from: ${kind.from.joinToString(" | ")}" to null
@@ -99,7 +101,24 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
             val written = if (kind.maxFires != null) "max_fires: ${kind.maxFires}" else "caps.$MAX_FIRES_DEFAULT: ${maximum.toPlainString()}"
             return "$written, window: ${kind.window.key}" to null
         }
+        if (!addressed(kind.to, message)) return "to: ${destination(kind.to)}" to null
         return null
+    }
+
+    /**
+     * The addressee is a party the kind's `to` names (contracts.md §4.1): a seat of one of its roles, or one of its
+     * parties; the sender of the message this one answers, for `{re: from}`; any seat — not a party — for `a seat`.
+     */
+    private fun addressed(to: Destination, message: View): Boolean = when (to) {
+        is Destination.Parties -> to.names.any { roleOwns(it, message.to) }
+        is Destination.Reply -> (evaluation.value(Value.Reply(to.field)) as? Datum.Text)?.value == message.to
+        Destination.AnySeat -> message.to !in PARTIES && rules.engagement.roles.keys.any { roleOwns(it, message.to) }
+    }
+
+    private fun destination(to: Destination): String = when (to) {
+        is Destination.Parties -> to.names.joinToString(" | ")
+        is Destination.Reply -> "{re: ${to.field.key}}"
+        Destination.AnySeat -> "a seat"
     }
 
     private fun cap(name: String) = (rules.engagement.caps[name] as? Literal.Number)?.value
@@ -115,7 +134,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
             Window.STAGE -> earlier.count { it.stage == message.stage }
             Window.DAY -> now()?.let { day(it) }?.let { today -> bySender.count { day(it.at) == today } } ?: bySender.size
             Window.RETURN -> state.machine(PRESENCE_MACHINE, BORA)?.since?.let { since -> bySender.count { !before(it.at, since) } } ?: bySender.size
-            Window.SESSION -> context.session?.let { since -> bySender.count { !before(it.at, since) } } ?: bySender.size
+            Window.SESSION -> state.sessions[message.from]?.let { since -> bySender.count { !before(it.at, since) } } ?: bySender.size
         }
     }
 

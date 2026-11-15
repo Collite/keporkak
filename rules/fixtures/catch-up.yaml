@@ -51,3 +51,18 @@ scenarios:
         - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
     expect:
       failures: ["profile 'supervisd' is not in autonomy_profiles"]
+  - name: a kind with max_fires null is capped by caps.max_fires_default, in the walker too
+    given:
+      caps: {max_fires_default: 1}
+      states: {planned: {bora_gate: true}, exited: {terminal: true}}
+      transitions:
+        - {id: T-again, from: planned, to: planned, kind: started, 'on': message, guard: '-', require: [], effects: []}
+      walks:
+        - name: the second started is past the default cap
+          initial: planned
+          steps:
+            - {who: coder, kind: started, args: {}}
+            - {who: coder, kind: started, args: {}, expect: {refused: true, refusal_contains: cap exhausted}}
+          final: planned
+    expect:
+      output: ["ok   walk the second started is past the default cap reached planned"]

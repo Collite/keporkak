@@ -23,7 +23,7 @@ class ClassesSpec : StringSpec({
 
         supervised().judge(assigned, Arrival(message("started", from = "coder-1")), table("now" to NOW, "git.branch_exists" to true)).cls() shouldBe (MessageClass.A to false)
         supervised().judge(building, Arrival(message("stop", from = "coder-1", to = "principal", args = """{"sc": "SC-3"}""")), table("now" to NOW, "list.stop_conditions" to listOf("SC-3"))).cls() shouldBe (MessageClass.C to false)
-        supervised().judge(proposed, Arrival(message("decline", from = "bora"), signed = true), table("now" to NOW)).cls() shouldBe (MessageClass.B to true)
+        supervised().judge(proposed, Arrival(message("decline", from = "bora", signed = true)), table("now" to NOW)).cls() shouldBe (MessageClass.B to true)
     }
     "a kind's first case that holds gives its class" {
         val stopped = fold(log(move("stage", STAGE, "building", "stopped")))

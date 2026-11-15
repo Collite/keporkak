@@ -898,6 +898,8 @@ class Walk:
             window=kind.get("window","stage")
             key=(kind_name,self.stage if window=="stage" else (who,step.get("session","default")) if window=="session" else (who,window))
             maximum=kind.get("max_fires")
+            # `max_fires: null` is caps.max_fires_default: no kind is without a cap (contracts.md §4.2).
+            if maximum is None:maximum=E.get("caps",{}).get("max_fires_default")
             if isinstance(maximum,int) and self.kind_fires.get(key,0)>=maximum:raise WalkError(f"kind {kind_name} cap exhausted")
             self.kind_fires[key]=self.kind_fires.get(key,0)+1
             if len(step.get("body","").splitlines())>E.get("caps",{}).get("body_lines",float("inf")):raise WalkError("body line cap exhausted")

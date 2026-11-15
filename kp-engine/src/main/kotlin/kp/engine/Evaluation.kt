@@ -37,7 +37,7 @@ internal class Evaluation(val rules: RuleSet, val state: State, val context: Con
         is Requirement.Reply -> compare(reply(requirement.field), requirement.comparison)
         is Requirement.Counter -> compare(Datum.of(counter(requirement.name)), requirement.comparison)
         is Requirement.Attest -> requirement.name in attested()
-        is Requirement.Signed -> context.signed && context.message?.from == requirement.signer
+        is Requirement.Signed -> context.message?.signed == true && context.message.from == requirement.signer
         is Requirement.Operation -> context.operation == requirement.operation && context.ok == (requirement.outcome == kp.rules.Outcome.OK)
         is Requirement.Any -> requirement.items.any { holds(it, blocks) }
         is Requirement.Not -> !holds(requirement.item, blocks)

@@ -129,11 +129,12 @@ private class WalkThrough(private val walk: Datum.Fields) {
             Destination.AnySeat -> args.fields()["seat"].text() ?: who
         }
         val by = step["by"].text() ?: if (who == "bora") "bora-cli" else "seat:$who"
-        val optional = listOfNotNull(replyTo?.let { """"re":"${it.id.value}"""" }, step["body"]?.let { """"body":${it.json()}""" })
+        val optional = listOfNotNull(replyTo?.let { """"re":"${it.id.value}"""" }, step["body"]?.let { """"body":${it.json()}""" },
+            """"signed":true""".takeIf { step["signed"].text() == "bora" })
         val message = write("""{"id":"$id","thread":"${replyTo?.thread?.value ?: id}","from":"$who","to":"$to","kind":"$kind","stage":"$stageId",""" +
             """"subject":"$kind","created":"${now()}","by":"$by","args":${args.json()}${optional.joinToString("") { ",$it" }}}""") as Message
         messages[id] = message
-        val trigger = Trigger.Arrival(message, signed = step["signed"].text() == "bora")
+        val trigger = Trigger.Arrival(message)
         val decision = engine.judge(state, trigger, Facts.collect(engine.needs(state, trigger), ::observe))
         if (decision.outcome == Outcome.REFUSE) write(refusedRecord(decision, id))
         else {

@@ -5,10 +5,10 @@ import kp.model.Message
 /** What the engine judges (contracts.md §4.1, triggers): a message that arrives, an operation's result, an expiry, a fact that changed. */
 sealed interface Trigger {
     /**
-     * `on: message`. [signed]: the daemon read a root peer on the control socket (§6) — the log does not say so, the
-     * socket does. [session]: when the sender's current session began, which a `session` window counts from.
+     * `on: message`. Whether it was signed is the message's own `signed` (contracts.md §2.1); when the sender's session
+     * began is in the log (its last `seat.start` that is `ok`).
      */
-    data class Arrival(val message: Message, val signed: Boolean = false, val session: String? = null) : Trigger
+    data class Arrival(val message: Message) : Trigger
     /** `on: op-result`: [operation], which the delivered message [request] requested, ended `ok` or not. */
     data class Result(val request: String, val operation: String, val ok: Boolean) : Trigger
     /** `on: expiry`: the deadline of the delivered message [message] passed. */
