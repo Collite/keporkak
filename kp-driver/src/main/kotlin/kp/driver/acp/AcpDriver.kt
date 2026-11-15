@@ -50,7 +50,7 @@ internal class AcpDriver(
     fun transcript(seat: SeatId): Transcript = transcripts.computeIfAbsent(seat) { Transcript.of(seatsRoot, it, clock) }
 
     /** A process started with the built environment, its connection, and `initialize` answered (T2). */
-    suspend fun launch(spec: SessionSpec, onClosed: () -> Unit = {}): Outcome<Launched> {
+    suspend fun launch(spec: SessionSpec, onClosed: () -> Unit = {}, wire: Wire = Wire.NONE): Outcome<Launched> {
         val transcript = transcript(spec.seat)
         val environment = when (val built = binding.environment(spec)) {
             is Outcome.Ok -> built.value
@@ -64,7 +64,7 @@ internal class AcpDriver(
         }
         launched += process
         transcript.write("process ${process.pid} started: ${spec.command.joinToString(" ")} in ${spec.workingDirectory}")
-        val connection = AcpConnection(process, scope, "kp-driver ${spec.seat.value}", onNote = { transcript.write(it) }, onClosed = onClosed)
+        val connection = AcpConnection(process, scope, "kp-driver ${spec.seat.value}", onNote = { transcript.write(it) }, onClosed = onClosed, wire = wire)
         val info = try {
             connection.initialize()
         } catch (e: Exception) {
@@ -85,9 +85,9 @@ internal class AcpDriver(
 
     override suspend fun start(spec: SessionSpec): Outcome<Started> {
         seats[spec.seat]?.takeIf { it.live }?.let { return Outcome.Failed("seat ${spec.seat.value} has a live session ${it.session.sessionId.value}") }
-        val seat = SeatSession(spec.seat, spec, mint(), transcript(spec.seat), listener)
+        val seat = SeatSession(spec.seat, spec, mint(), transcript(spec.seat), clock, listener, scope)
         seat.transcript.hide(seat.token.value)
-        val launched = when (val result = launch(spec, onClosed = seat::protocolClosed)) {
+        val launched = when (val result = launch(spec, onClosed = seat::protocolClosed, wire = seat.wire)) {
             is Outcome.Ok -> result.value
             is Outcome.Failed -> return result
         }
@@ -99,7 +99,7 @@ internal class AcpDriver(
         } catch (e: Exception) {
             return abandon(seat, "session/new failed", e)
         }
-        seat.transcript.write("session ${seat.session.sessionId.value} opened in ${spec.workingDirectory} with ${spec.servers.joinToString(", ") { it.name }.ifEmpty { "no MCP server" }}")
+        seat.note("session ${seat.session.sessionId.value} opened in ${spec.workingDirectory} with ${spec.servers.joinToString(", ") { it.name }.ifEmpty { "no MCP server" }}")
         return opened(seat)
     }
 
@@ -114,7 +114,7 @@ internal class AcpDriver(
         val set = (settings as Outcome.Ok).value
         seat.handedOut = true
         seats[seat.seat] = seat
-        seat.transcript.write("started: session ${seat.session.sessionId.value}, mode ${set.mode}, model ${set.model}, effort ${set.effort}")
+        seat.note("started: session ${seat.session.sessionId.value}, mode ${set.mode}, model ${set.model}, effort ${set.effort}")
         return Outcome.Ok(Started(seat.seat, seat.session.sessionId.value, seat.token, set.mode!!, set.model!!, set.effort!!))
     }
 
@@ -132,8 +132,11 @@ internal class AcpDriver(
 
     /** The session token (§5): random, one per started process. */
     private fun mint() = SessionToken(Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(TOKEN_BYTES).also(random::nextBytes)))
-    override suspend fun prompt(seat: SeatId, text: String): Outcome<TurnEnd> = TODO("S2.1 T4")
-    override suspend fun cancel(seat: SeatId): Outcome<Unit> = TODO("S2.1 T4")
+    override suspend fun prompt(seat: SeatId, text: String): Outcome<TurnEnd> =
+        seats[seat]?.prompt(text) ?: Outcome.Failed("seat ${seat.value} has no session")
+
+    override suspend fun cancel(seat: SeatId): Outcome<Unit> =
+        seats[seat]?.cancel() ?: Outcome.Failed("seat ${seat.value} has no session")
     override suspend fun kill(seat: SeatId, grace: Duration): Outcome<Unit> = TODO("S2.1 T7")
     override suspend fun load(spec: SessionSpec, sessionId: String): Outcome<Started> = TODO("S2.1 T7")
     override fun offers(seat: SeatId): Outcome<Offers> =

@@ -15,7 +15,9 @@ import kotlinx.coroutines.flow.map
 
 /**
  * ACP over one agent process's stdio: the SDK's transport, protocol and client. Each line from the agent passes
- * [Repairs] before the SDK decodes it; a repair is noted. [onClosed] runs once when the transport closes.
+ * [Repairs] before the SDK decodes it; a repair is noted. [wire] sees every line, both ways, in the order the
+ * transport carries it — before the SDK acts on an incoming one, and before an outgoing one reaches the agent.
+ * [onClosed] runs once when the transport closes.
  */
 internal class AcpConnection(
     process: AgentProcess,
@@ -23,12 +25,13 @@ internal class AcpConnection(
     name: String,
     onNote: (String) -> Unit,
     onClosed: () -> Unit,
+    wire: Wire = Wire.NONE,
 ) {
     private val transport = StdioTransport(
         scope,
         Dispatchers.IO,
-        process.lines().map { line -> Repairs.repair(line).also { it.notes.forEach(onNote) }.line },
-        process::write,
+        process.lines().map { line -> Repairs.repair(line).also { it.notes.forEach(onNote) }.line.also(wire::incoming) },
+        { line -> wire.outgoing(line); process.write(line) },
         name,
     )
     private val protocol = Protocol(scope, transport, ProtocolOptions(protocolDebugName = name))
@@ -53,5 +56,18 @@ internal class AcpConnection(
 
     companion object {
         const val PROTOCOL_VERSION = 1
+    }
+}
+
+/** A tap on the wire; it must not throw. */
+internal interface Wire {
+    fun incoming(line: String)
+    fun outgoing(line: String)
+
+    companion object {
+        val NONE = object : Wire {
+            override fun incoming(line: String) {}
+            override fun outgoing(line: String) {}
+        }
     }
 }

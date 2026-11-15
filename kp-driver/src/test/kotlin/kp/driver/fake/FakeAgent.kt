@@ -32,7 +32,7 @@ import kotlin.system.exitProcess
  * The script (JSON): `record` · `turns` — one list of steps per prompt · optional `mode`, `model`, `effort` (what a
  * session starts on), `modes`, `models`, `efforts` (what it offers), `w1` (send `auth.status` as `{}`, default true),
  * `onEof` (`exit` or `linger`), `loadable` (default true). Steps: `say`, `tool`, `tool_update`, `ask`, `usage`, `run`,
- * `recall`, `end` — see [perform].
+ * `recall`, `end` — see [perform]. Steps after `end` are sent after the turn's answer.
  */
 fun main(args: Array<String>) {
     FakeAgent(Json.parseToJsonElement(File(args[0]).readText()).jsonObject).run()
@@ -169,9 +169,13 @@ private class FakeAgent(private val script: JsonObject) {
         remember(buildJsonObject { put("sessionUpdate", "user_message_chunk"); put("content", text(text)) })
         val steps = script["turns"]?.jsonArray?.getOrNull(prompts++)?.jsonArray ?: JsonArray(emptyList())
         cancelled = false
+        // Steps after `end` are sent after the turn's answer: updates between turns.
+        val endAt = steps.indexOfFirst { it.jsonObject.string("do") == "end" }
+        val during = if (endAt < 0) steps else JsonArray(steps.take(endAt + 1))
+        val after = if (endAt < 0) emptyList() else steps.drop(endAt + 1)
         turns.submit {
-            val end = runTurn(steps)
-            answer(id, end)
+            answer(id, runTurn(during))
+            after.forEach { perform(it.jsonObject) }
         }
     }
 
