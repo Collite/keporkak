@@ -40,15 +40,15 @@ class TriggersSpec : StringSpec({
         val absent = fold(log(move("stage", STAGE, "re_review", "ruling_pending"), *sent("m-panda-000030", "ruling-request", from = "principal", to = "bora"), move("presence", "bora", "present", "absent")))
 
         supervised().judge(asked, Trigger.Expiry("m-panda-000030"), table("now" to NOW)).fired() shouldBe listOf("T-32 stage $STAGE: ruling_pending → recut", "FLAG_THREAD-04 flag m-panda-000030: asked → expired")
-        supervised().judge(absent, Trigger.Expiry("m-panda-000030"), table("now" to NOW)).verdict shouldBe Verdict.NOTHING
-        supervised(gateOnly).judge(absent, Trigger.Expiry("m-panda-000030"), table("now" to NOW)).verdict shouldBe Verdict.NOTHING
+        supervised().judge(absent, Trigger.Expiry("m-panda-000030"), table("now" to NOW)).outcome shouldBe Outcome.NOTHING
+        supervised(gateOnly).judge(absent, Trigger.Expiry("m-panda-000030"), table("now" to NOW)).outcome shouldBe Outcome.NOTHING
     }
     "on: fact — a fact named in a transition's requirements changed; no sender is named" {
         val away = fold(log(move("presence", "bora", "present", "absent")))
         val engine = supervised()
 
         engine.judge(State(), Trigger.Changed("bora.idle_for"), table("now" to NOW, "bora.idle_for" to "5h")).fired() shouldBe listOf("PRESENCE-02 presence bora: present → absent")
-        engine.judge(State(), Trigger.Changed("bora.idle_for"), table("now" to NOW, "bora.idle_for" to "3h")).verdict shouldBe Verdict.NOTHING
+        engine.judge(State(), Trigger.Changed("bora.idle_for"), table("now" to NOW, "bora.idle_for" to "3h")).outcome shouldBe Outcome.NOTHING
         engine.judge(away, Trigger.Changed("bora.acted"), table("now" to NOW, "bora.acted" to true)).fired() shouldBe listOf("PRESENCE-03 presence bora: absent → present")
     }
     "*active is any active state: a seat gone pauses a building stage, and leaves a planned one where it is" {

@@ -96,7 +96,7 @@ fun fold(lines: Iterable<Envelope>, from: State = State()): State = lines.fold(f
 
 /**
  * One line's changes to the state. What ends a wait, from the records alone: a delivered reply (`re`) from the waiting
- * message's addressee — every kind's declared reply comes from there, and a mailroom nudge does not; an `ok` or
+ * message's addressee — every kind's declared reply comes from there, and what the mailroom itself sends does not; an `ok` or
  * `failed` operation the message caused, for a request to the daemon; an expiry without a new deadline.
  */
 private class Folding(state: State) {

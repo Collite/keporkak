@@ -17,7 +17,7 @@ class EngineJudgesSpec : StringSpec({
 
         val decision = supervised().judge(state, Arrival(review), facts)
 
-        decision.verdict shouldBe Verdict.DELIVER
+        decision.outcome shouldBe Outcome.DELIVER
         decision.rule shouldBe "T-17"
         decision.moves shouldBe listOf(Move("stage", STAGE, "building", "ready_for_review", "T-17", mapOf("review_requests" to 1L)))
         decision.counted shouldBe mapOf("review_requests" to 1L)
@@ -30,7 +30,7 @@ class EngineJudgesSpec : StringSpec({
 
         val decision = supervised().judge(state, Arrival(resume), facts)
 
-        decision.verdict shouldBe Verdict.REFUSE
+        decision.outcome shouldBe Outcome.REFUSE
         decision.rule shouldBe "T-13"
         decision.requirement shouldBe "outcome=resume · task-count diff within R4.11 · no edit outside the Found section (observed) · counter resumes ≤ 2, the 3rd needs Bora"
         decision.failed shouldBe "{counter: resumes, lt: {cap: resumes_per_stage}}"

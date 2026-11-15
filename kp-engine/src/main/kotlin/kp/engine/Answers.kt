@@ -44,7 +44,7 @@ internal class Answers(private val evaluation: Evaluation) {
         return Datum.Bool(Datum.Text(stage) in (queue.args.fields.getValue(STAGES) as Datum.Items).items)
     }
 
-    /** The blocker ids of the last delivered message of the stage that carries blockers — the last verdict. */
+    /** The blocker ids of the last delivered message of the stage that carries blockers. */
     private fun openBlockers(stage: String): Datum {
         val last = state.delivered.values.lastOrNull { it.stage == stage && it.args.fields[BLOCKERS] is Datum.Items }
         val blockers = (last?.args?.fields?.get(BLOCKERS) as? Datum.Items)?.items.orEmpty()

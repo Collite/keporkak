@@ -3,7 +3,7 @@ package kp.engine
 import kp.rules.MessageClass
 
 /** What a judgement comes to. A message is delivered or refused; any other trigger fires something or nothing. */
-enum class Verdict { DELIVER, REFUSE, FIRE, NOTHING }
+enum class Outcome { DELIVER, REFUSE, FIRE, NOTHING }
 
 /**
  * One machine's move, as its `transition` record needs it (contracts.md §2.2): the machine by its record name, the
@@ -26,7 +26,7 @@ sealed interface Requested {
  * or `refused` record and the `transition` records need, and the effects requested.
  */
 class Decision private constructor(
-    val verdict: Verdict,
+    val outcome: Outcome,
     /** The transition fired (the stage machine's first), or the rule that refused: a transition id or a kind's name. */
     val rule: String?,
     /** A refusal's requirement, in the rule file's own prose (contracts.md §4: what a refusal quotes). */
@@ -50,16 +50,16 @@ class Decision private constructor(
     val attested: List<String>,
 ) {
     /** Only for the construction fence's probes, which construct with no arguments (kp-model's EngineBoundarySpec). */
-    private constructor() : this(Verdict.NOTHING, null, null, null, emptyList(), emptyList(), emptyMap(), emptyList(), null, false, null, emptyMap(), emptyList())
+    private constructor() : this(Outcome.NOTHING, null, null, null, emptyList(), emptyList(), emptyMap(), emptyList(), null, false, null, emptyMap(), emptyList())
 
     override fun toString(): String =
-        "Decision($verdict, rule=$rule, requirement=$requirement, failed=$failed, unsupplied=$unsupplied, moves=$moves, counted=$counted, " +
+        "Decision($outcome, rule=$rule, requirement=$requirement, failed=$failed, unsupplied=$unsupplied, moves=$moves, counted=$counted, " +
             "effects=$effects, class=$messageClass, waitsForBora=$waitsForBora, deadline=$deadline, observed=$observed, attested=$attested)"
 
     internal companion object {
         @JvmOverloads
         fun create(
-            verdict: Verdict = Verdict.NOTHING,
+            outcome: Outcome = Outcome.NOTHING,
             rule: String? = null,
             requirement: String? = null,
             failed: String? = null,
@@ -72,7 +72,7 @@ class Decision private constructor(
             deadline: String? = null,
             observed: Map<String, Datum> = emptyMap(),
             attested: List<String> = emptyList(),
-        ): Decision = Decision(verdict, rule, requirement, failed, unsupplied, moves, counted, effects, messageClass, waitsForBora, deadline, observed, attested)
+        ): Decision = Decision(outcome, rule, requirement, failed, unsupplied, moves, counted, effects, messageClass, waitsForBora, deadline, observed, attested)
     }
 }
 

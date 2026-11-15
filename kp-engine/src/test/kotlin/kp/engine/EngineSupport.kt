@@ -73,4 +73,32 @@ fun ref(written: String): FactRef {
 fun table(vararg entries: Pair<String, Any?>): Facts = Facts(entries.associate { (written, value) -> ref(written) to Datum.of(value) })
 
 /** A refusal's rule and requirement. */
-fun Decision.refusal(): Pair<String?, String?> = rule to requirement.takeIf { verdict == Verdict.REFUSE }
+fun Decision.refusal(): Pair<String?, String?> = rule to requirement.takeIf { outcome == Outcome.REFUSE }
+
+/** The `delivered` record a mailroom writes from a delivery's decision (contracts.md §2.2), less `v`, `seq` and `at`; [to] is its routing. */
+fun deliveredRecord(decision: Decision, id: String, to: String): String {
+    val fields = listOfNotNull(
+        decision.rule?.let { """"rule":"$it"""" },
+        decision.deadline?.let { """"deadline":"$it"""" },
+        """"counted":${Datum.of(decision.counted).json()}""",
+        """"observed":${Datum.Fields(decision.observed).json()}""",
+        """"attested":${Datum.of(decision.attested).json()}""",
+    )
+    return """{"event":"delivered","id":"$id","to":["$to"],"class":"${decision.messageClass}",${fields.joinToString(",")}}"""
+}
+
+/** The `refused` record a mailroom writes from a refusal's decision. */
+fun refusedRecord(decision: Decision, id: String): String =
+    """{"event":"refused","id":"$id","rule":"${decision.rule}","requirement":${Datum.Text(decision.requirement!!).json()},"observed":${Datum.Fields(decision.observed).json()}}"""
+
+/** One `transition` record per machine the decision moves, caused by [cause]. */
+fun transitionRecords(decision: Decision, cause: String): List<String> = decision.moves.map { move ->
+    """{"event":"transition","machine":"${move.machine}","subject":"${move.subject}","from":"${move.from}","to":"${move.to}",""" +
+        """"rule":"${move.rule}","cause":"$cause","counted":${Datum.of(move.counted).json()}}"""
+}
+
+/** [lines] as the log holds them after [state]: `seq` continues from the state's, each `at` a minute after the last. */
+fun after(state: State, vararg lines: String): List<kp.model.Envelope> = lines.mapIndexed { index, line ->
+    val seq = state.seq + index + 1
+    parseLine("""{"v":1,"seq":$seq,"at":"2026-11-15T09:%02d:00Z",""".format(seq % 60) + line.removePrefix("{"))
+}

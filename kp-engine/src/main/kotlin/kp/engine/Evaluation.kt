@@ -6,7 +6,6 @@ import kp.rules.FactCall
 import kp.rules.Literal
 import kp.rules.MessageField
 import kp.rules.Operator
-import kp.rules.Outcome
 import kp.rules.PoolFile
 import kp.rules.ReplyField
 import kp.rules.Requirement
@@ -28,7 +27,7 @@ internal class Evaluation(val rules: RuleSet, val state: State, val context: Con
     /** Counter → its new value, for every counter this judgement moved. */
     val moved = LinkedHashMap<String, Long>()
 
-    /** The first of [requirements] that fails, or null when all hold — evaluated in order. */
+    /** The first of [requirements] that fails, evaluated in order; null when none does. */
     fun firstFailure(requirements: List<Requirement>): Requirement? = requirements.firstOrNull { !holds(it) }
 
     fun holds(requirement: Requirement, blocks: Boolean = true): Boolean = when (requirement) {
@@ -39,7 +38,7 @@ internal class Evaluation(val rules: RuleSet, val state: State, val context: Con
         is Requirement.Counter -> compare(Datum.of(counter(requirement.name)), requirement.comparison)
         is Requirement.Attest -> requirement.name in attested()
         is Requirement.Signed -> context.signed && context.message?.from == requirement.signer
-        is Requirement.Operation -> context.operation == requirement.operation && context.ok == (requirement.outcome == Outcome.OK)
+        is Requirement.Operation -> context.operation == requirement.operation && context.ok == (requirement.outcome == kp.rules.Outcome.OK)
         is Requirement.Any -> requirement.items.any { holds(it, blocks) }
         is Requirement.Not -> !holds(requirement.item, blocks)
         is Requirement.Always -> requirement.holds
@@ -177,11 +176,11 @@ private fun member(actual: Datum, expected: Datum): Boolean {
 /** Numbers as numbers, durations as durations (`24h`, a number is seconds), times as times, text as text; else no order. */
 private fun order(actual: Datum, expected: Datum): Int? {
     if (actual is Datum.Number && expected is Datum.Number) return actual.value.compareTo(expected.value)
-    val durations = listOf(actual, expected).map(::seconds)
-    if (durations.none { it == null } && (actual is Datum.Text || expected is Datum.Text)) return durations[0]!!.compareTo(durations[1]!!)
+    val (left, right) = listOf(actual, expected).map(::seconds)
+    if (left != null && right != null && (actual is Datum.Text || expected is Datum.Text)) return left.compareTo(right)
     if (actual is Datum.Text && expected is Datum.Text) {
-        val times = listOf(actual.value, expected.value).map { runCatching { utc(it) }.getOrNull() }
-        if (times.none { it == null }) return times[0]!!.compareTo(times[1]!!)
+        val (from, to) = listOf(actual.value, expected.value).map { runCatching { utc(it) }.getOrNull() }
+        if (from != null && to != null) return from.compareTo(to)
         return actual.value.compareTo(expected.value)
     }
     return null

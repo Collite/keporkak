@@ -100,7 +100,7 @@ private class WalkThrough(private val walk: Datum.Fields) {
             val stageId = stage(current)
             facts.getValue(current).putAll(step["facts"].fields())
             val decision = if (step["operation"] != null) result(step) else arrival(step, index + 1, stageId)
-            TraceStep(index + 1, decision.verdict == Verdict.REFUSE, decision.moves.map { it.rule },
+            TraceStep(index + 1, decision.outcome == Outcome.REFUSE, decision.moves.map { it.rule },
                 stageIds.mapValues { (_, id) -> state.stage(id) ?: "planned" })
         }
     }
@@ -135,30 +135,17 @@ private class WalkThrough(private val walk: Datum.Fields) {
         messages[id] = message
         val trigger = Trigger.Arrival(message, signed = step["signed"].text() == "bora")
         val decision = engine.judge(state, trigger, Facts.collect(engine.needs(state, trigger), ::observe))
-        when (decision.verdict) {
-            Verdict.REFUSE -> write("""{"event":"refused","id":"$id","rule":"${decision.rule}","requirement":${Datum.Text(decision.requirement!!).json()},""" +
-                """"observed":${Datum.Fields(decision.observed).json()}}""")
-            else -> {
-                val fields = listOfNotNull(
-                    decision.rule?.let { """"rule":"$it"""" },
-                    decision.deadline?.let { """"deadline":"$it"""" },
-                    """"counted":${Datum.of(decision.counted).json()}""",
-                    """"observed":${Datum.Fields(decision.observed).json()}""",
-                    """"attested":${Datum.of(decision.attested).json()}""",
-                )
-                write("""{"event":"delivered","id":"$id","to":["$to"],"class":"${decision.messageClass}",${fields.joinToString(",")}}""")
-                record(decision, id)
-            }
+        if (decision.outcome == Outcome.REFUSE) write(refusedRecord(decision, id))
+        else {
+            write(deliveredRecord(decision, id, to))
+            record(decision, id)
         }
         return decision
     }
 
     /** The transitions a decision moves and the operations it requests, caused by [cause]. */
     private fun record(decision: Decision, cause: String) {
-        decision.moves.forEach { move ->
-            write("""{"event":"transition","machine":"${move.machine}","subject":"${move.subject}","from":"${move.from}","to":"${move.to}",""" +
-                """"rule":"${move.rule}","cause":"$cause","counted":${Datum.of(move.counted).json()}}""")
-        }
+        transitionRecords(decision, cause).forEach(::write)
         decision.effects.filterIsInstance<Requested.Do>().forEach { effect ->
             write("""{"event":"op","op":"${effect.operation}","phase":"requested","cause":"$cause","with":${Datum.Fields(effect.with).json()}}""")
         }

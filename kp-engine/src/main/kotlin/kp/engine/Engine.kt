@@ -35,7 +35,7 @@ class Engine(private val rules: RuleSet, private val profile: String) {
 
     /** What is to happen: deliver or refuse, which transitions fire, which counters move, which effects are requested, under which class. */
     fun judge(state: State, trigger: Trigger, facts: Facts): Decision {
-        val context = Context.of(trigger, state) ?: return Decision.create(Verdict.NOTHING)
+        val context = Context.of(trigger, state) ?: return Decision.create(Outcome.NOTHING)
         return Judgement(rules, state, context, facts, profile).run()
     }
 }
@@ -52,7 +52,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
     fun run(): Decision = if (context.event == Event.MESSAGE) arrival() else fire()
 
     private fun refuse(rule: String, requirement: String, failed: Requirement? = null) = Decision.create(
-        Verdict.REFUSE, rule = rule, requirement = requirement, failed = failed?.let(::render) ?: requirement,
+        Outcome.REFUSE, rule = rule, requirement = requirement, failed = failed?.let(::render) ?: requirement,
         unsupplied = evaluation.unsupplied.toList(), observed = evaluation.observed.toMap(), attested = evaluation.attested(),
     )
 
@@ -71,7 +71,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         val messageClass = classify(kind)
         val deadline = kind.deadline?.let { duration -> now()?.let { plus(it, duration) } ?: return refuse(kind.name, "deadline: $duration") }
         return Decision.create(
-            Verdict.DELIVER, rule = fired.rule(), unsupplied = evaluation.unsupplied.toList(), moves = fired.moves, counted = evaluation.moved.toMap(),
+            Outcome.DELIVER, rule = fired.rule(), unsupplied = evaluation.unsupplied.toList(), moves = fired.moves, counted = evaluation.moved.toMap(),
             effects = fired.effects, messageClass = messageClass, waitsForBora = messageClass == MessageClass.B, deadline = deadline,
             observed = evaluation.observed.toMap(), attested = evaluation.attested(),
         )
@@ -100,7 +100,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
     private fun cap(name: String) = (rules.engagement.caps[name] as? Literal.Number)?.value
 
     /** A body's lines, as a reader counts them: a last line end opens no line. */
-    private fun lines(body: String?): Int = body?.lines()?.let { if (it.last().isEmpty()) it.dropLast(1) else it }?.size ?: 0
+    private fun lines(body: String?): Int = body?.lines()?.let { if (it.last().isEmpty()) it.size.dec() else it.size } ?: 0
 
     /** The kind's deliveries in the window this message falls in. */
     private fun fires(kind: Kind, message: View): Int {
@@ -158,7 +158,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         val effects = fired.effects + expiry
         val reported = expiry.filterIsInstance<Requested.Report>().firstOrNull()
         return Decision.create(
-            if (fired.moves.isEmpty() && effects.isEmpty()) Verdict.NOTHING else Verdict.FIRE,
+            if (fired.moves.isEmpty() && effects.isEmpty()) Outcome.NOTHING else Outcome.FIRE,
             rule = fired.rule() ?: kind?.name?.takeIf { effects.isNotEmpty() }, unsupplied = evaluation.unsupplied.toList(),
             moves = fired.moves, counted = evaluation.moved.toMap(), effects = effects, messageClass = reported?.messageClass,
             waitsForBora = reported != null, observed = evaluation.observed.toMap(),
@@ -172,7 +172,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
 
     /**
      * Each machine in turn (contracts.md §4.1, choosing among transitions): its candidates for this trigger, from its
-     * subject's state, in file order; the first whose requirements hold fires, and its effects apply before the next
+     * subject's state, in file order; the first whose requirements are all met fires, and its effects apply before the next
      * machine is read. An expiry's `{transition: …, if: …}` keeps a candidate only while its `if` holds.
      */
     private fun fireMachines(kind: Kind?): Fired {

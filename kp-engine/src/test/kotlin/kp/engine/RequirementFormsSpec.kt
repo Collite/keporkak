@@ -27,7 +27,7 @@ fun requiring(vararg requirements: String): Engine = supervised(ruleSet(
 /** A probe from [from] with [args], judged on [state] with [facts]: what failed, or null when T-90 fired. */
 fun Engine.failure(facts: Facts = table("now" to NOW), args: String = "{}", state: State = State(), from: String = "coder-1", re: String? = null, signed: Boolean = false): String? {
     val decision = judge(state, Trigger.Arrival(message("probe", from = from, args = args, re = re), signed = signed), facts)
-    return if (decision.verdict == Verdict.DELIVER && decision.rule == "T-90") null else decision.failed
+    return if (decision.outcome == Outcome.DELIVER && decision.rule == "T-90") null else decision.failed
 }
 
 /** T2: every requirement form of contracts.md §4.1 — each holds, and each fails and is the one reported. */
@@ -97,7 +97,7 @@ class RequirementFormsSpec : StringSpec({
         val assigned = fold(log(move("stage", STAGE, "proposed", "assigned"), *sent("m-panda-000091", "approval", from = "bora")))
         val engine = supervised()
         engine.judge(assigned, Trigger.Result("m-panda-000091", "worktree.create", ok = true), table("now" to NOW)).moves.map { it.rule } shouldBe listOf("T-03")
-        engine.judge(assigned, Trigger.Result("m-panda-000091", "worktree.create", ok = false), table("now" to NOW)).verdict shouldBe Verdict.NOTHING
+        engine.judge(assigned, Trigger.Result("m-panda-000091", "worktree.create", ok = false), table("now" to NOW)).outcome shouldBe Outcome.NOTHING
     }
     "{holds: …} holds when every requirement of the named block holds" {
         val engine = requiring("{holds: second_key}")

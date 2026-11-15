@@ -35,7 +35,7 @@ class FactsSpec : StringSpec({
 
         (asked.indexOf("pr.head") < asked.indexOf("ci.state(of=abc)")) shouldBe true
         facts[ref("ci.state(of=abc)")] shouldBe Datum.Text("green")
-        supervised().judge(building, Arrival(review), facts).verdict shouldBe Verdict.DELIVER
+        supervised().judge(building, Arrival(review), facts).outcome shouldBe Outcome.DELIVER
     }
     "a fact whose source is exactly L is answered from the state, never from the table" {
         val assigned = fold(log(move("stage", STAGE, "planned", "assigned"), move("seat", "coder-1", "provisioned", "ready")))
@@ -43,14 +43,14 @@ class FactsSpec : StringSpec({
 
         val decision = supervised().judge(assigned, Arrival(assign), table("now" to NOW, "stage.state" to "planned"))
 
-        decision.verdict shouldBe Verdict.DELIVER
+        decision.outcome shouldBe Outcome.DELIVER
         decision.observed["stage.state"] shouldBe Datum.Text("assigned")
         supervised().needs(assigned, Arrival(assign)).map { it.name } shouldBe listOf("now")
     }
     "a fact the table does not supply is unknown: the requirement reading it fails, and the refusal says it was not supplied" {
         val decision = supervised().judge(building, Arrival(review), table("now" to NOW, "pr.ready" to true, "pr.head" to "abc", "list.tasks_open" to 0))
 
-        decision.verdict shouldBe Verdict.REFUSE
+        decision.outcome shouldBe Outcome.REFUSE
         decision.failed shouldBe "{fact: ci.state, of: {fact: pr.head}, eq: green}"
         decision.unsupplied shouldBe listOf(ref("ci.state(of=abc)"))
         decision.observed["ci.state(of=abc)"] shouldBe UNKNOWN_FACT

@@ -15,15 +15,15 @@ class EveryKindSpec : StringSpec({
         val qaFacts = table("now" to NOW, "list.task_exists(id=T5)" to true, "list.done_item_exists(id=D1)" to true, "stage.live" to "bp-dsk")
         val qaRequest = """{"task": "T5", "done": "D1", "verify": "the candidate"}"""
 
-        engine.judge(assigned, Arrival(message("started", from = "coder-1")), branch).verdict shouldBe Verdict.DELIVER
-        engine.judge(building, Arrival(message("qa-request", from = "teamlead", to = "qa", args = qaRequest)), qaFacts).verdict shouldBe Verdict.DELIVER
-        engine.judge(building, Arrival(message("qa-request", from = "coder-2", to = "qa", args = qaRequest)), qaFacts).verdict shouldBe Verdict.DELIVER
+        engine.judge(assigned, Arrival(message("started", from = "coder-1")), branch).outcome shouldBe Outcome.DELIVER
+        engine.judge(building, Arrival(message("qa-request", from = "teamlead", to = "qa", args = qaRequest)), qaFacts).outcome shouldBe Outcome.DELIVER
+        engine.judge(building, Arrival(message("qa-request", from = "coder-2", to = "qa", args = qaRequest)), qaFacts).outcome shouldBe Outcome.DELIVER
         engine.judge(building, Arrival(message("qa-request", from = "reviewer-1", to = "qa", args = qaRequest)), qaFacts).refusal() shouldBe ("qa-request" to "from: coder | teamlead")
         engine.judge(assigned, Arrival(message("started", from = "coders-1")), branch).refusal() shouldBe ("started" to "from: coder")
     }
     "max_fires within the stage: the kind's deliveries in this stage, whoever sent them" {
         val otherStage = fold(log(move("stage", STAGE, "planned", "assigned"), *sent("m-panda-000050", "started", from = "coder-1", stage = "KP/P1/S1.3")))
-        supervised().judge(otherStage, Arrival(message("started", from = "coder-1")), branch).verdict shouldBe Verdict.DELIVER
+        supervised().judge(otherStage, Arrival(message("started", from = "coder-1")), branch).outcome shouldBe Outcome.DELIVER
     }
     "max_fires within the day: the sender's deliveries of the kind on the UTC day of now" {
         val queuedYesterday = fold(log(*sent("m-panda-000050", "queue-approval", from = "bora", args = """{"stages": ["$STAGE"]}""")))
@@ -31,7 +31,7 @@ class EveryKindSpec : StringSpec({
         val queue = Arrival(message("queue-approval", from = "bora", args = """{"stages": ["$STAGE"]}"""), signed = true)
 
         supervised().judge(queuedYesterday, queue, table("now" to "2026-11-14T23:59:00Z", *wave)).refusal() shouldBe ("queue-approval" to "max_fires: 1, window: day")
-        supervised().judge(queuedYesterday, queue, table("now" to "2026-11-15T00:00:00Z", *wave)).verdict shouldBe Verdict.DELIVER
+        supervised().judge(queuedYesterday, queue, table("now" to "2026-11-15T00:00:00Z", *wave)).outcome shouldBe Outcome.DELIVER
     }
     "max_fires within a return: the sender's deliveries of the kind since Bora last came back" {
         val digested = fold(log(move("presence", "bora", "absent", "present"), *sent("m-panda-000050", "digest", from = "deputy", to = "bora")))
@@ -40,14 +40,14 @@ class EveryKindSpec : StringSpec({
         val digest = Arrival(message("digest", from = "deputy", to = "bora"))
 
         supervised().judge(digested, digest, table("now" to NOW)).refusal() shouldBe ("digest" to "max_fires: 1, window: return")
-        supervised().judge(awayAgain, digest, table("now" to NOW)).verdict shouldBe Verdict.DELIVER
+        supervised().judge(awayAgain, digest, table("now" to NOW)).outcome shouldBe Outcome.DELIVER
     }
     "max_fires within a session: the sender's deliveries of the kind since its session began" {
         val reported = fold(log(*sent("m-panda-000050", "retro-report", from = "retro", to = "principal", args = """{"mode": "stage-retro", "report": "r", "candidates": []}""")))
         val report = message("retro-report", from = "retro", to = "principal", args = """{"mode": "stage-retro", "report": "r", "candidates": []}""")
 
         supervised().judge(reported, Arrival(report, session = "2026-11-14T08:00:00Z"), table("now" to NOW)).refusal() shouldBe ("retro-report" to "max_fires: 1, window: session")
-        supervised().judge(reported, Arrival(report, session = "2026-11-14T09:30:00Z"), table("now" to NOW)).verdict shouldBe Verdict.DELIVER
+        supervised().judge(reported, Arrival(report, session = "2026-11-14T09:30:00Z"), table("now" to NOW)).outcome shouldBe Outcome.DELIVER
     }
     "a kind with no max_fires of its own is capped by caps.max_fires_default" {
         val threeAways = fold(log(*sent("m-panda-000051", "away", from = "bora", to = "mailroom"), *sent("m-panda-000052", "away", from = "bora", to = "mailroom"),
@@ -69,12 +69,12 @@ class EveryKindSpec : StringSpec({
             *sent("m-panda-000053", "stop", from = "coder-1", thread = "m-panda-000051"), *sent("m-panda-000054", "stop", from = "coder-1", thread = "m-panda-000051"),
             *sent("m-panda-000055", "stop", from = "coder-1", thread = "m-panda-000051"), *sent("m-panda-000056", "stop", from = "coder-1", thread = "m-panda-000051"),
             *sent("m-panda-000057", "stop", from = "coder-1", thread = "m-panda-000051")))
-        supervised().judge(sevenHops, Arrival(message("started", from = "coder-1", thread = "m-panda-000051")), branch).verdict shouldBe Verdict.DELIVER
+        supervised().judge(sevenHops, Arrival(message("started", from = "coder-1", thread = "m-panda-000051")), branch).outcome shouldBe Outcome.DELIVER
     }
     "the body's line cap: forty lines are delivered, a last line end opens no line" {
         val forty = (1..40).joinToString("\n")
-        supervised().judge(assigned, Arrival(message("started", from = "coder-1", body = forty)), branch).verdict shouldBe Verdict.DELIVER
-        supervised().judge(assigned, Arrival(message("started", from = "coder-1", body = "$forty\n")), branch).verdict shouldBe Verdict.DELIVER
+        supervised().judge(assigned, Arrival(message("started", from = "coder-1", body = forty)), branch).outcome shouldBe Outcome.DELIVER
+        supervised().judge(assigned, Arrival(message("started", from = "coder-1", body = "$forty\n")), branch).outcome shouldBe Outcome.DELIVER
     }
     "args against the kind's declaration: an unknown key, a missing required one, a wrong type and a value outside the enum are refused" {
         val stopped = fold(log(move("stage", STAGE, "building", "stopped")))
