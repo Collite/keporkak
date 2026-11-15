@@ -153,6 +153,19 @@ class SeatFactsSpec : StringSpec({
         found shouldBe emptyList()
     }
 
+    "the driver's source compares no observation with a limit" {
+        // Every comparison with a number or a named constant in the driver's source. The two there guard an input,
+        // not an observation: a context size the fraction cannot be computed from, and the token file's lines.
+        val comparison = Regex("""[\w.)\]]+\s*(<=|>=|<|>)\s*-?(\d|[A-Z][A-Z_]+\b)|\b(compareTo|isAfter|isBefore|coerceAtMost|coerceAtLeast)\(""")
+        val found = Files.walk(root("kp-driver/src/main")).use { files -> files.filter { it.extension == "kt" }.toList() }.sorted()
+            .flatMap { file ->
+                file.readText().lines().filterNot { it.trimStart().startsWith("*") || it.trimStart().startsWith("//") }
+                    .flatMap { line -> comparison.findAll(line).map { "${file.fileName}: ${it.value}" }.toList() }
+            }
+
+        found shouldBe listOf("Observations.kt: size <= 0", "ClaudeAdapter.kt: lines > 1")
+    }
+
     "the transcript is <roots.seats>/_transcripts/<seat>.log, appended across the seat's sessions" {
         Office().use { office ->
             office.driver().use { it.start(office.session("coder-1", office.agent("{}"))).ok() }
