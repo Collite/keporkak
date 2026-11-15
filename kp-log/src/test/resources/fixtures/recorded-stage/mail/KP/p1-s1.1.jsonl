@@ -1,0 +1,20 @@
+{"v":1,"seq":4,"at":"2026-11-14T09:00:00Z","id":"m-panda-000101","thread":"m-panda-000101","from":"teamlead","to":"coder-1","kind":"assign","stage":"KP/P1/S1.1","subject":"assign KP/P1/S1.1","deadline":"2026-11-14T09:15:00Z","created":"2026-11-14T09:00:00Z","by":"seat:teamlead"}
+{"v":1,"seq":5,"at":"2026-11-14T09:00:00Z","event":"delivered","id":"m-panda-000101","to":["coder-1"],"woke":["coder-1"],"class":"A"}
+{"v":1,"seq":7,"at":"2026-11-14T09:00:05Z","event":"read","seat":"coder-1","ids":["m-panda-000101"]}
+{"v":1,"seq":8,"at":"2026-11-14T09:10:00Z","id":"m-panda-000102","thread":"m-panda-000101","re":"m-panda-000101","from":"coder-1","to":"teamlead","kind":"started","stage":"KP/P1/S1.1","subject":"started KP/P1/S1.1","created":"2026-11-14T09:10:00Z","by":"seat:coder-1"}
+{"v":1,"seq":9,"at":"2026-11-14T09:10:00Z","event":"delivered","id":"m-panda-000102","to":["teamlead"],"class":"A","rule":"T-08"}
+{"v":1,"seq":10,"at":"2026-11-14T09:10:00Z","event":"transition","machine":"stage","subject":"KP/P1/S1.1","from":"assigned","to":"building","rule":"T-08","cause":"m-panda-000102"}
+{"v":1,"seq":11,"at":"2026-11-14T11:30:00Z","id":"m-panda-000103","thread":"m-panda-000103","from":"coder-1","to":"principal","kind":"stop","stage":"KP/P1/S1.1","subject":"stop SC-10","args":{"sc":"SC-10"},"deadline":"2026-11-14T15:30:00Z","created":"2026-11-14T11:30:00Z","by":"seat:coder-1"}
+{"v":1,"seq":12,"at":"2026-11-14T11:30:00Z","event":"delivered","id":"m-panda-000103","to":["principal"],"class":"C","rule":"T-09","counted":{"stops":1}}
+{"v":1,"seq":13,"at":"2026-11-14T11:30:00Z","event":"transition","machine":"stage","subject":"KP/P1/S1.1","from":"building","to":"stopped","rule":"T-09","cause":"m-panda-000103","counted":{"stops":1}}
+{"v":1,"seq":14,"at":"2026-11-14T11:31:00Z","event":"read","seat":"principal","ids":["m-panda-000103"]}
+{"v":1,"seq":15,"at":"2026-11-14T12:00:00Z","id":"m-panda-000104","thread":"m-panda-000103","re":"m-panda-000103","from":"principal","to":"coder-1","kind":"triage","stage":"KP/P1/S1.1","subject":"triage: resume","args":{"outcome":"resume"},"created":"2026-11-14T12:00:00Z","by":"seat:principal"}
+{"v":1,"seq":16,"at":"2026-11-14T12:00:00Z","event":"delivered","id":"m-panda-000104","to":["coder-1"],"class":"A","rule":"T-13","counted":{"resumes":1}}
+{"v":1,"seq":17,"at":"2026-11-14T12:00:00Z","event":"transition","machine":"stage","subject":"KP/P1/S1.1","from":"stopped","to":"building","rule":"T-13","cause":"m-panda-000104","counted":{"resumes":1}}
+{"v":1,"seq":18,"at":"2026-11-14T15:00:00Z","id":"m-panda-000105","thread":"m-panda-000105","from":"coder-1","to":"teamlead","kind":"review-request","stage":"KP/P1/S1.1","subject":"review-request KP/P1/S1.1","args":{"attest":["done_lines_hold"]},"deadline":"2026-11-14T16:00:00Z","created":"2026-11-14T15:00:00Z","by":"seat:coder-1"}
+{"v":1,"seq":19,"at":"2026-11-14T15:00:00Z","event":"delivered","id":"m-panda-000105","to":["teamlead"],"class":"A","rule":"T-17","counted":{"review_requests":1},"attested":["done_lines_hold"]}
+{"v":1,"seq":20,"at":"2026-11-14T15:00:00Z","event":"transition","machine":"stage","subject":"KP/P1/S1.1","from":"building","to":"ready_for_review","rule":"T-17","cause":"m-panda-000105","counted":{"review_requests":1}}
+{"v":1,"seq":21,"at":"2026-11-14T16:00:00Z","event":"expired","id":"m-panda-000105","rule":"T-74","deadline":"2026-11-14T17:00:00Z"}
+{"v":1,"seq":22,"at":"2026-11-14T16:00:00Z","event":"transition","machine":"stage","subject":"KP/P1/S1.1","from":"ready_for_review","to":"ready_for_review","rule":"T-74","cause":"m-panda-000105","counted":{"review_request_expiries":1}}
+{"v":1,"seq":23,"at":"2026-11-14T16:00:00Z","id":"m-panda-000106","thread":"m-panda-000105","re":"m-panda-000105","from":"mailroom","to":"teamlead","kind":"nudge","stage":"KP/P1/S1.1","subject":"nudge: review-request waits","args":{"rule":"T-74"},"created":"2026-11-14T16:00:00Z","by":"effect:T-74"}
+{"v":1,"seq":24,"at":"2026-11-14T16:00:00Z","event":"delivered","id":"m-panda-000106","to":["teamlead"],"class":"A"}

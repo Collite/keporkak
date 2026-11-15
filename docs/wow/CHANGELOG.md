@@ -2,6 +2,11 @@
 
 One line per change: date · rule ids · what · the decision. Newest first.
 
+- 2026-11-14 · PL-18 · A list cites every contract section its tasks touch, walked task by task before it is cut; a task needing what no contract names leaves the list uncut. · KP D-54
+- 2026-11-14 · PL-19 · The specs task names the seam its specs observe. · KP D-54
+- 2026-11-14 · PL-20 · A DONE item is checkable on the PR's head at the hand-off; what only the merge shows is an Exit line. · KP D-54
+- 2026-11-14 · — · The `tdd` skill tests a boundary from the far side: producer through consumer, an independent oracle, the failure path, the second language's way in. · KP D-54 (retro of P0)
+- 2026-11-14 · — · The `review` skill looks for the same four at a boundary; a boundary claim without them is a test that does not test what it claims. · KP D-54 (retro of P0)
 - 2026-11-14 · EN-9 · After a serious `reverse`, the Deputy's queued approvals (DEP-2) stay off until Bora's next signed `queue-approval`. · KP D-52
 - 2026-11-14 · EN-12 · A message's body is at most 40 lines (`caps.body_lines`), as ruled; the cap had been named without its value. · KP D-39, D-52
 - 2026-11-13 · EN-13, SE-25 · Wake checkpoints, session windows, next-wave and over-cap facts; stop-gate requirements belong to S2.2. · KP D-50

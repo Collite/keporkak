@@ -56,6 +56,7 @@ sealed class Record protected constructor(value: JsonObject) : Envelope {
             "fact" -> Fact(value)
             "op" -> Op(value)
             "rules" -> Rules(value)
+            "read" -> Read(value)
             else -> throw IllegalArgumentException("unknown record event")
         }
     }
@@ -91,6 +92,12 @@ class Held internal constructor(value: JsonObject) : Record(value) {
 class Expired internal constructor(value: JsonObject) : Record(value) {
     val id get() = json.string("id")
     val rule get() = json.optionalString("rule")
+    /** `bora` when the kind's expiry reports to Bora; the record is then the inbox item. */
+    val report get() = json.optionalString("report")
+    val deliveryClass get() = json.optionalString("class")
+    val ticket get() = json.number("ticket")
+    /** When the wait starts again; null when it is over (Amendment 6). */
+    val deadline get() = json.optionalString("deadline")?.let(::Timestamp)
 }
 @Serializable(with = TransitionSerializer::class)
 class Transition internal constructor(value: JsonObject) : Record(value) {
@@ -100,6 +107,8 @@ class Transition internal constructor(value: JsonObject) : Record(value) {
     val to get() = json.string("to")
     val rule get() = json.optionalString("rule")
     val cause get() = json.string("cause")
+    /** The new values of the counters this transition moved, whatever fired it (Amendment 6). */
+    val counted get() = json["counted"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content.toBigDecimal().toBigIntegerExact() }
 }
 @Serializable(with = FactSerializer::class)
 class Fact internal constructor(value: JsonObject) : Record(value) {
@@ -122,4 +131,10 @@ class Op internal constructor(value: JsonObject) : Record(value) {
 class Rules internal constructor(value: JsonObject) : Record(value) {
     val hash get() = json.string("hash")
     val files get() = json.getValue("files").jsonObject.mapValues { it.value.jsonPrimitive.content }
+}
+/** A seat has seen these messages: its `inbox` returned them, or it was woken with one (Amendment 5). */
+@Serializable(with = ReadSerializer::class)
+class Read internal constructor(value: JsonObject) : Record(value) {
+    val seat get() = json.string("seat")
+    val ids get() = json.strings("ids")!!
 }

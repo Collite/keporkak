@@ -27,3 +27,4 @@ object TransitionSerializer : EnvelopeSerializer<Transition>("Transition", { Rec
 object FactSerializer : EnvelopeSerializer<Fact>("Fact", { Record.read(it) as? Fact ?: throw IllegalArgumentException("expected Fact record") })
 object OpSerializer : EnvelopeSerializer<Op>("Op", { Record.read(it) as? Op ?: throw IllegalArgumentException("expected Op record") })
 object RulesSerializer : EnvelopeSerializer<Rules>("Rules", { Record.read(it) as? Rules ?: throw IllegalArgumentException("expected Rules record") })
+object ReadSerializer : EnvelopeSerializer<Read>("Read", { Record.read(it) as? Read ?: throw IllegalArgumentException("expected Read record") })

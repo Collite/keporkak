@@ -47,3 +47,10 @@
 - **PL-16 Planner and Principal.** The Planner (design squad) writes plans and lists. The Principal (coding squad) owns
   them at runtime: triage, add · delete · split · merge tasks within PL-3, cut pin stages — never a redesign (DS-14). `D-7`
 - **PL-17 Plans stay markdown.** Stage lists are the human-facing plan; machine indexes are generated from them. `D-10`
+- **PL-18 Walk the contract before cutting.** A list cites every contract section its tasks touch, and the planner
+  walks each task against those sections before cutting the list. A task that needs something no contract names means
+  the list is not cut yet: the gap goes to the contract first. `D-54`
+- **PL-19 The specs task names its seam** — the interface its specs observe the behaviours at (an entry point, a
+  command, a file another program reads). The executor writes the specs there and nowhere further in. `D-54`
+- **PL-20 DONE is checkable at the hand-off.** Every DONE item can be seen on the PR's head before the merge; what
+  only the merge can show (CI on master, a released artefact, a deploy) is an Exit line. `D-54`

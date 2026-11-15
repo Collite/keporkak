@@ -5,7 +5,7 @@
   "required": ["v", "seq", "at", "event"],
   "properties": {
     "v": {"const": 1}, "seq": {"type": "integer", "minimum": 1}, "at": {"type": "string", "format": "date-time"},
-    "event": {"enum": ["delivered", "refused", "held", "expired", "transition", "fact", "op", "rules"]}
+    "event": {"enum": ["delivered", "refused", "held", "expired", "transition", "fact", "op", "rules", "read"]}
   },
   "oneOf": [
     {"properties": {"event": {"const": "delivered"},
@@ -24,12 +24,15 @@
        "ticket": {"type": ["integer", "null"]}},
      "required": ["id", "by", "until"]},
     {"properties": {"event": {"const": "expired"},
-       "id": {"type": "string"}, "rule": {"type": "string"}},
+       "id": {"type": "string"}, "rule": {"type": "string"},
+       "report": {"const": "bora"}, "class": {"enum": ["B", "C"]}, "ticket": {"type": ["integer", "null"]},
+       "deadline": {"type": ["string", "null"], "format": "date-time"}},
      "required": ["id"]},
     {"properties": {"event": {"const": "transition"},
        "machine": {"enum": ["stage", "found", "flag", "seat", "phase", "presence"]},
        "subject": {"type": "string"}, "from": {"type": "string"}, "to": {"type": "string"},
-       "rule": {"type": "string"}, "cause": {"type": "string"}},
+       "rule": {"type": "string"}, "cause": {"type": "string"},
+       "counted": {"type": "object", "additionalProperties": {"type": "integer"}}},
      "required": ["machine", "subject", "from", "to", "cause"]},
     {"properties": {"event": {"const": "fact"},
        "fact": {"type": "string"}, "subject": {"type": "string"}, "value": {}, "evidence": {"type": "string"}},
@@ -41,6 +44,9 @@
      "required": ["op", "phase", "cause"]},
     {"properties": {"event": {"const": "rules"},
        "hash": {"type": "string"}, "files": {"type": "object", "additionalProperties": {"type": "string"}}},
-     "required": ["hash", "files"]}
+     "required": ["hash", "files"]},
+    {"properties": {"event": {"const": "read"},
+       "seat": {"type": "string"}, "ids": {"type": "array", "items": {"type": "string"}, "minItems": 1}},
+     "required": ["seat", "ids"]}
   ]
 }

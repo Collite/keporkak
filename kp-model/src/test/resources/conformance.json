@@ -3352,7 +3352,11 @@
       "at": "2026-11-13T12:00:01Z",
       "event": "expired",
       "id": "m-panda-000001",
-      "rule": "started"
+      "rule": "T-74",
+      "report": "bora",
+      "class": "C",
+      "ticket": 3,
+      "deadline": "2026-11-13T13:00:01Z"
     }
   },
   {
@@ -3379,10 +3383,13 @@
       "event": "transition",
       "machine": "stage",
       "subject": "KP/P0/S0.2",
-      "from": "planned",
-      "to": "building",
+      "from": "ready_for_review",
+      "to": "ready_for_review",
       "cause": "m-panda-000001",
-      "rule": "T-1"
+      "rule": "T-74",
+      "counted": {
+        "review_request_expiries": 1
+      }
     }
   },
   {
@@ -4462,6 +4469,325 @@
       "at": "2026-11-13T12:00:01Z\n",
       "event": "expired",
       "id": "m-panda-000001"
+    }
+  },
+  {
+    "name": "read minimal",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "read",
+      "seat": "coder-1",
+      "ids": [
+        "m-panda-000001"
+      ]
+    }
+  },
+  {
+    "name": "read extension retained",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "read",
+      "seat": "coder-1",
+      "ids": [
+        "m-panda-000001",
+        "m-panda-000002"
+      ],
+      "extension": {
+        "nested": [
+          1,
+          null,
+          false
+        ]
+      }
+    }
+  },
+  {
+    "name": "read missing v",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "read",
+      "seat": "coder-1",
+      "ids": [
+        "m-panda-000001",
+        "m-panda-000002"
+      ]
+    }
+  },
+  {
+    "name": "read missing seq",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "read",
+      "seat": "coder-1",
+      "ids": [
+        "m-panda-000001",
+        "m-panda-000002"
+      ]
+    }
+  },
+  {
+    "name": "read missing at",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "event": "read",
+      "seat": "coder-1",
+      "ids": [
+        "m-panda-000001",
+        "m-panda-000002"
+      ]
+    }
+  },
+  {
+    "name": "read missing event",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "seat": "coder-1",
+      "ids": [
+        "m-panda-000001",
+        "m-panda-000002"
+      ]
+    }
+  },
+  {
+    "name": "read missing seat",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "read",
+      "ids": [
+        "m-panda-000001",
+        "m-panda-000002"
+      ]
+    }
+  },
+  {
+    "name": "read missing ids",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "read",
+      "seat": "coder-1"
+    }
+  },
+  {
+    "name": "read all fields",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "read",
+      "seat": "coder-1",
+      "ids": [
+        "m-panda-000001",
+        "m-panda-000002"
+      ]
+    }
+  },
+  {
+    "name": "read empty ids",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "read",
+      "seat": "coder-1",
+      "ids": []
+    }
+  },
+  {
+    "name": "read ids wrong element",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "read",
+      "seat": "coder-1",
+      "ids": [
+        1
+      ]
+    }
+  },
+  {
+    "name": "read ids wrong type",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "read",
+      "seat": "coder-1",
+      "ids": "m-panda-000001"
+    }
+  },
+  {
+    "name": "read seat wrong type",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "read",
+      "seat": null,
+      "ids": [
+        "m-panda-000001",
+        "m-panda-000002"
+      ]
+    }
+  },
+  {
+    "name": "expired invalid optional report",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "expired",
+      "id": "m-panda-000001",
+      "rule": "T-74",
+      "report": "teamlead",
+      "class": "C",
+      "ticket": 3,
+      "deadline": "2026-11-13T13:00:01Z"
+    }
+  },
+  {
+    "name": "expired invalid optional class",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "expired",
+      "id": "m-panda-000001",
+      "rule": "T-74",
+      "report": "bora",
+      "class": "A",
+      "ticket": 3,
+      "deadline": "2026-11-13T13:00:01Z"
+    }
+  },
+  {
+    "name": "expired invalid optional ticket",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "expired",
+      "id": "m-panda-000001",
+      "rule": "T-74",
+      "report": "bora",
+      "class": "C",
+      "ticket": "3",
+      "deadline": "2026-11-13T13:00:01Z"
+    }
+  },
+  {
+    "name": "expired invalid optional deadline",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "expired",
+      "id": "m-panda-000001",
+      "rule": "T-74",
+      "report": "bora",
+      "class": "C",
+      "ticket": 3,
+      "deadline": "tomorrow"
+    }
+  },
+  {
+    "name": "expired wait over: null deadline and ticket",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "expired",
+      "id": "m-panda-000001",
+      "rule": "T-74",
+      "ticket": null,
+      "deadline": null
+    }
+  },
+  {
+    "name": "transition invalid optional counted",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "transition",
+      "machine": "stage",
+      "subject": "KP/P0/S0.2",
+      "from": "ready_for_review",
+      "to": "ready_for_review",
+      "cause": "m-panda-000001",
+      "rule": "T-74",
+      "counted": {
+        "review_request_expiries": "1"
+      }
+    }
+  },
+  {
+    "name": "transition null counted",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-13T12:00:01Z",
+      "event": "transition",
+      "machine": "stage",
+      "subject": "KP/P0/S0.2",
+      "from": "ready_for_review",
+      "to": "ready_for_review",
+      "cause": "m-panda-000001",
+      "rule": "T-74",
+      "counted": null
     }
   }
 ]

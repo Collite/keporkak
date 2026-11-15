@@ -14,7 +14,28 @@ private fun constructorProbe(module: String, language: String, source: String): 
     init.writeText("gradle.projectsEvaluated { def p = rootProject.project(':$module'); $addDependency; $sourceSet.srcDir('${folder.path}') }")
     return runCommand(listOf("./gradlew", "--console=plain", "--max-workers=1", "-I", init.path, ":$module:compile${if (language == "java") "Java" else "Kotlin"}"), fixture)
 }
+/** Adds [notation] to the engine's [configuration] in the fixture build and runs the engine's dependency fence. */
+private fun engineFence(configuration: String, notation: String): CommandResult {
+    val fixture = engineFixture()
+    val init = File(fixture, "build/probes/fence-$configuration.init.gradle").apply { parentFile.mkdirs() }
+    init.writeText("gradle.projectsEvaluated { rootProject.project(':kp-engine').dependencies.add('$configuration', '$notation') }")
+    return runCommand(listOf("./gradlew", "--console=plain", "--max-workers=1", "-I", init.path, ":kp-engine:checkEngineDependencies"), fixture)
+}
 class EngineBoundarySpec : StringSpec({
+    "the engine's tests may carry the test framework" {
+        val result = engineFence("testImplementation", "io.kotest:kotest-assertions-core:6.2.6")
+        result.exitCode shouldBe 0
+    }
+    "a test dependency outside the test framework fails the engine fence" {
+        val result = engineFence("testImplementation", "org.example:forbidden:1.0")
+        result.exitCode shouldBe 1
+        result.output.contains("kp-engine dependency is forbidden: org.example:forbidden") shouldBe true
+    }
+    "the test framework on the engine's production classpath fails the engine fence" {
+        val result = engineFence("implementation", "io.kotest:kotest-runner-junit5:6.2.6")
+        result.exitCode shouldBe 1
+        result.output.contains("kp-engine dependency is forbidden: io.kotest:kotest-runner-junit5") shouldBe true
+    }
     "a Kotlin module outside the engine cannot construct a decision" {
         val result = constructorProbe("kp-log", "kotlin", "package probe; fun counterfeit() = kp.engine.Decision()")
         result.exitCode shouldBe 1

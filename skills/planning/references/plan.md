@@ -9,7 +9,7 @@
 
 ## 2. Stages per phase
 ### P<n> — <title>
-| stage | goal (testable) | ~task titles | rolls · live · touches | pre-flight | DONE |
+| stage | goal (testable) | ~task titles | rolls · live · touches | pre-flight | DONE (checkable at the hand-off) |
 |---|---|---|---|---|---|
 
 ## 3. Dependency chart

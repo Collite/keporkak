@@ -64,7 +64,8 @@ def check_examples():
         actual = checks[case["schema"]].is_valid(case["value"])
         if actual != case["accepted"]:
             raise ValueError(f"schema expectation differs: {case['name']}: {list(checks[case['schema']].iter_errors(case['value']))}")
-    print(f"PASS: 2 Draft 2020-12 schemas; {len(cases)} shared examples (date-time format assertions enabled)")
+    events = json.loads((ROOT / "schemas/record.schema.json").read_text())["properties"]["event"]["enum"]
+    print(f"PASS: 2 Draft 2020-12 schemas, {len(events)} record types ({', '.join(events)}); {len(cases)} shared examples (date-time format assertions enabled)")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
