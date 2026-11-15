@@ -10,8 +10,8 @@ Two ways in:
   kp-record.py [--effort <effort>] < message.json
       One complete message, with its own ids, sequence number and timestamps.
 Either way the message is validated before any path is created, appended once under a lock and synced to disk, and
-nothing but the project's mail/<effort>/_hand/ is written. --project defaults to the office's project checkout for
-the effort in pool/offices.yaml (--office defaults to the short host name).
+nothing but the project's mail/<effort>/_hand/ is written. --project defaults to the office's one project checkout in
+pool/offices.yaml, when the effort has a folder there (--office defaults to the short host name); `mail/` is at its root.
 """
 import argparse
 from datetime import datetime, timezone
@@ -155,13 +155,18 @@ def role_of(party):
     raise ValueError(f"'{party}' is neither a role nor a seat of one (rules/engagement.yaml)")
 
 def project_of(args, effort):
+    """The office's one project checkout (contracts.md §9): `mail/` is at its root, whichever effort's folder the plan is in."""
     if args.project:
         return args.project
     offices = yaml.safe_load((args.pool / "offices.yaml").read_text())["offices"]
-    path = (offices.get(args.office) or {}).get("project", {}).get(effort)
-    if not path:
-        raise ValueError(f"no project checkout for {effort} on office '{args.office}' in pool/offices.yaml; pass --project")
-    return Path(os.path.expanduser(path))
+    project = (offices.get(args.office) or {}).get("project")
+    project = project if isinstance(project, dict) else {}
+    checkout, efforts = project.get("checkout"), project.get("efforts")
+    if not isinstance(checkout, str) or not checkout or not isinstance(efforts, dict):
+        raise ValueError(f"office '{args.office}' names no project checkout in pool/offices.yaml; pass --project")
+    if effort not in efforts:
+        raise ValueError(f"effort '{effort}' has no folder in office '{args.office}'s project checkout (pool/offices.yaml); pass --project")
+    return Path(os.path.expanduser(checkout))
 
 def from_command_line(args):
     kinds = yaml.safe_load((ROOT / "rules/message-kinds.yaml").read_text())["kinds"]

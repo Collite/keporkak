@@ -29,6 +29,15 @@ class OfficeCheckTests(unittest.TestCase):
         self.secrets.chmod(0o755)
         self.assertIn("to do  root secrets ~/.config/keporkak/secrets: chmod 0700 ~/.config/keporkak/secrets", self.lines())
 
+    def test_a_missing_project_checkout_or_effort_folder_is_to_do(self):
+        project = self.machine.home / _specs.PROJECT
+        (project / "toy").rmdir()
+        self.assertIn("to do  project folder TOY ~/Dev/keporkak/project/toy: git -C ~/Dev/keporkak/project pull --ff-only", self.lines())
+        (project / ".git").rmdir()
+        lines = self.lines()
+        self.assertIn("to do  project checkout ~/Dev/keporkak/project: clone the project repository to ~/Dev/keporkak/project (docs/profiles/ names it)", lines)
+        self.assertFalse(any(line.startswith(("ok     project folder", "to do  project folder")) for line in lines))
+
     def test_a_token_in_place_is_ok_and_one_open_to_others_is_to_do(self):
         token = self.secrets / "claude-token"
         token.write_text("not a real token\n")

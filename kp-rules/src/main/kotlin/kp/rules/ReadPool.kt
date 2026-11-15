@@ -12,6 +12,9 @@ private val computerUse = listOf("A", "B", "C", "off")
 private val listener = Regex("127\\.0\\.0\\.1:([1-9][0-9]{0,4})")
 private val officeName = Regex("[a-z][a-z0-9]*")
 private val effortId = Regex("[A-Z][A-Z0-9-]*")
+
+/** A folder of the project checkout, written relative to it: not absolute, not from home, never above it. */
+private fun insideCheckout(folder: String) = folder.isNotEmpty() && !folder.startsWith("/") && !folder.startsWith("~") && ".." !in folder.split("/")
 private val sdkCoordinate = Regex("[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[A-Za-z0-9_.+-]+")
 
 private fun Doc.textOrNull(node: Node?): String? = ((node as? Node.Scalar)?.literal as? Literal.Text)?.value?.takeIf { it.isNotBlank() }
@@ -115,9 +118,14 @@ internal fun readOffices(doc: Doc, node: Node, vendors: Set<String>): Map<String
         val rootsMap = (read?.get("roots") as? Node.Mapping)?.entries.orEmpty().mapValues { doc.textOrNull(it.value) }
         roots.filter { rootsMap[it] == null }.forEach { doc.problem(name, "roots lack '$it'") }
         (rootsMap.keys - roots.toSet()).sorted().forEach { doc.problem(name, "unknown root '$it'") }
-        val project = (read?.get("project") as? Node.Mapping)?.entries.orEmpty().mapValues { doc.textOrNull(it.value) }
-        if (project.isEmpty()) doc.problem(name, "project must map efforts to checkouts")
-        project.forEach { (effort, path) -> if (!effortId.matches(effort) || path == null) doc.problem(name, "project '$effort' must be an effort id with a path") }
+        val project = (read?.get("project") as? Node.Mapping)?.entries.orEmpty()
+        val checkout = doc.textOrNull(project["checkout"])
+        val efforts = (project["efforts"] as? Node.Mapping)?.entries.orEmpty().mapValues { doc.textOrNull(it.value) }
+        if (checkout == null || efforts.isEmpty()) doc.problem(name, "project must name a checkout and a folder per effort")
+        (project.keys - setOf("checkout", "efforts")).sorted().forEach { doc.problem(name, "unknown field 'project.$it'") }
+        efforts.forEach { (effort, folder) ->
+            if (!effortId.matches(effort) || folder == null || !insideCheckout(folder)) doc.problem(name, "project effort '$effort' must be an effort id with a folder inside the checkout")
+        }
         val repos = (read?.get("repos") as? Node.Mapping)?.entries.orEmpty().mapValues { doc.textOrNull(it.value) }
         if (repos.isEmpty() || repos.values.any { it == null }) doc.problem(name, "repos must map repo names to checkouts")
         val targets = (read?.get("live_targets") as? Node.Sequence)?.items?.map { doc.textOrNull(it) }
@@ -136,7 +144,7 @@ internal fun readOffices(doc: Doc, node: Node, vendors: Set<String>): Map<String
         if (ports.size == 2 && ports[0] == ports[1]) doc.problem(name, "mcp and board listen on one port")
         (listen.keys - setOf("mcp", "board")).forEach { doc.problem(name, "unknown field 'listen.$it'") }
         read?.close()
-        Office(name, text["os"] ?: "", text["user"] ?: "", rootsMap.mapValues { it.value ?: "" }, project.mapValues { it.value ?: "" },
+        Office(name, text["os"] ?: "", text["user"] ?: "", rootsMap.mapValues { it.value ?: "" }, Project(checkout ?: "", efforts.mapValues { it.value ?: "" }),
             repos.mapValues { it.value ?: "" }, targets.orEmpty().filterNotNull(), use ?: "", qaVendor ?: "", listen.mapValues { it.value ?: "" })
     }.associateBy { it.name }
 }

@@ -66,6 +66,9 @@ ok     root worktrees ~/Dev/keporkak/_wt
 ok     root scratch ~/Dev/_scratch
 to do  root seats ~/.local/share/keporkak/seats: mkdir -p ~/.local/share/keporkak/seats
 to do  root secrets ~/.config/keporkak/secrets: mkdir -p -m 0700 ~/.config/keporkak/secrets
+ok     project checkout ~/Dev/keporkak/project
+ok     project folder KP ~/Dev/keporkak/project
+ok     project folder TOY ~/Dev/keporkak/project/toy
 later  secret claude-token: S2.1 — the seats' Claude token, put there by Bora before P2 (office/README.md)
 later  secrets apps/kp-merger.pem, apps/kp-coder.pem, apps/kp-reviewer.pem, apps/kp-gardener.pem: S3.2 — the four GitHub Apps' keys
 later  kp root-owned and not writable by {USER}: S1.5 installs kp
@@ -75,12 +78,12 @@ later  kubectl context bp-dsk: S4.1
 later  systemd user service keporkak.service: S1.5 delivers it (template office/systemd/keporkak.service)
 to do  lingering for {USER}: sudo loginctl enable-linger {USER}
 later  no vendor global configuration reachable from a seat's config home: S2.2
-RESULT: NOT READY — 3 to do, 9 later, 11 ok
+RESULT: NOT READY — 3 to do, 9 later, 14 ok
 """)
         machine.bora_does_the_three_to_dos()
         done = machine.office_check()
         self.assertEqual(done.returncode, 0)
-        self.assertEqual(done.stdout.splitlines()[-1], "RESULT: READY — 0 to do, 9 later, 14 ok")
+        self.assertEqual(done.stdout.splitlines()[-1], "RESULT: READY — 0 to do, 9 later, 17 ok")
 
     def test_the_office_check_changes_nothing_on_the_machine(self):
         machine = FakeMachine(self, roots=["worktrees", "scratch"], linger="no")
@@ -121,6 +124,7 @@ STUBS = {
     "sudo": ': > "$HOME/sudo-was-called"',
 }
 ROOTS = {"worktrees": "Dev/keporkak/_wt", "scratch": "Dev/_scratch", "seats": ".local/share/keporkak/seats", "secrets": ".config/keporkak/secrets"}
+PROJECT = "Dev/keporkak/project"
 
 
 class FakeMachine:
@@ -138,6 +142,8 @@ class FakeMachine:
         self.stub("loginctl", f"echo {linger}")
         for name in roots:
             (self.home / ROOTS[name]).mkdir(parents=True)
+        (self.home / PROJECT / ".git").mkdir(parents=True)
+        (self.home / PROJECT / "toy").mkdir()
     def stub(self, name, script):
         path = self.bin / name
         path.write_text("#!/bin/sh\n" + script + "\n")

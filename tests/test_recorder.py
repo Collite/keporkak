@@ -154,10 +154,13 @@ class RecorderCommandLineTests(unittest.TestCase):
     def test_the_project_defaults_to_the_offices_checkout_in_the_pool(self):
         pool = Path(self.temp.name) / "pool"
         pool.mkdir()
-        (pool / "offices.yaml").write_text(f"version: 1\noffices:\n  panda:\n    project: {{KP: {self.project}}}\n")
-        result = self.record("started", "--from", "coder", "--to", "teamlead", "--stage", "KP/P0/S0.3", "--pool", str(pool), "--office", "panda", project=False)
+        (pool / "offices.yaml").write_text(f"version: 1\noffices:\n  panda:\n    project: {{checkout: {self.project}, efforts: {{KP: '.', TOY: toy}}}}\n")
+        result = self.record("started", "--from", "coder", "--to", "teamlead", "--stage", "TOY/P0/S0.3", "--pool", str(pool), "--office", "panda", project=False)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(self.lines()), 1)
+        self.assertEqual(len(self.lines(self.project / "mail/TOY/_hand/p0-s0.3.jsonl")), 1)
+        result = self.record("started", "--from", "coder", "--to", "teamlead", "--stage", "XY/P0/S0.3", "--pool", str(pool), "--office", "panda", project=False)
+        self.assertIn("refused: effort 'XY' has no folder in office 'panda's project checkout (pool/offices.yaml); pass --project", result.stderr)
+        self.assertFalse((self.project / "mail/XY").exists())
     def test_the_sequence_continues_after_a_line_recorded_from_stdin(self):
         carried = {**MESSAGE, "stage": "KP/P0/S0.3", "seq": 5}
         stdin = subprocess.run([sys.executable, "scripts/kp-record.py", "--project", str(self.project)], input=json.dumps(carried), text=True, capture_output=True, cwd=ROOT)

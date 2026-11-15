@@ -160,6 +160,22 @@ def check_roots(report, office):
             report.ok(item)
 
 
+def check_project(report, office):
+    """The one project checkout and each effort's folder in it (contracts.md §9); the hand log's `mail/` is at its root."""
+    project = office["project"]
+    checkout = project["checkout"]
+    if not (home(checkout) / ".git").exists():
+        report.todo(f"project checkout {checkout}", f"clone the project repository to {checkout} (docs/profiles/ names it)")
+        return
+    report.ok(f"project checkout {checkout}")
+    for effort, folder in project["efforts"].items():
+        item = f"project folder {effort} " + (checkout if folder == "." else f"{checkout.rstrip('/')}/{folder}")
+        if (home(checkout) / folder).is_dir():
+            report.ok(item)
+        else:
+            report.todo(item, f"git -C {checkout} pull --ff-only")
+
+
 def check_secrets(report, office):
     user, folder = office["user"], office["roots"]["secrets"]
     for names, stage, what in SECRETS:
@@ -231,6 +247,7 @@ def main():
     check_claude(report, roster)
     check_tools(report)
     check_roots(report, office)
+    check_project(report, office)
     check_secrets(report, office)
     check_sudo(report, office)
     check_live_targets(report, office)

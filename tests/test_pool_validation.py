@@ -74,6 +74,12 @@ class PoolValidationTests(unittest.TestCase):
         self.edit("budgets.yaml", "warn: [0.7, 0.9]", "warn: [0.7]")
         self.assertEqual(self.failures(), ["pool: {budget: warn.1} used by the rules does not resolve"])
 
+    def test_the_project_is_one_checkout_with_a_folder_per_effort_inside_it(self):
+        self.edit("offices.yaml", 'efforts: {KP: ".", TOY: toy}', 'efforts: {KP: ".", TOY: ../toy}')
+        self.assertEqual(self.failures(), ["pool/offices.yaml: panda: project effort 'TOY' must be an effort id with a folder inside the checkout"])
+        self.edit("offices.yaml", "project: {checkout: ~/Dev/keporkak/project, efforts: {KP: \".\", TOY: ../toy}}", "project: {KP: ~/Dev/keporkak/project}")
+        self.assertEqual(self.failures(), ["pool/offices.yaml: panda: project must name a checkout and a folder per effort", "pool/offices.yaml: panda: unknown field 'project.KP'"])
+
     def test_a_missing_pool_file_fails(self):
         (self.pool / "budgets.yaml").unlink()
         self.assertIn("pool/budgets.yaml: missing", self.failures())

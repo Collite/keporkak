@@ -1027,6 +1027,10 @@ def check_roster(roster):
     ok(f"{label}: {len(pairs)} (model, effort) pairs of {len(models)} models; {len(levels)} levels × {len(SIZES)} sizes on the order; review floor {floor}")
     return vendors
 
+def relative_folder(value):
+    """A folder of the project checkout, written relative to it: not absolute, not from home, never above it."""
+    return text(value) and not value.startswith(("/", "~")) and ".." not in value.split("/")
+
 def check_offices(offices, vendors):
     label = "pool/offices.yaml"
     entries = offices.get("offices") if isinstance(offices.get("offices"), dict) else {}
@@ -1041,9 +1045,12 @@ def check_offices(offices, vendors):
             if not text(roots.get(root)): fail(f"{label}: {name}: roots lack '{root}'")
         for root in sorted(set(roots) - set(ROOTS)): fail(f"{label}: {name}: unknown root '{root}'")
         project = office.get("project") if isinstance(office.get("project"), dict) else {}
-        if not project: fail(f"{label}: {name}: project must map efforts to checkouts")
-        for effort, path in project.items():
-            if not re.fullmatch(r"[A-Z][A-Z0-9-]*", str(effort)) or not text(path): fail(f"{label}: {name}: project '{effort}' must be an effort id with a path")
+        efforts = project.get("efforts") if isinstance(project.get("efforts"), dict) else {}
+        if not text(project.get("checkout")) or not efforts: fail(f"{label}: {name}: project must name a checkout and a folder per effort")
+        for key in sorted(set(project) - {"checkout", "efforts"}): fail(f"{label}: {name}: unknown field 'project.{key}'")
+        for effort, folder in efforts.items():
+            if not re.fullmatch(r"[A-Z][A-Z0-9-]*", str(effort)) or not relative_folder(folder):
+                fail(f"{label}: {name}: project effort '{effort}' must be an effort id with a folder inside the checkout")
         repos = office.get("repos") if isinstance(office.get("repos"), dict) else {}
         if not repos or not all(text(path) for path in repos.values()): fail(f"{label}: {name}: repos must map repo names to checkouts")
         targets = office.get("live_targets")

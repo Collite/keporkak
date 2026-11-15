@@ -36,6 +36,14 @@ class RobotsPoolSpec : StringSpec({
         rules.pool.budgets.slots.total shouldBe 4
     }
 
+    "an office names one project checkout and a folder per effort inside it" {
+        rules.pool.offices.getValue("panda").project shouldBe Project("~/Dev/keporkak/project", mapOf("KP" to ".", "TOY" to "toy"))
+        problemsAfter("pool/offices.yaml", "TOY: toy}", "TOY: ../toy}") shouldBe
+            listOf("pool/offices.yaml: panda: project effort 'TOY' must be an effort id with a folder inside the checkout")
+        problemsAfter("pool/offices.yaml", "project: {checkout: ~/Dev/keporkak/project, efforts: {KP: \".\", TOY: toy}}", "project: {KP: ~/Dev/keporkak/project}") shouldBe
+            listOf("pool/offices.yaml: panda: project must name a checkout and a folder per effort", "pool/offices.yaml: panda: unknown field 'project.KP'")
+    }
+
     "a reserved model only its roles may run outright, and a pool value the rules use resolves" {
         val reserved = """, "reserved": {"claude-sonnet-5-5": ["principal"]}, "role_models": {"principal": {"model": "claude-sonnet-5-5", "effort": "high"}, "coder": {"model": "claude-sonnet-5-5", "effort": "low"}}}"""
         problemsAfterExpanded("pool/roster.yaml", "\"floor\": \"claude-opus-5-5\"}}", "\"floor\": \"claude-opus-5-5\"}$reserved") shouldBe

@@ -221,13 +221,16 @@ data class Office(
     val os: String,
     val user: String,
     val roots: Map<String, String>,
-    val project: Map<String, String>,
+    val project: Project,
     val repos: Map<String, String>,
     val liveTargets: List<String>,
     val computerUse: String,
     val qaVendor: String,
     val listen: Map<String, String>,
 )
+
+/** The office's one project checkout, and each effort's folder relative to it; `mail/` is at its root (Amendment 4). */
+data class Project(val checkout: String, val efforts: Map<String, String>)
 
 data class Slots(val total: Int, val perSubscription: Map<String, Int>, val perOffice: Map<String, Int>, val stagesInFlightPerEffort: Int)
 
