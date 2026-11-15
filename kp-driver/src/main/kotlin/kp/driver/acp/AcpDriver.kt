@@ -1,6 +1,9 @@
 package kp.driver.acp
 
 import com.agentclientprotocol.agent.AgentInfo
+import com.agentclientprotocol.common.SessionCreationParameters
+import com.agentclientprotocol.model.HttpHeader
+import com.agentclientprotocol.model.McpServer
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,11 +18,14 @@ import kp.driver.ObservedFact
 import kp.driver.Offers
 import kp.driver.Outcome
 import kp.driver.SessionSpec
+import kp.driver.SessionToken
 import kp.driver.Started
 import kp.driver.TurnEnd
 import kp.driver.UsageWindow
 import kp.model.SeatId
 import java.io.IOException
+import java.security.SecureRandom
+import java.util.Base64
 import java.nio.file.Path
 import java.time.Clock
 import java.time.Duration
@@ -38,6 +44,8 @@ internal class AcpDriver(
     private val scope = CoroutineScope(job + Dispatchers.IO + CoroutineName("kp-driver"))
     private val transcripts = ConcurrentHashMap<SeatId, Transcript>()
     private val launched = ConcurrentHashMap.newKeySet<AgentProcess>()
+    private val seats = ConcurrentHashMap<SeatId, SeatSession>()
+    private val random = SecureRandom()
 
     fun transcript(seat: SeatId): Transcript = transcripts.computeIfAbsent(seat) { Transcript.of(seatsRoot, it, clock) }
 
@@ -75,12 +83,61 @@ internal class AcpDriver(
         return Outcome.Failed(hidden)
     }
 
-    override suspend fun start(spec: SessionSpec): Outcome<Started> = TODO("S2.1 T3")
+    override suspend fun start(spec: SessionSpec): Outcome<Started> {
+        seats[spec.seat]?.takeIf { it.live }?.let { return Outcome.Failed("seat ${spec.seat.value} has a live session ${it.session.sessionId.value}") }
+        val seat = SeatSession(spec.seat, spec, mint(), transcript(spec.seat), listener)
+        seat.transcript.hide(seat.token.value)
+        val launched = when (val result = launch(spec, onClosed = seat::protocolClosed)) {
+            is Outcome.Ok -> result.value
+            is Outcome.Failed -> return result
+        }
+        seat.launched = launched
+        launched.process.exit.thenAccept { seat.processGone(it.exitValue()) }
+        val parameters = SessionCreationParameters(spec.workingDirectory.toString(), servers(spec, seat.token))
+        seat.session = try {
+            launched.connection.client.newSession(parameters) { _, _ -> seat.operations }
+        } catch (e: Exception) {
+            return abandon(seat, "session/new failed", e)
+        }
+        seat.transcript.write("session ${seat.session.sessionId.value} opened in ${spec.workingDirectory} with ${spec.servers.joinToString(", ") { it.name }.ifEmpty { "no MCP server" }}")
+        return opened(seat)
+    }
+
+    /** Mode, model and effort set; the seat registered; its token handed to the caller. */
+    private suspend fun opened(seat: SeatSession): Outcome<Started> {
+        val settings = try {
+            seat.configure()
+        } catch (e: Exception) {
+            return abandon(seat, "setting mode, model and effort failed", e)
+        }
+        if (settings is Outcome.Failed) return abandon(seat, settings.reason, null)
+        val set = (settings as Outcome.Ok).value
+        seat.handedOut = true
+        seats[seat.seat] = seat
+        seat.transcript.write("started: session ${seat.session.sessionId.value}, mode ${set.mode}, model ${set.model}, effort ${set.effort}")
+        return Outcome.Ok(Started(seat.seat, seat.session.sessionId.value, seat.token, set.mode!!, set.model!!, set.effort!!))
+    }
+
+    /** A session that could not be opened: its process is ended, and the reason returned. */
+    private suspend fun abandon(seat: SeatSession, what: String, error: Exception?): Outcome.Failed {
+        if (error is CancellationException) currentCoroutineContext().ensureActive()
+        seat.launched.process.end(Duration.ZERO)
+        return failed(seat.transcript, if (error == null) what else "$what: ${error.message ?: error.javaClass.simpleName}")
+    }
+
+    private fun servers(spec: SessionSpec, token: SessionToken): List<McpServer> = spec.servers.map { server ->
+        val headers = server.headers + if (server.carriesToken) mapOf("Authorization" to "Bearer ${token.value}") else emptyMap()
+        McpServer.Http(server.name, server.url, headers.map { (name, value) -> HttpHeader(name, value) })
+    }
+
+    /** The session token (§5): random, one per started process. */
+    private fun mint() = SessionToken(Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(TOKEN_BYTES).also(random::nextBytes)))
     override suspend fun prompt(seat: SeatId, text: String): Outcome<TurnEnd> = TODO("S2.1 T4")
     override suspend fun cancel(seat: SeatId): Outcome<Unit> = TODO("S2.1 T4")
     override suspend fun kill(seat: SeatId, grace: Duration): Outcome<Unit> = TODO("S2.1 T7")
     override suspend fun load(spec: SessionSpec, sessionId: String): Outcome<Started> = TODO("S2.1 T7")
-    override fun offers(seat: SeatId): Outcome<Offers> = TODO("S2.1 T3")
+    override fun offers(seat: SeatId): Outcome<Offers> =
+        seats[seat]?.let { Outcome.Ok(it.offers()) } ?: Outcome.Failed("seat ${seat.value} has no session")
     override fun observe(seat: SeatId, fact: String, window: UsageWindow?): Outcome<ObservedFact> = TODO("S2.1 T6")
 
     override fun close() {
@@ -88,6 +145,8 @@ internal class AcpDriver(
         scope.cancel()
     }
 }
+
+private const val TOKEN_BYTES = 32
 
 /** A started and initialized agent. */
 internal class Launched(val process: AgentProcess, val connection: AcpConnection, val info: AgentInfo)
