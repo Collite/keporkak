@@ -151,3 +151,11 @@ private class WalkThrough(private val walk: Datum.Fields) {
         }
     }
 }
+
+/** The walks under `rules/walks/` that need no robot: no step sent by a robot, no observed event, no robot's send, wake, rule or hold expected. */
+fun walksThatNeedNoRobot(): List<String> = File(root, "rules/walks").listFiles { file -> file.name.endsWith(".yaml") }!!.sorted().mapNotNull { file ->
+    val definition = Datum.parse(pythonWalk(file.readText().lines().first { it.startsWith("name: ") }.removePrefix("name: ")).single { it.startsWith("WALK ") }.removePrefix("WALK ")) as Datum.Fields
+    val steps = (definition.fields["steps"] as Datum.Items).items.map { it.fields() }
+    val robotic = steps.any { step -> step["by"].text()?.startsWith("robot:") == true || step["event"] != null || step["expect"].fields().keys.any { it in setOf("sends", "wakes", "rules", "held") } }
+    definition.fields["name"].text().takeUnless { robotic }
+}
