@@ -31,7 +31,7 @@ internal object YamlText {
 
     /** The document, or `null` with one problem naming why it cannot be read. */
     fun parse(file: String, text: String, report: Report): Node? = try {
-        convert(yaml.parseToYamlNode(text))
+        Converter(file, text.lines(), report).convert(yaml.parseToYamlNode(text))
     } catch (problem: ForbiddenAnchorOrAliasException) {
         report.add(file, null, "a YAML anchor or alias (line ${problem.line}) — every rule is written out")
         null
@@ -50,15 +50,27 @@ internal object YamlText {
         return parse(file, match.groupValues[1], report)
     }
 
-    private fun convert(node: YamlNode): Node = when (node) {
-        is YamlMap -> Node.Mapping(node.entries.entries.associate { (key, value) -> key.content to convert(value) }, node.path.endLocation.line)
-        is YamlList -> Node.Sequence(node.items.map(::convert), node.path.endLocation.line)
-        is YamlScalar -> Node.Scalar(resolve(node.content), node.path.endLocation.line)
-        is YamlNull -> Node.Scalar(Literal.Null, node.path.endLocation.line)
-        is YamlTaggedNode -> throw YamlException("an explicit tag '${node.tag}' is not part of the rules' form", node.path)
+    /**
+     * Turns kaml's tree into [Node]s. A scalar is resolved by its text, quoted or not; a quoted one whose text reads
+     * as a number, a boolean or null is reported, since its writer meant text (S1.0's Found lines; S1.2 T8).
+     */
+    private class Converter(private val file: String, private val lines: List<String>, private val report: Report) {
+        fun convert(node: YamlNode): Node = when (node) {
+            is YamlMap -> Node.Mapping(node.entries.entries.associate { (key, value) -> key.content to convert(value) }, node.path.endLocation.line)
+            is YamlList -> Node.Sequence(node.items.map(::convert), node.path.endLocation.line)
+            is YamlScalar -> Node.Scalar(resolve(node.content).also { literal -> if (literal !is Literal.Text && quoted(node)) quotedProblem(node) }, node.path.endLocation.line)
+            is YamlNull -> Node.Scalar(Literal.Null, node.path.endLocation.line)
+            is YamlTaggedNode -> throw YamlException("an explicit tag '${node.tag}' is not part of the rules' form", node.path)
+        }
+
+        /** Whether the scalar's text starts with a quote where kaml says the scalar starts. */
+        private fun quoted(node: YamlScalar): Boolean = node.path.endLocation.let { lines.getOrNull(it.line - 1)?.getOrNull(it.column - 1) } in setOf('\'', '"')
+
+        private fun quotedProblem(node: YamlScalar) = report.add(file, null,
+            "the quoted scalar '${node.content}' (line ${node.path.endLocation.line}) would read as a number, a boolean or null — the loader resolves a scalar by its text, not its quotes")
     }
 
-    private fun resolve(content: String): Literal = when {
+    fun resolve(content: String): Literal = when {
         content in nulls -> Literal.Null
         content.equals("true", ignoreCase = true) -> Literal.Bool(true)
         content.equals("false", ignoreCase = true) -> Literal.Bool(false)

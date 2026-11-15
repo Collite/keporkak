@@ -9,9 +9,6 @@ fun verifyDecisionConstruction(module: String, script: File, directories: List<F
     if (output.isNotBlank()) print(output)
 }
 
-/** A module with main source but no spec yet, and when its first arrives; the stage that writes it removes the line. */
-val specsNotYetWritten = mapOf("kp-engine" to "S1.1 or S1.2 writes its first")
-
 plugins {
     base
     alias(libs.plugins.kotlin.jvm) apply false
@@ -64,7 +61,6 @@ subprojects {
             when {
                 executed > 0 -> println("$specsModule: the test task executed $executed specs")
                 mainSources.isEmpty -> println("$specsModule: no main source, no spec expected")
-                specsModule in specsNotYetWritten -> println("$specsModule: no spec expected until ${specsNotYetWritten.getValue(specsModule)}")
                 else -> throw GradleException("$specsModule: the test task executed no spec")
             }
         }

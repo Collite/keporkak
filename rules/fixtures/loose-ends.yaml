@@ -1,0 +1,82 @@
+name: what S1.0 left the two validators to agree on (S1.2 T8; review-006, issue #12; contracts.md §4.1, Amendment 9)
+scenarios:
+  - name: an attestation whose description is not text is reported
+    given:
+      vocabulary:
+        facts: {}
+        operations: {}
+        attestations: {done_lines_hold: [DONE lines ticked, attested]}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+    expect:
+      failures: ["attestations.done_lines_hold must be text"]
+  - name: a block that names a block is reported, and the walker never follows it
+    given:
+      vocabulary:
+        facts:
+          seat.name: {params: seat or role-in-stage, returns: string, source: L+C}
+        operations: {}
+      second_key:
+        require:
+          - {fact: seat.name, of: reviewer, ne: {fact: seat.name, of: coder}}
+          - {holds: second_key}
+        otherwise: {class: B}
+      kinds:
+        started:
+          from: coder
+          to: teamlead
+          guard: '-'
+          args: {}
+          class: {default: C, cases: [{if: {not: {holds: second_key}}, class: B}]}
+          window: stage
+          max_fires: null
+          deadline: null
+          expiry: []
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+      walks:
+        - name: the block that names itself never holds
+          initial: planned
+          steps: [{who: coder, kind: started, args: {}, facts: {seat.name: {coder: coder-1, reviewer: reviewer-1}}, expect: {class: B}}]
+          final: exited
+    expect:
+      failures: ["second_key: names the block 'second_key' — a block never names a block"]
+      output: ["ok   walk the block that names itself never holds reached exited"]
+  - name: a robot's presence trigger that is neither present nor absent is reported
+    given:
+      vocabulary:
+        facts: {}
+        operations: {}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+      robots:
+        - role: coder
+          active_when: {always: true}
+          intercepts: []
+          rules:
+            - id: TEST-1
+              when: Bora comes back
+              'on': {presence: presnt}
+              if: []
+              then: [{send: started, to: teamlead, args: {}}]
+    expect:
+      failures: ["TEST-1: presence is present or absent"]
+  - name: a robot's presence trigger of present or absent is accepted
+    given:
+      vocabulary:
+        facts: {}
+        operations: {}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+      robots:
+        - role: coder
+          active_when: {always: true}
+          intercepts: []
+          rules:
+            - id: TEST-1
+              when: Bora comes back
+              'on': {presence: present}
+              if: []
+              then: [{send: started, to: teamlead, args: {}}]
+    expect: {}

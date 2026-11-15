@@ -15,7 +15,8 @@ internal class RobotsCheck(
     fun run() {
         val ids = mutableSetOf<String>()
         for ((path, robot) in robots) {
-            val file = Owner(path, robot.file)
+            // A problem of the robot as a whole names its file once: the problem's file, with no rule id.
+            val file = Owner(path, null)
             if (robot.role !in engagement.roles) {
                 report.add(path, null, "unknown role '${robot.role}'")
                 continue
@@ -23,11 +24,11 @@ internal class RobotsCheck(
             val may = kinds.values.filter { robot.role in it.from }.map { it.name }.toSet()
             resolve(file, robot, Names().apply { requirement(robot.activeWhen) })
             for (intercept in robot.intercepts) when (intercept) {
-                is Intercept.Kind -> if (intercept.name !in kinds) report.add(path, robot.file, "unknown intercepted kind '${intercept.name}'")
-                is Intercept.ClassTo -> if (intercept.messageClass !in classes || intercept.to !in engagement.roles) report.add(path, robot.file, "invalid class intercept")
+                is Intercept.Kind -> if (intercept.name !in kinds) report.add(path, null, "unknown intercepted kind '${intercept.name}'")
+                is Intercept.ClassTo -> if (intercept.messageClass !in classes || intercept.to !in engagement.roles) report.add(path, null, "invalid class intercept")
             }
             robot.queue?.let { queue ->
-                queue.order.filterNot { it in kinds }.forEach { report.add(path, robot.file, "unknown queued kind '$it'") }
+                queue.order.filterNot { it in kinds }.forEach { report.add(path, null, "unknown queued kind '$it'") }
                 resolve(file, robot, Names().apply { requirement(queue.nextWhen) })
             }
             for (rule in robot.rules) {
