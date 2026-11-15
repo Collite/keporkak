@@ -5,6 +5,8 @@ import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kp.engine.MachineState
+import kp.engine.State
 import kp.engine.Wait
 import kp.engine.fold
 import kp.model.EffortId
@@ -59,14 +61,32 @@ class TheLogAndTheFoldSpec : StringSpec({
         val state = fold(read.lines.map { it.entry })
 
         read.problems shouldBe emptyList()
-        state.stage("KP/P1/S1.1") shouldBe "ready_for_review"
-        state.counters shouldBe mapOf("KP/P1/S1.1" to mapOf("stops" to 1L, "resumes" to 1L, "review_requests" to 1L, "review_request_expiries" to 1L))
-        state.deadlines shouldBe mapOf(
-            "m-panda-000105" to Wait(kind = "review-request", stage = "KP/P1/S1.1", from = "coder-1", to = "teamlead", deadline = "2026-11-14T17:00:00Z", expiries = 1),
-        )
-        state.unread shouldBe mapOf(
-            "coder-1" to listOf("m-panda-000104"),
-            "teamlead" to listOf("m-panda-000102", "m-panda-000105", "m-panda-000106"),
+        state shouldBe State(
+            seq = 24,
+            at = "2026-11-14T16:00:00Z",
+            rules = "5f0c6a2d9b1e4f8a7c3d2e1b0a9f8e7d6c5b4a3928170f6e5d4c3b2a19087f6e",
+            machines = mapOf(
+                // building → ready_for_review at 15:00, then T-74's re-arm moved it to itself at 16:00
+                "stage" to mapOf("KP/P1/S1.1" to MachineState(state = "ready_for_review", previous = "building", since = "2026-11-14T16:00:00Z", cause = "m-panda-000105", rule = "T-74")),
+                "seat" to mapOf("coder-1" to MachineState(state = "busy", previous = "ready", since = "2026-11-14T09:00:01Z", cause = "m-panda-000101", rule = null)),
+                "presence" to mapOf("bora" to MachineState(state = "present", previous = "absent", since = "2026-11-14T08:30:00Z", cause = "bora.present", rule = null)),
+            ),
+            counters = mapOf("KP/P1/S1.1" to mapOf("stops" to 1L, "resumes" to 1L, "review_requests" to 1L, "review_request_expiries" to 1L)),
+            // every message on the log was delivered
+            pending = emptyMap(),
+            // the assign's and the stop's waits ended with their replies; the mailroom's nudge does not end the review-request's
+            deadlines = mapOf(
+                "m-panda-000105" to Wait(kind = "review-request", stage = "KP/P1/S1.1", from = "coder-1", to = "teamlead", deadline = "2026-11-14T17:00:00Z", expiries = 1),
+            ),
+            held = emptyMap(),
+            tickets = emptyMap(),
+            unread = mapOf(
+                "coder-1" to listOf("m-panda-000104"),
+                "teamlead" to listOf("m-panda-000102", "m-panda-000105", "m-panda-000106"),
+            ),
+            // assign + started; stop + triage; review-request + nudge
+            hops = mapOf("m-panda-000101" to 2, "m-panda-000103" to 2, "m-panda-000105" to 2),
+            refusals = emptyMap(),
         )
     }
 
