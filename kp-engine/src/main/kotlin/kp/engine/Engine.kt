@@ -52,7 +52,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
     fun run(): Decision = if (context.event == Event.MESSAGE) arrival() else fire()
 
     private fun refuse(rule: String, requirement: String, failed: Requirement? = null) = Decision.create(
-        Outcome.REFUSE, rule = rule, requirement = requirement, failed = failed?.let(::render) ?: requirement,
+        Outcome.REFUSE, rule = rule, requirement = requirement, failed = failed?.let(::form),
         unsupplied = evaluation.unsupplied.toList(), observed = evaluation.observed.toMap(), attested = evaluation.attested(),
     )
 

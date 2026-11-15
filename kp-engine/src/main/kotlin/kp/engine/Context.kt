@@ -1,6 +1,5 @@
 package kp.engine
 
-import kp.model.toLine
 
 /** The fields of a message a judgement reads (contracts.md §2.1): `{msg: …}`, `{arg: …}`, the stage, the thread. */
 internal data class View(
@@ -29,11 +28,10 @@ internal data class Context(
     companion object {
         fun of(trigger: Trigger, state: State): Context? = when (trigger) {
             is Trigger.Arrival -> {
-                val line = (Datum.parse(trigger.message.toLine()) as Datum.Fields).fields
                 val message = trigger.message
                 val view = View(
                     message.id.value, message.kind, message.from.value, message.to.value, message.by, message.stage?.value, message.thread.value,
-                    message.re?.value, line["args"] as? Datum.Fields ?: Datum.Fields(emptyMap()), message.body,
+                    message.re?.value, Datum.of(message.plainArgs) as Datum.Fields, message.body,
                 )
                 Context(kp.rules.Event.MESSAGE, message.kind, view, message.re?.value?.let(state.delivered::get), signed = trigger.signed, session = trigger.session)
             }

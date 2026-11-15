@@ -10,7 +10,6 @@ import kp.model.Read
 import kp.model.Refused
 import kp.model.Rules
 import kp.model.Transition
-import kp.model.toLine
 import kp.model.utc
 
 /** A machine's subject's current state; [previous] is the state before it (what `*previous` names). */
@@ -106,7 +105,7 @@ private class Folding(state: State) {
         val at = line.at.value
         when (line) {
             is Message -> {
-                val args = Datum.parse(line.toLine()).let { it as Datum.Fields }.fields["args"] as? Datum.Fields ?: Datum.Fields(emptyMap())
+                val args = Datum.of(line.plainArgs) as Datum.Fields
                 s = s.copy(pending = s.pending + (line.id.value to Pending(line.kind, line.from.value, line.to.value, line.stage?.value, line.thread.value, line.re?.value, line.deadline?.value, line.by, args)))
             }
             is Transition -> {
@@ -128,7 +127,7 @@ private class Folding(state: State) {
                     if (message.from == BORA && message.re != null) answer(message.re, line.id)
                     s = s.copy(hops = s.hops + (message.thread to s.hops(message.thread).inc()))
                 }
-                ((Datum.parse(line.toLine()) as Datum.Fields).fields["answers"] as? Datum.Text)?.let { s = s.copy(answered = s.answered + it.value) }
+                line.answers?.let { s = s.copy(answered = s.answered + it) }
                 s = s.copy(
                     pending = s.pending - line.id,
                     held = s.held - line.id,

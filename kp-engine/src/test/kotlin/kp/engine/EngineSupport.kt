@@ -64,11 +64,24 @@ fun sent(id: String, kind: String, from: String, to: String = "teamlead", args: 
     """{"event":"delivered","id":"$id","to":["$to"],"class":"A"}""",
 )
 
+/** One JSON text as a datum, read by kp-model's plain view as the engine reads a line. */
+fun parseDatum(json: String): Datum = Datum.of(plain(json))
+
+/** A datum written as the rules files write a value in flow style: `{counter: resumes, lt: {cap: resumes_per_stage}}`. */
+fun Datum.flow(): String = when (this) {
+    is Datum.Fields -> fields.entries.joinToString(", ", "{", "}") { (key, value) -> "$key: ${value.flow()}" }
+    is Datum.Items -> items.joinToString(", ", "[", "]") { it.flow() }
+    is Datum.Text -> value
+    is Datum.Number -> value.toPlainString()
+    is Datum.Bool -> value.toString()
+    Datum.Null -> "null"
+}
+
 /** A fact by its written form — `pr.ready`, `ci.state(of=abc)` — as [FactRef.toString] writes it; a parameter is text, or JSON when it is a list or a map. */
 fun ref(written: String): FactRef {
     val name = written.substringBefore('(')
     val params = written.substringAfter('(', "").removeSuffix(")").split(", ").filter { it.isNotEmpty() }
-        .associate { it.substringBefore('=') to it.substringAfter('=').let { value -> if (value.startsWith("[") || value.startsWith("{")) Datum.parse(value) else Datum.Text(value) } }
+        .associate { it.substringBefore('=') to it.substringAfter('=').let { value -> if (value.startsWith("[") || value.startsWith("{")) parseDatum(value) else Datum.Text(value) } }
     return FactRef(name, params)
 }
 
@@ -94,7 +107,7 @@ fun deliveredRecord(decision: Decision, id: String, to: String): String {
 /** The `refused` record a mailroom writes from a refusal's decision: the rule's guard as `requirement`, and the requirement that failed as `failed`. */
 fun refusedRecord(decision: Decision, id: String): String =
     """{"event":"refused","id":"$id","rule":"${decision.rule}","requirement":${Datum.Text(decision.requirement!!).json()},""" +
-        (decision.failed?.let { """"failed":${Datum.Text(it).json()},""" } ?: "") + """"observed":${Datum.Fields(decision.observed).json()}}"""
+        (decision.failed?.let { """"failed":${it.json()},""" } ?: "") + """"observed":${Datum.Fields(decision.observed).json()}}"""
 
 /** The `expired` record a mailroom writes from an expiry's decision: its rule, and the new deadline — null when the wait is over. */
 fun expiredRecord(decision: Decision, id: String): String =

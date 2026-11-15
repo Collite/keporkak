@@ -46,6 +46,7 @@ private val messageFields = common + mapOf(
     "body" to text,
     "pointers" to array(pointer),
     "args" to objectValue, "deadline" to nullable(timestamp), "created" to timestamp,
+    "signed" to { it is JsonPrimitive && !it.isString && it.booleanOrNull != null },
     "by" to pattern("^(seat:[a-z][a-z0-9-]*|robot:[A-Z]+-[0-9]+|bora-cli|effect:T-[0-9]+|hand:[a-z][a-z0-9-]*)$")
 )
 internal fun validateMessage(value: JsonObject) = validateObject(
@@ -54,9 +55,9 @@ internal fun validateMessage(value: JsonObject) = validateObject(
 private data class Shape(val required: Set<String>, val fields: Map<String, Check>)
 private fun shape(required: String, vararg fields: Pair<String, Check>) = Shape(required.split(' ').toSet(), fields.toMap())
 private val recordShapes = mapOf(
-    "delivered" to shape("id to class", "id" to text, "to" to array(text), "woke" to array(text), "class" to choice("A", "B", "C"), "rule" to text, "ticket" to nullable(integer()), "counted" to dictionary(integer()), "observed" to objectValue, "attested" to array(text)),
-    "refused" to shape("id rule requirement", "id" to text, "rule" to text, "requirement" to text, "observed" to objectValue, "refusals_today" to integer()),
-    "held" to shape("id by until", "id" to text, "by" to text, "until" to text, "ticket" to nullable(integer())),
+    "delivered" to shape("id to class", "id" to text, "to" to array(text), "woke" to array(text), "class" to choice("A", "B", "C"), "rule" to text, "ticket" to nullable(integer()), "counted" to dictionary(integer()), "observed" to objectValue, "attested" to array(text), "answers" to text, "deadline" to nullable(timestamp)),
+    "refused" to shape("id rule requirement", "id" to text, "rule" to text, "requirement" to text, "failed" to objectValue, "observed" to objectValue, "refusals_today" to integer()),
+    "held" to shape("id by until", "id" to text, "by" to text, "until" to text, "ticket" to nullable(integer()), "deadline" to nullable(timestamp)),
     "expired" to shape("id", "id" to text, "rule" to text, "report" to choice("bora"), "class" to choice("B", "C"), "ticket" to nullable(integer()), "deadline" to nullable(timestamp)),
     "transition" to shape("machine subject from to cause", "machine" to choice("stage", "found", "flag", "seat", "phase", "presence"), "subject" to text, "from" to text, "to" to text, "rule" to text, "cause" to text, "counted" to dictionary(integer())),
     "fact" to shape("fact subject value", "fact" to text, "subject" to text, "value" to { true }, "evidence" to text),

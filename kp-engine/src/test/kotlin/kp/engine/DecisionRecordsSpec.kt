@@ -7,7 +7,7 @@ import kp.model.Delivered
 import kp.model.Refused
 import kp.model.Transition
 import kp.model.parseLine
-import kp.model.toLine
+import kp.model.plain
 import kp.rules.RuleSet
 import java.io.File
 
@@ -17,7 +17,7 @@ private fun ready(found: Int = 0) = table("now" to NOW, "pr.ready" to true, "pr.
 
 /** The names of the facts a record's `observed` holds, read from the line as kp-model writes it. */
 private fun observed(record: kp.model.Envelope): Set<String> =
-    (((Datum.parse(record.toLine()) as Datum.Fields).fields.getValue("observed")) as Datum.Fields).fields.keys
+    (record.plain().getValue("observed") as Map<*, *>).keys.map { it as String }.toSet()
 
 /** A record line with `v`, `seq` and `at`, read back by kp-model — which validates it against contracts.md §2.2. */
 private fun read(record: String) = parseLine("""{"v":1,"seq":7,"at":"$NOW",""" + record.removePrefix("{"))

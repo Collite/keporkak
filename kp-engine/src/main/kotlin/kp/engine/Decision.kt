@@ -31,8 +31,11 @@ class Decision private constructor(
     val rule: String?,
     /** A refusal's requirement, in the rule file's own prose (contracts.md §4: what a refusal quotes). */
     val requirement: String?,
-    /** The first requirement that failed, in the rule file's own form. */
-    val failed: String?,
+    /**
+     * The first requirement that failed, in its file form — the `refused` record's `failed` (contracts.md §2.2). Null
+     * when what failed is one the engine enforces for every kind with no requirement written: [requirement] names it.
+     */
+    val failed: Datum?,
     /** Facts the judgement read that the table did not supply: unknown, so what read them failed. */
     val unsupplied: List<FactRef>,
     val moves: List<Move>,
@@ -65,7 +68,7 @@ class Decision private constructor(
             outcome: Outcome = Outcome.NOTHING,
             rule: String? = null,
             requirement: String? = null,
-            failed: String? = null,
+            failed: Datum? = null,
             unsupplied: List<FactRef> = emptyList(),
             moves: List<Move> = emptyList(),
             counted: Map<String, Long> = emptyMap(),

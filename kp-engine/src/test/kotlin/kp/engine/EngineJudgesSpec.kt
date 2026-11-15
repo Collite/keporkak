@@ -33,7 +33,7 @@ class EngineJudgesSpec : StringSpec({
         decision.outcome shouldBe Outcome.REFUSE
         decision.rule shouldBe "T-13"
         decision.requirement shouldBe "outcome=resume · task-count diff within R4.11 · no edit outside the Found section (observed) · counter resumes ≤ 2, the 3rd needs Bora"
-        decision.failed shouldBe "{counter: resumes, lt: {cap: resumes_per_stage}}"
+        decision.failed?.flow() shouldBe "{counter: resumes, lt: {cap: resumes_per_stage}}"
     }
 
     "a kind its sender's role does not own, a kind past its max_fires in its window, a thread past its hop cap and a body past its line cap are refused though no requirement says so" {

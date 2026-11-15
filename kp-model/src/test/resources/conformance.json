@@ -4789,5 +4789,262 @@
       "rule": "T-74",
       "counted": null
     }
+  },
+  {
+    "name": "message signed",
+    "schema": "message",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "signed": true
+    }
+  },
+  {
+    "name": "message unsigned",
+    "schema": "message",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "signed": false
+    }
+  },
+  {
+    "name": "message signed not a boolean",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "signed": "bora"
+    }
+  },
+  {
+    "name": "message signed null",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "hand:coder",
+      "signed": null
+    }
+  },
+  {
+    "name": "delivered answers and deadline",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-15T12:00:01Z",
+      "event": "delivered",
+      "id": "m-panda-000002",
+      "to": [
+        "teamlead"
+      ],
+      "class": "A",
+      "answers": "m-panda-000001",
+      "deadline": "2026-11-15T13:00:00Z"
+    }
+  },
+  {
+    "name": "delivered null deadline",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-15T12:00:01Z",
+      "event": "delivered",
+      "id": "m-panda-000002",
+      "to": [
+        "teamlead"
+      ],
+      "class": "A",
+      "deadline": null
+    }
+  },
+  {
+    "name": "delivered answers not text",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-15T12:00:01Z",
+      "event": "delivered",
+      "id": "m-panda-000002",
+      "to": [
+        "teamlead"
+      ],
+      "class": "A",
+      "answers": 1
+    }
+  },
+  {
+    "name": "delivered answers null",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-15T12:00:01Z",
+      "event": "delivered",
+      "id": "m-panda-000002",
+      "to": [
+        "teamlead"
+      ],
+      "class": "A",
+      "answers": null
+    }
+  },
+  {
+    "name": "delivered deadline not a time",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-15T12:00:01Z",
+      "event": "delivered",
+      "id": "m-panda-000002",
+      "to": [
+        "teamlead"
+      ],
+      "class": "A",
+      "deadline": "tomorrow"
+    }
+  },
+  {
+    "name": "refused failed",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-15T12:00:01Z",
+      "event": "refused",
+      "id": "m-panda-000002",
+      "rule": "T-13",
+      "requirement": "counter resumes ≤ 2",
+      "failed": {
+        "counter": "resumes",
+        "lt": {
+          "cap": "resumes_per_stage"
+        }
+      }
+    }
+  },
+  {
+    "name": "refused failed not an object",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-15T12:00:01Z",
+      "event": "refused",
+      "id": "m-panda-000002",
+      "rule": "T-13",
+      "requirement": "counter resumes ≤ 2",
+      "failed": "{counter: resumes}"
+    }
+  },
+  {
+    "name": "refused failed null",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-15T12:00:01Z",
+      "event": "refused",
+      "id": "m-panda-000002",
+      "rule": "T-13",
+      "requirement": "counter resumes ≤ 2",
+      "failed": null
+    }
+  },
+  {
+    "name": "held suspends its deadline",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-15T12:00:01Z",
+      "event": "held",
+      "id": "m-panda-000002",
+      "by": "robot:DEP-1",
+      "until": "presence",
+      "deadline": null
+    }
+  },
+  {
+    "name": "held deadline",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-15T12:00:01Z",
+      "event": "held",
+      "id": "m-panda-000002",
+      "by": "robot:DEP-1",
+      "until": "presence",
+      "deadline": "2026-11-15T13:00:00Z"
+    }
+  },
+  {
+    "name": "held deadline not a time",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 2,
+      "at": "2026-11-15T12:00:01Z",
+      "event": "held",
+      "id": "m-panda-000002",
+      "by": "robot:DEP-1",
+      "until": "presence",
+      "deadline": 3
+    }
   }
 ]
