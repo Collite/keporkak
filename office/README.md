@@ -47,7 +47,7 @@ sudo -l
 `PASSWD` rule decides for `kp`, and `timestamp_timeout=0` means a ticket from an earlier `sudo` is not reused.
 
 S1.5 installs `kp` at `/usr/local/bin/kp`, owned by root and not writable by `bora`. The seats' compiled permissions
-deny `kp` and `sudo` (S2.2).
+deny `kp` and `sudo` (S2.2: the `side-channels` border; see §5).
 
 ## 3. At S1.5 — the systemd user service
 
@@ -92,3 +92,26 @@ install -m 0600 <the copied key>.pem ~/.config/keporkak/secrets/apps/kp-merger.p
 ```
 
 and the same for `kp-coder`, `kp-reviewer` and `kp-gardener`. Delete the copies on both machines afterwards.
+
+## 5. A seat's home — nothing to install, nothing to edit
+
+Each seat has a Claude config home, `~/.local/share/keporkak/seats/<seat>/` (`roots.seats`), and its Claude Code
+reads that home and nothing of yours: not `~/.claude/`, not `~/.claude.json` (S2.2's probe; contracts.md §10). The
+driver builds it at every start of the seat, from the keporkak checkout:
+
+```
+~/.local/share/keporkak/seats/<seat>/     0700
+├── CLAUDE.md          0600  renders/<role>.md, byte for byte
+├── skills/<name>/           the skills the persona lists, and no other
+├── settings.json      0600  the persona's deny rules as Claude Code's early no; the three hooks of hooks/
+└── permissions.json   0600  the same rules compiled with each border's name; the hooks and the driver answer from it
+```
+
+Those four are replaced at every start; what Claude Code keeps beside them — its sessions, its own `.claude.json`
+— stays, because loading a session needs it. **Nothing in a home is edited by hand**: a change there is gone at the
+next start. A border changes in the persona (`agents/<role>/AGENT.md`), the packaging data
+(`agents/packaging/claude.yaml`) or the profile's frontmatter (`docs/profiles/<name>.md`), through a stage. Never
+run `claude mcp add`, `claude config` or `/permissions` with a home as `CLAUDE_CONFIG_DIR`: `just office-check`
+reports a home whose `.claude.json` names an MCP server.
+
+The seats' transcripts are beside the homes, in `~/.local/share/keporkak/seats/_transcripts/<seat>.log`.
