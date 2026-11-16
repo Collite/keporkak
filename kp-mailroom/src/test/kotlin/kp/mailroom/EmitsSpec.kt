@@ -45,6 +45,21 @@ class EmitsSpec : StringSpec({
         office.stage() shouldBe "grant_pending"
     }
 
+    "the fourth FIX FIRST makes the mailroom send ruling-request to Bora, by T-29, with the default and the citation T-29 declares (S1.8, D-68)" {
+        val office = Office(seed = "re_review", counters = """{"fix_rounds": 3}""")
+        office.facts.set("pr.head", "head-4")
+        office.facts.set("pr.review_on", "changes_requested")
+
+        val fixFirst = office.send("reviewer-1", """{"kind": "re-verdict", "stage": "$STAGE", "subject": "still blocked",
+            "args": {"verdict": "FIX FIRST", "sha": "head-4", "blockers": [{"id": "B4"}], "new_findings": [], "follow_ups": [], "reviewed": []}}""")
+
+        val ruling = office.readBack().sent("ruling-request").single()
+        listOf(fixFirst.transition, ruling.by, ruling.to.value, ruling.args?.toString()) shouldBe
+            listOf("T-29", "effect:T-29", "bora", """{"default":"recut","citation":"T-29"}""")
+        office.readBack().records<Delivered>().single { it.id == ruling.id.value }.to shouldBe listOf("bora")
+        office.stage() shouldBe "ruling_pending"
+    }
+
     "an assignment-proposal that expires with its proposals spent goes back to planned, and T-07's nudge reaches the principal (S1.8)" {
         val office = Office(seed = "planned", counters = """{"proposals": 1}""")
         office.send("teamlead", """{"kind": "assignment-proposal", "stage": "$STAGE", "subject": "propose", "args": {"role": "coder", "level": "senior", "seat": "coder-1"}}""")
