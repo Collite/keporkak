@@ -105,8 +105,8 @@ class Row(val word: String, val profile: String, val worktree: String, val tool:
     override fun toString() = "$word: $tool $input → $expected"
 }
 
-object PermissionTable {
-    fun rows(): List<Row> = PermissionTable::class.java.getResource("permission-table.tsv")!!.readText().lines()
+object TableRows {
+    fun rows(): List<Row> = TableRows::class.java.getResource("permission-table.tsv")!!.readText().lines()
         .filter { it.isNotBlank() && !it.startsWith("#") }
         .map { line -> line.split('\t').let { Row(it[0], it[1], it[2], it[3], Json.parseToJsonElement(it[4]), it[5]) } }
 }

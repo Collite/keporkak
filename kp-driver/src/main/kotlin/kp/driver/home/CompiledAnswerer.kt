@@ -1,10 +1,18 @@
 package kp.driver.home
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kp.driver.Answer
 import kp.driver.Answerer
 import kp.driver.Explained
 import kp.driver.PermissionRequest
 import java.nio.file.Path
+import kotlin.io.path.readText
 
 /**
  * The answerer of S2.1's driver, read from the seat's `permissions.json` (contracts.md §10, T4): a deny rule denies,
@@ -13,5 +21,70 @@ import java.nio.file.Path
  */
 class CompiledAnswerer(private val seatsRoot: Path) : Answerer {
     override suspend fun answer(request: PermissionRequest): Answer = explained(request).answer
-    override suspend fun explained(request: PermissionRequest): Explained = TODO("T4")
+
+    override suspend fun explained(request: PermissionRequest): Explained {
+        val file = seatsRoot.resolve(request.seat.value).resolve("permissions.json")
+        val table = runCatching { Json.parseToJsonElement(file.readText()).jsonObject }.getOrNull()
+            ?: return Explained(Answer.DENY, "the seat's permissions.json cannot be read")
+        val name = request.name ?: return Explained(Answer.DENY, "the request does not name its tool")
+        return PermissionTable.of(table)?.decide(name, request.input) ?: Explained(Answer.DENY, "the seat's permissions.json is not in its form")
+    }
+}
+
+/**
+ * `permissions.json`, as the `deny` hook reads it too (hooks/deny): the same rules, matched the same way. A rule
+ * denies a call when its `tool` expression matches the tool's whole name, its `command` expression is found in the
+ * input's `command`, and one of the call's paths matches `path` and not `except`. A call's paths are its input's
+ * `file_path`, `path` and `notebook_path`, resolved against the working directory, `.` and `..` removed.
+ */
+internal class PermissionTable private constructor(private val workingDirectory: String, private val inside: Answer, private val outside: Answer, private val rules: List<Rule>) {
+    private class Rule(val border: String, val tool: Regex, val command: Regex?, val path: Regex?, val except: Regex?)
+
+    fun decide(tool: String, input: JsonElement?): Explained {
+        val fields = input as? JsonObject ?: return Explained(Answer.DENY, "its paths cannot be read: the input is not an object")
+        val given = PATH_FIELDS.mapNotNull { fields[it] }
+        if (given.any { (it as? JsonPrimitive)?.isString != true || it.content.isEmpty() }) return Explained(Answer.DENY, "its paths cannot be read")
+        val paths = given.map { normalize((it as JsonPrimitive).content) }
+        val command = (fields["command"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        rules.firstOrNull { rule ->
+            rule.tool.matches(tool) &&
+                (rule.command == null || (command != null && rule.command.containsMatchIn(command))) &&
+                (rule.path == null || paths.any { rule.path.containsMatchIn(it) && rule.except?.containsMatchIn(it) != true })
+        }?.let { return Explained(Answer.DENY, "border ${it.border}") }
+        return if (paths.all { it == workingDirectory || it.startsWith("$workingDirectory/") }) Explained(inside, "inside the working directory")
+        else Explained(outside, "outside the working directory")
+    }
+
+    /** [path] made absolute against the working directory, with `.`, `..` and empty names removed — as hooks/deny does. */
+    private fun normalize(path: String): String {
+        val names = ArrayDeque<String>()
+        for (name in (if (path.startsWith("/")) path else "$workingDirectory/$path").split('/')) {
+            when (name) {
+                "", "." -> {}
+                ".." -> names.removeLastOrNull()
+                else -> names.addLast(name)
+            }
+        }
+        return "/" + names.joinToString("/")
+    }
+
+    companion object {
+        val PATH_FIELDS = listOf("file_path", "path", "notebook_path")
+
+        fun of(table: JsonObject): PermissionTable? = runCatching {
+            val defaults = table.getValue("defaults").jsonObject
+            fun answer(key: String) = when ((defaults.getValue(key) as JsonPrimitive).content) {
+                "allow" -> Answer.ALLOW
+                "deny" -> Answer.DENY
+                else -> error("$key is neither allow nor deny")
+            }
+            val rules = table.getValue("rules").jsonArray.map { item ->
+                val rule = item.jsonObject
+                fun regex(key: String) = (rule[key] as? JsonPrimitive)?.contentOrNull?.let(::Regex)
+                Rule((rule.getValue("border") as JsonPrimitive).content, regex("tool")!!, regex("command"), regex("path"), regex("except"))
+            }
+            val directory = (table.getValue("working_directory") as JsonPrimitive).content.trimEnd('/').ifEmpty { "/" }
+            PermissionTable(directory, answer("inside_working_directory"), answer("outside_working_directory"), rules)
+        }.getOrNull()
+    }
 }

@@ -261,6 +261,10 @@ private val NOT_A_LIMIT = mapOf(
         "the oldest open tool call, whose age is reported",
     "Observations.kt: if (size <= 0) return Outcome.Failed(\"the agent reported a context size of \$size\")" to
         "a context size the fraction cannot be computed from — an input",
+    "ConfigHomes.kt: fun <T> read(path: String, missing: String, parse: (String) -> Outcome<T>): T? =" to
+        "a generic helper's type parameter and function type (S2.2) — no comparison",
+    "Packaging.kt: return problems.distinct().sorted()" to "the packaging check's problem lines, sorted to be reported (S2.2)",
+    "Packaging.kt: while (i < glob.length) {" to "a glob's characters, read one by one into an expression (S2.2)",
 )
 
 /**

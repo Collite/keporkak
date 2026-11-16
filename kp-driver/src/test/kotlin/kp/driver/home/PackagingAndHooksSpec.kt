@@ -49,7 +49,7 @@ class PackagingAndHooksSpec : StringSpec({
 
     "a call a deny: word covers is denied with the border's name — by the hook from permissions.json, and by the answerer when it arrives as a permission request — and the two agree on every row of one table" {
         Sources().use { sources ->
-            val table = PermissionTable.rows()
+            val table = TableRows.rows()
             table.map { it.word }.distinct() shouldContainExactlyInAnyOrder listOf("side-channels", "push-master", "pin-files", "outside-worktree",
                 "live-target", "browser", "write-code", "write-project", "write-project-beyond-own-list", "write-project-beyond-own-report", "demo-cluster")
 
@@ -64,13 +64,15 @@ class PackagingAndHooksSpec : StringSpec({
 
     "a call no rule covers is answered by the default: allowed inside the working directory, denied outside" {
         Sources().use { sources ->
-            ConfigHomes(sources.root, sources.seats).build(SeatId("reviewer-1"), "reviewer", "keporkak", sources.places, allow).ok()
+            // The principal has no stage: its working directory is the project checkout, and no rule of its covers a write.
+            val noStage = sources.places.copy(worktree = sources.places.project)
+            ConfigHomes(sources.root, sources.seats).build(SeatId("principal-1"), "principal", "keporkak", noStage, allow).ok()
             val answerer = CompiledAnswerer(sources.seats)
-            fun write(path: String) = PermissionRequest(SeatId("reviewer-1"), "t1", "Write", "edit", Json.parseToJsonElement("""{"file_path":"$path","content":"x"}"""),
+            fun write(path: String) = PermissionRequest(SeatId("principal-1"), "t1", "Write", "edit", Json.parseToJsonElement("""{"file_path":"$path","content":"x"}"""),
                 listOf(OfferedOption("allow-once", "Yes", "allow_once"), OfferedOption("reject", "No", "reject_once")), name = "Write")
 
-            answerer.explained(write("${sources.places.worktree}/review-notes.md")) shouldBe Explained(Answer.ALLOW, "inside the working directory")
-            answerer.explained(write("/tmp/elsewhere/review-notes.md")) shouldBe Explained(Answer.DENY, "outside the working directory")
+            answerer.explained(write("${sources.places.project}/notes.md")) shouldBe Explained(Answer.ALLOW, "inside the working directory")
+            answerer.explained(write("/tmp/elsewhere/notes.md")) shouldBe Explained(Answer.DENY, "outside the working directory")
         }
     }
 
