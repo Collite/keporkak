@@ -67,13 +67,14 @@ fun fixtureFiles(given: YamlMap): Map<String, String> {
     val secondKey = given.get<YamlNode>("second_key")?.let { """, "second_key": ${jsonOf(it)}""" }.orEmpty()
     val profile = given.get<YamlNode>("profile")?.let(::jsonOf) ?: "\"supervised\""
     val profiles = given.get<YamlNode>("autonomy_profiles")?.let(::jsonOf) ?: """{"supervised": {}}"""
+    val declared = given.get<YamlNode>("mailroom_declared_effects")?.let(::jsonOf) ?: "[]"
     val vocabulary = part("vocabulary").let { it.substring(0, it.lastIndexOf('}')) + """, "version": 1}""" }
     return filesOnMaster().filterKeys { it.startsWith("pool/") || it.startsWith("agents/") } + mapOf(
         "rules/stage-lifecycle.yaml" to """{"version": 1, "states": ${part("states")}, "active_states": ["planned"],
             "counters": ${part("counters")}, "transitions": ${jsonOf(given.get<YamlList>("transitions")!!)}}""",
         "rules/message-kinds.yaml" to """{"version": 1, "kinds": ${part("kinds")}}""",
         "rules/engagement.yaml" to """{"version": 1, "roles": {"coder": {}, "teamlead": {}}, "graduation": {"never": []},
-            "mailroom_declared_effects": [], "caps": ${part("caps")}, "profile": $profile, "autonomy_profiles": $profiles$secondKey}""",
+            "mailroom_declared_effects": $declared, "caps": ${part("caps")}, "profile": $profile, "autonomy_profiles": $profiles$secondKey}""",
         "rules/vocabulary.yaml" to vocabulary,
     ) + robots.mapIndexed { index, robot -> "robots/fixture-$index.yaml" to jsonOf(robot) }
 }

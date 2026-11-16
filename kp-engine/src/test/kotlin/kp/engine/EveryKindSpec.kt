@@ -60,6 +60,16 @@ class EveryKindSpec : StringSpec({
         supervised().judge(threeAways, Arrival(message("away", from = "bora", to = "mailroom", signed = true)), table("now" to NOW)).refusal() shouldBe
             ("away" to "caps.max_fires_default: 3, window: stage")
     }
+    "max_fires: null on a kind only the mailroom sends counts nothing of its own: a stage's fourth nudge is delivered (S1.8, Amendment 16)" {
+        val threeNudges = fold(log(*sent("m-panda-000060", "review-request", from = "coder-1"),
+            *sent("m-panda-000061", "nudge", from = "mailroom", re = "m-panda-000060", thread = "m-panda-000060", args = """{"rule": "T-74", "failed_guard": "x"}"""),
+            *sent("m-panda-000062", "nudge", from = "mailroom", re = "m-panda-000060", thread = "m-panda-000060", args = """{"rule": "T-74", "failed_guard": "x"}"""),
+            *sent("m-panda-000063", "nudge", from = "mailroom", re = "m-panda-000060", thread = "m-panda-000060", args = """{"rule": "T-74", "failed_guard": "x"}""")))
+        val fourth = Arrival(message("nudge", from = "mailroom", re = "m-panda-000060", thread = "m-panda-000060", by = "expiry:review-request",
+            args = """{"rule": "T-74", "failed_guard": "x"}"""))
+
+        supervised().judge(threeNudges, fourth, table("now" to NOW)).outcome shouldBe Outcome.DELIVER
+    }
     "a delivery sets the kind's deadline, counted from now; a kind with none sets none" {
         val building = fold(log(move("stage", STAGE, "assigned", "building")))
         val review = message("review-request", from = "coder-1", args = """{"attest": ["done_lines_hold"]}""")

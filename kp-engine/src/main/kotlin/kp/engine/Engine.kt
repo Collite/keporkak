@@ -47,6 +47,8 @@ private const val BODY_LINES = "body_lines"
 private const val HOPS = "hops_per_thread"
 private const val MAX_FIRES_DEFAULT = "max_fires_default"
 
+private const val MAILROOM = "mailroom"
+
 /** The `by` of an emit the rules declare: a transition's effect, a kind's expiry (contracts.md §2.1). */
 private val DECLARED = listOf("effect:", "expiry:")
 
@@ -91,7 +93,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
     /**
      * What the engine enforces for every kind with no requirement written (contracts.md §4.1, §2.1): the sender's
      * role owns the kind, `args` against the declaration, the body's line cap, the thread's hop cap, `max_fires`
-     * within the window — `null` is `caps.max_fires_default` — and the addressee, when a seat, a robot or Bora names
+     * within the window — `null` is `caps.max_fires_default`, and no count on a kind only the mailroom sends — and the addressee, when a seat, a robot or Bora names
      * one: an emit the rules declare is addressed by the rule that declares it. A refusal quotes the rule file's field.
      */
     private fun everyKind(kind: Kind, message: View): Pair<String, Requirement?>? {
@@ -101,7 +103,9 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         if (bodyLines != null && lines(message.body).toBigDecimal() > bodyLines) return "caps.$BODY_LINES: ${bodyLines.toPlainString()}" to null
         val hops = cap(HOPS)
         if (hops != null && state.hops(message.thread).toBigDecimal() >= hops) return "caps.$HOPS: ${hops.toPlainString()}" to null
-        val maximum = kind.maxFires?.toBigDecimal() ?: cap(MAX_FIRES_DEFAULT)
+        // `max_fires: null` is `caps.max_fires_default`, but on a kind only the mailroom sends: each of its emits is bounded
+        // by the rule that declares it (contracts.md §4.2, Amendment 16).
+        val maximum = kind.maxFires?.toBigDecimal() ?: cap(MAX_FIRES_DEFAULT).takeUnless { kind.from == listOf(MAILROOM) }
         if (maximum != null && fires(kind, message).toBigDecimal() >= maximum) {
             val written = if (kind.maxFires != null) "max_fires: ${kind.maxFires}" else "caps.$MAX_FIRES_DEFAULT: ${maximum.toPlainString()}"
             return "$written, window: ${kind.window.key}" to null

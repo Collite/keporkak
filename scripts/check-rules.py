@@ -88,7 +88,7 @@ if FIXTURE:
         "class": {"default": "A"}, "window": "stage", "max_fires": None, "deadline": None, "expiry": [], "require": [],
     }})
     E = {"roles": {"coder": {}, "teamlead": {}}, "graduation": {"never": []},
-         "mailroom_declared_effects": [], "caps": given.get("caps", {}),
+         "mailroom_declared_effects": given.get("mailroom_declared_effects", []), "caps": given.get("caps", {}),
          "profile": given.get("profile", "supervised"), "autonomy_profiles": given.get("autonomy_profiles", {"supervised": {}})}
     if "second_key" in given:
         E["second_key"] = given["second_key"]
@@ -150,6 +150,34 @@ for name, requirements in BLOCKS.items():
 def check_destination(to, owner):
     if isinstance(to, str) and to not in roles | PARTIES:
         fail(f"{owner}: unknown destination '{to}'")
+
+# A declared emit carries the args its kind requires (contracts.md §4.2, Amendment 16): every arg it gives is declared,
+# every required one is given, and a value written as a literal is of the declared type and in the declared enum.
+# A value the mailroom resolves at run time ({arg: …}, {re: …}, {fact: …}) is the engine's to check.
+ARG_TYPES = {"string": lambda v: isinstance(v, str), "boolean": lambda v: isinstance(v, bool),
+             "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
+             "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+             "array": lambda v: False, "object": lambda v: False}
+def literal_text(value):
+    return ("true" if value else "false") if isinstance(value, bool) else str(value)
+def check_emit_args(effect, owner):
+    if not isinstance(effect, dict) or "emit" not in effect or not isinstance(K.get(effect["emit"]), dict):
+        return
+    kind, declared = effect["emit"], K[effect["emit"]].get("args") or {}
+    given = effect.get("args") or {}
+    for name in given:
+        if name not in declared: fail(f"{owner}: emit '{kind}' gives undeclared arg '{name}'")
+    for name, spec in declared.items():
+        if isinstance(spec, dict) and spec.get("required") and name not in given:
+            fail(f"{owner}: emit '{kind}' lacks required arg '{name}'")
+    for name, value in given.items():
+        spec = declared.get(name)
+        if not isinstance(spec, dict) or not isinstance(value, (str, bool, int, float)):
+            continue
+        if "enum" in spec and value not in spec["enum"]:
+            fail(f"{owner}: emit '{kind}' arg '{name}' is not one of {' | '.join(literal_text(item) for item in spec['enum'])}")
+        elif "enum" not in spec and spec.get("type") in ARG_TYPES and not ARG_TYPES[spec["type"]](value):
+            fail(f"{owner}: emit '{kind}' arg '{name}' is not {spec['type']}")
 
 # All executable names are resolved against the closed vocabulary and rule owners (issue #4).
 # `{robot: …}` resolves against one robot's thresholds: the robot's own, or — outside a robot — those of the robot
@@ -260,6 +288,7 @@ for machine, transition in all_transitions:
             fail(f"{owner}: undeclared mailroom emit '{effect['emit']}'")
         if isinstance(effect, dict) and "emit" in effect:
             check_destination(effect.get("to"), owner)
+            check_emit_args(effect, owner)
         if "if" in effect:
             check_requirements([effect["if"]], owner, thresholds=thresholds)
     for requirement in transition["require"]:
@@ -393,6 +422,7 @@ for name, kind in K.items():
         check_references(effect,name,thresholds=thresholds)
         if isinstance(effect, dict) and "emit" in effect:
             check_destination(effect.get("to"), name)
+            check_emit_args(effect, name)
         if not isinstance(effect,dict) or not set(effect)&{"emit","report","transition","do","wait"}:
             fail(f"{name}: invalid expiry effect")
         # The wait goes on only under a cap (contracts.md §4.2): `{wait: again}`'s if is a counter compared with {cap: …} —

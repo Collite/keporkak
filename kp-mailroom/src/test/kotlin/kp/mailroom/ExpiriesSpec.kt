@@ -82,6 +82,20 @@ class ExpiriesSpec : StringSpec({
         office.readBack().sent("nudge").map { "${it.by} ${it.to.value} ${it.re?.value}" } shouldBe listOf("expiry:session-request pool ${request.id}")
     }
 
+    "a stage's fourth nudge is delivered: a kind only the mailroom sends has no count of its own (S1.8, Amendment 16)" {
+        val office = Office(seed = "building")
+        office.play("review-request", "review-bind", "verdict", "repair-done")
+
+        office.clock.advance(8.hours)
+        office.mailroom.tick()
+        office.clock.advance(8.hours)
+        office.mailroom.tick()
+
+        val nudges = office.readBack().sent("nudge").map { it.id.value }
+        nudges.size shouldBe 4
+        office.readBack().records<Delivered>().map { it.id }.filter { it in nudges } shouldBe nudges
+    }
+
     "an expired record that ends the wait writes its deadline as null" {
         val office = Office(seed = "building")
         val stop = office.send("coder-1", STOP)
