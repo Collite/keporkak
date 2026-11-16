@@ -5,12 +5,80 @@ A persona never restates its borders or its message kinds; this script generates
 rules/engagement.yaml and rules/message-kinds.yaml, so they cannot drift.
 Checks (FAIL exits 1; WARN does not): every seat role has a persona and vice versa · frontmatter complete · skills exist
 · every mode has a section · every message kind the persona text names is one the role may send or receive ·
-files named in reads_at_start exist (WARN: some are created in planning).
+files named in reads_at_start exist (WARN: some are created in planning) · the packaging data maps every `deny:` word
+and MCP server a persona uses, and something fills every placeholder it names (contracts.md §10; kp-driver's reader
+reports the same, in the same words, on the shared fixture agents/packaging/fixture/).
 Usage: python3 scripts/render-agents.py
+       python3 scripts/render-agents.py --packaging-fixture DIR   # only the packaging check, on DIR's claude.yaml,
+                                                                  # personas/*.md and profiles/*.md; prints each problem
 """
 import re, sys, yaml, pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+# The packaging check (S2.2 T2). The session's placeholders the driver fills from the caller's places; every other
+# placeholder must be a key of each profile's frontmatter.
+SESSION_PLACEHOLDERS = ("worktree", "scratch", "project", "own_file", "code_repos", "mcp_listen")
+HOOKS = ("inbox-first", "deny", "stop-gate")
+PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
+FRONTMATTER = re.compile(r"\A---\n(.*?)\n---", re.S)
+
+def frontmatter(text):
+    m = FRONTMATTER.match(text)
+    if not m: return None
+    try: return yaml.safe_load(m.group(1))
+    except yaml.YAMLError: return None
+
+def packaging_read(text):
+    """The packaging data's words, servers and their placeholders, or the reason it cannot be read — as kp-driver reads it."""
+    try: data = yaml.safe_load(text)
+    except yaml.YAMLError as e: return None, f"the packaging data is not readable YAML: {e}"
+    if not isinstance(data, dict): return None, "the packaging data is not a mapping"
+    problems, owners = [], []
+    for name, word in (data.get("deny") or {}).items():
+        rules = (word or {}).get("rules") or []
+        texts = []
+        for rule in rules:
+            rule = rule or {}
+            if not rule.get("tools"): problems.append(f"deny word '{name}': a rule names no tool")
+            texts += ([str(rule["command"])] if rule.get("command") is not None else []) + [str(t) for key in ("path", "except", "early") for t in (rule.get(key) or [])]
+        if not rules: problems.append(f"deny word '{name}' has no rule")
+        owners += [(f"deny word '{name}'", p) for p in dict.fromkeys(p for t in texts for p in PLACEHOLDER.findall(t))]
+    servers = data.get("mcp") or {}
+    for name, server in servers.items():
+        url = (server or {}).get("url")
+        if url is None: problems.append(f"MCP server '{name}' has no url")
+        owners += [(f"MCP server '{name}'", p) for p in dict.fromkeys(PLACEHOLDER.findall(str(url or "")))]
+    hooks = data.get("hooks") or {}
+    for name, hook in hooks.items():
+        if (hook or {}).get("event") is None: problems.append(f"hook '{name}' names no event")
+    problems += [f"hook '{h}' is not in the packaging data" for h in HOOKS if h not in hooks]
+    if problems: return None, "; ".join(problems)
+    return {"words": set(data.get("deny") or {}), "servers": set(servers), "placeholders": owners}, None
+
+def packaging_problems(personas, data, profiles):
+    """Every problem of the packaging data with these personas ({role: text}) and profiles ({name: text}), sorted."""
+    packaging, reason = packaging_read(data)
+    if packaging is None: return [f"packaging: {reason}"]
+    problems = []
+    for role, text in personas.items():
+        fm = frontmatter(text)
+        if not isinstance(fm, dict): problems.append(f"persona {role}: no frontmatter"); continue
+        problems += [f"persona {role}: deny word '{w}' is not mapped by the packaging data" for w in fm.get("deny") or [] if w not in packaging["words"]]
+        problems += [f"persona {role}: MCP server '{s}' is not mapped by the packaging data" for s in ((fm.get("tools") or {}).get("mcp") or []) if s not in packaging["servers"]]
+    for name, text in profiles.items():
+        fm = frontmatter(text)
+        if not isinstance(fm, dict): problems.append(f"profile {name}: no frontmatter"); continue
+        problems += [f"packaging: placeholder '{{{p}}}' of {owner} is filled by nothing in profile {name}"
+                     for owner, p in packaging["placeholders"] if p not in SESSION_PLACEHOLDERS and p not in fm]
+    return sorted(set(problems))
+
+if len(sys.argv) == 3 and sys.argv[1] == "--packaging-fixture":
+    fixture = pathlib.Path(sys.argv[2])
+    found = packaging_problems({p.stem: p.read_text() for p in sorted((fixture / "personas").glob("*.md"))}, (fixture / "claude.yaml").read_text(),
+                               {p.stem: p.read_text() for p in sorted((fixture / "profiles").glob("*.md"))})
+    print("\n".join(found))
+    sys.exit(1 if found else 0)
 E = yaml.safe_load((ROOT / "rules/engagement.yaml").read_text())
 K = yaml.safe_load((ROOT / "rules/message-kinds.yaml").read_text())["kinds"]
 NON_SEATS = {"bora", "daemon", "mailroom"}
@@ -132,6 +200,11 @@ for r in sorted(have & seat_roles):
     lines += ["", "## Messages that reach you", ", ".join(f"`{n}`" for n in R) or "-", ""]
     (out / f"{r}.md").write_text("\n".join(lines))
     print(f"ok   {r} [{fm.get('engine')}]: {len(fm['modes'])} modes · sends {len(S)} kinds · receives {len(R)} · level {fm['level']}")
+
+# The packaging data maps what every persona uses, and every profile fills its placeholders (contracts.md §10).
+personas = {p.parent.name: p.read_text() for p in sorted((ROOT / "agents").glob("*/AGENT.md"))}
+profiles = {p.stem: p.read_text() for p in sorted((ROOT / "docs/profiles").glob("*.md"))}
+for problem in packaging_problems(personas, (ROOT / "agents/packaging/claude.yaml").read_text(), profiles): fail(problem)
 
 print("RESULT:", "FAIL" if fails else "PASS", f"({len(fails)} failures, {len(warns)} warnings)")
 sys.exit(1 if fails else 0)

@@ -1,3 +1,13 @@
+---
+# The profile's machine part (contracts.md §10): what agents/packaging/claude.yaml's placeholders need. The prose below
+# says where each value comes from; where they disagree, fix this frontmatter.
+default_branch: master
+# Relative to a repo's root; globs as the packaging data reads them.
+pin_files: [gradle/libs.versions.toml, toolchain.lock]
+cluster_tools: [kubectl, kustomize, helm]
+# hartland is the demo cluster; its context is named only for a demo release Bora calls.
+demo_context: hartland
+---
 # Profile — the Tatrman ecosystem
 
 > The bindings of the universal rulebook for the Tatrman repos. Source: `collite-gh/CLAUDE.md`, `collite-gh/AGENTS.md`,

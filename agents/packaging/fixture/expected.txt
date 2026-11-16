@@ -1,0 +1,5 @@
+packaging: placeholder '{default_branch}' of deny word 'alpha' is filled by nothing in profile bare
+packaging: placeholder '{nosuch}' of deny word 'beta' is filled by nothing in profile bare
+packaging: placeholder '{nosuch}' of deny word 'beta' is filled by nothing in profile plain
+persona scribe: MCP server 'slack' is not mapped by the packaging data
+persona scribe: deny word 'teleport' is not mapped by the packaging data

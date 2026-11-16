@@ -1,0 +1,115 @@
+# The Claude packaging data (contracts.md §10): data, not code. It maps each neutral `deny:` word of a persona to the
+# rules a Claude seat's config home carries, names the MCP servers a persona may list, by address, and says which
+# Claude Code event runs each of the three hooks (§11). kp-driver compiles it at every start of a seat (S2.2);
+# scripts/render-agents.py reports a word or a server a persona uses that it does not map, and a placeholder nothing
+# fills. Never edited to fit one seat: a seat's home is built from this file, never edited by hand.
+#
+# Placeholders, written {name}:
+#   the session's, which the caller gives —
+#     worktree      the session's working directory: the stage's worktree, or the project checkout for a seat with no stage
+#     scratch       the session's scratch folder
+#     project       the project checkout
+#     own_file      the one project file a `…-beyond-own-list` or `…-beyond-own-report` seat may write
+#     code_repos    the office's code checkouts and its worktrees' root (pool/offices.yaml)
+#     mcp_listen    the address the daemon's MCP server listens on (pool/offices.yaml `listen.mcp`)
+#   the profile's, from the frontmatter of docs/profiles/<name>.md — default_branch, pin_files, cluster_tools,
+#     demo_context. A list fills one pattern per value; an empty list or null leaves the rule out.
+#
+# A rule denies a call when its tool's name is one of `tools` (a name ending `__*` is every tool of that MCP server)
+# and, if given:
+#   command  — a regular expression found in the call's `command` (placeholders are filled as literal text). A command
+#              is matched where one starts — at the beginning, or after `;`, `&`, `|`, `(` or a backtick — so a word
+#              inside an argument does not trip it; a command hidden in a script or `sh -c` is not seen;
+#   path     — globs one of the call's paths matches (`file_path`, `path`, `notebook_path`, absolute or relative to the
+#              working directory; `**` is any part of a path, `*` any part of one name), and `except` globs it does not.
+# `early` is the same rule in Claude Code's own syntax, for settings.json — the early no. A rule Claude Code cannot say
+# (a path outside a folder) has no `early`; the deny hook and the answerer still hold it (permissions.json).
+version: 1
+
+deny:
+  side-channels:
+    denies: vendor cross-session messaging and sub-session tools; tmux, ssh, claude, kp, sudo
+    rules:
+      - tools: [Agent, Task, SendMessage, ListAgents, Workflow, TeamCreate, TeamDelete, RemoteTrigger, SendToProject, SendToProjectContext, EnterWorktree, ExitWorktree]
+        early: [Agent, Task, SendMessage, ListAgents, Workflow, TeamCreate, TeamDelete, RemoteTrigger, SendToProject, SendToProjectContext, EnterWorktree, ExitWorktree]
+      - tools: [Bash]
+        command: '(^|[;&|(`])\s*(tmux|ssh|claude|kp|sudo)(\s|$|[;&|`])'
+        early: ["Bash(tmux *)", "Bash(ssh *)", "Bash(claude *)", "Bash(kp *)", "Bash(sudo *)"]
+  push-master:
+    denies: a push to the default branch (the ruleset is the fence; this is the early no)
+    rules:
+      - tools: [Bash]
+        command: '(^|[;&|(`])\s*git\s([^;&|]*\s)?push\b[^;&|]*[\s:/]{default_branch}(\s|$|[;&|`])'
+        early: ["Bash(git push * {default_branch})", "Bash(git push * HEAD:{default_branch})"]
+  pin-files:
+    denies: writes to the profile's pin files
+    rules:
+      - tools: [Write, Edit, MultiEdit, NotebookEdit]
+        path: ["{worktree}/{pin_files}"]
+        early: ["Edit(/{worktree}/{pin_files})"]
+  outside-worktree:
+    denies: writes outside the session's working directory and scratch
+    rules:
+      - tools: [Write, Edit, MultiEdit, NotebookEdit]
+        path: ["/**"]
+        except: ["{worktree}/**", "{scratch}/**"]
+  live-target:
+    denies: the profile's cluster tools and kp-qa, kp-cred
+    rules:
+      - tools: [Bash]
+        command: '(^|[;&|(`])\s*({cluster_tools})(\s|$|[;&|`])'
+        early: ["Bash({cluster_tools} *)"]
+      - tools: [Bash]
+        command: '(^|[;&|(`])\s*(kp-qa|kp-cred)(\s|$|[;&|`])'
+        early: ["Bash(kp-qa *)", "Bash(kp-cred *)"]
+  browser:
+    denies: Playwright outside a test suite, opening URLs, computer use
+    rules:
+      - tools: ["mcp__playwright__*", "mcp__computer-use__*", "mcp__claude-in-chrome__*"]
+        early: [mcp__playwright, mcp__computer-use, mcp__claude-in-chrome]
+      - tools: [Bash]
+        command: '(^|[;&|(`])\s*(npx\s+playwright|playwright|xdg-open|sensible-browser|x-www-browser|firefox|chromium|chromium-browser|google-chrome)(\s|$|[;&|`])'
+        early: ["Bash(npx playwright *)", "Bash(playwright *)", "Bash(xdg-open *)", "Bash(sensible-browser *)", "Bash(x-www-browser *)", "Bash(firefox *)", "Bash(chromium *)", "Bash(chromium-browser *)", "Bash(google-chrome *)"]
+  write-code:
+    denies: writes in any code repo
+    rules:
+      - tools: [Write, Edit, MultiEdit, NotebookEdit]
+        path: ["{code_repos}/**"]
+        early: ["Edit(/{code_repos}/**)"]
+  write-project:
+    denies: writes in the project repo
+    rules:
+      - tools: [Write, Edit, MultiEdit, NotebookEdit]
+        path: ["{project}/**"]
+        early: ["Edit(/{project}/**)"]
+  write-project-beyond-own-list:
+    denies: writes in the project repo, but to the seat's own stage list
+    rules:
+      - tools: [Write, Edit, MultiEdit, NotebookEdit]
+        path: ["{project}/**"]
+        except: ["{own_file}"]
+  write-project-beyond-own-report:
+    denies: writes in the project repo, but to the seat's own report
+    rules:
+      - tools: [Write, Edit, MultiEdit, NotebookEdit]
+        path: ["{project}/**"]
+        except: ["{own_file}"]
+  demo-cluster:
+    denies: any command naming the demo cluster's context
+    rules:
+      - tools: [Bash]
+        command: '(--context|--kube-context|use-context)[=\s]+{demo_context}(\s|$|[;&|`])'
+        early: ["Bash(* --context {demo_context}*)", "Bash(* --context={demo_context}*)", "Bash(* --kube-context {demo_context}*)", "Bash(kubectl config use-context {demo_context}*)"]
+
+# The MCP servers a persona may name under tools.mcp, by address. The messaging server gets the session's token as
+# its bearer (contracts.md §5).
+mcp:
+  messaging: {url: "http://{mcp_listen}/mcp", session_token: true}
+  context7: {url: "https://mcp.context7.com/mcp"}
+
+# The three hooks (contracts.md §11): the Claude Code event each runs on, and its limit in seconds. stop-gate gives
+# up on the daemon after `limit`; Claude Code ends a hook after `timeout`.
+hooks:
+  inbox-first: {event: SessionStart, timeout: 10}
+  deny: {event: PreToolUse, matcher: "*", timeout: 10}
+  stop-gate: {event: Stop, timeout: 30, limit: 10}

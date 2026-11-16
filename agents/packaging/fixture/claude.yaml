@@ -1,0 +1,21 @@
+# A packaging data for the fixture: one word whose placeholder a profile does not fill, one whose placeholder nothing
+# fills, one MCP server.
+version: 1
+deny:
+  alpha:
+    denies: a push to the default branch
+    rules:
+      - tools: [Bash]
+        command: 'git push origin {default_branch}'
+        early: ["Bash(git push origin {default_branch})"]
+  beta:
+    denies: writes under a folder nobody names
+    rules:
+      - tools: [Write]
+        path: ["{nosuch}/**"]
+mcp:
+  messaging: {url: "http://{mcp_listen}/mcp", session_token: true}
+hooks:
+  inbox-first: {event: SessionStart, timeout: 10}
+  deny: {event: PreToolUse, matcher: "*", timeout: 10}
+  stop-gate: {event: Stop, timeout: 30, limit: 10}
