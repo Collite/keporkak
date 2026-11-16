@@ -196,7 +196,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         val kind = context.kind?.let(rules.kinds::get)
         val fired = fireMachines(kind)
         val expiry = if (context.event == Event.EXPIRY && kind != null) effects(kind.expiry.filter { it !is Effect.Transition && it !is Effect.Wait }, kind.name) else emptyList()
-        val deadline = kind?.takeIf { context.event == Event.EXPIRY }?.let(::waitAgain)
+        val deadline = kind?.takeIf { context.event == Event.EXPIRY }?.let { waitAgain(it, fired.moves) }
         val effects = fired.effects + expiry
         val reported = expiry.filterIsInstance<Requested.Report>().firstOrNull()
         return Decision.create(
@@ -208,12 +208,27 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
     }
 
     /**
-     * `{wait: again}` (contracts.md §4.2): when one of the kind's holds, read after the expiry's transitions moved their
-     * counters, the wait starts again for the kind's deadline, counted from now. Otherwise — or with no `now` — it is over.
+     * `{wait: again}` (contracts.md §4.2, Amendment 13): when one of the kind's holds, read after the expiry's
+     * transitions moved their counters, the wait starts again for the kind's deadline, counted from now. A wait holds
+     * only when this expiry fired a transition that moved a counter its `if` reads: an expiry that counts nothing —
+     * the stage in no state the transition starts from — ends the wait, as does one with no `now`.
      */
-    private fun waitAgain(kind: Kind): String? {
-        if (kind.expiry.filterIsInstance<Effect.Wait>().none { it.condition?.let(evaluation::holds) ?: true }) return null
+    private fun waitAgain(kind: Kind, moves: List<Move>): String? {
+        val counted = moves.flatMap { it.counted.keys }.toSet()
+        val again = kind.expiry.filterIsInstance<Effect.Wait>().any { wait ->
+            val condition = wait.condition ?: return@any false
+            countersRead(condition).any { it in counted } && evaluation.holds(condition)
+        }
+        if (!again) return null
         return kind.deadline?.let { duration -> now()?.let { plus(it, duration) } }
+    }
+
+    /** The counters a requirement reads, wherever it reads one. */
+    private fun countersRead(requirement: Requirement): Set<String> = when (requirement) {
+        is Requirement.Counter -> setOf(requirement.name)
+        is Requirement.Any -> requirement.items.flatMap(::countersRead).toSet()
+        is Requirement.Not -> countersRead(requirement.item)
+        else -> emptySet()
     }
 
     private class Fired(val moves: List<Move>, val effects: List<Requested>, val first: Pair<Transition, String>?) {

@@ -4,6 +4,7 @@ import io.kotest.core.spec.style.FreeSpec
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import kp.engine.Datum
+import kp.model.Refused
 import kp.mailroom.Status.DELIVERED
 import kp.mailroom.Status.REFUSED
 import kotlin.time.Duration.Companion.hours
@@ -56,7 +57,7 @@ class TheMailroomSpec : FreeSpec({
     }
 
     "a deadline that passes does what its kind's expiry says" - {
-        "a review-request's first expiry nudges the teamlead and waits again; the second reports to Bora, class C, with a ticket" {
+        "a review-request's first expiry counts, sends its nudge and waits again; the second reports to Bora, class C, with a ticket" {
             val office = Office(seed = "building")
             office.play("review-request")
             val request = office.readBack().sent("review-request").single().id.value
@@ -69,6 +70,8 @@ class TheMailroomSpec : FreeSpec({
             val (first, second) = office.readBack().expired(request)
             first.deadline?.value shouldBe "2026-11-16T11:01:00Z"
             office.readBack().sent("nudge").single().let { "${it.to.value} ${it.by} ${it.re?.value}" } shouldBe "teamlead effect:T-74 $request"
+            // Judged like any other, the nudge is refused: its kind's `to: {re: from}` names the asker, not the teamlead (Found while doing).
+            office.readBack().records<Refused>().single().requirement shouldBe "to: {re: from}"
             listOf(second.report, second.deliveryClass, second.deadline) shouldBe listOf("bora", "C", null)
             office.mailroom.state.openTickets().getValue(second.ticket!!.toLong()).item shouldBe request
             office.mailroom.state.deadlines shouldBe emptyMap()

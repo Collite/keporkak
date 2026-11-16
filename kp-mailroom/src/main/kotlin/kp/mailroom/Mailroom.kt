@@ -27,6 +27,7 @@ import kp.model.OfficeId
 import kp.model.StageId
 import kp.model.utc
 import kp.rules.Destination
+import kp.rules.Effect
 import kp.rules.Loaded
 import kp.rules.MessageClass
 import kp.rules.PARTIES
@@ -35,6 +36,7 @@ import kp.rules.RuleSet
 import kp.rules.Rules
 import java.nio.file.Path
 import java.time.Instant
+import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -128,11 +130,28 @@ class Mailroom private constructor(
         return Inbox(shown.map(messages::getValue), more = ids.size > shown.size)
     }
 
-    /** Fires every deadline the clock has passed. */
-    fun tick(): Unit = TODO()
+    /**
+     * Fires every deadline the clock has passed, earliest first (architecture.md §3: deadlines are timers on the clock).
+     * The timers are the state's open waits — what the log says, so they are rebuilt by any start. Each wait is looked
+     * at again before it fires: what an earlier expiry carried may have ended it or moved it.
+     */
+    @Synchronized
+    fun tick() {
+        val now = clock.now()
+        val due = folded.deadlines.filterValues { wait -> wait.deadline?.let { !instant(it).isAfter(now) } == true }
+            .entries.sortedWith(compareBy({ instant(it.value.deadline!!) }, { it.key })).map { it.key }
+        due.forEach { id ->
+            val wait = folded.deadlines[id]?.deadline ?: return@forEach
+            if (instant(wait).isAfter(now)) return@forEach
+            expire(id)
+            settle()
+            drain()
+        }
+    }
 
-    /** The next deadline of an open wait, for the process to set its timer. */
-    fun nextDeadline(): Instant? = TODO()
+    /** The earliest deadline of an open wait — when [tick] has something to fire — for the process to set its timer. */
+    @Synchronized
+    fun nextDeadline(): Instant? = folded.deadlines.values.mapNotNull { it.deadline }.minOfOrNull(::instant)
 
     /** Reads the rule texts again; a valid set is in force from the next message, an invalid one changes nothing. */
     fun reload(): Reload = TODO()
@@ -179,14 +198,42 @@ class Mailroom private constructor(
         return Answer(Status.DELIVERED, id, transition = decision.rule)
     }
 
-    /** What the judgement requested, in its order: a declared emit is carried after this judgement's lines. */
-    private fun effects(decision: Decision, cause: String, now: String) = decision.effects.forEach { effect ->
+    /**
+     * What the judgement requested, in its order: a declared emit is carried after this judgement's lines, by the
+     * transition that declared it — for an expiry's, by [expiry], the transition the kind's expiry names.
+     */
+    private fun effects(decision: Decision, cause: String, now: String, expiry: String? = null) = decision.effects.forEach { effect ->
         when (effect) {
-            is Requested.Emit -> emit(effect, effect.rule, cause)
+            is Requested.Emit -> if (expiry == null) emit(effect, effect.rule, cause) else if (expiry.isNotEmpty()) emit(effect, expiry, cause)
             is Requested.Do -> request(effect.operation, cause, Datum.Fields(effect.with), now)
             is Requested.Report -> Unit
         }
     }
+
+    /**
+     * A deadline passed (contracts.md §4.2): the engine judges the expiry, and its `expired` record says what became of
+     * the wait — a new deadline, or null when it is over — and, when the expiry reports to Bora, is that inbox item:
+     * `report: bora`, its class, its ticket. Then the transitions it fired and its effects; `notify.bora` for class B.
+     */
+    private fun expire(id: String) {
+        val now = now()
+        val engine = Engine(rules)
+        val trigger = Trigger.Expiry(id)
+        val decision = engine.judge(folded, trigger, table(engine, trigger, messages[id]?.stage?.value, now))
+        val report = decision.effects.filterIsInstance<Requested.Report>().firstOrNull()
+        val ticket = (writer.last + 1).takeIf { decision.waitsForBora }
+        write(line(now, EVENT to text("expired"), ID to text(id), RULE to text(decision.rule), REPORT to text(report?.to),
+            CLASS to text(report?.messageClass?.name), TICKET to ticket?.let(::JsonPrimitive), DEADLINE to text(decision.deadline), keepNull = setOf(DEADLINE)))
+        transitions(decision, id, now)
+        effects(decision, id, now, expiry = messages[id]?.kind?.let(::expiryTransition).orEmpty())
+        if (ticket != null && report?.messageClass == MessageClass.B) notify(ticket, id, now)
+    }
+
+    /**
+     * The transition an expiry's emit is `by` (contracts.md §2.1: `effect:T-n`): the one the kind's expiry names. A kind
+     * whose expiry names none gives its emit no `by` the contract allows, and the emit is not sent (Found while doing).
+     */
+    private fun expiryTransition(kind: String): String? = rules.kinds[kind]?.expiry?.filterIsInstance<Effect.Transition>()?.firstOrNull()?.id
 
     /** What a judgement of a result or an expiry decided: its transitions and its effects, caused by [cause]. */
     private fun record(decision: Decision, cause: String, now: String) {
@@ -403,6 +450,9 @@ class Mailroom private constructor(
     }
 }
 
+/** A time the log writes (`at`, `deadline`), as an instant. */
+private fun instant(at: String): Instant = utc(at).toInstant(ZoneOffset.UTC)
+
 private const val BORA = "bora"
 private const val MAILROOM = "mailroom"
 private const val SEAT_NAME = "seat.name"
@@ -447,6 +497,7 @@ private const val ANSWERS = "answers"
 private const val MACHINE = "machine"
 private const val CAUSE = "cause"
 private const val SEAT = "seat"
+private const val REPORT = "report"
 private const val IDS = "ids"
 private const val WOKE = "woke"
 private const val TICKET = "ticket"

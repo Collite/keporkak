@@ -43,6 +43,14 @@ class CatchUpRulesSpec : StringSpec({
         problemsAfter("rules/message-kinds.yaml", wait, wait.replace("wait: again", "wait: later")) shouldContain
             "rules/message-kinds.yaml: review-request: wait must be again"
     }
+    "a {wait: again} that never ends is reported: its if not lt the cap, or on a counter no on: expiry transition of the kind moves (issue #18)" {
+        val wait = "    - wait: again\n      if:\n        counter: review_request_expiries\n        lt:\n          cap: expiries_before_escalation\n"
+        val never = "rules/message-kinds.yaml: review-request: {wait: again}'s if is not lt a cap on a counter an on: expiry transition of the kind moves"
+
+        problemsAfter("rules/message-kinds.yaml", wait, wait.replace("lt:", "gte:")) shouldContain never
+        problemsAfter("rules/message-kinds.yaml", wait, wait.replace("review_request_expiries", "review_bind_expiries")) shouldContain never
+        problemsAfter("rules/stage-lifecycle.yaml", "  effects:\n  - count: review_request_expiries\n", "  effects: []\n") shouldContain never
+    }
     "the profile in force is named in engagement.yaml — supervised on master — and must be one of autonomy_profiles" {
         master.engagement.profile shouldBe "supervised"
         problemsAfter("rules/engagement.yaml", "profile: supervised", "profile: supervisd") shouldContain
