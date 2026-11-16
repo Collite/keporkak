@@ -1,0 +1,9 @@
+#!/bin/sh
+# inbox-first — the SessionStart hook of a Claude seat (contracts.md §11): adds one line of context, and decides
+# nothing. It opens no connection.
+#
+# Usage, from the seat's settings.json: /bin/sh hooks/inbox-first
+# Reads the hook's JSON on stdin and answers:
+#   {"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"…"}}
+cat >/dev/null
+printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"Keporkak: call `inbox` before anything else."}}'
