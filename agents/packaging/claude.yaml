@@ -17,9 +17,12 @@
 #
 # A rule denies a call when its tool's name is one of `tools` (a name ending `__*` is every tool of that MCP server)
 # and, if given:
-#   command  — a regular expression found in the call's `command` (placeholders are filled as literal text). A command
-#              is matched where one starts — at the beginning, or after `;`, `&`, `|`, `(` or a backtick — so a word
-#              inside an argument does not trip it; a command hidden in a script or `sh -c` is not seen;
+#   command  — a regular expression found in one line of the call's `command` (placeholders are filled as literal
+#              text). Each line is judged on its own, and one matching line denies the call; a line that ends in a
+#              backslash, not itself escaped, goes on in the next, as in the shell — so a pattern never runs across a
+#              newline. A command is matched where one starts — at a line's beginning, or after `;`, `&`, `|`, `(` or a
+#              backtick — so a word inside an argument does not trip it; a command hidden in a script or `sh -c` is
+#              not seen, and a line of a heredoc or a quoted string is judged as if it were a command;
 #   path     — globs one of the call's paths matches (`file_path`, `path`, `notebook_path`, absolute or relative to the
 #              working directory; `**` is any part of a path, `*` any part of one name), and `except` globs it does not.
 # `early` is the same rule in Claude Code's own syntax, for settings.json — the early no. A rule Claude Code cannot say

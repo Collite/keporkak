@@ -2,7 +2,9 @@
 # a call it denies, naming the border, and a call it lets through. Each row is compiled from that word alone, for the
 # profile and working directory the row names, with the places of PackagingAndHooksSpec. Columns, tab-separated:
 # word · profile · working directory · tool · the tool's input (JSON) · expected: `deny <border>` or `allow`.
-# An allowed row stays inside its working directory, so the answerer's default allows it too.
+# An allowed row stays inside its working directory, so the answerer's default allows it too. A command's lines are
+# judged each on its own, and one matching line denies the call; a line that ends in a backslash goes on in the next
+# (review-011, B1). In the JSON, \n is a newline and \\ one backslash.
 side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"tmux new-session -d -s watch"}	deny side-channels
 side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"cd kp-driver && ssh panda uptime"}	deny side-channels
 side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"sudo kp hold KP/P2/S2.2"}	deny side-channels
@@ -11,11 +13,18 @@ side-channels	keporkak	/office/_wt/keporkak-S2.2	Agent	{"description":"look","pr
 side-channels	keporkak	/office/_wt/keporkak-S2.2	SendMessage	{"to":"coder-2","message":"hi"}	deny side-channels
 side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"just check"}	allow
 side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"git log --oneline -- docs/kp-tmux-notes.md"}	allow
+side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"cd kp-driver\nsudo kp hold KP/P2/S2.2"}	deny side-channels
+side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"su\\\ndo kp hold KP/P2/S2.2"}	deny side-channels
+side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"echo done\\\\\nsudo kp hold KP/P2/S2.2"}	deny side-channels
+side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"just check\ngit log --oneline -3"}	allow
 push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"git push origin master"}	deny push-master
 push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"git push origin HEAD:master"}	deny push-master
 push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"just check && git push --force origin refs/heads/master"}	deny push-master
 push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"git push -u origin feat/kp-keporkak-p2-s2.2-packaging-and-hooks"}	allow
 push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"git push origin master-notes"}	allow
+push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"just check\ngit push origin master"}	deny push-master
+push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"git push origin \\\n  master"}	deny push-master
+push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"git push origin feature\necho master"}	allow
 pin-files	keporkak	/office/_wt/keporkak-S2.2	Edit	{"file_path":"/office/_wt/keporkak-S2.2/gradle/libs.versions.toml","old_string":"0.34.0","new_string":"0.35.0"}	deny pin-files
 pin-files	keporkak	/office/_wt/keporkak-S2.2	Write	{"file_path":"/office/_wt/keporkak-S2.2/.github/workflows/check.yml","content":"on: push"}	deny pin-files
 pin-files	keporkak	/office/_wt/keporkak-S2.2	Write	{"file_path":"gradle/wrapper/gradle-wrapper.properties","content":"x"}	deny pin-files
@@ -28,9 +37,12 @@ live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"kubectl --contex
 live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"kp-qa up KP/P4/S4.1 ghcr.io/collite/kp:1"}	deny live-target
 live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"kp-cred run reader@bp-dsk -- true"}	deny live-target
 live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"just test"}	allow
+live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"cd kp-driver\nkubectl get pods"}	deny live-target
+live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"just test\nkp-cred run reader@bp-dsk -- true"}	deny live-target
 browser	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"xdg-open https://example.org"}	deny browser
 browser	keporkak	/office/_wt/keporkak-S2.2	mcp__playwright__browser_navigate	{"url":"https://example.org"}	deny browser
 browser	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"./gradlew :kp-driver:test"}	allow
+browser	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"just check\nxdg-open https://example.org"}	deny browser
 write-code	keporkak	/office/project	Write	{"file_path":"/office/keporkak/kp-driver/Notes.kt","content":"x"}	deny write-code
 write-code	keporkak	/office/project	Edit	{"file_path":"/office/_wt/keporkak-S2.2/README.md","old_string":"a","new_string":"b"}	deny write-code
 write-code	keporkak	/office/project	Write	{"file_path":"/office/project/notes.md","content":"x"}	allow
@@ -43,3 +55,4 @@ write-project-beyond-own-report	keporkak	/office/project	Write	{"file_path":"/of
 write-project-beyond-own-report	keporkak	/office/project	Write	{"file_path":"/office/project/tasks-p2-s2.2.md","content":"x"}	allow
 demo-cluster	tatrman	/office/_wt/tatrman-S5.1	Bash	{"command":"kubectl --context hartland get pods"}	deny demo-cluster
 demo-cluster	tatrman	/office/_wt/tatrman-S5.1	Bash	{"command":"kubectl --context bp-dsk get pods"}	allow
+demo-cluster	tatrman	/office/_wt/tatrman-S5.1	Bash	{"command":"kubectl get pods \\\n  --context hartland"}	deny demo-cluster

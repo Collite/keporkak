@@ -33,9 +33,9 @@ class CompiledAnswerer(private val seatsRoot: Path) : Answerer {
 
 /**
  * `permissions.json`, as the `deny` hook reads it too (hooks/deny): the same rules, matched the same way. A rule
- * denies a call when its `tool` expression matches the tool's whole name, its `command` expression is found in the
- * input's `command`, and one of the call's paths matches `path` and not `except`. A call's paths are its input's
- * `file_path`, `path` and `notebook_path`, resolved against the working directory, `.` and `..` removed.
+ * denies a call when its `tool` expression matches the tool's whole name, its `command` expression is found in one of
+ * the [lines] of the input's `command`, and one of the call's paths matches `path` and not `except`. A call's paths
+ * are its input's `file_path`, `path` and `notebook_path`, resolved against the working directory, `.` and `..` removed.
  */
 internal class PermissionTable private constructor(private val workingDirectory: String, private val inside: Answer, private val outside: Answer, private val rules: List<Rule>) {
     private class Rule(val border: String, val tool: Regex, val command: Regex?, val path: Regex?, val except: Regex?)
@@ -45,10 +45,10 @@ internal class PermissionTable private constructor(private val workingDirectory:
         val given = PATH_FIELDS.mapNotNull { fields[it] }
         if (given.any { (it as? JsonPrimitive)?.isString != true || it.content.isEmpty() }) return Explained(Answer.DENY, "its paths cannot be read")
         val paths = given.map { normalize((it as JsonPrimitive).content) }
-        val command = (fields["command"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        val lines = (fields["command"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.let(::lines)
         rules.firstOrNull { rule ->
             rule.tool.matches(tool) &&
-                (rule.command == null || (command != null && rule.command.containsMatchIn(command))) &&
+                (rule.command == null || (lines != null && lines.any { rule.command.containsMatchIn(it) })) &&
                 (rule.path == null || paths.any { rule.path.containsMatchIn(it) && rule.except?.containsMatchIn(it) != true })
         }?.let { return Explained(Answer.DENY, "border ${it.border}") }
         return if (paths.all { it == workingDirectory || it.startsWith("$workingDirectory/") }) Explained(inside, "inside the working directory")
@@ -70,6 +70,15 @@ internal class PermissionTable private constructor(private val workingDirectory:
 
     companion object {
         val PATH_FIELDS = listOf("file_path", "path", "notebook_path")
+
+        /** A backslash that is not itself escaped, at a line's end: the shell joins the line to the next. */
+        private val CONTINUED = Regex("""(?<!\\)((?:\\\\)*)\\\n""")
+
+        /**
+         * A command's lines, each judged on its own, so a command on any line is seen and no pattern runs across a
+         * newline (review-011, B1): split at each newline, after the shell's continued lines are joined — as hooks/deny.
+         */
+        fun lines(command: String): List<String> = CONTINUED.replace(command, "$1").split('\n')
 
         fun of(table: JsonObject): PermissionTable? = runCatching {
             val defaults = table.getValue("defaults").jsonObject
