@@ -395,13 +395,19 @@ for name, kind in K.items():
             check_destination(effect.get("to"), name)
         if not isinstance(effect,dict) or not set(effect)&{"emit","report","transition","do","wait"}:
             fail(f"{name}: invalid expiry effect")
-        # The wait goes on only under a cap (contracts.md §4.2): `{wait: again}`'s if is a counter compared with {cap: …}.
+        # The wait goes on only under a cap (contracts.md §4.2): `{wait: again}`'s if is a counter compared with {cap: …} —
+        # `lt`, on a counter an `on: expiry` transition of the kind moves, or the wait never ends (issue #18).
         if isinstance(effect, dict) and "wait" in effect:
             if effect["wait"] != "again": fail(f"{name}: wait must be again")
             condition = effect.get("if")
             if not (isinstance(condition, dict) and isinstance(condition.get("counter"), str)
                     and any(isinstance(condition.get(operator), dict) and set(condition[operator]) == {"cap"} for operator in COMPARISONS)):
                 fail(f"{name}: {{wait: again}} has no if that reads a counter against a cap")
+            elif not (isinstance(condition.get("lt"), dict) and any(
+                    t.get("kind") == name and t.get("on") == "expiry"
+                    and any(isinstance(e, dict) and e.get("count") == condition["counter"] for e in t.get("effects") or [])
+                    for _, t in all_transitions)):
+                fail(f"{name}: {{wait: again}}'s if is not lt a cap on a counter an on: expiry transition of the kind moves")
         if "transition" in effect and effect["transition"] not in seen_ids:
             fail(f"{name}: expiry names unknown transition '{effect['transition']}'")
         if "emit" in effect and effect["emit"] not in E["mailroom_declared_effects"]:

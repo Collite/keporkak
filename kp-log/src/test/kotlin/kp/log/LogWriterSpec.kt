@@ -93,6 +93,26 @@ class LogWriterSpec : StringSpec({
         LogWriter.open(project, panda).use { it.append(record()) }
         project.resolve("mail/_office/panda-2026-11.jsonl").seqs() shouldBe listOf(2, 4)
     }
+    "the writer says which seq is the last on disk, so the next line's is known before it is written" {
+        val project = throwawayProject()
+        LogWriter.open(project, panda).use { log ->
+            log.last shouldBe 0L
+            log.append(message("m-panda-000001"))
+            log.append(record(), StageId("TOY/P0/S0.1"))
+            log.last shouldBe 2L
+        }
+        LogWriter.open(project, panda).use { it.last shouldBe 2L }
+    }
+    "the writer says whether a stage's file is closed, now or after a restart" {
+        val project = throwawayProject()
+        LogWriter.open(project, panda).use { log ->
+            log.isClosed(stage) shouldBe false
+            log.append(stageMove("exited"), stage)
+            log.isClosed(stage) shouldBe true
+            log.isClosed(StageId("KP/P1/S1.2")) shouldBe false
+        }
+        LogWriter.open(project, panda).use { it.isClosed(stage) shouldBe true }
+    }
     "a line is on disk when append returns: it is written, then its file is forced" {
         val project = throwawayProject()
         val events = mutableListOf<String>()

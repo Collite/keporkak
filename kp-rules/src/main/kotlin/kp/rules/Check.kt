@@ -191,6 +191,9 @@ internal class RulesCheck(
                 if (effect is Effect.Transition && effect.id !in transitionIds) problem(owner, "expiry names unknown transition '${effect.id}'")
                 if (effect is Effect.Emit && effect.kind !in engagement.mailroomDeclaredEffects) problem(owner, "undeclared expiry emit '${effect.kind}'")
                 if (effect is Effect.Wait && !readsCounterAgainstCap(effect.condition)) problem(owner, "{wait: again} has no if that reads a counter against a cap")
+                else if (effect is Effect.Wait && !endsUnderItsCap(kind, effect.condition as Requirement.Counter)) {
+                    problem(owner, "{wait: again}'s if is not lt a cap on a counter an on: expiry transition of the kind moves")
+                }
             }
             val toDaemon = (kind.to as? Destination.Parties)?.names == listOf("daemon")
             val bound = lifecycle.machines.values.any { machine -> machine.transitions.any { it.kind == kind.name && it.effects.any { effect -> effect is Effect.Do } } }
@@ -210,6 +213,17 @@ internal class RulesCheck(
     /** A wait goes on only under a cap (contracts.md §4.2): its `if` is a counter compared with `{cap: …}`. */
     private fun readsCounterAgainstCap(condition: Requirement?): Boolean =
         condition is Requirement.Counter && condition.comparison?.value is Value.Cap
+
+    /**
+     * A wait that goes on ends (issue #18): its `if` is `lt` the cap, on a counter that an `on: expiry` transition of
+     * the kind moves — with `gte`, or a counter no expiry moves, it would start again for good.
+     */
+    private fun endsUnderItsCap(kind: Kind, condition: Requirement.Counter): Boolean =
+        condition.comparison?.operator == Operator.LT && lifecycle.machines.values.any { machine ->
+            machine.transitions.any { transition ->
+                transition.kind == kind.name && transition.on == Event.EXPIRY && transition.effects.any { it is Effect.Count && it.counter == condition.name }
+            }
+        }
 
     /** A kind whose `fires` names a stage arrow `a→b` has that arrow in the lifecycle. */
     private fun firesCrossChecked() {

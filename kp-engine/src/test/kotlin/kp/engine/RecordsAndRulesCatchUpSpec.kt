@@ -22,17 +22,19 @@ class RecordsAndRulesCatchUpSpec : StringSpec({
             """{"id":"$PROPOSAL","thread":"$PROPOSAL","from":"teamlead","to":"bora","kind":"assignment-proposal","stage":"$STAGE","subject":"p","deadline":"2026-11-16T09:00:00Z","created":"$NOW","by":"seat:teamlead"}""",
             """{"event":"delivered","id":"$PROPOSAL","to":["bora"],"class":"B","ticket":3}"""))
         val decline = message("decline", from = "bora", re = PROPOSAL, id = "m-panda-000011", thread = PROPOSAL, signed = true)
-        val away = message("away", from = "bora", to = "mailroom", re = PROPOSAL, id = "m-panda-000012", thread = PROPOSAL, signed = true)
+        // Unsigned: since Amendment 13 a signed delivery whose `re` names the item closes its ticket, whatever its kind (TicketsSpec).
+        val pin = message("pin-stage", from = "principal", to = "teamlead", re = PROPOSAL, id = "m-panda-000012", thread = PROPOSAL, args = """{"stage": "x", "reason": "y"}""")
 
         val declined = supervised().judge(proposed, Arrival(decline), table("now" to NOW))
-        val wentAway = supervised().judge(proposed, Arrival(away), table("now" to NOW))
+        val pinned = supervised().judge(proposed, Arrival(pin), table("now" to NOW, "plan.stage_has_list(stage=x)" to true))
 
         declined.answers shouldBe PROPOSAL
         proposed.recorded(decline, declined).deadlines.keys shouldBe emptySet()
         proposed.recorded(decline, declined).openTickets().keys shouldBe emptySet()
-        wentAway.answers shouldBe null
-        proposed.recorded(away, wentAway).deadlines.keys shouldBe setOf(PROPOSAL)
-        proposed.recorded(away, wentAway).openTickets().keys shouldBe setOf(3L)
+        pinned.outcome shouldBe Outcome.DELIVER
+        pinned.answers shouldBe null
+        proposed.recorded(pin, pinned).deadlines.keys shouldBe setOf(PROPOSAL)
+        proposed.recorded(pin, pinned).openTickets().keys shouldBe setOf(3L)
     }
 
     "a refusal carries the rule's guard in the rules' words and, beside it, the one requirement that failed" {

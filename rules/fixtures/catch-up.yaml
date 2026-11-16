@@ -24,6 +24,7 @@ scenarios:
     given:
       counters: {started_expiries: {scope: stage}}
       caps: {expiries_before_escalation: 2}
+      states: {planned: {bora_gate: true}, exited: {terminal: true}}
       kinds:
         started:
           from: coder
@@ -36,13 +37,67 @@ scenarios:
           max_fires: null
           deadline: 1h
           expiry:
+            - {transition: T-expire}
             - {wait: again}
             - {wait: again, if: {counter: started_expiries, lt: {cap: expiries_before_escalation}}}
           require: []
       transitions:
         - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+        - {id: T-expire, from: planned, to: planned, kind: started, 'on': expiry, guard: '-', require: [], effects: [{count: started_expiries}]}
     expect:
       failures: ["started: {wait: again} has no if that reads a counter against a cap"]
+  - name: 'a {wait: again} whose if is not lt its cap never ends, and is reported (issue #18)'
+    given:
+      counters: {started_expiries: {scope: stage}}
+      caps: {expiries_before_escalation: 2}
+      states: {planned: {bora_gate: true}, exited: {terminal: true}}
+      kinds:
+        started:
+          from: coder
+          to: teamlead
+          guard: '-'
+          on_expiry: nudge; 2nd expiry → Bora
+          args: {}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: 1h
+          expiry:
+            - {transition: T-expire}
+            - {wait: again, if: {counter: started_expiries, gte: {cap: expiries_before_escalation}}}
+            - {wait: again, if: {counter: started_expiries, lt: {cap: expiries_before_escalation}}}
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+        - {id: T-expire, from: planned, to: planned, kind: started, 'on': expiry, guard: '-', require: [], effects: [{count: started_expiries}]}
+    expect:
+      failures: ["started: {wait: again}'s if is not lt a cap on a counter an on: expiry transition of the kind moves"]
+  - name: 'a {wait: again} on a counter no on: expiry transition of the kind moves never ends, and is reported (issue #18)'
+    given:
+      counters: {started_expiries: {scope: stage}, other_expiries: {scope: stage}}
+      caps: {expiries_before_escalation: 2}
+      states: {planned: {bora_gate: true}, exited: {terminal: true}}
+      kinds:
+        started:
+          from: coder
+          to: teamlead
+          guard: '-'
+          on_expiry: nudge; 2nd expiry → Bora
+          args: {}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: 1h
+          expiry:
+            - {transition: T-expire}
+            - {wait: again, if: {counter: other_expiries, lt: {cap: expiries_before_escalation}}}
+            - {wait: again, if: {counter: started_expiries, lt: {cap: expiries_before_escalation}}}
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: [{count: other_expiries}]}
+        - {id: T-expire, from: planned, to: planned, kind: started, 'on': expiry, guard: '-', require: [], effects: [{count: started_expiries}]}
+    expect:
+      failures: ["started: {wait: again}'s if is not lt a cap on a counter an on: expiry transition of the kind moves"]
   - name: a profile that is not one of autonomy_profiles is reported
     given:
       profile: supervisd
