@@ -3,6 +3,7 @@ package kp.mailroom
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kp.engine.FactRef
+import kp.model.Rules
 import kp.model.Delivered
 import kp.model.Message
 import kp.model.Refused
@@ -24,8 +25,8 @@ class TheLoopSpec : StringSpec({
 
         val line = office.readBack().message(answer.id)
         listOf(line.id.value, line.thread.value, line.from.value, line.by, line.signed, line.at.value, line.created.value, line.deadline?.value) shouldBe
-            listOf("m-panda-000004", "m-panda-000004", "coder-1", "seat:coder-1", false, START, START, "2026-11-16T13:00:00Z")
-        line.seq.toLong() shouldBe 4L
+            listOf("m-panda-000005", "m-panda-000005", "coder-1", "seat:coder-1", false, START, START, "2026-11-16T13:00:00Z")
+        line.seq.toLong() shouldBe 5L
     }
 
     "Bora's message is from bora by bora-cli, and signed only when the caller says it came over a root peer" {
@@ -44,7 +45,7 @@ class TheLoopSpec : StringSpec({
 
         val answer = office.send("coder-1", """{"kind": "started", "stage": "$STAGE", "subject": "started"}""")
 
-        val file = office.project.resolve("mail/KP/p2-s2.1.jsonl").readLines().map(::parseLine).filter { it.seq.toLong() > 3 }
+        val file = office.project.resolve("mail/KP/p2-s2.1.jsonl").readLines().map(::parseLine).filter { it.seq.toLong() > 3 && it !is Rules }
         file.map { it::class.simpleName } shouldBe listOf("Message", "Delivered", "Transition")
         (file[1] as Delivered).rule shouldBe "T-08"
         (file[2] as Transition).let { "${it.cause} ${it.from}→${it.to}" } shouldBe "${answer.id} assigned→building"
@@ -56,7 +57,7 @@ class TheLoopSpec : StringSpec({
 
         val answer = office.send("coder-1", """{"kind": "review-request", "stage": "$STAGE", "subject": "review"}""")
 
-        val written = office.readBack().lines.filter { it.seq.toLong() > 3 }
+        val written = office.readBack().lines.filter { it.seq.toLong() > 3 && it !is Rules }
         written.map { it::class.simpleName } shouldBe listOf("Message", "Refused")
         (written[1] as Refused).let { listOf(it.id, it.rule, it.requirement, it.refusalsToday?.toLong()) } shouldBe
             listOf(answer.id, answer.rule, answer.requirement, 1L)

@@ -3,6 +3,7 @@ package kp.mailroom
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kp.engine.Datum
+import kp.model.Rules
 import kp.model.Op
 import kotlin.concurrent.thread
 
@@ -17,7 +18,7 @@ class OperationsSpec : StringSpec({
         val onDisk = ArrayList<List<String>>()
         office.stop()
         office.mailroom = Mailroom.start(office.project, panda, office.texts, office.facts, { request, done ->
-            onDisk += office.readBack().lines.filter { it.seq.toLong() > 3 }.map { (it as? Op)?.let { op -> "${op.op} ${op.phase}" } ?: it::class.simpleName!! }
+            onDisk += office.readBack().lines.filter { it.seq.toLong() > 3 && it !is Rules }.map { (it as? Op)?.let { op -> "${op.op} ${op.phase}" } ?: it::class.simpleName!! }
             done(OperationResult.Ok())
         }, office.seats, office.clock)
 

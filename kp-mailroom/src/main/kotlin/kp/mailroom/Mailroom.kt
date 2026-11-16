@@ -28,12 +28,10 @@ import kp.model.StageId
 import kp.model.utc
 import kp.rules.Destination
 import kp.rules.Effect
-import kp.rules.Loaded
 import kp.rules.MessageClass
 import kp.rules.PARTIES
 import kp.rules.Problem
 import kp.rules.RuleSet
-import kp.rules.Rules
 import java.nio.file.Path
 import java.time.Instant
 import java.time.ZoneOffset
@@ -95,8 +93,11 @@ class Mailroom private constructor(
     private val deliveries: Deliveries,
     private val clock: Clock,
     private val writer: LogWriter,
-    private var rules: RuleSet,
+    private val texts: RuleTexts,
+    private var inForce: InForce,
 ) : AutoCloseable {
+    /** The rule set every judgement reads: one per message, replaced only between two (architecture.md §3). */
+    private val rules: RuleSet get() = inForce.ruleSet
     private var folded = State()
     /** Every message on the log the state was folded from, by id: what a reply, an inbox and a record's file read. */
     private val messages = HashMap<String, Message>()
@@ -153,8 +154,23 @@ class Mailroom private constructor(
     @Synchronized
     fun nextDeadline(): Instant? = folded.deadlines.values.mapNotNull { it.deadline }.minOfOrNull(::instant)
 
-    /** Reads the rule texts again; a valid set is in force from the next message, an invalid one changes nothing. */
-    fun reload(): Reload = TODO()
+    /**
+     * Reads the rule texts again and puts them through `kp-rules` (architecture.md §3, hot reload). A valid set is in
+     * force from the next message and leaves a `rules` record; an invalid one changes nothing — no line — and its
+     * problems are the answer, for the caller to report. A message in flight finishes under the set it began with.
+     */
+    @Synchronized
+    fun reload(): Reload {
+        val (next, loaded) = InForce.load(texts.read())
+        if (next == null) return Reload.Rejected(loaded.problems)
+        inForce = next
+        recordRules()
+        return Reload.Accepted(next.hash)
+    }
+
+    /** The `rules` record (contracts.md §2.2): the set in force, at start and at every accepted reload. */
+    private fun recordRules() =
+        write(line(now(), EVENT to text("rules"), HASH to text(inForce.hash), FILES to JsonObject(inForce.files.mapValues { JsonPrimitive(it.value) })))
 
     @Synchronized
     override fun close() {
@@ -437,11 +453,12 @@ class Mailroom private constructor(
             try {
                 val read = LogReader(project, office).read()
                 if (read.problems.isNotEmpty()) throw MailroomRefusal("the log has problems:\n" + read.problems.joinToString("\n"))
-                val ruleSet = when (val loaded = Rules.load(rules.read())) {
-                    is Loaded.Valid -> loaded.ruleSet
-                    is Loaded.Invalid -> throw MailroomRefusal("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
+                val (inForce, loaded) = InForce.load(rules.read())
+                if (inForce == null) throw MailroomRefusal("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
+                return Mailroom(project, office, facts, operations, deliveries, clock, writer, rules, inForce).apply {
+                    take(read.lines.map { it.entry })
+                    recordRules()
                 }
-                return Mailroom(project, office, facts, operations, deliveries, clock, writer, ruleSet).apply { take(read.lines.map { it.entry }) }
             } catch (error: Throwable) {
                 writer.close()
                 throw error
@@ -497,6 +514,8 @@ private const val ANSWERS = "answers"
 private const val MACHINE = "machine"
 private const val CAUSE = "cause"
 private const val SEAT = "seat"
+private const val HASH = "hash"
+private const val FILES = "files"
 private const val REPORT = "report"
 private const val IDS = "ids"
 private const val WOKE = "woke"
