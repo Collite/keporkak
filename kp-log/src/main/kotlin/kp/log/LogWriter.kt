@@ -52,9 +52,9 @@ class LogWriter private constructor(
 
     /**
      * Appends [draft] — a message or a record without `seq` — and returns the line as written. A message goes to its
-     * own stage's file; a record to the file of [stage]; a line of no stage to the office's file for the month of
-     * its `at`. A line the contract refuses, a hand-carried message, or a line for a closed stage is refused, and
-     * nothing is written.
+     * own stage's file; a record to the file of [stage]; a line of no stage, or of a stage whose file is closed — a
+     * late result, a late message (contracts.md §3) — to the office's file for the month of its `at`. A line the
+     * contract refuses, or a hand-carried message, is refused, and nothing is written.
      */
     fun append(draft: JsonObject, stage: StageId? = null): Envelope {
         if (!lock.isValid) throw LogRefusal("the writer is closed")
@@ -66,9 +66,8 @@ class LogWriter private constructor(
         }
         if (entry is Message && entry.by.startsWith("hand:")) throw LogRefusal("a hand-carried message is recorded in _hand/, never by the office's writer")
         if (entry is Message && stage != null && stage != entry.stage) throw LogRefusal("a message is appended for its own stage (${entry.stage?.value})")
-        val owner = if (entry is Message) entry.stage else stage
+        val owner = (if (entry is Message) entry.stage else stage)?.takeUnless(::isClosed)
         val file = if (owner != null) Layout.stageFile(project, owner) else Layout.officeFile(project, office, entry.at.value)
-        if (file in closed) throw LogRefusal("$file is closed: its stage exited or closed")
 
         write(file, (entry.toLine() + "\n").toByteArray(Charsets.UTF_8))
         last += 1

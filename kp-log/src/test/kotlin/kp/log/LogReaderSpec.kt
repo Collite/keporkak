@@ -18,7 +18,7 @@ private fun LogRead.seqs() = lines.map { it.entry.seq.toInt() }
 private fun LogRead.texts() = problems.map { it.toString() }
 
 class LogReaderSpec : StringSpec({
-    "open stage files and the office's files since the oldest open stage are read, merged in seq order; a closed stage is skipped" {
+    "every stage file, closed ones too, and every file of this office are read, merged in seq order; another office's are not" {
         val project = throwawayProject()
         project.file("mail/_office/panda-2026-09.jsonl", fact(1, "2026-09-30T10:00:00Z"))
         project.file("mail/KP/p0-s0.3.jsonl", fact(2, "2026-10-01T10:00:00Z"), fact(5, "2026-10-03T10:00:00Z"), exited(9, "2026-11-02T10:00:00Z"))
@@ -31,15 +31,15 @@ class LogReaderSpec : StringSpec({
         val read = LogReader(project, panda).read()
 
         read.texts() shouldBe emptyList()
-        read.seqs() shouldBe listOf(3, 4, 6, 7, 8, 10)
+        read.seqs() shouldBe listOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
     }
-    "with no open stage, the office's current file is read" {
+    "with no open stage, every file is still read" {
         val project = throwawayProject()
         project.file("mail/KP/p0-s0.3.jsonl", fact(1, "2026-10-01T10:00:00Z"), exited(2, "2026-10-02T10:00:00Z"))
         project.file("mail/_office/panda-2026-10.jsonl", fact(3, "2026-10-03T10:00:00Z"))
         project.file("mail/_office/panda-2026-11.jsonl", fact(4, "2026-11-01T10:00:00Z"))
 
-        LogReader(project, panda).read().seqs() shouldBe listOf(4)
+        LogReader(project, panda).read().seqs() shouldBe listOf(1, 2, 3, 4)
     }
     "a line that is not a message or record is reported with its path and line, and the lines around it are read" {
         val project = throwawayProject()

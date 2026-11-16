@@ -85,7 +85,6 @@ private fun Sender.author(): Author = when (this) {
  * nothing; its state is a cache of the log. One message, result or expiry is carried at a time.
  */
 class Mailroom private constructor(
-    private val project: Path,
     private val office: OfficeId,
     private val facts: FactSource,
     private val operations: Operations,
@@ -106,15 +105,13 @@ class Mailroom private constructor(
     private val queue = ArrayDeque<() -> Unit>()
     private var draining = false
     private var closed = false
-    /** A stage's file closed: the state is read again once the step that closed it is done. */
-    private var reread = false
 
     /** The fold of the log as the mailroom works from it. */
     val state: State @Synchronized get() = folded
 
     /** Carries one message submitted in [sender]'s name; [input] holds what a sender supplies (contracts.md §2.1, §5). */
     @Synchronized
-    fun submit(sender: Sender, input: JsonObject): Answer = arrive(sender.author(), input).also { settle(); drain() }
+    fun submit(sender: Sender, input: JsonObject): Answer = arrive(sender.author(), input).also { drain() }
 
     /**
      * A seat's inbox (contracts.md §5): its unread messages — or, with [unread] false, every message delivered to it —
@@ -144,7 +141,6 @@ class Mailroom private constructor(
             val wait = folded.deadlines[id]?.deadline ?: return@forEach
             if (instant(wait).isAfter(now)) return@forEach
             expire(id)
-            settle()
             drain()
         }
     }
@@ -344,26 +340,10 @@ class Mailroom private constructor(
         if (draining) return
         draining = true
         try {
-            while (queue.isNotEmpty() && !closed) {
-                queue.removeFirst()()
-                settle()
-            }
+            while (queue.isNotEmpty() && !closed) queue.removeFirst()()
         } finally {
             draining = false
         }
-    }
-
-    /**
-     * When a stage's file has closed, the state is what start-up would fold from the log now (contracts.md §3: the
-     * open stage files and the office's), so that a mailroom started again works from the same state as this one.
-     */
-    private fun settle() {
-        if (!reread) return
-        reread = false
-        folded = State()
-        messages.clear()
-        addressed.clear()
-        take(LogReader(project, office).read().lines.map { it.entry })
     }
 
     /**
@@ -411,14 +391,14 @@ class Mailroom private constructor(
 
     /**
      * Appends one line, synced, to the file of the stage it is about — a message to its own — or to the office's file
-     * when it is about no stage, or its stage's file is closed; then folds it. Nothing is acted on before this returns.
+     * when it is about no stage, or its stage's file is closed (contracts.md §3: the writer's to place); then folds it.
+     * Closing a file takes nothing out of the state. Nothing is acted on before this returns.
      */
     private fun write(draft: JsonObject): Envelope {
         val expected = writer.last + 1
-        val stage = if (draft[KIND] != null) null else about(draft)?.let(::StageId)?.takeUnless(writer::isClosed)
+        val stage = if (draft[KIND] != null) null else about(draft)?.let(::StageId)
         val written = writer.append(draft, stage)
         check(written.seq.longValueExact() == expected) { "the log gave seq ${written.seq}, not $expected" }
-        if (stage != null && writer.isClosed(stage)) reread = true
         take(listOf(written))
         return written
     }
@@ -460,11 +440,10 @@ class Mailroom private constructor(
                 if (read.problems.isNotEmpty()) throw MailroomRefusal("the log has problems:\n" + read.problems.joinToString("\n"))
                 val (inForce, loaded) = InForce.load(rules.read())
                 if (inForce == null) throw MailroomRefusal("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
-                return Mailroom(project, office, facts, operations, deliveries, clock, writer, rules, inForce).apply {
+                return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce).apply {
                     take(read.lines.map { it.entry })
                     recordRules()
                     interrupted()
-                    settle()
                     drain()
                 }
             } catch (error: Throwable) {
