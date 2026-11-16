@@ -328,6 +328,15 @@ class Mailroom private constructor(
         record(engine.judge(folded, trigger, table(engine, trigger, messages[request.cause]?.stage?.value, now)), request.cause, now)
     }
 
+    /**
+     * At start, each operation the fold says is in flight — requested, with no result — is recorded `failed` with the
+     * reason `interrupted` and judged as that result (contracts.md §4.4, §7). It is not performed again: a retry is
+     * another firing of its kind.
+     */
+    private fun interrupted() = folded.operations.forEach { flight ->
+        complete(OperationRequest(flight.op, flight.cause, flight.with), OperationResult.Failed(INTERRUPTED))
+    }
+
     /** `seat.start` and `seat.reseat` are `ok(seat)` (contracts.md §4.4, Amendment 13): the result names the seat, the one it was asked for when the performer did not. */
     private fun seated(request: OperationRequest, result: Datum.Fields): Datum.Fields {
         val seat = request.with.fields[SEAT]
@@ -458,6 +467,9 @@ class Mailroom private constructor(
                 return Mailroom(project, office, facts, operations, deliveries, clock, writer, rules, inForce).apply {
                     take(read.lines.map { it.entry })
                     recordRules()
+                    interrupted()
+                    settle()
+                    drain()
                 }
             } catch (error: Throwable) {
                 writer.close()
@@ -478,6 +490,7 @@ private const val REQUESTED = "requested"
 private const val OK = "ok"
 private const val OF = "of"
 private const val ITEM = "item"
+private const val INTERRUPTED = "interrupted"
 /** The operations whose `ok` names a seat (contracts.md §4.4). */
 private val SEATING = setOf("seat.start", "seat.reseat")
 private const val BORA_CLI = "bora-cli"
