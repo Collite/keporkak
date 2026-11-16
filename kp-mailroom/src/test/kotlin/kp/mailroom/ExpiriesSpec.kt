@@ -59,7 +59,7 @@ class ExpiriesSpec : StringSpec({
         office.readBack().records<Op>().map { "${it.op} ${it.phase} ${it.cause}" } shouldBe listOf("notify.bora requested #${expired.seq}", "notify.bora ok #${expired.seq}")
     }
 
-    "an expiry's emit is by the transition the kind's expiry names, in reply to the waiting message, judged and delivered like any other" {
+    "an expiry's emit is by the expiry of its kind, in reply to the waiting message, judged and delivered like any other" {
         val office = Office(seed = "ready_for_review")
         val bind = office.send("teamlead", """{"kind": "review-bind", "stage": "$STAGE", "subject": "bind", "args": {"reviewer": "reviewer-1"}}""")
 
@@ -67,11 +67,11 @@ class ExpiriesSpec : StringSpec({
         office.mailroom.tick()
 
         val nudge = office.readBack().sent("nudge").single()
-        listOf(nudge.by, nudge.re?.value, nudge.thread.value, nudge.to.value, nudge.from.value) shouldBe listOf("effect:T-75", bind.id, bind.id, "teamlead", "mailroom")
+        listOf(nudge.by, nudge.re?.value, nudge.thread.value, nudge.to.value, nudge.from.value) shouldBe listOf("expiry:review-bind", bind.id, bind.id, "teamlead", "mailroom")
         office.readBack().records<Delivered>().single { it.id == nudge.id.value }.woke shouldBe listOf("teamlead")
     }
 
-    "an expiry of a kind whose expiry names no transition is recorded, and its emit is not sent: no `by` the contract allows names it" {
+    "an expiry of a kind whose expiry names no transition is recorded, and its emit is sent by the expiry of its kind" {
         val office = Office()
         val request = office.send("teamlead", """{"kind": "session-request", "subject": "a coder", "args": {"action": "add", "seat": "coder-2", "role": "coder"}}""")
 
@@ -79,7 +79,7 @@ class ExpiriesSpec : StringSpec({
         office.mailroom.tick()
 
         office.readBack().expired(request.id).map { it.deadline } shouldBe listOf(null)
-        office.readBack().sent("nudge") shouldBe emptyList()
+        office.readBack().sent("nudge").map { "${it.by} ${it.to.value} ${it.re?.value}" } shouldBe listOf("expiry:session-request pool ${request.id}")
     }
 
     "an expired record that ends the wait writes its deadline as null" {

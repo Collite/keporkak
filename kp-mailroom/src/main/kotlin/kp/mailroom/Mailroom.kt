@@ -27,7 +27,6 @@ import kp.model.OfficeId
 import kp.model.StageId
 import kp.model.utc
 import kp.rules.Destination
-import kp.rules.Effect
 import kp.rules.MessageClass
 import kp.rules.PARTIES
 import kp.rules.Problem
@@ -217,21 +216,18 @@ class Mailroom private constructor(
     /** What the judgement requested, in its order: a declared emit is carried after this judgement's lines. */
     private fun effects(decision: Decision, cause: String, now: String) = decision.effects.forEach { effect ->
         when (effect) {
-            is Requested.Emit -> declaredBy(effect)?.let { emit(effect, it, cause) }
+            is Requested.Emit -> emit(effect, declaredBy(effect), cause)
             is Requested.Do -> request(effect.operation, cause, Datum.Fields(effect.with), now)
             is Requested.Report -> Unit
         }
     }
 
     /**
-     * The transition an emit is `by` (contracts.md §2.1: `effect:T-n`): the one that declared it — for a kind's expiry,
-     * the transition that expiry names. A kind whose expiry names none gives its emit no `by` the contract allows, and
-     * the emit is not sent (Found while doing).
+     * What an emit is `by` (contracts.md §2.1): `expiry:<kind>` when a kind's expiry declares it — whether or not that
+     * expiry fired a transition — and `effect:T-n` when a transition's effects declare it.
      */
-    private fun declaredBy(effect: Requested.Emit): String? {
-        val kind = rules.kinds[effect.rule] ?: return effect.rule
-        return kind.expiry.filterIsInstance<Effect.Transition>().firstOrNull()?.id
-    }
+    private fun declaredBy(effect: Requested.Emit): String =
+        if (effect.rule in rules.kinds) "$EXPIRY_OF${effect.rule}" else "$EFFECT_OF${effect.rule}"
 
     /**
      * A deadline passed (contracts.md §4.2): the engine judges the expiry, and its `expired` record says what became of
@@ -258,20 +254,20 @@ class Mailroom private constructor(
     }
 
     /**
-     * A message the rules make the mailroom send (T4: `engagement.yaml:mailroom_declared_effects`): from `mailroom`, by
-     * the transition that declared it, in reply to the message that caused it — its stage, its thread — and judged like
-     * any other, once the lines of the judgement that requested it are written.
+     * A message the rules make the mailroom send (`engagement.yaml:mailroom_declared_effects`): from `mailroom`, [by]
+     * the rule that declared it, in reply to the message that caused it — its stage, its thread — and judged like any
+     * other, once the lines of the judgement that requested it are written.
      */
-    private fun emit(effect: Requested.Emit, transition: String, cause: String) {
+    private fun emit(effect: Requested.Emit, by: String, cause: String) {
         val input = buildJsonObject {
             put(KIND, JsonPrimitive(effect.kind))
             effect.to?.let { put(TO, JsonPrimitive(it)) }
             put(RE, JsonPrimitive(cause))
-            put(SUBJECT, JsonPrimitive("${effect.kind} ($transition)"))
+            put(SUBJECT, JsonPrimitive("${effect.kind} ($by)"))
             put(POINTERS, texts(listOf("mail:$cause")))
             put(ARGS, fields(effect.args))
         }
-        queue += { arrive(Author(MAILROOM, "effect:$transition", false), input) }
+        queue += { arrive(Author(MAILROOM, by, false), input) }
     }
 
     /**
@@ -494,6 +490,9 @@ private const val INTERRUPTED = "interrupted"
 /** The operations whose `ok` names a seat (contracts.md §4.4). */
 private val SEATING = setOf("seat.start", "seat.reseat")
 private const val BORA_CLI = "bora-cli"
+/** The `by` of an emit a kind's expiry declares, and of one a transition's effects declare (contracts.md §2.1). */
+private const val EXPIRY_OF = "expiry:"
+private const val EFFECT_OF = "effect:"
 private const val NOW = "now"
 private const val SUBJECT_LIMIT = 120
 

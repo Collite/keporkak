@@ -1780,6 +1780,60 @@
     }
   },
   {
+    "name": "producer expiry:review-request",
+    "schema": "message",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "expiry:review-request"
+    }
+  },
+  {
+    "name": "expiry names a kind, not a transition",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "expiry:T-74"
+    }
+  },
+  {
+    "name": "expiry names a kind in lower case",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "coder-1",
+      "to": "teamlead",
+      "kind": "started",
+      "subject": "Skeleton",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "expiry:Review-request"
+    }
+  },
+  {
     "name": "producer hand:teamlead",
     "schema": "message",
     "accepted": true,

@@ -69,7 +69,7 @@ class TheMailroomSpec : FreeSpec({
 
             val (first, second) = office.readBack().expired(request)
             first.deadline?.value shouldBe "2026-11-16T11:01:00Z"
-            office.readBack().sent("nudge").single().let { "${it.to.value} ${it.by} ${it.re?.value}" } shouldBe "teamlead effect:T-74 $request"
+            office.readBack().sent("nudge").single().let { "${it.to.value} ${it.by} ${it.re?.value}" } shouldBe "teamlead expiry:review-request $request"
             // Judged like any other, the nudge is refused: its kind's `to: {re: from}` names the asker, not the teamlead (Found while doing).
             office.readBack().records<Refused>().single().requirement shouldBe "to: {re: from}"
             listOf(second.report, second.deliveryClass, second.deadline) shouldBe listOf("bora", "C", null)
