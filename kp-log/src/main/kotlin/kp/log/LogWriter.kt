@@ -39,10 +39,16 @@ class LogWriter private constructor(
     private val project: Path,
     private val office: OfficeId,
     private val lock: FileLock,
-    private var last: Long,
+    last: Long,
     private val closed: MutableSet<Path>,
     private val channels: Channels,
 ) : AutoCloseable {
+    /** The `seq` of the last line on disk, in any file of this office: the next line's is one more. */
+    var last: Long = last
+        private set
+
+    /** Whether [stage]'s file ended with its own `exited` or `closed` and takes no more lines (§3, Rotation). */
+    fun isClosed(stage: StageId): Boolean = Layout.stageFile(project, stage) in closed
 
     /**
      * Appends [draft] — a message or a record without `seq` — and returns the line as written. A message goes to its
