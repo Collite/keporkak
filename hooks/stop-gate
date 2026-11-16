@@ -1,0 +1,27 @@
+#!/bin/sh
+# stop-gate — the Stop hook of a Claude seat (contracts.md §11): asks the daemon whether the seat owes something
+# before its turn ends, and relays a block with its reason. The engine decides (engagement.yaml:stop_gate); this
+# hook only asks and relays. No answer within the limit, or any error, lets the turn end: a seat is never held by a
+# daemon that is down.
+#
+# Usage, from the seat's settings.json: /bin/sh hooks/stop-gate <limit in seconds>
+# The driver gives the seat KP_HOOK_URL and KP_SESSION_TOKEN; the token goes as the bearer of
+# POST $KP_HOOK_URL/hook/stop, read by curl from its standard input, never from its arguments. The daemon answers
+# {"block": bool, "reason": string}; a block is relayed to Claude Code as {"decision":"block","reason":"…"}.
+# Nothing is printed for a turn that may end, and nothing of the URL or the token is ever printed.
+set -u
+limit=${1:-10}
+input=$(cat)
+
+[ -n "${KP_HOOK_URL:-}" ] && [ -n "${KP_SESSION_TOKEN:-}" ] || exit 0
+
+body=$(printf '%s' "$input" | jq -c '{stop_hook_active: (.stop_hook_active == true)}' 2>/dev/null) || exit 0
+answer=$(printf 'header = "Authorization: Bearer %s"\n' "$KP_SESSION_TOKEN" \
+	| curl --silent --fail --max-time "$limit" --config - \
+		--header 'Content-Type: application/json' --data "$body" "$KP_HOOK_URL/hook/stop" 2>/dev/null) || exit 0
+
+printf '%s' "$answer" | jq -ce '
+	select(.block == true and (.reason | type) == "string" and .reason != "")
+	| {decision: "block", reason: .reason}
+' 2>/dev/null || true
+exit 0

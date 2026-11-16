@@ -257,7 +257,29 @@ def check_service(report, office):
         report.ok(f"lingering for {user}")
     else:
         report.todo(f"lingering for {user}", f"sudo loginctl enable-linger {user}")
-    report.later("no vendor global configuration reachable from a seat's config home", "S2.2")
+
+
+def check_vendor_configuration(report, office):
+    """What S2.2's probe showed (contracts.md §10, §12): a seat's Claude Code, given its config home, reads nothing of
+    the office user's ~/.claude or ~/.claude.json — only the home, where Claude Code also keeps its own global file,
+    .claude.json. So nothing of the office user's configuration reaches a seat while the seats' root is not ~/.claude
+    or inside it, and no home's .claude.json names an MCP server. Reads only; a home is never edited here."""
+    item = "no vendor global configuration reachable from a seat's config home"
+    written = office["roots"]["seats"]
+    seats, vendor = home(written).resolve(), home("~/.claude").resolve()
+    if seats == vendor or vendor in seats.parents:
+        report.todo(item, f"roots.seats {written} is ~/.claude or inside it: name a folder outside it in pool/offices.yaml")
+        return
+    named = []
+    for file in sorted(seats.glob("*/.claude.json")) if seats.is_dir() else []:
+        data = read_json(file) or {}
+        servers = list(data.get("mcpServers") or {}) + [name for project in (data.get("projects") or {}).values() for name in ((project or {}).get("mcpServers") or {})]
+        if servers:
+            named.append(f"{written}/{file.parent.name}/.claude.json names {', '.join(servers)}")
+    if named:
+        report.todo(item, "; ".join(named) + " — remove them: a seat's home is built at every start, never edited by hand (office/README.md)")
+    else:
+        report.ok(item, f"a seat reads its config home under {written}, not ~/.claude (S2.2's probe); no home names an MCP server")
 
 
 def main():
@@ -282,6 +304,7 @@ def main():
     check_sudo(report, office)
     check_live_targets(report, office)
     check_service(report, office)
+    check_vendor_configuration(report, office)
     print("\n".join(report.lines))
     counts = report.counts
     print(f"RESULT: {'NOT READY' if counts['to do'] else 'READY'} — {counts['to do']} to do, {counts['later']} later, {counts['ok']} ok")

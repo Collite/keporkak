@@ -48,6 +48,8 @@ adapter:
 # The adapter contract test (S2.1): the driver against the pinned adapter, on the office. It spends tokens: run it on
 # demand, not as a habit; it is no part of `check`, and CI never runs it. Its evidence file is named on its last line.
 # `just handshake models` runs only its models step — every roster model set and read back — and spends no tokens.
+# `just handshake hooks` (S2.2) runs a seat the builder made for the coder's persona through its hooks and borders,
+# with a poisoned HOME beside it: one prompt. Neither is part of `check`, and CI never runs them.
 handshake *args:
     ./gradlew --console=plain -q :kp-driver:handshakeClasspath
     java -cp "$(cat kp-driver/build/handshake.classpath)" kp.driver.handshake.HandshakeKt --root "$PWD" "$@"

@@ -28,6 +28,7 @@ import kotlinx.serialization.json.JsonNull
 import kp.driver.Answer
 import kp.driver.Answerer
 import kp.driver.Cancel
+import kp.driver.Explained
 import kp.driver.OfferedOption
 import kp.driver.PermissionRequest
 import java.util.concurrent.ConcurrentHashMap
@@ -85,7 +86,8 @@ internal class SeatSession(
     @Volatile private var replaying = false
     val observations = Observations(seat, clock)
     private val inputs = ConcurrentHashMap<String, JsonElement>()
-    private val asking = ConcurrentHashMap.newKeySet<Deferred<Answer>>()
+    private val names = ConcurrentHashMap<String, String>()
+    private val asking = ConcurrentHashMap.newKeySet<Deferred<Explained>>()
 
     val live: Boolean get() = !ended.get()
 
@@ -104,15 +106,17 @@ internal class SeatSession(
 
     /**
      * One permission request, handed whole — the tool, its input, the options offered — to the caller's answerer.
-     * Its input is the request's own, or else the one the tool call carried on the wire. A request still waiting
-     * for its answer when the turn is cancelled is answered `cancelled`.
+     * Its input is the request's own, or else the one the tool call carried on the wire; the tool's name is the one
+     * the agent gave on the wire, beside the protocol's fields (S2.2). A request still waiting for its answer when
+     * the turn is cancelled is answered `cancelled`. The answer's reason, if the answerer gives one, goes to the
+     * transcript with it: a denial by a compiled rule names its border.
      */
     private suspend fun permission(toolCall: SessionUpdate.ToolCallUpdate, permissions: List<PermissionOption>): RequestPermissionResponse {
         val id = toolCall.toolCallId.value
         val input = toolCall.rawInput?.takeUnless { it == JsonNull } ?: inputs[id]
         val offered = permissions.map { OfferedOption(it.optionId.value, it.name, Lines.wire(it.kind, PermissionOptionKind.serializer())) }
-        val request = PermissionRequest(seat, id, toolCall.title ?: "", toolCall.kind?.let { Lines.wire(it, ToolKind.serializer()) }, input, offered)
-        val asked = scope.async { answerer.answer(request) }
+        val request = PermissionRequest(seat, id, toolCall.title ?: "", toolCall.kind?.let { Lines.wire(it, ToolKind.serializer()) }, input, offered, names[id])
+        val asked = scope.async { answerer.explained(request) }
         asking += asked
         val answer = try {
             asked.await()
@@ -121,7 +125,7 @@ internal class SeatSession(
             null
         } catch (e: Exception) {
             note("permission $id: the answerer failed: ${e.message ?: e.javaClass.simpleName}")
-            Answer.DENY
+            Explained(Answer.DENY)
         } finally {
             asking -= asked
         }
@@ -130,8 +134,8 @@ internal class SeatSession(
             note("$asks → cancelled: the turn was cancelled")
             return RequestPermissionResponse(RequestPermissionOutcome.Cancelled)
         }
-        val choice = Permissions.choose(answer, offered)
-        note("$asks → ${choice.words}")
+        val choice = Permissions.choose(answer.answer, offered)
+        note("$asks → ${choice.words}${answer.because?.let { " ($it)" } ?: ""}")
         return RequestPermissionResponse(choice.option?.let { RequestPermissionOutcome.Selected(PermissionOptionId(it.id)) } ?: RequestPermissionOutcome.Cancelled)
     }
 
@@ -149,7 +153,13 @@ internal class SeatSession(
                         val input = update["rawInput"]?.takeUnless { it == JsonNull }
                         val toolCallId = (update["toolCallId"] as? JsonPrimitive)?.contentOrNull
                         if (input != null && toolCallId != null) inputs[toolCallId] = input
+                        if (toolCallId != null) toolName(update)?.let { names[toolCallId] = it }
                         events.trySend(Item.Update(update, clock.instant(), replay = replaying))
+                    }
+                    method == "session/request_permission" -> {
+                        val toolCall = message.getValue("params").jsonObject.getValue("toolCall").jsonObject
+                        val toolCallId = (toolCall["toolCallId"] as? JsonPrimitive)?.contentOrNull
+                        if (toolCallId != null) toolName(toolCall)?.let { names[toolCallId] = it }
                     }
                     method == null && id != null && id == loading -> {
                         replaying = false
@@ -176,6 +186,11 @@ internal class SeatSession(
             }
         }
     }
+
+    /** The tool's name as the agent gives it beside the protocol's fields: `name`, or `_meta.claudeCode.toolName` (S2.2 probe). */
+    private fun toolName(toolCall: JsonObject): String? =
+        (toolCall["name"] as? JsonPrimitive)?.contentOrNull
+            ?: (((toolCall["_meta"] as? JsonObject)?.get("claudeCode") as? JsonObject)?.get("toolName") as? JsonPrimitive)?.contentOrNull
 
     /** One turn (T4). A prompt while a turn is in flight fails; it is never queued. */
     suspend fun prompt(text: String): Outcome<TurnEnd> {

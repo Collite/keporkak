@@ -53,6 +53,9 @@ internal class AcpDriver(
 
     fun transcript(seat: SeatId): Transcript = transcripts.computeIfAbsent(seat) { Transcript.of(seatsRoot, it, clock) }
 
+    /** How many of the processes this driver started are still held: those that have not ended. */
+    fun held(): Int = launched.size
+
     /** A process started with the built environment, its connection, and `initialize` answered (T2). */
     suspend fun launch(spec: SessionSpec, onClosed: () -> Unit = {}, wire: Wire = Wire.NONE): Outcome<Launched> {
         val transcript = transcript(spec.seat)
@@ -67,6 +70,8 @@ internal class AcpDriver(
             return failed(transcript, "the agent cannot be started: ${e.message}")
         }
         launched += process
+        // A process that ended is forgotten: a long-lived driver keeps only the processes still running (issue #16).
+        process.exit.thenRun { launched -= process }
         transcript.write("process ${process.pid} started: ${spec.command.joinToString(" ")} in ${spec.workingDirectory}")
         val connection = AcpConnection(process, scope, "kp-driver ${spec.seat.value}", onNote = { transcript.write(it) }, onClosed = onClosed, wire = wire)
         val info = try {
@@ -129,7 +134,12 @@ internal class AcpDriver(
         seats[spec.seat]?.takeIf { it.live }?.let { return Outcome.Failed("seat ${spec.seat.value} has a live session ${it.session.sessionId.value}") }
         val seat = SeatSession(spec.seat, spec, mint(), transcript(spec.seat), clock, listener, answerer, scope)
         seat.transcript.hide(seat.token.value)
-        val launched = when (val result = launch(spec, onClosed = seat::protocolClosed, wire = seat.wire)) {
+        // The stop hook's call (§11): the token is minted before the process starts, and given to it with the URL.
+        val hooked = spec.hookUrl?.let { url ->
+            seat.transcript.hide(url)
+            spec.copy(environment = spec.environment + mapOf(SessionSpec.HOOK_URL to url, SessionSpec.SESSION_TOKEN to seat.token.value))
+        } ?: spec
+        val launched = when (val result = launch(hooked, onClosed = seat::protocolClosed, wire = seat.wire)) {
             is Outcome.Ok -> result.value
             is Outcome.Failed -> return result
         }

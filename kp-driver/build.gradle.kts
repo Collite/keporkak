@@ -7,15 +7,19 @@ dependencies {
     runtimeOnly(libs.slf4j.api)
     testImplementation(libs.kotest)
     testImplementation(libs.kotest.assertions)
-    // The specs read rules/vocabulary.yaml to hold the driver's fact names to it (S2.1 DONE).
-    testImplementation(libs.kaml)
+    // The packaging data, the personas' and the profiles' frontmatter (S2.2 T2); the specs also read rules/vocabulary.yaml.
+    implementation(libs.kaml)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
-// The specs start the scripted fake agent as a child JVM on the test classpath (S2.1 T1).
+// The specs start the scripted fake agent as a child JVM on the test classpath (S2.1 T1). They also read the
+// checkout's personas, renders, skills, packaging data, profiles and hooks (S2.2): a change there runs them again.
 tasks.named<Test>("test") {
     val classpath = sourceSets["test"].runtimeClasspath
     jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dkp.driver.fake.classpath=${classpath.asPath}") })
+    for (folder in listOf("agents", "renders", "skills", "docs/profiles", "hooks")) {
+        inputs.files(rootProject.fileTree(folder)).withPropertyName("checkout_" + folder.replace("/", "_")).withPathSensitivity(PathSensitivity.RELATIVE)
+    }
 }
 
 // `just handshake` (S2.1 T8): the driver against the real, pinned adapter. A source set of its own, outside the

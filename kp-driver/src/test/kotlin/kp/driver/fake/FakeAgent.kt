@@ -32,7 +32,8 @@ import kotlin.system.exitProcess
  * The script (JSON): `record` · `turns` — one list of steps per prompt · optional `mode`, `model`, `effort` (what a
  * session starts on), `modes`, `models`, `efforts` (what it offers), `w1` (send `auth.status` as `{}`, default true),
  * `onEof` (`exit`, `linger` or `orphan`), `loadable` (default true), `resolve` (a model value → the offered value it
- * is read back as, before the adapter's own rule — see [resolveModel]). Steps: `say`, `tool`, `tool_update`, `ask`, `usage`, `run`,
+ * is read back as, before the adapter's own rule — see [resolveModel]). Steps: `say`, `tool`, `tool_update`, `ask` (each tool step with an
+ * optional `name`, sent as the adapter sends the tool's name), `usage`, `run`,
  * `hangup`, `leak`, `recall`, `end` — see [perform]. Steps after `end` are sent after the turn's answer.
  */
 fun main(args: Array<String>) {
@@ -66,6 +67,8 @@ private class FakeAgent(private val script: JsonObject) {
             "env" to JsonArray(System.getenv().keys.sorted().map(::JsonPrimitive)),
             "CLAUDE_CONFIG_DIR" to (System.getenv("CLAUDE_CONFIG_DIR")?.let(::JsonPrimitive) ?: JsonNull),
             "CLAUDE_CODE_OAUTH_TOKEN_sha256" to (System.getenv("CLAUDE_CODE_OAUTH_TOKEN")?.let { JsonPrimitive(sha256(it)) } ?: JsonNull),
+            "KP_HOOK_URL" to (System.getenv("KP_HOOK_URL")?.let(::JsonPrimitive) ?: JsonNull),
+            "KP_SESSION_TOKEN_sha256" to (System.getenv("KP_SESSION_TOKEN")?.let { JsonPrimitive(sha256(it)) } ?: JsonNull),
         )
         val input = System.`in`.bufferedReader()
         while (true) {
@@ -211,6 +214,8 @@ private class FakeAgent(private val script: JsonObject) {
             "tool" -> emit(buildJsonObject {
                 put("sessionUpdate", "tool_call"); put("toolCallId", step.string("id")); put("title", step.string("title"))
                 put("kind", step.string("kind") ?: "execute"); put("status", "pending"); put("rawInput", step["input"] ?: JsonNull)
+                // The tool's name, where the adapter puts it beside the protocol's fields (S2.2 probe).
+                step.string("name")?.let { name -> put("name", name); put("_meta", buildJsonObject { put("claudeCode", buildJsonObject { put("toolName", name) }) }) }
             })
             "tool_update" -> emit(buildJsonObject {
                 put("sessionUpdate", "tool_call_update"); put("toolCallId", step.string("id")); put("status", step.string("status"))
@@ -222,7 +227,8 @@ private class FakeAgent(private val script: JsonObject) {
             // An agent that repeats its secrets: the token in its environment and the headers it was given.
             "leak" -> emit(buildJsonObject {
                 put("sessionUpdate", "agent_message_chunk")
-                put("content", text("my token is ${System.getenv("CLAUDE_CODE_OAUTH_TOKEN")} and my headers are ${headers.joinToString(" ")}"))
+                put("content", text("my token is ${System.getenv("CLAUDE_CODE_OAUTH_TOKEN")} and my headers are ${headers.joinToString(" ")}" +
+                    " and my hook is ${System.getenv("KP_HOOK_URL")} with ${System.getenv("KP_SESSION_TOKEN")}"))
             })
             // Closes stdout and stays: the protocol closes while the process lives.
             "hangup" -> {
@@ -254,6 +260,7 @@ private class FakeAgent(private val script: JsonObject) {
                 put("toolCall", buildJsonObject {
                     put("toolCallId", toolCallId); put("title", step.string("title")); put("kind", step.string("kind") ?: "execute")
                     put("status", "pending"); put("rawInput", step["input"] ?: JsonNull)
+                    step.string("name")?.let { put("name", it) }
                 })
                 put("options", JsonArray(options))
             })

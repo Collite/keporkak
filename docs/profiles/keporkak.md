@@ -1,3 +1,13 @@
+---
+# The profile's machine part (contracts.md §10): what agents/packaging/claude.yaml's placeholders need. The prose below
+# says where each value comes from; where they disagree, fix this frontmatter.
+default_branch: master
+# Relative to a repo's root; globs as the packaging data reads them.
+pin_files: [gradle/libs.versions.toml, gradle/wrapper/gradle-wrapper.properties, requirements.txt, ".github/workflows/*.yml", pool/roster.yaml, office/adapter/package.json, office/adapter/package-lock.json]
+cluster_tools: [kubectl, kustomize, helm]
+# No demo cluster: bp-dsk is the live target, and only QA touches it.
+demo_context: null
+---
 # Profile — Keporkak
 
 > The bindings of the universal rulebook for Keporkak itself (effort `KP`, D-47 finding 7). Source: the KP plan,
