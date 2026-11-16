@@ -49,7 +49,8 @@ sealed interface Outcome<out T> {
 /**
  * What the caller gives for one session (contracts.md §10): the agent's command, its working directory, the seat's
  * config home, model (a full id, §9) and effort, the MCP servers, and the environment — built by the caller, never
- * inherited.
+ * inherited. With a [hookUrl], the seat's process is also given `KP_HOOK_URL` and `KP_SESSION_TOKEN`, the token the
+ * driver minted for it (§11).
  */
 data class SessionSpec(
     val seat: SeatId,
@@ -60,6 +61,7 @@ data class SessionSpec(
     val effort: String,
     val servers: List<McpServer>,
     val environment: Map<String, String> = emptyMap(),
+    val hookUrl: String? = null,
 )
 
 /** An MCP server injected at `session/new`; one that [carriesToken] gets `Authorization: Bearer <session token>` (§5). */
@@ -115,7 +117,10 @@ data class Offers(val modes: List<String>, val models: List<String>, val efforts
 /** One option of a permission request, as offered. [kind] is the protocol's word, e.g. `allow_once`. */
 data class OfferedOption(val id: String, val name: String, val kind: String)
 
-/** A permission request, whole: the tool, its input, and the options the agent offers (T5). */
+/**
+ * A permission request, whole: the tool's title, its input, and the options the agent offers (T5) — and the tool's
+ * [name] as the agent calls it (`Bash`, `Write`), when the agent says it (S2.2).
+ */
 data class PermissionRequest(
     val seat: SeatId,
     val toolCallId: String,
@@ -123,13 +128,20 @@ data class PermissionRequest(
     val kind: String?,
     val input: JsonElement?,
     val options: List<OfferedOption>,
+    val name: String? = null,
 )
 
 enum class Answer { ALLOW, DENY }
 
+/** An answer and why, in the transcript's words: a denial by a compiled rule names its border (S2.2 T4). */
+data class Explained(val answer: Answer, val because: String? = null)
+
 /** Says allow or deny for one permission request; the caller supplies it (S2.2 brings the real one). */
 fun interface Answerer {
     suspend fun answer(request: PermissionRequest): Answer
+
+    /** The answer with its reason; an answerer that gives none answers as [answer]. */
+    suspend fun explained(request: PermissionRequest): Explained = Explained(answer(request))
 }
 
 /** The windows of `seat.usage` (contracts.md §4.4): the last turn that ended, and the session. */
