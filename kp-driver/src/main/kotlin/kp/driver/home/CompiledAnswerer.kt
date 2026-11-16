@@ -15,9 +15,11 @@ import java.nio.file.Path
 import kotlin.io.path.readText
 
 /**
- * The answerer of S2.1's driver, read from the seat's `permissions.json` (contracts.md §10, T4): a deny rule denies,
- * naming its border; no rule — the default, by the paths in the request's input; a request whose paths cannot be
- * read is denied. It decides nothing else and reads no rule file.
+ * The answerer of S2.1's driver, read from the seat's `permissions.json` (contracts.md §4.3, §10): a deny rule denies,
+ * naming its border. With no rule, a request that names no path is allowed — the deny rules alone judge it; a read
+ * gets the read default; any other request gets the write default for inside or outside what the session may write,
+ * by its paths. A request whose paths cannot be read is denied. What a path, a read and each default are, it reads from
+ * `permissions.json`; it decides nothing else and reads no rule file.
  */
 class CompiledAnswerer(private val seatsRoot: Path) : Answerer {
     override suspend fun answer(request: PermissionRequest): Answer = explained(request).answer
@@ -35,14 +37,21 @@ class CompiledAnswerer(private val seatsRoot: Path) : Answerer {
  * `permissions.json`, as the `deny` hook reads it too (hooks/deny): the same rules, matched the same way. A rule
  * denies a call when its `tool` expression matches the tool's whole name, its `command` expression is found in one of
  * the [lines] of the input's `command`, and one of the call's paths matches `path` and not `except`. A call's paths
- * are its input's `file_path`, `path` and `notebook_path`, resolved against the working directory, `.` and `..` removed.
+ * are the fields of its input that `paths` names, resolved against the working directory, `.` and `..` removed.
  */
-internal class PermissionTable private constructor(private val workingDirectory: String, private val inside: Answer, private val outside: Answer, private val rules: List<Rule>) {
+internal class PermissionTable private constructor(
+    private val workingDirectory: String,
+    private val pathFields: List<String>,
+    private val read: Regex,
+    private val writable: Regex,
+    private val defaults: Map<String, Answer>,
+    private val rules: List<Rule>,
+) {
     private class Rule(val border: String, val tool: Regex, val command: Regex?, val path: Regex?, val except: Regex?)
 
     fun decide(tool: String, input: JsonElement?): Explained {
         val fields = input as? JsonObject ?: return Explained(Answer.DENY, "its paths cannot be read: the input is not an object")
-        val given = PATH_FIELDS.mapNotNull { fields[it] }
+        val given = pathFields.mapNotNull { fields[it] }
         if (given.any { (it as? JsonPrimitive)?.isString != true || it.content.isEmpty() }) return Explained(Answer.DENY, "its paths cannot be read")
         val paths = given.map { normalize((it as JsonPrimitive).content) }
         val lines = (fields["command"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.let(::lines)
@@ -51,8 +60,12 @@ internal class PermissionTable private constructor(private val workingDirectory:
                 (rule.command == null || (lines != null && lines.any { rule.command.containsMatchIn(it) })) &&
                 (rule.path == null || paths.any { rule.path.containsMatchIn(it) && rule.except?.containsMatchIn(it) != true })
         }?.let { return Explained(Answer.DENY, "border ${it.border}") }
-        return if (paths.all { it == workingDirectory || it.startsWith("$workingDirectory/") }) Explained(inside, "inside the working directory")
-        else Explained(outside, "outside the working directory")
+        return when {
+            paths.isEmpty() -> Explained(Answer.ALLOW, "no path, and no deny rule covers it")
+            read.matches(tool) -> Explained(defaults.getValue(READ), "a read no deny rule covers")
+            paths.all { writable.matches(it) } -> Explained(defaults.getValue(WRITE_INSIDE), "a write inside what the session may write")
+            else -> Explained(defaults.getValue(WRITE_OUTSIDE), "a write outside what the session may write")
+        }
     }
 
     /** [path] made absolute against the working directory, with `.`, `..` and empty names removed — as hooks/deny does. */
@@ -69,7 +82,10 @@ internal class PermissionTable private constructor(private val workingDirectory:
     }
 
     companion object {
-        val PATH_FIELDS = listOf("file_path", "path", "notebook_path")
+        /** The keys of `permissions.json`'s defaults, as the builder writes them from `engagement.yaml:permissions`. */
+        private val READ = PermissionDefaults.READ
+        private val WRITE_INSIDE = PermissionDefaults.WRITE_INSIDE
+        private val WRITE_OUTSIDE = PermissionDefaults.WRITE_OUTSIDE
 
         /** A backslash that is not itself escaped, at a line's end: the shell joins the line to the next. */
         private val CONTINUED = Regex("""(?<!\\)((?:\\\\)*)\\\n""")
@@ -87,13 +103,16 @@ internal class PermissionTable private constructor(private val workingDirectory:
                 "deny" -> Answer.DENY
                 else -> error("$key is neither allow nor deny")
             }
+            fun text(key: String) = (table.getValue(key) as JsonPrimitive).also { check(it.isString) }.content
             val rules = table.getValue("rules").jsonArray.map { item ->
                 val rule = item.jsonObject
                 fun regex(key: String) = (rule[key] as? JsonPrimitive)?.contentOrNull?.let(::Regex)
                 Rule((rule.getValue("border") as JsonPrimitive).content, regex("tool")!!, regex("command"), regex("path"), regex("except"))
             }
-            val directory = (table.getValue("working_directory") as JsonPrimitive).content.trimEnd('/').ifEmpty { "/" }
-            PermissionTable(directory, answer("inside_working_directory"), answer("outside_working_directory"), rules)
+            val directory = text("working_directory").trimEnd('/').ifEmpty { "/" }
+            val paths = table.getValue("paths").jsonArray.map { (it as JsonPrimitive).also { field -> check(field.isString) }.content }
+            PermissionTable(directory, paths, Regex(text("read")), Regex(text("writable")),
+                listOf(READ, WRITE_INSIDE, WRITE_OUTSIDE).associateWith(::answer), rules)
         }.getOrNull()
     }
 }

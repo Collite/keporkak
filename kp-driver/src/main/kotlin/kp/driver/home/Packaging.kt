@@ -66,16 +66,22 @@ class Packaging private constructor(
     private val words: Map<String, Word>,
     private val servers: Map<String, Server>,
     internal val hooks: Map<String, HookEvent>,
+    private val writable: List<String>,
+    private val requests: Requests,
+    private val commandStart: String,
 ) {
+    /** What a request is (contracts.md §10): the fields of its input that are paths, and the tools whose requests are reads. */
+    internal class Requests(val paths: List<String>, val read: List<String>)
     internal class Word(val name: String, val denies: String, val rules: List<RawRule>)
-    internal class RawRule(val tools: List<String>, val command: String?, val path: List<String>, val except: List<String>, val early: List<String>)
+    internal class RawRule(val tools: List<String>, val command: String?, val line: String?, val path: List<String>, val except: List<String>, val outside: String?)
     internal class Server(val url: String, val sessionToken: Boolean)
     internal class HookEvent(val event: String, val matcher: String?, val timeout: Int, val limit: Int?)
 
     /** The placeholders each word and server uses, by the word or server: for the check that something fills each. */
     internal fun placeholders(): List<Pair<String, String>> =
         words.values.flatMap { word -> word.rules.flatMap { it.texts() }.flatMap(::placeholdersIn).distinct().map { "deny word '${word.name}'" to it } } +
-            servers.entries.flatMap { (name, server) -> placeholdersIn(server.url).distinct().map { "MCP server '$name'" to it } }
+            servers.entries.flatMap { (name, server) -> placeholdersIn(server.url).distinct().map { "MCP server '$name'" to it } } +
+            writable.flatMap(::placeholdersIn).distinct().map { "the writable set" to it }
 
     internal fun maps(word: String) = word in words
     internal fun serves(server: String) = server in servers
@@ -86,21 +92,23 @@ class Packaging private constructor(
             is Outcome.Ok -> rules.value
             is Outcome.Failed -> return rules
         }
+        val writable = when (val set = writable(profile, places)) {
+            is Outcome.Ok -> set.value
+            is Outcome.Failed -> return set
+        }
         return Outcome.Ok(buildJsonObject {
             put("version", 1)
             put("working_directory", places.worktree.toString())
+            put("writable", globs(writable))
+            put("paths", JsonArray(requests.paths.map(::JsonPrimitive)))
+            put("read", tools(requests.read))
             put("defaults", buildJsonObject {
-                put("inside_working_directory", defaults.inside.word())
-                put("outside_working_directory", defaults.outside.word())
+                put(PermissionDefaults.WRITE_INSIDE, defaults.writeInside.word())
+                put(PermissionDefaults.WRITE_OUTSIDE, defaults.writeOutside.word())
+                put(PermissionDefaults.READ, defaults.read.word())
             })
             put("rules", JsonArray(compiled.map { it.json() }))
         })
-    }
-
-    /** The same words in Claude Code's own syntax, for `settings.json` — the early no. */
-    internal fun early(words: List<String>, profile: Profile, places: Places): Outcome<List<String>> = when (val rules = compile(words, profile, places)) {
-        is Outcome.Ok -> Outcome.Ok(rules.value.flatMap { it.early }.distinct())
-        is Outcome.Failed -> rules
     }
 
     /** The MCP servers a persona names, by address, for injection per session (§5: the messaging server carries the token). */
@@ -116,27 +124,50 @@ class Packaging private constructor(
         return if (problems.isEmpty()) Outcome.Ok(built) else Outcome.Failed(problems.joinToString("; "))
     }
 
+    private fun values(profile: Profile, places: Places) = SessionPlaceholders.fill(places) + profile.values.filterKeys { it !in SessionPlaceholders.names }
+
     private fun compile(names: List<String>, profile: Profile, places: Places): Outcome<List<CompiledRule>> {
-        val values = SessionPlaceholders.fill(places) + profile.values.filterKeys { it !in SessionPlaceholders.names }
+        val values = values(profile, places)
         val problems = mutableListOf<String>()
+        val writable = when (val set = writable(profile, places)) {
+            is Outcome.Ok -> set.value
+            is Outcome.Failed -> return set
+        }
         val compiled = names.flatMap { name ->
             val word = words[name] ?: return@flatMap emptyList<CompiledRule>().also { problems += "deny word '$name' is not mapped by the packaging data" }
             val fill = Fill(values, problems, "deny word '$name'", profile.name)
-            word.rules.mapNotNull { rule -> rule.compile(word, fill) }
+            word.rules.mapNotNull { rule -> rule.compile(word, fill, writable) }
         }
         return if (problems.isEmpty()) Outcome.Ok(compiled) else Outcome.Failed(problems.distinct().joinToString("; "))
     }
 
-    private fun RawRule.texts() = listOfNotNull(command) + path + except + early
+    /**
+     * What the session may write, as globs (contracts.md §10): each glob of the data's `writable` with its placeholders
+     * filled. A glob whose session value is empty — the own file of a seat that has none — is left out.
+     */
+    private fun writable(profile: Profile, places: Places): Outcome<List<String>> {
+        val values = values(profile, places)
+        val problems = mutableListOf<String>()
+        val globs = writable.flatMap { glob ->
+            if (placeholdersIn(glob).any { it in SessionPlaceholders.names && values[it] == null }) emptyList()
+            else Fill(values, problems, "the writable set", profile.name).expand(glob, ::literal).orEmpty()
+        }
+        return if (problems.isEmpty()) Outcome.Ok(globs) else Outcome.Failed(problems.distinct().joinToString("; "))
+    }
 
-    /** One rule with its placeholders filled; null when a value it needs is empty — the rule is left out. */
-    private fun RawRule.compile(word: Word, fill: Fill): CompiledRule? {
-        val command = command?.let { fill.expandRegex(it) ?: return null }
-        val path = path.map { fill.expand(it, ::literal) ?: return null }.flatten()
-        val except = except.map { fill.expand(it, ::literal) ?: return null }.flatten()
-        val early = early.flatMap { fill.expand(it, ::literal) ?: emptyList() }
+    private fun RawRule.texts() = listOfNotNull(command, line) + path + except
+
+    /**
+     * One rule with its placeholders filled; null when a value it needs is empty — the rule is left out. A `command`
+     * is matched where a command starts — the data's `command_start` stands before it; a `line` anywhere in a line.
+     */
+    private fun RawRule.compile(word: Word, fill: Fill, writable: List<String>): CompiledRule? {
+        val command = command?.let { "$commandStart(?:" + (fill.expandRegex(it) ?: return null) + ")" }
+            ?: line?.let { fill.expandRegex(it) ?: return null }
+        val path = (if (outside != null) listOf("/**") else path.map { fill.expand(it, ::literal) ?: return null }.flatten())
+        val except = except.map { fill.expand(it, ::literal) ?: return null }.flatten() + (if (outside != null) writable else emptyList())
         if (fill.failed) return null
-        return CompiledRule(word.name, word.denies, tools(tools), command, path.takeIf { it.isNotEmpty() }?.let(::globs), except.takeIf { it.isNotEmpty() }?.let(::globs), early)
+        return CompiledRule(word.name, word.denies, tools(tools), command, path.takeIf { it.isNotEmpty() }?.let(::globs), except.takeIf { it.isNotEmpty() }?.let(::globs))
     }
 
     /** A placeholder's value as literal text in a pattern. */
@@ -173,16 +204,21 @@ class Packaging private constructor(
                 problems += "placeholder '{$name}' of $owner is filled by nothing" + (profile?.let { " in profile $it" } ?: "")
                 return null
             }
-            return when (val value = values[name]) {
-                null -> if (name in SessionPlaceholders.names) null.also { failed = true; problems += "placeholder '{$name}' of $owner is filled by nothing: the session gives none" } else null
+            val choices = when (val value = values[name]) {
+                null -> null
                 is List<*> -> value.map { it.toString() }.takeIf { it.isNotEmpty() }
                 else -> listOf(value.toString())
             }
+            if (choices == null && name in SessionPlaceholders.names) {
+                failed = true
+                problems += "placeholder '{$name}' of $owner is filled by nothing: the session gives none"
+            }
+            return choices
         }
     }
 
     /** A rule ready for `permissions.json`: regular expressions over the tool's name, its command and its paths. */
-    private class CompiledRule(val border: String, val denies: String, val tool: String, val command: String?, val path: String?, val except: String?, val early: List<String>) {
+    private class CompiledRule(val border: String, val denies: String, val tool: String, val command: String?, val path: String?, val except: String?) {
         fun json() = buildJsonObject {
             put("border", border)
             put("denies", denies)
@@ -210,8 +246,11 @@ class Packaging private constructor(
                 val word = value as? Map<*, *>
                 val rules = (word?.get("rules") as? List<*>).orEmpty().map { item ->
                     val rule = item as? Map<*, *> ?: emptyMap<Any, Any>()
-                    RawRule(strings(rule["tools"]), rule["command"]?.toString(), strings(rule["path"]), strings(rule["except"]), strings(rule["early"]))
+                    rule.keys.map { it.toString() }.filterNot { it in RULE_KEYS }.forEach { problems += "deny word '$name': a rule has an unknown key '$it'" }
+                    RawRule(strings(rule["tools"]), rule["command"]?.toString(), rule["line"]?.toString(), strings(rule["path"]), strings(rule["except"]), rule["outside"]?.toString())
                         .also { if (it.tools.isEmpty()) problems += "deny word '$name': a rule names no tool" }
+                        .also { if (it.command != null && it.line != null) problems += "deny word '$name': a rule names a command and a line" }
+                        .also { if (it.outside != null && it.outside != WRITABLE) problems += "deny word '$name': outside names '${it.outside}', not $WRITABLE" }
                 }
                 if (rules.isEmpty()) problems += "deny word '$name' has no rule"
                 name to Word(name, word?.get("denies")?.toString() ?: name, rules)
@@ -227,12 +266,22 @@ class Packaging private constructor(
                 key.toString() to HookEvent(event, hook?.get("matcher")?.toString(), hook?.get("timeout")?.toString()?.toIntOrNull() ?: 0, hook?.get("limit")?.toString()?.toIntOrNull())
             }
             for (hook in HOOKS) if (hook !in hooks) problems += "hook '$hook' is not in the packaging data"
+            val requests = (root["requests"] as? Map<*, *>).orEmpty().let { Requests(strings(it["paths"]), strings(it["read"])) }
+            if (requests.paths.isEmpty()) problems += "requests: no field of an input is named as a path"
+            val commandStart = root["command_start"]?.toString()
+            if (commandStart == null && words.values.any { word -> word.rules.any { it.command != null } }) problems += "a rule names a command, and command_start is not given"
             if (problems.isNotEmpty()) return Outcome.Failed(problems.joinToString("; "))
-            return Outcome.Ok(Packaging(words, servers, hooks))
+            return Outcome.Ok(Packaging(words, servers, hooks, strings(root[WRITABLE]), requests, commandStart.orEmpty()))
         }
 
         /** The three hooks of contracts.md §11, by their scripts' names in `hooks/`. */
         internal val HOOKS = listOf("inbox-first", "deny", "stop-gate")
+
+        /** What a rule may say: its tools, and what it matches of a call. */
+        private val RULE_KEYS = listOf("tools", "command", "line", "path", "except", "outside")
+
+        /** The data's set of what a session may write, and the one name a rule's `outside` may give. */
+        private const val WRITABLE = "writable"
 
         /**
          * Every problem the packaging data has with these personas and profiles (T2) — a `deny:` word or an MCP server

@@ -1,5 +1,9 @@
 package kp.driver.home
 
+import com.charleskorn.kaml.Yaml
+import com.charleskorn.kaml.YamlMap
+import com.charleskorn.kaml.YamlScalar
+import com.charleskorn.kaml.yamlMap
 import com.sun.net.httpserver.HttpServer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -82,11 +86,24 @@ class Sources : AutoCloseable {
     /** What the answerer says to the call as a permission request of the seat `table`: `allow` or `deny <border>`. */
     suspend fun answer(permissions: Path, tool: String, input: JsonElement): String {
         check(permissions == seats.resolve("table/permissions.json"))
-        val request = PermissionRequest(SeatId("table"), "toolu_table", tool, null, input,
-            listOf(OfferedOption("allow-once", "Yes", "allow_once"), OfferedOption("reject", "No", "reject_once")), name = tool)
-        val explained = CompiledAnswerer(seats).explained(request)
-        return if (explained.answer == Answer.ALLOW) "allow" else "deny " + (BORDER.find(explained.because ?: "")?.groupValues?.get(1) ?: "without a border: ${explained.because}")
+        return answer("table", Call(tool, input))
     }
+
+    /** What the answerer says to [call] as a permission request of [seat]: `allow`, `deny <border>` or `deny: <why>`. */
+    suspend fun answer(seat: String, call: Call): String {
+        val request = PermissionRequest(SeatId(seat), "toolu_$seat", call.tool, null, call.input,
+            listOf(OfferedOption("allow-once", "Yes", "allow_once"), OfferedOption("reject", "No", "reject_once")), name = call.tool)
+        val explained = CompiledAnswerer(seats).explained(request)
+        return if (explained.answer == Answer.ALLOW) "allow" else BORDER.find(explained.because ?: "")?.let { "deny " + it.groupValues[1] } ?: "deny: ${explained.because}"
+    }
+
+    /** The home the builder makes for [seat] in [role], with these places, for [profile], and master's defaults or [defaults]. */
+    fun home(seat: String, role: String, profile: String = "keporkak", defaults: PermissionDefaults = MASTER_DEFAULTS): Path =
+        ConfigHomes(root, seats).build(SeatId(seat), role, profile, places, defaults).ok().path
+
+    /** The roles of the personas, and the names of the profiles, sorted. */
+    fun roles(): List<String> = root.resolve("agents").listDirectoryEntries().filter { it.resolve("AGENT.md").exists() }.map { it.name }.sorted()
+    fun profiles(): List<String> = root.resolve("docs/profiles").listDirectoryEntries("*.md").map { it.name.removeSuffix(".md") }.sorted()
 
     override fun close() { root.toFile().deleteRecursively() }
 
@@ -99,6 +116,23 @@ class Sources : AutoCloseable {
 
 /** A border's name in a reason: `border <word>`. */
 val BORDER = Regex("border ([a-z][a-z-]*)")
+
+/** `engagement.yaml:permissions` on master, as a caller hands it to the builder. */
+val MASTER_DEFAULTS: PermissionDefaults by lazy {
+    val block = Yaml.default.parseToYamlNode(root("rules/engagement.yaml").readText()).yamlMap.get<YamlMap>("permissions")!!
+    PermissionDefaults.of(block.entries.entries.associate { (key, value) -> key.content to (value as YamlScalar).content }).ok()
+}
+
+/** One tool call: its tool's name and its input — the hook's `tool_input`, a permission request's input. */
+class Call(val tool: String, val input: JsonElement) {
+    override fun toString() = "$tool $input"
+}
+
+fun call(tool: String, input: String) = Call(tool, Json.parseToJsonElement(input))
+fun bash(command: String) = Call("Bash", buildJsonObject { put("command", command) })
+fun write(path: String) = Call("Write", buildJsonObject { put("file_path", path); put("content", "x") })
+fun edit(path: String, old: String, new: String) = Call("Edit", buildJsonObject { put("file_path", path); put("old_string", old); put("new_string", new) })
+fun read(path: String) = Call("Read", buildJsonObject { put("file_path", path) })
 
 /** One row of permission-table.tsv. */
 class Row(val word: String, val profile: String, val worktree: String, val tool: String, val input: JsonElement, val expected: String) {
@@ -113,17 +147,21 @@ object TableRows {
 
 /** The hook scripts of `hooks/`, run as the pinned Claude Code runs them: a process, the hook's JSON on stdin. */
 object Hooks {
-    /** What `deny` answers to a PreToolUse call, in the probe's form: `allow` (no decision) or `deny <border>`. */
-    fun deny(permissions: Path, tool: String, input: JsonElement): String {
+    /** What `deny` answers to a PreToolUse call, in the probe's form: `allow` (no decision), `deny <border>` or `deny: <why>`. */
+    fun deny(permissions: Path, tool: String, input: JsonElement, environment: Map<String, String> = emptyMap()): String {
         val call = JsonObject(PRE_TOOL_USE + mapOf("tool_name" to JsonPrimitive(tool), "tool_input" to input))
-        val out = run("deny", listOf(permissions.toString()), call.toString()).trim()
+        val out = run("deny", listOf(permissions.toString()), call.toString(), environment).trim()
         if (out.isEmpty()) return "allow"
         val decision = Json.parseToJsonElement(out).jsonObject.getValue("hookSpecificOutput").jsonObject
         check((decision["hookEventName"] as JsonPrimitive).content == "PreToolUse") { out }
         check((decision["permissionDecision"] as JsonPrimitive).content == "deny") { out }
         val reason = (decision["permissionDecisionReason"] as JsonPrimitive).content
-        return "deny " + (BORDER.find(reason)?.groupValues?.get(1) ?: "without a border: $reason")
+        return BORDER.find(reason)?.let { "deny " + it.groupValues[1] } ?: "deny: " + reason.removePrefix("Keporkak denied this call: ").removeSuffix(".")
     }
+
+    /** What `deny` answers to [call] from the `permissions.json` of [home] — with only [path] as its PATH, if given. */
+    fun deny(home: Path, call: Call, path: String? = null): String =
+        deny(home.resolve("permissions.json"), call.tool, call.input, path?.let { mapOf("PATH" to it) } ?: emptyMap())
 
     /** What `stop-gate` prints at a Stop, with the daemon at [url] and the seat's [token] in its environment. */
     fun stopGate(limitSeconds: Int, url: String, token: String): String =

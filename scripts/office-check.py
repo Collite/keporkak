@@ -2,9 +2,12 @@
 """The office check (contracts.md §12, architecture.md §4): one line per item, each with one of three outcomes —
 `ok` · `to do` (Bora's, with the exact command) · `later` (the stage that delivers it). Exit 1 while anything is to do.
 
-It reads and reports only. It installs, creates and changes nothing, and never runs `sudo`: every command it runs is
-a version or a read-only query, and `gh` runs with DO_NOT_TRACK so it writes no state file.
-Usage: python3 scripts/office-check.py [--pool DIR] [--adapter DIR] [--office NAME]   (default: the short host name)
+It reads and reports only. It installs and changes nothing on the office, and never runs `sudo`: every command it
+runs is a version or a read-only query, `gh` runs with DO_NOT_TRACK so it writes no state file — and, for the seats'
+permissions, kp-driver's builder makes every persona's home in a temporary folder it then removes (Gradle compiles
+into the checkout's build/ first), and hooks/deny reads each home's permissions.json.
+Usage: python3 scripts/office-check.py [--pool DIR] [--adapter DIR] [--office NAME] [--homes DIR]
+       --office: default the short host name · --homes: read the homes built in DIR instead of building them
 """
 import argparse
 import json
@@ -17,6 +20,7 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -234,7 +238,77 @@ def check_sudo(report, office):
         else:
             report.todo(item, f"sudo install -o root -g root -m 0755 {real} /usr/local/bin/kp, and keep it the only kp on PATH")
     report.later("sudo asks every time for kp", "S1.5", "— Bora installs office/sudoers.d/zz-keporkak-kp before it (office/README.md)")
-    report.later("seats' permissions deny kp and sudo", "S2.2", "compiles them")
+
+
+# Bora's signed command, as a seat would try it (contracts.md §6).
+SEAT_CALLS = ("kp approve 1", "sudo kp approve 1")
+# The PATH a seat's hooks run with (kp-driver gives the seat a fixed PATH).
+HOOK_PATH = "/usr/local/bin:/usr/bin:/bin"
+
+
+def build_homes(folder):
+    """Every persona's home, for every profile, made by kp-driver's builder into folder — no session, no token. None
+    when they are made; otherwise what went wrong, in one line."""
+    try:
+        gradle = subprocess.run([str(ROOT / "gradlew"), "--console=plain", "-q", ":kp-driver:handshakeClasspath"], cwd=ROOT,
+                                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=900)
+        if gradle.returncode != 0:
+            return "./gradlew :kp-driver:handshakeClasspath failed: " + ((gradle.stderr or gradle.stdout).strip().splitlines() or ["no output"])[-1]
+        classpath = (ROOT / "kp-driver/build/handshake.classpath").read_text().strip()
+        built = subprocess.run(["java", "-XX:-UsePerfData", "-cp", classpath, "kp.driver.handshake.HomesKt", "--root", str(ROOT), "--out", str(folder)],
+                               cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return f"the builder did not run: {error}"
+    if built.returncode != 0:
+        return "the builder made no home: " + ((built.stderr or built.stdout).strip().splitlines() or ["no output"])[0]
+    return None
+
+
+def denial(permissions, command):
+    """What hooks/deny answers to a Bash call of command, read against permissions: the border that denies it, or None."""
+    call = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": command}})
+    try:
+        out = subprocess.run(["/bin/sh", str(ROOT / "hooks/deny"), str(permissions)], input=call, capture_output=True, text=True, timeout=30,
+                             env={"PATH": HOOK_PATH, "LANG": "C.UTF-8"}).stdout
+        reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"] if out.strip() else ""
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError):
+        return None
+    match = re.search(r"border ([a-z][a-z-]*)", reason)
+    return match.group(1) if match else None
+
+
+def check_seat_permissions(report, homes):
+    """contracts.md §6: seats' compiled permissions deny `kp` and `sudo`. Reads the permissions.json of every home —
+    built by kp-driver's builder in a temporary folder, or found in homes — and puts a `kp …` and a `sudo kp …` call
+    through hooks/deny with each, as a seat's Claude Code does: each must be denied by a border, not by a hook that
+    cannot read its table."""
+    item = "seats' permissions deny kp and sudo"
+    with tempfile.TemporaryDirectory(prefix="kp-office-homes-") as temporary:
+        if homes is None:
+            folder, how = Path(temporary), "built from this checkout's personas and profiles"
+            problem = build_homes(folder)
+            if problem:
+                report.todo(item, problem + " — then just office-check again")
+                return
+            folder = folder / "seats"
+        else:
+            folder, how = homes, f"read from {homes}"
+        tables = sorted(folder.glob("*/permissions.json")) if folder.is_dir() else []
+        if not tables:
+            report.todo(item, f"no home's permissions.json to read in {folder} — a home is built by kp-driver (office/README.md §5)")
+            return
+        borders, through = set(), []
+        for table in tables:
+            for command in SEAT_CALLS:
+                border = denial(table, command)
+                if border:
+                    borders.add(border)
+                else:
+                    through.append(f"{table.parent.name} does not deny `{command}` by a border")
+    if through:
+        report.todo(item, "; ".join(through) + " — a persona's deny: or the packaging data changes through a stage (office/README.md §5)")
+    else:
+        report.ok(item, f"{len(tables)} home{'s' if len(tables) != 1 else ''} {how}; each denies `{SEAT_CALLS[0]}` and `{SEAT_CALLS[1]}`, by border {', '.join(sorted(borders))}")
 
 
 def check_live_targets(report, office):
@@ -287,6 +361,7 @@ def main():
     parser.add_argument("--pool", type=Path, default=ROOT / "pool")
     parser.add_argument("--adapter", type=Path, default=ROOT / "office/adapter", help="the adapter's folder: its lockfile and node_modules")
     parser.add_argument("--office", default=socket.gethostname().split(".")[0])
+    parser.add_argument("--homes", type=Path, help="read the homes built in this folder instead of building them")
     args = parser.parse_args()
     try:
         roster = yaml.load((args.pool / "roster.yaml").read_text(), Loader=PoolLoader)
@@ -302,6 +377,7 @@ def main():
     check_project(report, office)
     check_secrets(report, office)
     check_sudo(report, office)
+    check_seat_permissions(report, args.homes)
     check_live_targets(report, office)
     check_service(report, office)
     check_vendor_configuration(report, office)

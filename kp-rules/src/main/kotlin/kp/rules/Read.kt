@@ -469,10 +469,27 @@ internal fun readEngagement(doc: Doc, node: Node): Engagement? {
             forms.requirements(read["require"])).also { read.close() }
     }
     val permissions = fields["permissions"]?.let { doc.textMap(it, null, "permissions") } ?: emptyMap()
+    if (fields["permissions"] != null) {
+        // What a request no deny: word covers gets (contracts.md §4.3, §10): these keys and these values, no other.
+        permissions.keys.filterNot { it in PERMISSIONS }.forEach { doc.problem(null, "permissions: unknown key '$it'") }
+        for ((key, values) in PERMISSIONS) {
+            val value = permissions[key]
+            if (value == null) doc.problem(null, "permissions: missing $key")
+            else if (value !in values) doc.problem(null, "permissions.$key must be ${values.joinToString(" or ")}")
+        }
+    }
     fields.close()
     return Engagement(principles, roles, classes, graduation, caps, presence, declared, secondKey, profile.orEmpty(), profiles, qa, identity, unguarded,
         stopGate, permissions, flatten(mapping))
 }
+
+/** `engagement.yaml:permissions`: each key and the values it may take (contracts.md §4.3, §10; D-18 (4)). */
+private val PERMISSIONS = mapOf(
+    "write_inside" to listOf("allow", "deny"),
+    "write_outside" to listOf("allow", "deny"),
+    "read" to listOf("allow", "deny"),
+    "lifetime" to listOf("once"),
+)
 
 // rules/vocabulary.yaml
 

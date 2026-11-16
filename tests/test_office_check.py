@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location("office_specs", Path(__file__).with_name("test_s0_3_the_office.py"))
 _specs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_specs)
-FakeMachine, USER, ADAPTER, PIN = _specs.FakeMachine, _specs.USER, _specs.ADAPTER, _specs.PIN
+FakeMachine, USER, ADAPTER, PIN, SIDE_CHANNELS = _specs.FakeMachine, _specs.USER, _specs.ADAPTER, _specs.PIN, _specs.SIDE_CHANNELS
 
 
 class OfficeCheckTests(unittest.TestCase):
@@ -26,6 +26,26 @@ class OfficeCheckTests(unittest.TestCase):
     def test_a_ready_machine_passes(self):
         result = self.machine.office_check()
         self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_every_home_whose_compiled_permissions_deny_kp_and_sudo_by_a_border_is_ok(self):
+        self.machine.put_home("reviewer-keporkak", SIDE_CHANNELS)
+        self.assertIn(f"ok     seats' permissions deny kp and sudo: 2 homes read from {self.machine.homes}; each denies `kp approve 1` and `sudo kp approve 1`, by border side-channels", self.lines())
+
+    def test_a_home_that_lets_kp_or_sudo_through_is_to_do(self):
+        self.machine.put_home("deputy-keporkak", {**SIDE_CHANNELS, "rules": [{**SIDE_CHANNELS["rules"][0], "command": "(^|[;&|(])\\s*kp(\\s|$)"}]})
+        self.assertIn("to do  seats' permissions deny kp and sudo: deputy-keporkak does not deny `sudo kp approve 1` by a border"
+                      " — a persona's deny: or the packaging data changes through a stage (office/README.md §5)", self.lines())
+
+    def test_a_home_whose_permissions_the_hook_cannot_read_is_to_do_though_the_hook_denies(self):
+        self.machine.put_home("pool-keporkak", "{not json")
+        self.assertIn("to do  seats' permissions deny kp and sudo: pool-keporkak does not deny `kp approve 1` by a border; pool-keporkak does not deny `sudo kp approve 1` by a border"
+                      " — a persona's deny: or the packaging data changes through a stage (office/README.md §5)", self.lines())
+
+    def test_no_home_to_read_is_to_do(self):
+        empty = self.machine.base / "no-homes"
+        empty.mkdir()
+        self.machine.homes = empty
+        self.assertIn(f"to do  seats' permissions deny kp and sudo: no home's permissions.json to read in {empty} — a home is built by kp-driver (office/README.md §5)", self.lines())
 
     def test_a_secrets_root_open_to_others_is_to_do(self):
         self.secrets.chmod(0o755)

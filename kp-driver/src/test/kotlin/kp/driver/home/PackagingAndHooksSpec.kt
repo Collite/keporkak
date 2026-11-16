@@ -26,7 +26,7 @@ import kotlin.io.path.writeText
  * probe's JSON on stdin (Hooks.kt).
  */
 class PackagingAndHooksSpec : StringSpec({
-    val allow = PermissionDefaults(inside = Answer.ALLOW, outside = Answer.DENY)
+    val allow = PermissionDefaults(writeInside = Answer.ALLOW, writeOutside = Answer.DENY, read = Answer.ALLOW)
 
     "a config home holds, for its role, the render as CLAUDE.md, the skills its persona lists and no other, settings.json and permissions.json — and what an earlier build put there and this one does not is gone" {
         Sources().use { sources ->
@@ -71,8 +71,8 @@ class PackagingAndHooksSpec : StringSpec({
             fun write(path: String) = PermissionRequest(SeatId("principal-1"), "t1", "Write", "edit", Json.parseToJsonElement("""{"file_path":"$path","content":"x"}"""),
                 listOf(OfferedOption("allow-once", "Yes", "allow_once"), OfferedOption("reject", "No", "reject_once")), name = "Write")
 
-            answerer.explained(write("${sources.places.project}/notes.md")) shouldBe Explained(Answer.ALLOW, "inside the working directory")
-            answerer.explained(write("/tmp/elsewhere/notes.md")) shouldBe Explained(Answer.DENY, "outside the working directory")
+            answerer.explained(write("${sources.places.project}/notes.md")) shouldBe Explained(Answer.ALLOW, "a write inside what the session may write")
+            answerer.explained(write("/tmp/elsewhere/notes.md")) shouldBe Explained(Answer.DENY, "a write outside what the session may write")
         }
     }
 

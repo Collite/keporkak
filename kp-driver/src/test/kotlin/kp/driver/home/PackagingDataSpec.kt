@@ -21,7 +21,7 @@ import kotlin.io.path.readText
 
 /** T2 — the packaging data, its reader and its compile, for the next developer. */
 class PackagingDataSpec : StringSpec({
-    val defaults = PermissionDefaults(Answer.ALLOW, Answer.DENY)
+    val defaults = PermissionDefaults(Answer.ALLOW, Answer.DENY, Answer.ALLOW)
     val places = Places(
         worktree = Path.of("/office/_wt/keporkak-S2.2"),
         scratch = Path.of("/office/_scratch/keporkak/S2.2"),
@@ -61,24 +61,72 @@ class PackagingDataSpec : StringSpec({
         val pins = rules(packaging.permissions(listOf("pin-files"), profile("toy"), places, defaults).ok()).single()
 
         pins.field("path") shouldBe "^(/office/_wt/keporkak-S2\\.2/gradle/libs\\.versions\\.toml|/office/_wt/keporkak-S2\\.2/gradle/wrapper/gradle-wrapper\\.properties)$"
-        packaging.early(listOf("pin-files"), profile("toy"), places).ok() shouldBe
-            listOf("Edit(//office/_wt/keporkak-S2.2/gradle/libs.versions.toml)", "Edit(//office/_wt/keporkak-S2.2/gradle/wrapper/gradle-wrapper.properties)")
         rules(packaging.permissions(listOf("demo-cluster"), profile("keporkak"), places, defaults).ok()).shouldBeEmpty()
-        rules(packaging.permissions(listOf("live-target"), profile("keporkak"), places, defaults).ok()).first().field("command") shouldBe
-            "(^|[;&|(`])\\s*((kubectl|kustomize|helm))(\\s|$|[;&|`])"
+        rules(packaging.permissions(listOf("live-target"), profile("keporkak"), places, defaults).ok()).first().field("command")!!
+            .substringAfterLast(")*(\\S*/)?") shouldBe "(?:((kubectl|kustomize|helm))(\\s|$|[;&|`)]))"
     }
 
     "a session placeholder the session leaves empty is a problem, not a rule left out" {
         val outcome = packaging.permissions(listOf("write-project-beyond-own-list"), profile("keporkak"), places.copy(ownFile = null), defaults)
 
         (outcome as Outcome.Failed).reason shouldBe "placeholder '{own_file}' of deny word 'write-project-beyond-own-list' is filled by nothing: the session gives none"
+        (packaging.permissions(listOf("write-code"), profile("keporkak"), places.copy(codeRepos = emptyList()), defaults) as Outcome.Failed).reason shouldBe
+            "placeholder '{code_repos}' of deny word 'write-code' is filled by nothing: the session gives none"
     }
 
-    "permissions.json carries the working directory and the defaults the caller gives" {
-        val permissions = packaging.permissions(listOf("push-master"), profile("keporkak"), places, PermissionDefaults(Answer.DENY, Answer.DENY)).ok()
+    "what a session may write is its worktree, its scratch and its own file; a seat with no own file has none" {
+        val withList = packaging.permissions(listOf("push-master"), profile("keporkak"), places, defaults).ok()
+        val without = packaging.permissions(listOf("push-master"), profile("keporkak"), places.copy(ownFile = null), defaults).ok()
+
+        withList.field("writable") shouldBe "^(/office/_wt/keporkak-S2\\.2/.*|/office/_scratch/keporkak/S2\\.2/.*|/office/project/tasks-p2-s2\\.2\\.md)$"
+        without.field("writable") shouldBe "^(/office/_wt/keporkak-S2\\.2/.*|/office/_scratch/keporkak/S2\\.2/.*)$"
+    }
+
+    "outside-worktree denies a write to any path outside what the session may write" {
+        val permissions = packaging.permissions(listOf("outside-worktree"), profile("keporkak"), places, defaults).ok()
+        val rule = rules(permissions).single()
+
+        rule.field("path") shouldBe "^(/.*)$"
+        rule.field("except") shouldBe permissions.field("writable")
+    }
+
+    "every command rule is matched where a command starts: the data's command_start stands before it; a line rule stands alone" {
+        val start = Regex("""(?m)^command_start: '(.*)'$""").find(root("agents/packaging/claude.yaml").readText())!!.groupValues[1].replace("''", "'")
+        val words = listOf("side-channels", "push-master", "live-target", "browser", "demo-cluster")
+        val commands = rules(packaging.permissions(words, profile("tatrman"), places, defaults).ok()).mapNotNull { rule -> rule.field("command")?.let { rule.field("border") to it } }
+
+        commands.map { it.first } shouldBe listOf("side-channels", "push-master", "live-target", "live-target", "browser", "demo-cluster")
+        commands.dropLast(1).map { it.second.startsWith("$start(?:") } shouldBe List(5) { true }
+        commands.last().second shouldBe "(--context|--kube-context|use-context)[=\\s]+[\"']?hartland[\"']?(\\s|$|[;&|`)])"
+    }
+
+    "a rule that names a command and a line, or a command with no command_start, is refused" {
+        val data = root("agents/packaging/claude.yaml").readText()
+
+        (Packaging.read(data.replace("        line: '(--context", "        command: 'x'\n        line: '(--context")) as Outcome.Failed).reason shouldBe
+            "deny word 'demo-cluster': a rule names a command and a line"
+        (Packaging.read(data.replace(Regex("(?m)^command_start: .*\n"), "")) as Outcome.Failed).reason shouldBe "a rule names a command, and command_start is not given"
+    }
+
+    "a rule with a key it may not have — an early rule for settings.json — is refused" {
+        val data = root("agents/packaging/claude.yaml").readText().replace("        outside: writable", "        outside: writable\n        early: [Edit]")
+
+        (Packaging.read(data) as Outcome.Failed).reason shouldBe "deny word 'outside-worktree': a rule has an unknown key 'early'"
+    }
+
+    "a rule's outside names the writable set and nothing else" {
+        val data = root("agents/packaging/claude.yaml").readText().replace("outside: writable", "outside: readable")
+
+        (Packaging.read(data) as Outcome.Failed).reason shouldBe "deny word 'outside-worktree': outside names 'readable', not writable"
+    }
+
+    "permissions.json carries the working directory, what a request's paths and a read are, and the defaults the caller gives" {
+        val permissions = packaging.permissions(listOf("push-master"), profile("keporkak"), places, PermissionDefaults(Answer.DENY, Answer.DENY, Answer.ALLOW)).ok()
 
         permissions.field("working_directory") shouldBe "/office/_wt/keporkak-S2.2"
-        permissions.getValue("defaults").jsonObject.toString() shouldBe """{"inside_working_directory":"deny","outside_working_directory":"deny"}"""
+        permissions.getValue("paths").toString() shouldBe """["file_path","path","notebook_path"]"""
+        permissions.field("read") shouldBe "^(Read|Glob|Grep|LS|NotebookRead)$"
+        permissions.getValue("defaults").jsonObject.toString() shouldBe """{"write_inside":"deny","write_outside":"deny","read":"allow"}"""
         rules(permissions).single().field("denies") shouldBe "a push to the default branch (the ruleset is the fence; this is the early no)"
     }
 
@@ -90,10 +138,10 @@ class PackagingDataSpec : StringSpec({
         (packaging.servers(listOf("messaging"), places.copy(mcpListen = null)) as Outcome.Failed).reason shouldContain "'{mcp_listen}'"
     }
 
-    "data that cannot be read, or lacks a hook, is refused with the reason" {
+    "data that cannot be read, or lacks a hook or the fields of a request that are paths, is refused with the reason" {
         (Packaging.read("deny: [") as Outcome.Failed).reason shouldContain "not readable YAML"
         (Packaging.read("deny: {x: {rules: [{tools: []}]}}\nhooks: {inbox-first: {event: SessionStart}, deny: {event: PreToolUse}}") as Outcome.Failed).reason shouldBe
-            "deny word 'x': a rule names no tool; hook 'stop-gate' is not in the packaging data"
+            "deny word 'x': a rule names no tool; hook 'stop-gate' is not in the packaging data; requests: no field of an input is named as a path"
     }
 
     "globs and tool names become anchored expressions; literal text is escaped" {

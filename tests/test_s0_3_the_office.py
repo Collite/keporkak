@@ -77,17 +77,17 @@ to do  secret claude-token: claude setup-token, then: install -m 0600 /dev/stdin
 later  secrets apps/kp-merger.pem, apps/kp-coder.pem, apps/kp-reviewer.pem, apps/kp-gardener.pem: S3.2 — the four GitHub Apps' keys
 later  kp root-owned and not writable by {USER}: S1.5 installs kp
 later  sudo asks every time for kp: S1.5 — Bora installs office/sudoers.d/zz-keporkak-kp before it (office/README.md)
-later  seats' permissions deny kp and sudo: S2.2 compiles them
+ok     seats' permissions deny kp and sudo: 1 home read from {machine.homes}; each denies `kp approve 1` and `sudo kp approve 1`, by border side-channels
 later  kubectl context bp-dsk: S4.1
 later  systemd user service keporkak.service: S1.5 delivers it (template office/systemd/keporkak.service)
 to do  lingering for {USER}: sudo loginctl enable-linger {USER}
 ok     no vendor global configuration reachable from a seat's config home: a seat reads its config home under ~/.local/share/keporkak/seats, not ~/.claude (S2.2's probe); no home names an MCP server
-RESULT: NOT READY — 5 to do, 6 later, 15 ok
+RESULT: NOT READY — 5 to do, 5 later, 16 ok
 """)
         machine.bora_does_the_to_dos()
         done = machine.office_check()
         self.assertEqual(done.returncode, 0, done.stdout)
-        self.assertEqual(done.stdout.splitlines()[-1], "RESULT: READY — 0 to do, 6 later, 20 ok")
+        self.assertEqual(done.stdout.splitlines()[-1], "RESULT: READY — 0 to do, 5 later, 21 ok")
 
     def test_the_office_check_changes_nothing_on_the_machine(self):
         machine = FakeMachine(self, roots=["worktrees", "scratch"], linger="no")
@@ -127,6 +127,9 @@ STUBS = {
     "systemctl": "echo not-found",
     "sudo": ': > "$HOME/sudo-was-called"',
 }
+# A home's compiled permissions as kp-driver writes them, cut to one rule: what the office check reads (--homes).
+SIDE_CHANNELS = {"version": 1, "working_directory": "/office/_wt/keporkak-S2.6", "paths": ["file_path"], "rules": [
+    {"border": "side-channels", "denies": "tmux, ssh, claude, kp, sudo", "tool": "^(Bash)$", "command": "(^|[;&|(])\\s*(\\S*/)?(kp|sudo)(\\s|$)"}]}
 ROOTS = {"worktrees": "Dev/keporkak/_wt", "scratch": "Dev/_scratch", "seats": ".local/share/keporkak/seats", "secrets": ".config/keporkak/secrets"}
 PROJECT = "Dev/keporkak/project"
 
@@ -136,6 +139,8 @@ class FakeMachine:
         self.base = Path(tempfile.mkdtemp(dir=ROOT / "build"))
         test.addCleanup(shutil.rmtree, self.base)
         self.home, self.bin, self.pool, self.adapter = self.base / "home", self.base / "bin", self.base / "pool", self.base / "adapter"
+        self.homes = self.base / "homes"
+        self.put_home("coder-keporkak", SIDE_CHANNELS)
         self.home.mkdir()
         self.bin.mkdir()
         shutil.copytree(ROOT / "pool", self.pool)
@@ -168,13 +173,17 @@ class FakeMachine:
             folder = self.adapter / "node_modules" / name
             folder.mkdir(parents=True, exist_ok=True)
             (folder / "package.json").write_text(json.dumps({"name": name, **fields}))
+    def put_home(self, seat, permissions):
+        """A built home in the folder the check reads with --homes: its permissions.json, as text or as JSON."""
+        (self.homes / seat).mkdir(parents=True, exist_ok=True)
+        (self.homes / seat / "permissions.json").write_text(permissions if isinstance(permissions, str) else json.dumps(permissions))
     def put_token(self):
         token = self.home / ROOTS["secrets"] / "claude-token"
         token.write_text("not a real token\n")
         token.chmod(0o600)
     def office_check(self):
         environment = {"HOME": str(self.home), "PATH": str(self.bin), "LANG": "C.UTF-8"}
-        return subprocess.run([sys.executable, str(ROOT / "scripts/office-check.py"), "--pool", str(self.pool), "--adapter", str(self.adapter), "--office", "panda"], cwd=ROOT, env=environment, text=True, capture_output=True)
+        return subprocess.run([sys.executable, str(ROOT / "scripts/office-check.py"), "--pool", str(self.pool), "--adapter", str(self.adapter), "--office", "panda", "--homes", str(self.homes)], cwd=ROOT, env=environment, text=True, capture_output=True)
     def snapshot(self):
         entries = {}
         for folder, directories, files in os.walk(self.base):

@@ -23,20 +23,44 @@ import kotlin.io.path.readText
 /**
  * The values of one session that fill the packaging data's placeholders (contracts.md §10): its working directory —
  * the stage's worktree, or the project checkout for a seat with no stage — its scratch, the project checkout, the one
- * project file a `…-beyond-own-…` word leaves writable, the office's code checkouts, and the messaging server's
- * address. The caller gives them; the builder reads no office file.
+ * project file a `…-beyond-own-…` word leaves writable (none for a seat with no such word), the office's code
+ * checkouts, and the messaging server's address. The caller gives all six; the builder reads no office file, and reports
+ * a placeholder the data uses that the caller left empty.
  */
 data class Places(
     val worktree: Path,
     val scratch: Path,
     val project: Path,
-    val ownFile: Path? = null,
-    val codeRepos: List<Path> = emptyList(),
-    val mcpListen: String? = null,
+    val ownFile: Path?,
+    val codeRepos: List<Path>,
+    val mcpListen: String?,
 )
 
-/** The defaults of `engagement.yaml:permissions` as the caller read them: the answer inside and outside the working directory. */
-data class PermissionDefaults(val inside: Answer, val outside: Answer)
+/**
+ * The defaults of `engagement.yaml:permissions` as the caller read them (contracts.md §4.3, §10): what a write gets
+ * inside and outside what the session may write, and what a read gets.
+ */
+data class PermissionDefaults(val writeInside: Answer, val writeOutside: Answer, val read: Answer) {
+    companion object {
+        /** The block's keys, as `engagement.yaml:permissions` names them; `lifetime` is the driver's (one-time answers). */
+        const val WRITE_INSIDE = "write_inside"
+        const val WRITE_OUTSIDE = "write_outside"
+        const val READ = "read"
+
+        /** The defaults from the block's text values, each `allow` or `deny`; a missing or other value is reported. */
+        fun of(block: Map<String, String>): Outcome<PermissionDefaults> {
+            val problems = mutableListOf<String>()
+            fun answer(key: String) = when (block[key]) {
+                "allow" -> Answer.ALLOW
+                "deny" -> Answer.DENY
+                null -> Answer.DENY.also { problems += "engagement.yaml:permissions has no $key" }
+                else -> Answer.DENY.also { problems += "engagement.yaml:permissions.$key is neither allow nor deny" }
+            }
+            val defaults = PermissionDefaults(answer(WRITE_INSIDE), answer(WRITE_OUTSIDE), answer(READ))
+            return if (problems.isEmpty()) Outcome.Ok(defaults) else Outcome.Failed(problems.joinToString("; "))
+        }
+    }
+}
 
 /** A built config home, and the MCP servers its persona names, by address, for the caller to inject per session. */
 data class Home(val path: Path, val servers: List<McpServer>)
@@ -47,7 +71,7 @@ data class Home(val path: Path, val servers: List<McpServer>)
  * frontmatter and the hooks in `hooks/`.
  *
  * The home holds `CLAUDE.md` (the render, byte for byte), `skills/<name>/` for each skill the persona lists,
- * `settings.json` (the deny rules as the early no, and the three hooks by absolute path — no MCP server, no token)
+ * `settings.json` (the three hooks by absolute path, and no permission rule, no MCP server, no token)
  * and `permissions.json` (the same rules compiled, each with its border's name, and the defaults the caller gives).
  * Those four are replaced at every build; what Claude Code keeps in the home itself — its sessions — stays. The home
  * is the office user's only: the folder and its folders 0700, its files 0600. A persona the packaging data cannot
@@ -78,9 +102,8 @@ class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
         persona.mcp.filterNot(packaging::serves).forEach { problems += "persona $role: MCP server '$it' is not mapped by the packaging data" }
         if (problems.isNotEmpty()) return Outcome.Failed(problems.joinToString("; "))
         val permissions = packaging.permissions(persona.deny, values, places, defaults).or("persona $role: ")
-        val early = packaging.early(persona.deny, values, places).or("persona $role: ")
         val servers = packaging.servers(persona.mcp, places).or("persona $role: ")
-        if (permissions == null || early == null || servers == null) return Outcome.Failed(problems.distinct().joinToString("; "))
+        if (permissions == null || servers == null) return Outcome.Failed(problems.distinct().joinToString("; "))
 
         val home = seatsRoot.resolve(seat.value)
         return try {
@@ -88,7 +111,7 @@ class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
             if (!home.exists()) Files.createDirectory(home, FOLDER)
             Files.setPosixFilePermissions(home, FOLDER.value())
             replace(home.resolve("CLAUDE.md"), Files.readAllBytes(render))
-            replace(home.resolve("settings.json"), settings(early, packaging, hooks, home).toString().toByteArray())
+            replace(home.resolve("settings.json"), settings(packaging, hooks, home).toString().toByteArray())
             replace(home.resolve("permissions.json"), permissions.toString().toByteArray())
             replaceSkills(home, skills.mapValues { it.value!! })
             Outcome.Ok(Home(home, servers))
@@ -100,10 +123,11 @@ class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
     private fun text(path: String): String? = keporkak.resolve(path).takeIf { it.isRegularFile() }?.readText()
 
     /**
-     * `settings.json`: the deny rules in Claude Code's syntax, and each hook on the event the packaging data names,
-     * by absolute path — `deny` with this home's `permissions.json`, `stop-gate` with its limit.
+     * `settings.json`: each hook on the event the packaging data names, by absolute path — `deny` with this home's
+     * `permissions.json`, `stop-gate` with its limit — and no permission rule: the deny rules' one source is
+     * `permissions.json` (contracts.md §10, Amendment 15).
      */
-    private fun settings(early: List<String>, packaging: Packaging, hooks: Map<String, Path>, home: Path): JsonObject {
+    private fun settings(packaging: Packaging, hooks: Map<String, Path>, home: Path): JsonObject {
         val arguments = mapOf(
             "inbox-first" to emptyList(),
             "deny" to listOf(home.resolve("permissions.json").toString()),
@@ -111,7 +135,6 @@ class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
         )
         val byEvent = Packaging.HOOKS.groupBy { packaging.hooks.getValue(it).event }
         return buildJsonObject {
-            put("permissions", buildJsonObject { put("deny", JsonArray(early.map(::JsonPrimitive))) })
             put("hooks", JsonObject(byEvent.mapValues { (_, names) ->
                 JsonArray(names.map { name ->
                     val hook = packaging.hooks.getValue(name)

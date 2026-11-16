@@ -2,7 +2,8 @@
 # a call it denies, naming the border, and a call it lets through. Each row is compiled from that word alone, for the
 # profile and working directory the row names, with the places of PackagingAndHooksSpec. Columns, tab-separated:
 # word · profile · working directory · tool · the tool's input (JSON) · expected: `deny <border>` or `allow`.
-# An allowed row stays inside its working directory, so the answerer's default allows it too. A command's lines are
+# An allowed row writes inside what the session may write — its working directory, its scratch, its own file — reads,
+# or names no path, so the answerer's default allows it too. A command's lines are
 # judged each on its own, and one matching line denies the call; a line that ends in a backslash goes on in the next
 # (review-011, B1). In the JSON, \n is a newline and \\ one backslash.
 side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"tmux new-session -d -s watch"}	deny side-channels
@@ -17,6 +18,8 @@ side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"cd kp-driver\n
 side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"su\\\ndo kp hold KP/P2/S2.2"}	deny side-channels
 side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"echo done\\\\\nsudo kp hold KP/P2/S2.2"}	deny side-channels
 side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"just check\ngit log --oneline -3"}	allow
+side-channels	keporkak	/office/_wt/keporkak-S2.2	mcp__messaging__inbox	{}	allow
+side-channels	keporkak	/office/_wt/keporkak-S2.2	WebFetch	{"url":"https://example.org/","prompt":"the title"}	allow
 push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"git push origin master"}	deny push-master
 push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"git push origin HEAD:master"}	deny push-master
 push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"just check && git push --force origin refs/heads/master"}	deny push-master
@@ -33,6 +36,11 @@ outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Write	{"file_path":"/office/
 outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Write	{"file_path":"/office/_wt/keporkak-S2.2/../keporkak/README.md","content":"x"}	deny outside-worktree
 outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Write	{"file_path":"/office/_wt/keporkak-S2.2/kp-driver/new.kt","content":"x"}	allow
 outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Edit	{"file_path":"docs/notes.md","old_string":"a","new_string":"b"}	allow
+outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Write	{"file_path":"/office/_scratch/keporkak/S2.2/probe.md","content":"x"}	allow
+outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Edit	{"file_path":"/office/project/tasks-p2-s2.2.md","old_string":"- [ ] T1","new_string":"- [x] T1"}	allow
+outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Write	{"file_path":"/office/project/tasks-p2-s2.3.md","content":"x"}	deny outside-worktree
+outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Write	{"file_path":"/office/_scratch/keporkak/S2.3/probe.md","content":"x"}	deny outside-worktree
+outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Read	{"file_path":"/office/elsewhere/notes.md"}	allow
 live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"kubectl --context bp-dsk get pods"}	deny live-target
 live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"kp-qa up KP/P4/S4.1 ghcr.io/collite/kp:1"}	deny live-target
 live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"kp-cred run reader@bp-dsk -- true"}	deny live-target
@@ -56,3 +64,26 @@ write-project-beyond-own-report	keporkak	/office/project	Write	{"file_path":"/of
 demo-cluster	tatrman	/office/_wt/tatrman-S5.1	Bash	{"command":"kubectl --context hartland get pods"}	deny demo-cluster
 demo-cluster	tatrman	/office/_wt/tatrman-S5.1	Bash	{"command":"kubectl --context bp-dsk get pods"}	allow
 demo-cluster	tatrman	/office/_wt/tatrman-S5.1	Bash	{"command":"kubectl get pods \\\n  --context hartland"}	deny demo-cluster
+# Issue #22's shapes (S2.6 T5), each with a denied and an allowed row: a command by its absolute path, an environment
+# prefix, a wrapper, a shell keyword, a forced push written with `+`, a quoted context; and Playwright as a test suite.
+side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"/usr/bin/ssh panda uptime"}	deny side-channels
+side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"/usr/bin/git log --oneline -3"}	allow
+side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"ls -l /usr/bin/ssh"}	allow
+live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"/usr/local/bin/helm list"}	deny live-target
+live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"KUBECONFIG=/x kubectl get pods"}	deny live-target
+side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"LANG=C sudo kp hold KP/P2/S2.6"}	deny side-channels
+live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"KUBECONFIG=/x just test"}	allow
+side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"nohup ssh panda uptime &"}	deny side-channels
+side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"timeout 10 ssh panda uptime"}	deny side-channels
+side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"nohup just check > build/check.log 2>&1 &"}	allow
+side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"if true; then tmux ls; fi"}	deny side-channels
+side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"if true; then just check; fi"}	allow
+push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"git push origin +master"}	deny push-master
+push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"git push origin +feat/kp-keporkak-p2-s2.6-permissions-second-pass"}	allow
+demo-cluster	tatrman	/office/_wt/tatrman-S5.1	Bash	{"command":"kubectl get pods --context \"hartland\""}	deny demo-cluster
+demo-cluster	tatrman	/office/_wt/tatrman-S5.1	Bash	{"command":"kubectl get pods --context 'hartland'"}	deny demo-cluster
+demo-cluster	tatrman	/office/_wt/tatrman-S5.1	Bash	{"command":"kubectl get pods --context \"bp-dsk\""}	allow
+browser	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"npx playwright test"}	allow
+browser	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"playwright test --project=chromium"}	allow
+browser	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"npx playwright open https://example.org"}	deny browser
+browser	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"npx playwright codegen"}	deny browser
