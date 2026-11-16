@@ -21,10 +21,7 @@ import kotlin.time.Duration.Companion.hours
  * master's rules — and what happened read back from the log. `Office` is in MailroomSupport.kt.
  */
 class TheMailroomsLooseEndsSpec : FreeSpec({
-    afterTest {
-        Office.everyLogIsWhole() shouldBe emptyList()
-        Office.closeAll()
-    }
+    afterTest { Office.checkAndCloseAll() }
 
     "an expiry's nudge reaches the party its rule names, sent by the expiry of its kind — whether or not a transition fired" {
         val counting = Office(seed = "building")

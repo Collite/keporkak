@@ -1,5 +1,6 @@
 package kp.mailroom
 
+import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -204,6 +205,13 @@ class Office(walk: String = "H-1-prime", seed: String? = null, counters: String 
         fun closeAll() {
             opened.forEach { runCatching { it.stop() } }
             opened.clear()
+        }
+
+        /** What every spec of the mailroom ends with: its logs are whole — and its offices closed even when they are not (issue #21). */
+        fun checkAndCloseAll() = try {
+            everyLogIsWhole() shouldBe emptyList()
+        } finally {
+            closeAll()
         }
 
         /**

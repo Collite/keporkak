@@ -446,11 +446,15 @@ class Mailroom private constructor(
                 if (read.problems.isNotEmpty()) throw MailroomRefusal("the log has problems:\n" + read.problems.joinToString("\n"))
                 val (inForce, loaded) = InForce.load(rules.read())
                 if (inForce == null) throw MailroomRefusal("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
+                // Under the mailroom's lock, as every other step: a performer that answers from its own thread while the
+                // start is carrying its queue waits for it (issue #21).
                 return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce).apply {
-                    take(read.lines.map { it.entry })
-                    recordRules()
-                    interrupted()
-                    drain()
+                    synchronized(this) {
+                        take(read.lines.map { it.entry })
+                        recordRules()
+                        interrupted()
+                        drain()
+                    }
                 }
             } catch (error: Throwable) {
                 writer.close()

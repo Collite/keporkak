@@ -22,13 +22,7 @@ private val H1_PRIME = listOf(
  * back line by line: `seq` has no gap, and no operation is requested twice for one request.
  */
 class TheMailroomSpec : FreeSpec({
-    afterTest {
-        Office.opened.forEach { office ->
-            office.readBack().seqRunsWithoutGap() shouldBe true
-            office.readBack().requestedTwice() shouldBe emptyList()
-        }
-        Office.closeAll()
-    }
+    afterTest { Office.checkAndCloseAll() }
 
     "H-1′'s first seven steps pass through with scripted senders and leave the stage `exited`" {
         val office = Office()

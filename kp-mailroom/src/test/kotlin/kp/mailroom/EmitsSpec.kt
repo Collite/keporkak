@@ -7,10 +7,7 @@ import kotlin.time.Duration.Companion.hours
 
 /** T4 — the declared emits: what the rules make the mailroom send goes through the same loop, `by` naming the rule that declares it. */
 class EmitsSpec : StringSpec({
-    afterTest {
-        Office.everyLogIsWhole() shouldBe emptyList()
-        Office.closeAll()
-    }
+    afterTest { Office.checkAndCloseAll() }
 
     "a review-request with a Found line untriaged makes the mailroom send found-batch to the principal, by T-17, in reply to it" {
         val office = Office(seed = "building")

@@ -13,10 +13,7 @@ private const val STOP = """{"kind": "stop", "stage": "$STAGE", "subject": "stop
 
 /** T6 — deadlines and expiry: timers from the state, rebuilt at start; the `expired` record and what §4.2's forms say. */
 class ExpiriesSpec : StringSpec({
-    afterTest {
-        Office.everyLogIsWhole() shouldBe emptyList()
-        Office.closeAll()
-    }
+    afterTest { Office.checkAndCloseAll() }
 
     "a deadline fires when the clock has passed it, not before; the next deadline says when" {
         val office = Office(seed = "building")

@@ -7,10 +7,7 @@ import kp.model.Refused
 
 /** T8 — what the mailroom writes that S1.7 prepared (contracts.md §2.1, §2.2, §7). */
 class PreparedSpec : StringSpec({
-    afterTest {
-        Office.everyLogIsWhole() shouldBe emptyList()
-        Office.closeAll()
-    }
+    afterTest { Office.checkAndCloseAll() }
 
     "a refusal's record carries the requirement that failed, in its file form" {
         val office = Office(seed = "building")

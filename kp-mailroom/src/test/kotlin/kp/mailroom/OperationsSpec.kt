@@ -11,10 +11,7 @@ private const val APPROVAL = """{"kind": "approval", "stage": "$STAGE", "subject
 
 /** T5 — operations (contracts.md §7): requested, then `ok` or `failed`, each a record; the result is a trigger for the engine. */
 class OperationsSpec : StringSpec({
-    afterTest {
-        Office.everyLogIsWhole() shouldBe emptyList()
-        Office.closeAll()
-    }
+    afterTest { Office.checkAndCloseAll() }
 
     "an operation is performed only once its request is on disk, after the lines of the judgement that requested it" {
         val office = Office(seed = "proposed")

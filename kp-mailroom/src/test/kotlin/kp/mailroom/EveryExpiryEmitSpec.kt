@@ -18,10 +18,7 @@ private val COVERED = setOf("qa-request", "computer-use-session", "review-reques
  * §4.1). Each emit of a kind's expiry is shown as `<by> → <delivered to>`; one that was refused shows `refused`.
  */
 class EveryExpiryEmitSpec : StringSpec({
-    afterTest {
-        Office.everyLogIsWhole() shouldBe emptyList()
-        Office.closeAll()
-    }
+    afterTest { Office.checkAndCloseAll() }
 
     "every kind on master whose expiry declares an emit has a spec in this file" {
         val rules = (Rules.load(Texts().read()) as Loaded.Valid).ruleSet
