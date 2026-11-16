@@ -104,13 +104,15 @@ class Mailroom private constructor(
     private val queue = ArrayDeque<() -> Unit>()
     private var draining = false
     private var closed = false
+    /** A stage's file closed: the state is read again once the step that closed it is done. */
+    private var reread = false
 
     /** The fold of the log as the mailroom works from it. */
     val state: State @Synchronized get() = folded
 
     /** Carries one message submitted in [sender]'s name; [input] holds what a sender supplies (contracts.md §2.1, §5). */
     @Synchronized
-    fun submit(sender: Sender, input: JsonObject): Answer = arrive(sender.author(), input).also { drain() }
+    fun submit(sender: Sender, input: JsonObject): Answer = arrive(sender.author(), input).also { settle(); drain() }
 
     /**
      * A seat's inbox (contracts.md §5): its unread messages — or, with [unread] false, every message delivered to it —
@@ -181,8 +183,15 @@ class Mailroom private constructor(
     private fun effects(decision: Decision, cause: String, now: String) = decision.effects.forEach { effect ->
         when (effect) {
             is Requested.Emit -> emit(effect, effect.rule, cause)
-            is Requested.Do, is Requested.Report -> Unit
+            is Requested.Do -> request(effect.operation, cause, Datum.Fields(effect.with), now)
+            is Requested.Report -> Unit
         }
+    }
+
+    /** What a judgement of a result or an expiry decided: its transitions and its effects, caused by [cause]. */
+    private fun record(decision: Decision, cause: String, now: String) {
+        transitions(decision, cause, now)
+        effects(decision, cause, now)
     }
 
     /**
@@ -239,15 +248,27 @@ class Mailroom private constructor(
         drain()
     }
 
-    /** The result's record. */
+    /**
+     * The result's record, then the result as a trigger for the engine (contracts.md §4.1, `on: op-result`): what it fires
+     * is recorded as caused by the request. An operation that starts or re-seats a seat names it in its result.
+     */
     private fun complete(request: OperationRequest, result: OperationResult) {
         val now = now()
         write(when (result) {
             is OperationResult.Ok -> line(now, EVENT to text("op"), OP to text(request.operation), PHASE to text(OK), CAUSE to text(request.cause),
-                RESULT to result.result.takeIf { it.fields.isNotEmpty() }?.element())
+                RESULT to seated(request, result.result).takeIf { it.fields.isNotEmpty() }?.element())
             is OperationResult.Failed -> line(now, EVENT to text("op"), OP to text(request.operation), PHASE to text(FAILED), CAUSE to text(request.cause),
                 REASON to text(result.reason))
         })
+        val trigger = Trigger.Result(request.cause, request.operation, result is OperationResult.Ok)
+        val engine = Engine(rules)
+        record(engine.judge(folded, trigger, table(engine, trigger, messages[request.cause]?.stage?.value, now)), request.cause, now)
+    }
+
+    /** `seat.start` and `seat.reseat` are `ok(seat)` (contracts.md §4.4, Amendment 13): the result names the seat, the one it was asked for when the performer did not. */
+    private fun seated(request: OperationRequest, result: Datum.Fields): Datum.Fields {
+        val seat = request.with.fields[SEAT]
+        return if (request.operation !in SEATING || seat == null || SEAT in result.fields) result else Datum.Fields(result.fields + (SEAT to seat))
     }
 
     /** Carries what the queue holds, in order, until it is empty; what a step adds runs after it. */
@@ -255,10 +276,26 @@ class Mailroom private constructor(
         if (draining) return
         draining = true
         try {
-            while (queue.isNotEmpty() && !closed) queue.removeFirst()()
+            while (queue.isNotEmpty() && !closed) {
+                queue.removeFirst()()
+                settle()
+            }
         } finally {
             draining = false
         }
+    }
+
+    /**
+     * When a stage's file has closed, the state is what start-up would fold from the log now (contracts.md §3: the
+     * open stage files and the office's), so that a mailroom started again works from the same state as this one.
+     */
+    private fun settle() {
+        if (!reread) return
+        reread = false
+        folded = State()
+        messages.clear()
+        addressed.clear()
+        take(LogReader(project, office).read().lines.map { it.entry })
     }
 
     /**
@@ -313,6 +350,7 @@ class Mailroom private constructor(
         val stage = if (draft[KIND] != null) null else about(draft)?.let(::StageId)?.takeUnless(writer::isClosed)
         val written = writer.append(draft, stage)
         check(written.seq.longValueExact() == expected) { "the log gave seq ${written.seq}, not $expected" }
+        if (stage != null && writer.isClosed(stage)) reread = true
         take(listOf(written))
         return written
     }
@@ -373,6 +411,8 @@ private const val REQUESTED = "requested"
 private const val OK = "ok"
 private const val OF = "of"
 private const val ITEM = "item"
+/** The operations whose `ok` names a seat (contracts.md §4.4). */
+private val SEATING = setOf("seat.start", "seat.reseat")
 private const val BORA_CLI = "bora-cli"
 private const val NOW = "now"
 private const val SUBJECT_LIMIT = 120
