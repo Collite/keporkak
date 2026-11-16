@@ -40,7 +40,7 @@ class TheMailroomSpec : FreeSpec({
         started.status shouldBe DELIVERED
         built shouldBe listOf("stopped", "building", "ready_for_review", "in_review", "fix_round", "re_review", "passed", "merged", "exited")
         office.readBack().message(started.id).from.value shouldBe "coder-1"
-        office.readBack().sent("found-batch").single().by shouldBe "effect:T-14"
+        office.readBack().sent("found-batch").single().by shouldBe "effect:T-17"
         office.readBack().recordsBeforeTheirMessage() shouldBe emptyList()
     }
 

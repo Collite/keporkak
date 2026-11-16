@@ -84,6 +84,7 @@ class TheLoopSpec : StringSpec({
         office.facts.set("pr.head", "head-1")
         office.facts.set("ci.state", "green")
         office.facts.set("list.tasks_open", 0)
+        office.facts.set("list.found_untriaged", 0)
         office.mailroom = Mailroom.start(office.project, panda, office.texts, { fact, stage -> walk.observe(fact, stage).also { asked += fact to stage } },
             office.operations, office.seats, office.clock)
 

@@ -128,10 +128,10 @@ private fun Datum?.fields(): Map<String, Datum> = (this as? Datum.Fields)?.field
 
 /**
  * One office on a throwaway project: master's rules, facts from a walk, faked operations and seats, a clock that moves
- * a minute per step. [seed] puts the stage in a state before the mailroom starts — what an earlier part of the log
- * would have left — and each of the walk's seats in `ready`.
+ * a minute per step. [seed] puts the stage in a state, with [counters], before the mailroom starts — what an earlier
+ * part of the log would have left — and each of the walk's seats in `ready`.
  */
-class Office(walk: String = "H-1-prime", seed: String? = null) {
+class Office(walk: String = "H-1-prime", seed: String? = null, counters: String = "{}") {
     val project: Path = throwawayProject()
     val texts = Texts()
     val facts = FakeFacts()
@@ -148,7 +148,7 @@ class Office(walk: String = "H-1-prime", seed: String? = null) {
         facts.set(this.walk.facts)
         LogWriter.open(project, panda).use { log ->
             fun line(text: String) = log.append(json("""{"v":1,"at":"$START",""" + text.removePrefix("{")))
-            seed?.let { line("""{"event":"transition","machine":"stage","subject":"$STAGE","from":"planned","to":"$it","cause":"$SEEDED"}""") }
+            seed?.let { line("""{"event":"transition","machine":"stage","subject":"$STAGE","from":"planned","to":"$it","cause":"$SEEDED","counted":$counters}""") }
             listOf("coder-1", "reviewer-1").forEach { line("""{"event":"transition","machine":"seat","subject":"$it","from":"provisioned","to":"ready","cause":"$SEEDED"}""") }
         }
         start()

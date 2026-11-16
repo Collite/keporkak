@@ -3,6 +3,7 @@ package kp.mailroom
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -13,6 +14,7 @@ import kp.engine.Engine
 import kp.engine.FactRef
 import kp.engine.Facts
 import kp.engine.Outcome
+import kp.engine.Requested
 import kp.engine.State
 import kp.engine.Trigger
 import kp.engine.fold
@@ -169,9 +171,35 @@ class Mailroom private constructor(
             COUNTED to counted(decision.counted), OBSERVED to fields(decision.observed), ATTESTED to decision.attested.takeIf { it.isNotEmpty() }?.let(::texts),
             ANSWERS to text(decision.answers), DEADLINE to deadline?.let(::text)))
         transitions(decision, id, now)
+        effects(decision, id, now)
         if (ticket != null && decision.messageClass == MessageClass.B) notify(ticket, id, now)
         woke.filter { deliveries.wake(it, written) }.forEach { seat -> write(line(now(), EVENT to text("read"), SEAT to text(seat), IDS to texts(listOf(id)))) }
         return Answer(Status.DELIVERED, id, transition = decision.rule)
+    }
+
+    /** What the judgement requested, in its order: a declared emit is carried after this judgement's lines. */
+    private fun effects(decision: Decision, cause: String, now: String) = decision.effects.forEach { effect ->
+        when (effect) {
+            is Requested.Emit -> emit(effect, effect.rule, cause)
+            is Requested.Do, is Requested.Report -> Unit
+        }
+    }
+
+    /**
+     * A message the rules make the mailroom send (T4: `engagement.yaml:mailroom_declared_effects`): from `mailroom`, by
+     * the transition that declared it, in reply to the message that caused it — its stage, its thread — and judged like
+     * any other, once the lines of the judgement that requested it are written.
+     */
+    private fun emit(effect: Requested.Emit, transition: String, cause: String) {
+        val input = buildJsonObject {
+            put(KIND, JsonPrimitive(effect.kind))
+            effect.to?.let { put(TO, JsonPrimitive(it)) }
+            put(RE, JsonPrimitive(cause))
+            put(SUBJECT, JsonPrimitive("${effect.kind} ($transition)"))
+            put(POINTERS, texts(listOf("mail:$cause")))
+            put(ARGS, fields(effect.args))
+        }
+        queue += { arrive(Author(MAILROOM, "effect:$transition", false), input) }
     }
 
     /**
@@ -338,6 +366,7 @@ class Mailroom private constructor(
 }
 
 private const val BORA = "bora"
+private const val MAILROOM = "mailroom"
 private const val SEAT_NAME = "seat.name"
 private const val NOTIFY_BORA = "notify.bora"
 private const val REQUESTED = "requested"
