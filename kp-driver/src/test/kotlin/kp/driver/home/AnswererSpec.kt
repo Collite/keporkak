@@ -4,9 +4,12 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 import kp.driver.Answer
 import kp.driver.Explained
 import kp.driver.OfferedOption
@@ -114,6 +117,27 @@ class AnswererSpec : StringSpec({
             answerer.explained(request("""{"file_path": "/etc/hosts"}""", name = "Read")) shouldBe Explained(Answer.DENY, "a read no deny rule covers")
             answerer.explained(request("""{"pattern": "x", "path": "/etc"}""", name = "Grep")) shouldBe Explained(Answer.DENY, "a read no deny rule covers")
             answerer.explained(request("""{"path": "/etc/hosts"}""", name = "mcp__files__touch")) shouldBe Explained(Answer.ALLOW, "a write outside what the session may write")
+        }
+    }
+
+    "each answer follows the seat's permissions.json, not master's data: its read tools, its path fields and its defaults (review B1)" {
+        Office().use { office ->
+            // Unlike master's: only Grep reads, the one path field is `target`, a write inside is denied and one outside allowed, a read denied.
+            office.seats.resolve(seat.value).also(Files::createDirectories).resolve("permissions.json").writeText(buildJsonObject {
+                put("version", 1)
+                put("working_directory", office.worktree.toString())
+                put("writable", "^(" + regexLiteral(office.worktree.toString()) + "/.*)$")
+                put("paths", JsonArray(listOf(JsonPrimitive("target"))))
+                put("read", "^(Grep)$")
+                put("defaults", buildJsonObject { put("write_inside", "deny"); put("write_outside", "allow"); put("read", "deny") })
+                put("rules", JsonArray(emptyList()))
+            }.toString())
+            val answerer = CompiledAnswerer(office.seats)
+
+            answerer.explained(request("""{"target": "/etc/hosts"}""", name = "Grep")) shouldBe Explained(Answer.DENY, "a read no deny rule covers")
+            answerer.explained(request("""{"target": "/etc/hosts"}""", name = "Read")) shouldBe Explained(Answer.ALLOW, "a write outside what the session may write")
+            answerer.explained(request("""{"target": "${office.worktree}/a.md"}""", name = "Write")) shouldBe Explained(Answer.DENY, "a write inside what the session may write")
+            answerer.explained(request("""{"file_path": "${office.worktree}/a.md"}""", name = "Write")) shouldBe Explained(Answer.ALLOW, "no path, and no deny rule covers it")
         }
     }
 
