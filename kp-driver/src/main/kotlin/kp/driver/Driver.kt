@@ -62,7 +62,13 @@ data class SessionSpec(
     val servers: List<McpServer>,
     val environment: Map<String, String> = emptyMap(),
     val hookUrl: String? = null,
-)
+) {
+    companion object {
+        /** The variables a seat's hooks read (contracts.md §11); neither value reaches a transcript. */
+        const val HOOK_URL = "KP_HOOK_URL"
+        const val SESSION_TOKEN = "KP_SESSION_TOKEN"
+    }
+}
 
 /** An MCP server injected at `session/new`; one that [carriesToken] gets `Authorization: Bearer <session token>` (§5). */
 data class McpServer(

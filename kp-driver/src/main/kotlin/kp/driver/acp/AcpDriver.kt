@@ -129,7 +129,12 @@ internal class AcpDriver(
         seats[spec.seat]?.takeIf { it.live }?.let { return Outcome.Failed("seat ${spec.seat.value} has a live session ${it.session.sessionId.value}") }
         val seat = SeatSession(spec.seat, spec, mint(), transcript(spec.seat), clock, listener, answerer, scope)
         seat.transcript.hide(seat.token.value)
-        val launched = when (val result = launch(spec, onClosed = seat::protocolClosed, wire = seat.wire)) {
+        // The stop hook's call (§11): the token is minted before the process starts, and given to it with the URL.
+        val hooked = spec.hookUrl?.let { url ->
+            seat.transcript.hide(url)
+            spec.copy(environment = spec.environment + mapOf(SessionSpec.HOOK_URL to url, SessionSpec.SESSION_TOKEN to seat.token.value))
+        } ?: spec
+        val launched = when (val result = launch(hooked, onClosed = seat::protocolClosed, wire = seat.wire)) {
             is Outcome.Ok -> result.value
             is Outcome.Failed -> return result
         }

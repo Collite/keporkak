@@ -172,10 +172,11 @@ object Hooks {
 }
 
 /**
- * A stand-in for the daemon's `/hook/stop` on localhost: it answers [answer] to every POST, or — with none — never
- * answers. It keeps each request's Authorization header and body, in memory only.
+ * A stand-in for the daemon's `/hook/stop` on localhost: it answers [answer] with [status] to every request, or — with
+ * none — never answers. It keeps each request's method and path, Authorization header and body, in memory only.
  */
-class StopStandIn(private val answer: String?) : AutoCloseable {
+class StopStandIn(private val answer: String?, private val status: Int = 200) : AutoCloseable {
+    val paths: MutableList<String> = Collections.synchronizedList(mutableListOf())
     val authorizations: MutableList<String?> = Collections.synchronizedList(mutableListOf())
     val bodies: MutableList<String> = Collections.synchronizedList(mutableListOf())
     val connections = java.util.concurrent.atomic.AtomicInteger()
@@ -184,13 +185,14 @@ class StopStandIn(private val answer: String?) : AutoCloseable {
         executor = pool
         createContext("/") { exchange ->
             connections.incrementAndGet()
+            paths += "${exchange.requestMethod} ${exchange.requestURI.path}"
             authorizations += exchange.requestHeaders.getFirst("Authorization")
             bodies += exchange.requestBody.readAllBytes().decodeToString()
             if (answer == null) runCatching { Thread.sleep(60_000) }
             else {
                 val bytes = answer.toByteArray()
                 exchange.responseHeaders.add("Content-Type", "application/json")
-                exchange.sendResponseHeaders(200, bytes.size.toLong())
+                exchange.sendResponseHeaders(status, bytes.size.toLong())
                 exchange.responseBody.use { it.write(bytes) }
             }
         }

@@ -67,6 +67,8 @@ private class FakeAgent(private val script: JsonObject) {
             "env" to JsonArray(System.getenv().keys.sorted().map(::JsonPrimitive)),
             "CLAUDE_CONFIG_DIR" to (System.getenv("CLAUDE_CONFIG_DIR")?.let(::JsonPrimitive) ?: JsonNull),
             "CLAUDE_CODE_OAUTH_TOKEN_sha256" to (System.getenv("CLAUDE_CODE_OAUTH_TOKEN")?.let { JsonPrimitive(sha256(it)) } ?: JsonNull),
+            "KP_HOOK_URL" to (System.getenv("KP_HOOK_URL")?.let(::JsonPrimitive) ?: JsonNull),
+            "KP_SESSION_TOKEN_sha256" to (System.getenv("KP_SESSION_TOKEN")?.let { JsonPrimitive(sha256(it)) } ?: JsonNull),
         )
         val input = System.`in`.bufferedReader()
         while (true) {
@@ -225,7 +227,8 @@ private class FakeAgent(private val script: JsonObject) {
             // An agent that repeats its secrets: the token in its environment and the headers it was given.
             "leak" -> emit(buildJsonObject {
                 put("sessionUpdate", "agent_message_chunk")
-                put("content", text("my token is ${System.getenv("CLAUDE_CODE_OAUTH_TOKEN")} and my headers are ${headers.joinToString(" ")}"))
+                put("content", text("my token is ${System.getenv("CLAUDE_CODE_OAUTH_TOKEN")} and my headers are ${headers.joinToString(" ")}" +
+                    " and my hook is ${System.getenv("KP_HOOK_URL")} with ${System.getenv("KP_SESSION_TOKEN")}"))
             })
             // Closes stdout and stays: the protocol closes while the process lives.
             "hangup" -> {
