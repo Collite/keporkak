@@ -141,6 +141,8 @@ class Office(walk: String = "H-1-prime", seed: String? = null, counters: String 
     private val walk = Walk.named(walk)
     private val ids = HashMap<String, String>()
     private var next = 0
+    /** The id of every message submitted through this office: each must have its line and a record about it. */
+    val submitted = ArrayList<String>()
     lateinit var mailroom: Mailroom
 
     init {
@@ -159,8 +161,8 @@ class Office(walk: String = "H-1-prime", seed: String? = null, counters: String 
     fun stop() = mailroom.close()
     fun restart() { stop(); start() }
 
-    fun send(seat: String, input: String): Answer = mailroom.submit(Sender.Seat(seat), json(input))
-    fun bora(input: String, signed: Boolean = true): Answer = mailroom.submit(Sender.Bora(signed), json(input))
+    fun send(seat: String, input: String): Answer = mailroom.submit(Sender.Seat(seat), json(input)).also { submitted += it.id }
+    fun bora(input: String, signed: Boolean = true): Answer = mailroom.submit(Sender.Bora(signed), json(input)).also { submitted += it.id }
 
     /**
      * Plays the walk's next step of each kind, in order, from its sender with its args and facts — and the facts of the
@@ -204,10 +206,14 @@ class Office(walk: String = "H-1-prime", seed: String? = null, counters: String 
             opened.clear()
         }
 
-        /** In the log of every office a spec opened, `seq` has no gap and no operation is requested twice for one request. */
+        /**
+         * In the log of every office a spec opened: `seq` has no gap; no operation is requested twice for one request;
+         * and every submission has its message line and a record about it — none ended in an exception.
+         */
         fun everyLogIsWhole(): List<String> = opened.flatMap { office ->
             val log = office.readBack()
-            listOfNotNull("${office.project}: seq has a gap".takeUnless { log.seqRunsWithoutGap() }) + log.requestedTwice()
+            listOfNotNull("${office.project}: seq has a gap".takeUnless { log.seqRunsWithoutGap() }) + log.requestedTwice() +
+                office.submitted.filterNot(log::hasLineAndRecord).map { "$it: no message line, or no record about it" }
         }
     }
 }
@@ -225,6 +231,10 @@ class ReadBack(project: Path) {
     fun ops(cause: String): List<String> = records<Op>().filter { it.cause == cause }.map { listOfNotNull(it.op, it.phase, it.reason).joinToString(" ") }
     fun transitions(cause: String): List<String> = records<Transition>().filter { it.cause == cause }.map { "${it.rule} ${it.from}→${it.to}" }
     fun rules(): List<Rules> = records()
+
+    /** [id] has its message line and a `delivered`, `refused` or `held` record. */
+    fun hasLineAndRecord(id: String): Boolean =
+        messages.any { it.id.value == id } && lines.any { it is Record && it.event in setOf("delivered", "refused", "held") && it.plain()["id"] == id }
 
     /** `seq` runs 1, 2, 3 … with no gap and no repeat (contracts.md §2.2). */
     fun seqRunsWithoutGap(): Boolean = lines.map { it.seq.toLong() } == (1L..lines.size).toList()

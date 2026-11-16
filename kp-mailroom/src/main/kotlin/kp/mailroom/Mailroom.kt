@@ -349,7 +349,9 @@ class Mailroom private constructor(
     /**
      * The message as the mailroom writes it (contracts.md §2.1): from the input only what a sender supplies — `kind`,
      * `to`, `stage`, `subject`, `body`, `pointers`, `args`, `re`; `id`, `thread`, `at`, `created`, `from`, `by` and
-     * `signed` set here. A reply's thread, stage and addressee default to the message it answers'.
+     * `signed` set here. A reply's thread, stage and addressee default to the message it answers'. An addressee that
+     * cannot be resolved — a `{re: from}` kind with no `re` — is written `to: mailroom`, and the judgement refuses it:
+     * nothing is thrown at a sender (contracts.md §3).
      */
     private fun compose(author: Author, input: JsonObject, now: String): Message {
         fun field(name: String) = input[name]?.takeIf { it !is kotlinx.serialization.json.JsonNull }
@@ -366,8 +368,7 @@ class Mailroom private constructor(
                 is Destination.Reply -> re?.from?.value
                 Destination.AnySeat -> args?.get(SEAT)?.jsonPrimitive?.contentOrNull
             }
-        }
-        requireNotNull(to) { "a message of kind '$kind' names its addressee" }
+        } ?: MAILROOM
         val subject = string(SUBJECT) ?: re?.subject?.let { "re: $it".take(SUBJECT_LIMIT) } ?: kind
         return Message.read(line(now,
             ID to text(id), THREAD to text(re?.thread?.value ?: id), RE to field(RE), FROM to text(author.from), TO to text(to),
