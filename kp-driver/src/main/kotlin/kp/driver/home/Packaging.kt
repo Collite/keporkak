@@ -72,7 +72,7 @@ class Packaging private constructor(
     /** What a request is (contracts.md §10): the fields of its input that are paths, and the tools whose requests are reads. */
     internal class Requests(val paths: List<String>, val read: List<String>)
     internal class Word(val name: String, val denies: String, val rules: List<RawRule>)
-    internal class RawRule(val tools: List<String>, val command: String?, val path: List<String>, val except: List<String>, val outside: String?, val early: List<String>)
+    internal class RawRule(val tools: List<String>, val command: String?, val path: List<String>, val except: List<String>, val outside: String?)
     internal class Server(val url: String, val sessionToken: Boolean)
     internal class HookEvent(val event: String, val matcher: String?, val timeout: Int, val limit: Int?)
 
@@ -108,12 +108,6 @@ class Packaging private constructor(
             })
             put("rules", JsonArray(compiled.map { it.json() }))
         })
-    }
-
-    /** The same words in Claude Code's own syntax, for `settings.json` — the early no. */
-    internal fun early(words: List<String>, profile: Profile, places: Places): Outcome<List<String>> = when (val rules = compile(words, profile, places)) {
-        is Outcome.Ok -> Outcome.Ok(rules.value.flatMap { it.early }.distinct())
-        is Outcome.Failed -> rules
     }
 
     /** The MCP servers a persona names, by address, for injection per session (§5: the messaging server carries the token). */
@@ -160,16 +154,15 @@ class Packaging private constructor(
         return if (problems.isEmpty()) Outcome.Ok(globs) else Outcome.Failed(problems.distinct().joinToString("; "))
     }
 
-    private fun RawRule.texts() = listOfNotNull(command) + path + except + early
+    private fun RawRule.texts() = listOfNotNull(command) + path + except
 
     /** One rule with its placeholders filled; null when a value it needs is empty — the rule is left out. */
     private fun RawRule.compile(word: Word, fill: Fill, writable: List<String>): CompiledRule? {
         val command = command?.let { fill.expandRegex(it) ?: return null }
         val path = (if (outside != null) listOf("/**") else path.map { fill.expand(it, ::literal) ?: return null }.flatten())
         val except = except.map { fill.expand(it, ::literal) ?: return null }.flatten() + (if (outside != null) writable else emptyList())
-        val early = early.flatMap { fill.expand(it, ::literal) ?: emptyList() }
         if (fill.failed) return null
-        return CompiledRule(word.name, word.denies, tools(tools), command, path.takeIf { it.isNotEmpty() }?.let(::globs), except.takeIf { it.isNotEmpty() }?.let(::globs), early)
+        return CompiledRule(word.name, word.denies, tools(tools), command, path.takeIf { it.isNotEmpty() }?.let(::globs), except.takeIf { it.isNotEmpty() }?.let(::globs))
     }
 
     /** A placeholder's value as literal text in a pattern. */
@@ -220,7 +213,7 @@ class Packaging private constructor(
     }
 
     /** A rule ready for `permissions.json`: regular expressions over the tool's name, its command and its paths. */
-    private class CompiledRule(val border: String, val denies: String, val tool: String, val command: String?, val path: String?, val except: String?, val early: List<String>) {
+    private class CompiledRule(val border: String, val denies: String, val tool: String, val command: String?, val path: String?, val except: String?) {
         fun json() = buildJsonObject {
             put("border", border)
             put("denies", denies)
@@ -248,7 +241,8 @@ class Packaging private constructor(
                 val word = value as? Map<*, *>
                 val rules = (word?.get("rules") as? List<*>).orEmpty().map { item ->
                     val rule = item as? Map<*, *> ?: emptyMap<Any, Any>()
-                    RawRule(strings(rule["tools"]), rule["command"]?.toString(), strings(rule["path"]), strings(rule["except"]), rule["outside"]?.toString(), strings(rule["early"]))
+                    rule.keys.map { it.toString() }.filterNot { it in RULE_KEYS }.forEach { problems += "deny word '$name': a rule has an unknown key '$it'" }
+                    RawRule(strings(rule["tools"]), rule["command"]?.toString(), strings(rule["path"]), strings(rule["except"]), rule["outside"]?.toString())
                         .also { if (it.tools.isEmpty()) problems += "deny word '$name': a rule names no tool" }
                         .also { if (it.outside != null && it.outside != WRITABLE) problems += "deny word '$name': outside names '${it.outside}', not $WRITABLE" }
                 }
@@ -274,6 +268,9 @@ class Packaging private constructor(
 
         /** The three hooks of contracts.md §11, by their scripts' names in `hooks/`. */
         internal val HOOKS = listOf("inbox-first", "deny", "stop-gate")
+
+        /** What a rule may say: its tools, and what it matches of a call. */
+        private val RULE_KEYS = listOf("tools", "command", "path", "except", "outside")
 
         /** The data's set of what a session may write, and the one name a rule's `outside` may give. */
         private const val WRITABLE = "writable"

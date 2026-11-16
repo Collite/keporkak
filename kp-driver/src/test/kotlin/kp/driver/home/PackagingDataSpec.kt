@@ -61,8 +61,6 @@ class PackagingDataSpec : StringSpec({
         val pins = rules(packaging.permissions(listOf("pin-files"), profile("toy"), places, defaults).ok()).single()
 
         pins.field("path") shouldBe "^(/office/_wt/keporkak-S2\\.2/gradle/libs\\.versions\\.toml|/office/_wt/keporkak-S2\\.2/gradle/wrapper/gradle-wrapper\\.properties)$"
-        packaging.early(listOf("pin-files"), profile("toy"), places).ok() shouldBe
-            listOf("Edit(//office/_wt/keporkak-S2.2/gradle/libs.versions.toml)", "Edit(//office/_wt/keporkak-S2.2/gradle/wrapper/gradle-wrapper.properties)")
         rules(packaging.permissions(listOf("demo-cluster"), profile("keporkak"), places, defaults).ok()).shouldBeEmpty()
         rules(packaging.permissions(listOf("live-target"), profile("keporkak"), places, defaults).ok()).first().field("command") shouldBe
             "(^|[;&|(`])\\s*((kubectl|kustomize|helm))(\\s|$|[;&|`])"
@@ -90,6 +88,12 @@ class PackagingDataSpec : StringSpec({
 
         rule.field("path") shouldBe "^(/.*)$"
         rule.field("except") shouldBe permissions.field("writable")
+    }
+
+    "a rule with a key it may not have — an early rule for settings.json — is refused" {
+        val data = root("agents/packaging/claude.yaml").readText().replace("        outside: writable", "        outside: writable\n        early: [Edit]")
+
+        (Packaging.read(data) as Outcome.Failed).reason shouldBe "deny word 'outside-worktree': a rule has an unknown key 'early'"
     }
 
     "a rule's outside names the writable set and nothing else" {

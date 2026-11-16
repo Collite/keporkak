@@ -2,8 +2,6 @@ package kp.driver.home
 
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldBeEmpty
-import io.kotest.matchers.collections.shouldContain
-import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -75,7 +73,7 @@ class ConfigHomeSpec : StringSpec({
         }
     }
 
-    "settings.json holds the deny rules as the early no and the three hooks by absolute path — no allow rule" {
+    "settings.json holds the three hooks by absolute path, and nothing else" {
         Sources().use { sources ->
             val home = ConfigHomes(sources.root, sources.seats).build(SeatId("coder-1"), "coder", "keporkak", sources.places, defaults).ok().path
             val settings = Json.parseToJsonElement(home.resolve("settings.json").readText()).jsonObject
@@ -83,10 +81,7 @@ class ConfigHomeSpec : StringSpec({
             fun command(event: String) = hooks.getValue(event).jsonArray.single().jsonObject.getValue("hooks").jsonArray.single().jsonObject
             val hooksDir = sources.root.resolve("hooks").toAbsolutePath().normalize()
 
-            settings.keys shouldBe setOf("permissions", "hooks")
-            settings.getValue("permissions").jsonObject.keys shouldBe setOf("deny")
-            settings.getValue("permissions").jsonObject.getValue("deny").jsonArray.map { (it as JsonPrimitive).content } shouldContainAll
-                listOf("Agent", "Bash(git push * master)", "Bash(tmux *)", "Bash(kubectl *)", "Edit(/${sources.places.worktree}/gradle/libs.versions.toml)")
+            settings.keys shouldBe setOf("hooks")
             hooks.keys shouldBe setOf("SessionStart", "PreToolUse", "Stop")
             command("SessionStart").text("command") shouldBe "'/bin/sh' '$hooksDir/inbox-first'"
             command("PreToolUse").text("command") shouldBe "'/bin/sh' '$hooksDir/deny' '$home/permissions.json'"
@@ -134,15 +129,13 @@ class ConfigHomeSpec : StringSpec({
         }
     }
 
-    "settings.json and permissions.json of a home compile the same words" {
+    "permissions.json of a home compiles the persona's words, in the persona's order" {
         Sources().use { sources ->
             val home = ConfigHomes(sources.root, sources.seats).build(SeatId("qa-1"), "qa", "tatrman", sources.places, defaults).ok().path
             val permissions = Json.parseToJsonElement(home.resolve("permissions.json").readText()).jsonObject
 
             permissions.getValue("rules").jsonArray.map { (it.jsonObject["border"] as JsonPrimitive).content }.distinct() shouldBe
                 listOf("side-channels", "write-code", "write-project", "push-master", "pin-files", "demo-cluster")
-            Json.parseToJsonElement(home.resolve("settings.json").readText()).jsonObject.getValue("permissions").jsonObject.getValue("deny").jsonArray
-                .map { (it as JsonPrimitive).content } shouldContain "Bash(* --context hartland*)"
             (permissions.getValue("rules").jsonArray.map { it.jsonObject }.none { (it["border"] as JsonPrimitive).content == "live-target" }) shouldBe true
         }
     }

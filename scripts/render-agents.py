@@ -20,6 +20,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 # placeholder must be a key of each profile's frontmatter.
 SESSION_PLACEHOLDERS = ("worktree", "scratch", "project", "own_file", "code_repos", "mcp_listen")
 HOOKS = ("inbox-first", "deny", "stop-gate")
+RULE_KEYS = ("tools", "command", "path", "except", "outside")
 PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---", re.S)
 
@@ -42,7 +43,8 @@ def packaging_read(text):
             rule = rule or {}
             if not rule.get("tools"): problems.append(f"deny word '{name}': a rule names no tool")
             if rule.get("outside") is not None and rule["outside"] != "writable": problems.append(f"deny word '{name}': outside names '{rule['outside']}', not writable")
-            texts += ([str(rule["command"])] if rule.get("command") is not None else []) + [str(t) for key in ("path", "except", "early") for t in (rule.get(key) or [])]
+            problems += [f"deny word '{name}': a rule has an unknown key '{key}'" for key in rule if key not in RULE_KEYS]
+            texts += ([str(rule["command"])] if rule.get("command") is not None else []) + [str(t) for key in ("path", "except") for t in (rule.get(key) or [])]
         if not rules: problems.append(f"deny word '{name}' has no rule")
         owners += [(f"deny word '{name}'", p) for p in dict.fromkeys(p for t in texts for p in PLACEHOLDER.findall(t))]
     servers = data.get("mcp") or {}

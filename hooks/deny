@@ -2,24 +2,37 @@
 # deny — the PreToolUse hook of a Claude seat (contracts.md §11): matches the call on stdin against the seat's
 # compiled permissions and denies, naming the border, when a rule covers it. It decides nothing else and asks no
 # daemon: a call no rule covers gets no answer here and goes on to Claude Code's own permissions — and, if asked, to
-# the driver's answerer, which reads the same permissions.json the same way (kp-driver, CompiledAnswerer).
+# the driver's answerer, which reads the same permissions.json the same way (kp-driver, CompiledAnswerer). The
+# seat's settings.json holds no permission rule: permissions.json is the rules' one source.
 #
 # Usage, from the seat's settings.json: /bin/sh hooks/deny <config home>/permissions.json
 # Reads the hook's JSON on stdin: {tool_name, tool_input, …}. Answers, when a rule covers the call:
 #   {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"…"}}
-# A permissions.json that cannot be read denies every call: the seat's borders are not known.
+# It fails closed: when jq is missing, or permissions.json cannot be read, parsed or is not in its form, or the call
+# cannot be read, it denies every call — the seat's borders are not known.
 set -u
 table=${1:-}
 
-answer() {
-	jq -cn --arg reason "$1" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'
+# A fixed refusal, written without jq: the reason holds no quote and no backslash.
+refuse() {
+	cat >/dev/null 2>&1
+	printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Keporkak denied this call: %s."}}\n' "$1"
 	exit 0
 }
 
-if [ -z "$table" ] || [ ! -r "$table" ]; then
-	cat >/dev/null
-	answer "Keporkak denied this call: the seat's permissions.json cannot be read."
-fi
+answer() {
+	jq -cn --arg reason "$1" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}' \
+		|| refuse "its reason cannot be written"
+	exit 0
+}
+
+command -v jq >/dev/null 2>&1 || refuse "jq is missing, so the seat's permissions.json cannot be read"
+[ -n "$table" ] && [ -r "$table" ] || refuse "the seat's permissions.json cannot be read"
+# permissions.json in its form: an object with the working directory, the input fields that are paths, and the rules.
+jq -e 'type == "object" and (.working_directory | type) == "string" and (.paths | type) == "array"
+	and all(.paths[]; type == "string") and (.rules | type) == "array"' "$table" >/dev/null 2>&1 \
+	|| refuse "the seat's permissions.json cannot be read"
+input=$(cat) || refuse "its input cannot be read"
 
 # A call's paths: the fields of its input that the table's `paths` names, made absolute against the working directory,
 # with ".", ".." and empty names removed. A call's command lines: its input's command, split at each newline, after a
@@ -27,7 +40,7 @@ fi
 # rule matches when its `tool` expression matches the whole tool name, its `command` expression is found in one of the
 # command's lines — each judged on its own, so no pattern runs across a newline — and one path matches `path` and not
 # `except`.
-reason=$(jq -r --slurpfile table "$table" '
+reason=$(printf '%s' "$input" | jq -r --slurpfile table "$table" '
 	def lines: gsub("(?<keep>(?<!\\\\)(?:\\\\\\\\)*)\\\\\n"; "\(.keep // "")") | if . == "" then [""] else split("\n") end;
 	def normalize($wd):
 		(if startswith("/") then . else $wd + "/" + . end)
@@ -47,7 +60,7 @@ reason=$(jq -r --slurpfile table "$table" '
 		| select(.command == null or (.command as $re | $lines != null and any($lines[]; test($re))))
 		| select(.path == null or (. as $rule | any($paths[]; test($rule.path) and (($rule.except == null) or (test($rule.except) | not))))))
 	| "Keporkak denied this call: border \(.border) — \(.denies)."
-' 2>/dev/null) || answer "Keporkak denied this call: its input or the seat's permissions.json cannot be read."
+' 2>/dev/null) || refuse "its input cannot be read"
 
 [ -n "$reason" ] && answer "$reason"
 exit 0

@@ -3,7 +3,6 @@ package kp.driver.home
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
-import io.kotest.matchers.string.shouldStartWith
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kp.driver.Answer
@@ -39,7 +38,7 @@ class HooksSpec : StringSpec({
         }
     }
 
-    "deny denies every call when the seat's permissions.json or the call cannot be read" {
+    "deny denies every call when jq is missing, or the seat's permissions.json or the call cannot be read" {
         Sources().use { sources ->
             val missing = sources.seats.resolve("nobody/permissions.json")
             val broken = Files.createTempFile(sources.root, "permissions", ".json").also { it.writeText("{not json") }
@@ -48,8 +47,16 @@ class HooksSpec : StringSpec({
 
             reason(Hooks.run("deny", listOf(missing.toString()), """{"tool_name":"Bash","tool_input":{"command":"ls"}}""")) shouldBe
                 "Keporkak denied this call: the seat's permissions.json cannot be read."
-            reason(Hooks.run("deny", listOf(broken.toString()), """{"tool_name":"Bash","tool_input":{"command":"ls"}}""")) shouldStartWith "Keporkak denied this call: its input or"
-            reason(Hooks.run("deny", listOf(good.toString()), "not json")) shouldStartWith "Keporkak denied this call: its input or"
+            reason(Hooks.run("deny", listOf(broken.toString()), """{"tool_name":"Bash","tool_input":{"command":"ls"}}""")) shouldBe
+                "Keporkak denied this call: the seat's permissions.json cannot be read."
+            reason(Hooks.run("deny", listOf(good.toString()), "not json")) shouldBe "Keporkak denied this call: its input cannot be read."
+            for (form in listOf("[]", "{}", """{"working_directory": "/w", "paths": "file_path", "rules": []}""", """{"working_directory": "/w", "paths": ["file_path"], "rules": {}}""")) {
+                broken.writeText(form)
+                reason(Hooks.run("deny", listOf(broken.toString()), """{"tool_name":"Bash","tool_input":{"command":"ls"}}""")) shouldBe
+                    "Keporkak denied this call: the seat's permissions.json cannot be read."
+            }
+            reason(Hooks.run("deny", listOf(good.toString()), """{"tool_name":"Bash","tool_input":{"command":"ls"}}""", mapOf("PATH" to "/nonexistent"))) shouldBe
+                "Keporkak denied this call: jq is missing, so the seat's permissions.json cannot be read."
             reason(Hooks.run("deny", emptyList(), """{"tool_name":"Bash","tool_input":{"command":"ls"}}""")) shouldBe
                 "Keporkak denied this call: the seat's permissions.json cannot be read."
         }

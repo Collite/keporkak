@@ -9,7 +9,6 @@ deny:
     rules:
       - tools: [Bash]
         command: 'git push origin {default_branch}'
-        early: ["Bash(git push origin {default_branch})"]
   beta:
     denies: writes under a folder nobody names
     rules:

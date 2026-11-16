@@ -56,9 +56,18 @@ class PackagingCheckTests(unittest.TestCase):
         self.assertEqual(self.failures(), ["packaging: placeholder '{demo_context}' of deny word 'demo-cluster' is filled by nothing in profile toy"])
 
     def test_a_placeholder_nothing_fills_fails_for_every_profile(self):
-        self.edit("agents/packaging/claude.yaml", 'path: ["{project}/**"]\n        early: ["Edit(/{project}/**)"]', 'path: ["{projekt}/**"]\n        early: ["Edit(/{project}/**)"]')
+        self.edit("agents/packaging/claude.yaml", '  write-project:\n    denies: writes in the project repo\n    rules:\n      - tools: [Write, Edit, MultiEdit, NotebookEdit]\n        path: ["{project}/**"]',
+                  '  write-project:\n    denies: writes in the project repo\n    rules:\n      - tools: [Write, Edit, MultiEdit, NotebookEdit]\n        path: ["{projekt}/**"]')
         self.assertEqual(self.failures(), [f"packaging: placeholder '{{projekt}}' of deny word 'write-project' is filled by nothing in profile {name}"
                                            for name in ("keporkak", "tatrman", "toy")])
+
+    def test_an_early_rule_for_settings_json_fails_like_any_key_a_rule_may_not_have(self):
+        self.edit("agents/packaging/claude.yaml", "        outside: writable\n", "        outside: writable\n        early: [Edit]\n")
+        self.assertEqual(self.failures(), ["packaging: deny word 'outside-worktree': a rule has an unknown key 'early'"])
+
+    def test_the_packaging_data_without_the_fields_that_are_paths_fails(self):
+        self.edit("agents/packaging/claude.yaml", "  paths: [file_path, path, notebook_path]\n", "")
+        self.assertEqual(self.failures(), ["packaging: requests: no field of an input is named as a path"])
 
     def test_the_packaging_data_without_a_hook_fails(self):
         self.edit("agents/packaging/claude.yaml", "  stop-gate: {event: Stop, timeout: 30, limit: 10}\n", "")
