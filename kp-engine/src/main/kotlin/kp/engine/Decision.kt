@@ -43,7 +43,7 @@ class Decision private constructor(
     val counted: Map<String, Long>,
     val effects: List<Requested>,
     val messageClass: MessageClass?,
-    /** Class B: the outcome waits for Bora (a ticket). */
+    /** Class B: the outcome waits for Bora (a ticket) — unless it is Bora's own message (contracts.md §2.2). */
     val waitsForBora: Boolean,
     /**
      * The deadline a delivery sets, when its kind has one. For an expiry: the wait's new deadline when it goes on, null

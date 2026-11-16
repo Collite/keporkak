@@ -77,10 +77,11 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
             return refuse(candidate.id, candidate.guard ?: failure?.let(::render).orEmpty(), failure)
         }
         val messageClass = classify(kind)
+        // What waits for Bora (contracts.md §2.2, Amendment 15): a class-B item — but Bora's own message never waits for Bora.
         val deadline = kind.deadline?.let { duration -> now()?.let { plus(it, duration) } ?: return refuse(kind.name, "deadline: $duration") }
         return Decision.create(
             Outcome.DELIVER, rule = fired.rule(), unsupplied = evaluation.unsupplied.toList(), moves = fired.moves, counted = evaluation.moved.toMap(),
-            effects = fired.effects, messageClass = messageClass, waitsForBora = messageClass == MessageClass.B, deadline = deadline,
+            effects = fired.effects, messageClass = messageClass, waitsForBora = messageClass == MessageClass.B && message.from != BORA, deadline = deadline,
             observed = evaluation.observed.toMap(), attested = evaluation.attested(), answers = answers(kind, message),
         )
     }

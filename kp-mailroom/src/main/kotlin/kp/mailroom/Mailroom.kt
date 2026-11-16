@@ -151,13 +151,18 @@ class Mailroom private constructor(
 
     /**
      * Reads the rule texts again and puts them through `kp-rules` (architecture.md §3, hot reload). A valid set is in
-     * force from the next message and leaves a `rules` record; an invalid one changes nothing — no line — and its
-     * problems are the answer, for the caller to report. A message in flight finishes under the set it began with.
+     * force from the next message and leaves a `rules` record. An invalid one leaves the old set in force, writes no
+     * `rules` record and requests `notify.bora` with the cause `rules` and its problems in `with` (contracts.md §2.2);
+     * the problems are also the answer. A message in flight finishes under the set it began with.
      */
     @Synchronized
     fun reload(): Reload {
         val (next, loaded) = InForce.load(texts.read())
-        if (next == null) return Reload.Rejected(loaded.problems)
+        if (next == null) {
+            request(NOTIFY_BORA, RULES, Datum.Fields(mapOf(PROBLEMS to Datum.Items(loaded.problems.map { Datum.Text("$it") }))), now())
+            drain()
+            return Reload.Rejected(loaded.problems)
+        }
         inForce = next
         recordRules()
         return Reload.Accepted(next.hash)
@@ -467,6 +472,9 @@ private const val OK = "ok"
 private const val OF = "of"
 private const val ITEM = "item"
 private const val INTERRUPTED = "interrupted"
+/** The cause of the `notify.bora` an invalid reload requests, and where its problems go (contracts.md §2.2). */
+private const val RULES = "rules"
+private const val PROBLEMS = "problems"
 /** The operations whose `ok` names a seat (contracts.md §4.4). */
 private val SEATING = setOf("seat.start", "seat.reseat")
 private const val BORA_CLI = "bora-cli"

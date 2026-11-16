@@ -27,7 +27,8 @@ class OperationsSpec : StringSpec({
 
         office.bora(APPROVAL)
 
-        onDisk.first() shouldBe listOf("Message", "Delivered", "Transition", "worktree.create requested", "notify.bora requested", "Read")
+        // Bora's own approval waits for no one: no notify.bora (S1.8, contracts.md §2.2).
+        onDisk.first() shouldBe listOf("Message", "Delivered", "Transition", "worktree.create requested", "Read")
     }
 
     "a failed result is recorded with its reason and judged: nothing fires for worktree.create failed, and the stage stays assigned" {
@@ -75,7 +76,7 @@ class OperationsSpec : StringSpec({
         val retry = office.bora(APPROVAL)
 
         listOf(retry.status, retry.requirement) shouldBe listOf(Status.REFUSED, "max_fires: 1, window: stage")
-        office.operations.requested.map { it.operation } shouldBe listOf("worktree.create", "notify.bora")
+        office.operations.requested.map { it.operation } shouldBe listOf("worktree.create")
     }
 
     "seat.start names its seat in with.seat, and in result.seat when ok" {

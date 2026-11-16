@@ -208,12 +208,13 @@ class Office(walk: String = "H-1-prime", seed: String? = null, counters: String 
 
         /**
          * In the log of every office a spec opened: `seq` has no gap; no operation is requested twice for one request;
-         * and every submission has its message line and a record about it — none ended in an exception.
+         * every submission has its message line and a record about it — none ended in an exception; and Bora's own
+         * message waits for no one — no ticket and no `notify.bora` for a message `by: bora-cli`.
          */
         fun everyLogIsWhole(): List<String> = opened.flatMap { office ->
             val log = office.readBack()
             listOfNotNull("${office.project}: seq has a gap".takeUnless { log.seqRunsWithoutGap() }) + log.requestedTwice() +
-                office.submitted.filterNot(log::hasLineAndRecord).map { "$it: no message line, or no record about it" }
+                office.submitted.filterNot(log::hasLineAndRecord).map { "$it: no message line, or no record about it" } + log.borasOwnWaiting()
         }
     }
 }
@@ -235,6 +236,14 @@ class ReadBack(project: Path) {
     /** [id] has its message line and a `delivered`, `refused` or `held` record. */
     fun hasLineAndRecord(id: String): Boolean =
         messages.any { it.id.value == id } && lines.any { it is Record && it.event in setOf("delivered", "refused", "held") && it.plain()["id"] == id }
+
+    /** Each ticket or `notify.bora` about a message by Bora's command line (contracts.md §2.2: Bora's own message gets neither). */
+    fun borasOwnWaiting(): List<String> {
+        val boras = messages.filter { it.by == "bora-cli" }.map { it.id.value }.toSet()
+        val tickets = lines.filterIsInstance<Record>().filter { it.plain()["ticket"] != null && it.plain()["id"] in boras }.map { "${it.seq}: a ticket for ${it.plain()["id"]}" }
+        val notified = records<Op>().filter { it.op == "notify.bora" && (it.plain()["with"] as? Map<*, *>)?.get("item") in boras }.map { "${it.seq}: notify.bora for Bora's own message" }
+        return tickets + notified
+    }
 
     /** `seq` runs 1, 2, 3 … with no gap and no repeat (contracts.md §2.2). */
     fun seqRunsWithoutGap(): Boolean = lines.map { it.seq.toLong() } == (1L..lines.size).toList()

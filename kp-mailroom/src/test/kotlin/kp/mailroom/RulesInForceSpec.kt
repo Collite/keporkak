@@ -49,7 +49,7 @@ class RulesInForceSpec : StringSpec({
         Office.opened.remove(office)
     }
 
-    "an accepted reload records the set even when nothing changed; a rejected one writes nothing" {
+    "an accepted reload records the set even when nothing changed; a rejected one writes no rules record" {
         val office = Office()
 
         val same = office.mailroom.reload()
