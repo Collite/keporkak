@@ -32,6 +32,23 @@ class LooseEndsSpec : StringSpec({
         }
     }
 
+    "a tool call left open when its turn ends is closed when the process ends (issue #22)" {
+        Office().use { office ->
+            val agent = office.agent("""{"turns": [[{"do": "tool", "id": "t1", "title": "watch the build"}, {"do": "end"}]]}""")
+            val driver = office.driver()
+            driver.start(office.session("coder-1", agent)).ok()
+            driver.prompt(seat, "start watching").ok().stopReason shouldBe "end_turn"
+            office.clock.advance(Duration.ofSeconds(42))
+            driver.observe(seat, "seat.tool_call_open_for").ok().value shouldBe JsonPrimitive("42s")
+
+            ProcessHandle.of(agent.pids().single()).get().destroyForcibly()
+
+            eventually(10.seconds) { driver.observe(seat, "seat.process_gone").ok().value shouldBe JsonPrimitive(true) }
+            driver.observe(seat, "seat.tool_call_open_for").ok().value shouldBe JsonPrimitive("0s")
+            driver.observe(seat, "seat.tool_call_open_for").ok().evidence shouldBe "no tool call is open"
+        }
+    }
+
     "the session window of seat.usage starts again after a load" {
         Office().use { office ->
             val driver = office.driver()

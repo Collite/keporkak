@@ -93,6 +93,20 @@ class StopGateSpec : StringSpec({
         }
     }
 
+    "stop-gate's body is {\"stop_hook_active\": bool} and nothing else of the hook's input (contracts.md §11)" {
+        StopStandIn(answer = """{"block": false}""").use { daemon ->
+            val environment = mapOf("KP_HOOK_URL" to daemon.url, "KP_SESSION_TOKEN" to "t")
+            val active = Hooks.STOP.toString().replace("\"stop_hook_active\":false", "\"stop_hook_active\":true")
+            val missing = Hooks.STOP.toString().replace("\"stop_hook_active\":false,", "")
+            val notBool = Hooks.STOP.toString().replace("\"stop_hook_active\":false", "\"stop_hook_active\":\"yes\"")
+
+            for (input in listOf(Hooks.STOP.toString(), active, missing, notBool)) Hooks.run("stop-gate", listOf("3"), input, environment)
+
+            daemon.bodies shouldContainExactly listOf("""{"stop_hook_active":false}""", """{"stop_hook_active":true}""",
+                """{"stop_hook_active":false}""", """{"stop_hook_active":false}""")
+        }
+    }
+
     "the stop hook's input says whether the turn already goes on because of a block" {
         StopStandIn(answer = """{"block": false}""").use { daemon ->
             val active = Hooks.STOP.toString().replace("\"stop_hook_active\":false", "\"stop_hook_active\":true")

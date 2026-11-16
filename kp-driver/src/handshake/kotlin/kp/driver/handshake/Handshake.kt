@@ -21,7 +21,6 @@ import kp.driver.Explained
 import kp.driver.Listener
 import kp.driver.home.CompiledAnswerer
 import kp.driver.home.ConfigHomes
-import kp.driver.home.PermissionDefaults
 import kp.driver.home.Places
 import kp.driver.McpServer
 import kp.driver.ObservedFact
@@ -327,7 +326,7 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             run.resolve("project/tasks-handshake.md"), listOf(run.resolve("code")), standIn.listen)
 
         val built = step("a home built by the builder for the coder's persona") {
-            val built = ConfigHomes(root, seats).build(coder, "coder", "keporkak", places, permissionDefaults()).ok()
+            val built = ConfigHomes(root, seats).build(coder, "coder", "keporkak", places, permissionDefaults(root).ok()).ok()
             check(Files.readAllBytes(built.path.resolve("CLAUDE.md")).contentEquals(Files.readAllBytes(root.resolve("renders/coder.md")))) { "its CLAUDE.md is not renders/coder.md" }
             built to "${names(built.path)}; skills ${names(built.path.resolve("skills"))}; servers handed back: ${built.servers.joinToString { "${it.name} ${it.url}" }}"
         } ?: return@use
@@ -410,12 +409,6 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             Unit to "${names(built.path)}; .claude.json names no MCP server"
         }
         driver.kill(coder, Duration.ofSeconds(5))
-    }
-
-    /** `engagement.yaml:permissions`, read as the daemon will hand it to the builder: the defaults the answerer follows. */
-    private fun permissionDefaults(): PermissionDefaults {
-        val block = Yaml.default.parseToYamlNode(root.resolve("rules/engagement.yaml").readText()).yamlMap.get<YamlMap>("permissions")!!
-        return PermissionDefaults.of(block.entries.entries.associate { (key, value) -> key.content to (value as YamlScalar).content }).ok()
     }
 
     private fun names(folder: Path): List<String> = Files.list(folder).use { paths -> paths.map { it.fileName.toString() }.sorted().toList() }
