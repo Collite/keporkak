@@ -86,6 +86,19 @@ class TheMailroomsLooseEndsSpec : FreeSpec({
         office.readBack().records<Refused>().single().id shouldBe report.id
     }
 
+    "a submission whose to is not a string naming a party is written to the mailroom and refused: nothing is thrown at its sender (review B1)" {
+        val office = Office(seed = "assigned")
+
+        val answers = listOf("\"Not A Party\"", "7", "true", "[\"teamlead\"]").map { to ->
+            office.send("coder-1", """{"kind": "started", "stage": "$STAGE", "to": $to, "subject": "started on the branch"}""")
+        }
+
+        answers.map { "${it.status} ${it.requirement}" } shouldBe List(4) { "REFUSED to: teamlead" }
+        answers.map { office.readBack().message(it.id).to.value } shouldBe List(4) { "mailroom" }
+        office.readBack().records<Refused>().map { it.id } shouldBe answers.map { it.id }
+        office.readBack().records<Delivered>() shouldBe emptyList()
+    }
+
     "an invalid reload changes nothing and asks for Bora to be told, with its problems" {
         val office = Office()
         val inForce = office.mailroom.state.rules
