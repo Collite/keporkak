@@ -6,7 +6,10 @@ import kp.model.Delivered
 
 /** T4 — the declared emits: what the rules make the mailroom send goes through the same loop, `by` naming the transition. */
 class EmitsSpec : StringSpec({
-    afterTest { Office.closeAll() }
+    afterTest {
+        Office.everyLogIsWhole() shouldBe emptyList()
+        Office.closeAll()
+    }
 
     "a review-request with a Found line untriaged makes the mailroom send found-batch to the principal, by T-17, in reply to it" {
         val office = Office(seed = "building")

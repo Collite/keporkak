@@ -202,6 +202,12 @@ class Office(walk: String = "H-1-prime", seed: String? = null, counters: String 
             opened.forEach { runCatching { it.stop() } }
             opened.clear()
         }
+
+        /** In the log of every office a spec opened, `seq` has no gap and no operation is requested twice for one request. */
+        fun everyLogIsWhole(): List<String> = opened.flatMap { office ->
+            val log = office.readBack()
+            listOfNotNull("${office.project}: seq has a gap".takeUnless { log.seqRunsWithoutGap() }) + log.requestedTwice()
+        }
     }
 }
 

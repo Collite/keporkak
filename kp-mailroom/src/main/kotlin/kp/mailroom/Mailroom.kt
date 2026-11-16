@@ -214,16 +214,23 @@ class Mailroom private constructor(
         return Answer(Status.DELIVERED, id, transition = decision.rule)
     }
 
-    /**
-     * What the judgement requested, in its order: a declared emit is carried after this judgement's lines, by the
-     * transition that declared it — for an expiry's, by [expiry], the transition the kind's expiry names.
-     */
-    private fun effects(decision: Decision, cause: String, now: String, expiry: String? = null) = decision.effects.forEach { effect ->
+    /** What the judgement requested, in its order: a declared emit is carried after this judgement's lines. */
+    private fun effects(decision: Decision, cause: String, now: String) = decision.effects.forEach { effect ->
         when (effect) {
-            is Requested.Emit -> if (expiry == null) emit(effect, effect.rule, cause) else if (expiry.isNotEmpty()) emit(effect, expiry, cause)
+            is Requested.Emit -> declaredBy(effect)?.let { emit(effect, it, cause) }
             is Requested.Do -> request(effect.operation, cause, Datum.Fields(effect.with), now)
             is Requested.Report -> Unit
         }
+    }
+
+    /**
+     * The transition an emit is `by` (contracts.md §2.1: `effect:T-n`): the one that declared it — for a kind's expiry,
+     * the transition that expiry names. A kind whose expiry names none gives its emit no `by` the contract allows, and
+     * the emit is not sent (Found while doing).
+     */
+    private fun declaredBy(effect: Requested.Emit): String? {
+        val kind = rules.kinds[effect.rule] ?: return effect.rule
+        return kind.expiry.filterIsInstance<Effect.Transition>().firstOrNull()?.id
     }
 
     /**
@@ -240,16 +247,9 @@ class Mailroom private constructor(
         val ticket = (writer.last + 1).takeIf { decision.waitsForBora }
         write(line(now, EVENT to text("expired"), ID to text(id), RULE to text(decision.rule), REPORT to text(report?.to),
             CLASS to text(report?.messageClass?.name), TICKET to ticket?.let(::JsonPrimitive), DEADLINE to text(decision.deadline), keepNull = setOf(DEADLINE)))
-        transitions(decision, id, now)
-        effects(decision, id, now, expiry = messages[id]?.kind?.let(::expiryTransition).orEmpty())
+        record(decision, id, now)
         if (ticket != null && report?.messageClass == MessageClass.B) notify(ticket, id, now)
     }
-
-    /**
-     * The transition an expiry's emit is `by` (contracts.md §2.1: `effect:T-n`): the one the kind's expiry names. A kind
-     * whose expiry names none gives its emit no `by` the contract allows, and the emit is not sent (Found while doing).
-     */
-    private fun expiryTransition(kind: String): String? = rules.kinds[kind]?.expiry?.filterIsInstance<Effect.Transition>()?.firstOrNull()?.id
 
     /** What a judgement of a result or an expiry decided: its transitions and its effects, caused by [cause]. */
     private fun record(decision: Decision, cause: String, now: String) {
