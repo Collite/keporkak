@@ -201,7 +201,8 @@ stop_gate:
   max_consecutive_blocks:
     cap: stop_gate_blocks
   require: []
-permissions:
-  inside_working_directory: allow
-  outside_working_directory: deny
-  lifetime: once
+permissions:  # what a request no deny: word covers gets (contracts.md §4.3, §10); a request that names no path gets no default
+  write_inside: allow  # a write inside what the session may write: its working directory, its scratch, its own file
+  write_outside: deny
+  read: allow  # a read, wherever no deny: word covers it
+  lifetime: once  # every answer is a one-time option (D-18 (4))

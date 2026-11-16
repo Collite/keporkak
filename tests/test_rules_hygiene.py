@@ -43,6 +43,15 @@ class RulesHygieneTests(unittest.TestCase):
                   "- id: RET-3\n  when: the last stage of a phase exits\n  note: start a phase-retro (always; the phase cannot exit without its retro-report)\n  'on': *done\n")
         self.assertEqual(self.failures(), ["robots/retro.yaml: a YAML anchor or alias — every rule is written out"])
 
+    def test_the_permissions_block_takes_its_keys_and_their_values_only(self):
+        self.edit("rules/engagement.yaml", "  write_inside: allow  #", "  inside_working_directory: allow  #")
+        self.assertEqual(self.failures(), ["permissions: unknown key 'inside_working_directory'", "permissions: missing write_inside"])
+        self.edit("rules/engagement.yaml", "  inside_working_directory: allow  #", "  write_inside: ask  #")
+        self.assertEqual(self.failures(), ["permissions.write_inside must be allow or deny"])
+        self.edit("rules/engagement.yaml", "  write_inside: ask  #", "  write_inside: allow  #")
+        self.edit("rules/engagement.yaml", "  lifetime: once", "  lifetime: session")
+        self.assertEqual(self.failures(), ["permissions.lifetime must be once"])
+
     def test_a_cap_whose_source_comment_is_gone_fails(self):
         self.edit("rules/engagement.yaml", "  resumes_per_stage: 2  # 3rd needs Bora (RV-15)\n", "  resumes_per_stage: 2\n")
         self.assertEqual(self.failures(), ["rules/engagement.yaml: the comment on 'resumes_per_stage:' is gone — edit the rules as text, never by a YAML round trip"])

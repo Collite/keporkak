@@ -55,6 +55,7 @@ def packaging_read(text):
     for name, hook in hooks.items():
         if (hook or {}).get("event") is None: problems.append(f"hook '{name}' names no event")
     problems += [f"hook '{h}' is not in the packaging data" for h in HOOKS if h not in hooks]
+    if not ((data.get("requests") or {}).get("paths") or []): problems.append("requests: no field of an input is named as a path")
     if problems: return None, "; ".join(problems)
     return {"words": set(data.get("deny") or {}), "servers": set(servers), "placeholders": owners}, None
 

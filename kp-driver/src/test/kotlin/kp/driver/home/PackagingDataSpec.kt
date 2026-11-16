@@ -98,11 +98,13 @@ class PackagingDataSpec : StringSpec({
         (Packaging.read(data) as Outcome.Failed).reason shouldBe "deny word 'outside-worktree': outside names 'readable', not writable"
     }
 
-    "permissions.json carries the working directory and the defaults the caller gives" {
+    "permissions.json carries the working directory, what a request's paths and a read are, and the defaults the caller gives" {
         val permissions = packaging.permissions(listOf("push-master"), profile("keporkak"), places, PermissionDefaults(Answer.DENY, Answer.DENY, Answer.ALLOW)).ok()
 
         permissions.field("working_directory") shouldBe "/office/_wt/keporkak-S2.2"
-        permissions.getValue("defaults").jsonObject.toString() shouldBe """{"inside_working_directory":"deny","outside_working_directory":"deny"}"""
+        permissions.getValue("paths").toString() shouldBe """["file_path","path","notebook_path"]"""
+        permissions.field("read") shouldBe "^(Read|Glob|Grep|LS|NotebookRead)$"
+        permissions.getValue("defaults").jsonObject.toString() shouldBe """{"write_inside":"deny","write_outside":"deny","read":"allow"}"""
         rules(permissions).single().field("denies") shouldBe "a push to the default branch (the ruleset is the fence; this is the early no)"
     }
 
@@ -114,10 +116,10 @@ class PackagingDataSpec : StringSpec({
         (packaging.servers(listOf("messaging"), places.copy(mcpListen = null)) as Outcome.Failed).reason shouldContain "'{mcp_listen}'"
     }
 
-    "data that cannot be read, or lacks a hook, is refused with the reason" {
+    "data that cannot be read, or lacks a hook or the fields of a request that are paths, is refused with the reason" {
         (Packaging.read("deny: [") as Outcome.Failed).reason shouldContain "not readable YAML"
         (Packaging.read("deny: {x: {rules: [{tools: []}]}}\nhooks: {inbox-first: {event: SessionStart}, deny: {event: PreToolUse}}") as Outcome.Failed).reason shouldBe
-            "deny word 'x': a rule names no tool; hook 'stop-gate' is not in the packaging data"
+            "deny word 'x': a rule names no tool; hook 'stop-gate' is not in the packaging data; requests: no field of an input is named as a path"
     }
 
     "globs and tool names become anchored expressions; literal text is escaped" {

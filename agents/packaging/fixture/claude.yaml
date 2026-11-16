@@ -2,6 +2,7 @@
 # fills, one MCP server, and a writable set with a placeholder nothing fills.
 version: 1
 writable: ["{worktree}/**", "{elsewhere}/**"]
+requests: {paths: [file_path], read: [Read]}
 deny:
   alpha:
     denies: a push to the default branch

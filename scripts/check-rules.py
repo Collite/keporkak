@@ -434,6 +434,20 @@ if "stop_gate" in E and E["stop_gate"].get("require") != []:
 if not fails:
     ok("engagement second key, cap references and empty v1 stop gate checked")
 
+# What a request no deny: word covers gets (contracts.md §4.3, §10; D-18 (4)): these keys and these values, no other —
+# as kp-rules reads them.
+PERMISSIONS = {"write_inside": ("allow", "deny"), "write_outside": ("allow", "deny"), "read": ("allow", "deny"), "lifetime": ("once",)}
+if "permissions" in E:
+    permissions = E["permissions"] if isinstance(E["permissions"], dict) else {}
+    if not isinstance(E["permissions"], dict): fail("permissions must be a mapping")
+    for key in permissions:
+        if key not in PERMISSIONS: fail(f"permissions: unknown key '{key}'")
+    for key, values in PERMISSIONS.items():
+        if key not in permissions: fail(f"permissions: missing {key}")
+        elif permissions[key] not in values: fail(f"permissions.{key} must be {' or '.join(values)}")
+    if not fails:
+        ok(f"engagement permissions: {', '.join(PERMISSIONS)}")
+
 # 1. transitions → kinds (each transition's kind and states are checked above, with its id)
 ok(f"{len(trans)} stage transitions checked against {len(K)} kinds")
 

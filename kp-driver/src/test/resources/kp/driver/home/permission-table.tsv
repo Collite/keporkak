@@ -2,8 +2,8 @@
 # a call it denies, naming the border, and a call it lets through. Each row is compiled from that word alone, for the
 # profile and working directory the row names, with the places of PackagingAndHooksSpec. Columns, tab-separated:
 # word · profile · working directory · tool · the tool's input (JSON) · expected: `deny <border>` or `allow`.
-# An allowed row stays inside what the session may write — its working directory, its scratch, its own file — so the
-# answerer's default allows it too. A command's lines are
+# An allowed row writes inside what the session may write — its working directory, its scratch, its own file — reads,
+# or names no path, so the answerer's default allows it too. A command's lines are
 # judged each on its own, and one matching line denies the call; a line that ends in a backslash goes on in the next
 # (review-011, B1). In the JSON, \n is a newline and \\ one backslash.
 side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"tmux new-session -d -s watch"}	deny side-channels
@@ -18,6 +18,8 @@ side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"cd kp-driver\n
 side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"su\\\ndo kp hold KP/P2/S2.2"}	deny side-channels
 side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"echo done\\\\\nsudo kp hold KP/P2/S2.2"}	deny side-channels
 side-channels	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"just check\ngit log --oneline -3"}	allow
+side-channels	keporkak	/office/_wt/keporkak-S2.2	mcp__messaging__inbox	{}	allow
+side-channels	keporkak	/office/_wt/keporkak-S2.2	WebFetch	{"url":"https://example.org/","prompt":"the title"}	allow
 push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"git push origin master"}	deny push-master
 push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"git push origin HEAD:master"}	deny push-master
 push-master	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"just check && git push --force origin refs/heads/master"}	deny push-master
@@ -38,6 +40,7 @@ outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Write	{"file_path":"/office/
 outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Edit	{"file_path":"/office/project/tasks-p2-s2.2.md","old_string":"- [ ] T1","new_string":"- [x] T1"}	allow
 outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Write	{"file_path":"/office/project/tasks-p2-s2.3.md","content":"x"}	deny outside-worktree
 outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Write	{"file_path":"/office/_scratch/keporkak/S2.3/probe.md","content":"x"}	deny outside-worktree
+outside-worktree	keporkak	/office/_wt/keporkak-S2.2	Read	{"file_path":"/office/elsewhere/notes.md"}	allow
 live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"kubectl --context bp-dsk get pods"}	deny live-target
 live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"kp-qa up KP/P4/S4.1 ghcr.io/collite/kp:1"}	deny live-target
 live-target	keporkak	/office/_wt/keporkak-S2.2	Bash	{"command":"kp-cred run reader@bp-dsk -- true"}	deny live-target

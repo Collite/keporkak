@@ -67,7 +67,10 @@ class Packaging private constructor(
     private val servers: Map<String, Server>,
     internal val hooks: Map<String, HookEvent>,
     private val writable: List<String>,
+    private val requests: Requests,
 ) {
+    /** What a request is (contracts.md §10): the fields of its input that are paths, and the tools whose requests are reads. */
+    internal class Requests(val paths: List<String>, val read: List<String>)
     internal class Word(val name: String, val denies: String, val rules: List<RawRule>)
     internal class RawRule(val tools: List<String>, val command: String?, val path: List<String>, val except: List<String>, val outside: String?, val early: List<String>)
     internal class Server(val url: String, val sessionToken: Boolean)
@@ -96,9 +99,12 @@ class Packaging private constructor(
             put("version", 1)
             put("working_directory", places.worktree.toString())
             put("writable", globs(writable))
+            put("paths", JsonArray(requests.paths.map(::JsonPrimitive)))
+            put("read", tools(requests.read))
             put("defaults", buildJsonObject {
-                put("inside_working_directory", defaults.writeInside.word())
-                put("outside_working_directory", defaults.writeOutside.word())
+                put(PermissionDefaults.WRITE_INSIDE, defaults.writeInside.word())
+                put(PermissionDefaults.WRITE_OUTSIDE, defaults.writeOutside.word())
+                put(PermissionDefaults.READ, defaults.read.word())
             })
             put("rules", JsonArray(compiled.map { it.json() }))
         })
@@ -260,8 +266,10 @@ class Packaging private constructor(
                 key.toString() to HookEvent(event, hook?.get("matcher")?.toString(), hook?.get("timeout")?.toString()?.toIntOrNull() ?: 0, hook?.get("limit")?.toString()?.toIntOrNull())
             }
             for (hook in HOOKS) if (hook !in hooks) problems += "hook '$hook' is not in the packaging data"
+            val requests = (root["requests"] as? Map<*, *>).orEmpty().let { Requests(strings(it["paths"]), strings(it["read"])) }
+            if (requests.paths.isEmpty()) problems += "requests: no field of an input is named as a path"
             if (problems.isNotEmpty()) return Outcome.Failed(problems.joinToString("; "))
-            return Outcome.Ok(Packaging(words, servers, hooks, strings(root[WRITABLE])))
+            return Outcome.Ok(Packaging(words, servers, hooks, strings(root[WRITABLE]), requests))
         }
 
         /** The three hooks of contracts.md §11, by their scripts' names in `hooks/`. */

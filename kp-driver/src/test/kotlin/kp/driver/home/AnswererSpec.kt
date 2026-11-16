@@ -25,12 +25,13 @@ class AnswererSpec : StringSpec({
     val defaults = PermissionDefaults(Answer.ALLOW, Answer.DENY, Answer.ALLOW)
 
     /** The coder's words compiled into the office's home for the seat, where the answerer reads them. */
-    fun Office.permissions(vararg words: String) {
+    fun Office.permissionsWith(defaults: PermissionDefaults, vararg words: String) {
         val packaging = Packaging.read(root("agents/packaging/claude.yaml").readText()).ok()
         val places = Places(worktree, root.resolve("scratch"), root.resolve("project"), root.resolve("project/tasks-p2-s2.2.md"), listOf(root.resolve("repos")), "127.0.0.1:7711")
         val profile = Profile.read("keporkak", root("docs/profiles/keporkak.md").readText()).ok()
         seats.resolve(seat.value).also(Files::createDirectories).resolve("permissions.json").writeText(packaging.permissions(words.toList(), profile, places, defaults).ok().toString())
     }
+    fun Office.permissions(vararg words: String) { permissionsWith(defaults, *words) }
     fun request(input: String?, name: String? = "Write") = PermissionRequest(seat, "t1", "Write x", "edit", input?.let(Json::parseToJsonElement),
         listOf(OfferedOption("allow-once", "Yes", "allow_once"), OfferedOption("reject", "No", "reject_once")), name)
 
@@ -63,7 +64,7 @@ class AnswererSpec : StringSpec({
             driver.prompt(seat, "write").ok()
 
             agent.received("permission").single()["kind"] shouldBe JsonPrimitive("allow_once")
-            office.transcript("coder-1").last { " permission p2: " in it }.substringAfter("→ ") shouldBe "allow_once (inside what the session may write)"
+            office.transcript("coder-1").last { " permission p2: " in it }.substringAfter("→ ") shouldBe "allow_once (a write inside what the session may write)"
         }
     }
 
@@ -91,17 +92,41 @@ class AnswererSpec : StringSpec({
         }
     }
 
-    "a call with no path is judged inside the working directory; a relative path is resolved against it" {
+    "a call with no path is allowed when no deny rule covers it; a relative path is resolved against the working directory" {
         Office().use { office ->
             office.permissions("push-master")
             val answerer = CompiledAnswerer(office.seats)
 
-            answerer.explained(request("""{"command": "just check"}""", name = "Bash")) shouldBe Explained(Answer.ALLOW, "inside what the session may write")
-            answerer.explained(request("""{"to": "teamlead", "kind": "started"}""", name = "mcp__messaging__send")) shouldBe Explained(Answer.ALLOW, "inside what the session may write")
-            answerer.explained(request("""{"file_path": "docs/a.md"}""")) shouldBe Explained(Answer.ALLOW, "inside what the session may write")
-            answerer.explained(request("""{"file_path": "../elsewhere/a.md"}""")) shouldBe Explained(Answer.DENY, "outside what the session may write")
-            answerer.explained(request("""{"notebook_path": "${office.worktree}/n.ipynb", "file_path": "/etc/hosts"}""")) shouldBe Explained(Answer.DENY, "outside what the session may write")
+            answerer.explained(request("""{"command": "just check"}""", name = "Bash")) shouldBe Explained(Answer.ALLOW, "no path, and no deny rule covers it")
+            answerer.explained(request("""{"command": "git push origin master"}""", name = "Bash")) shouldBe Explained(Answer.DENY, "border push-master")
+            answerer.explained(request("""{"to": "teamlead", "kind": "started"}""", name = "mcp__messaging__send")) shouldBe Explained(Answer.ALLOW, "no path, and no deny rule covers it")
+            answerer.explained(request("""{"file_path": "docs/a.md"}""")) shouldBe Explained(Answer.ALLOW, "a write inside what the session may write")
+            answerer.explained(request("""{"file_path": "../elsewhere/a.md"}""")) shouldBe Explained(Answer.DENY, "a write outside what the session may write")
+            answerer.explained(request("""{"notebook_path": "${office.worktree}/n.ipynb", "file_path": "/etc/hosts"}""")) shouldBe Explained(Answer.DENY, "a write outside what the session may write")
         }
+    }
+
+    "a read gets the read default, and a request with a path whose tool is not a read is a write" {
+        Office().use { office ->
+            office.permissionsWith(PermissionDefaults(writeInside = Answer.ALLOW, writeOutside = Answer.ALLOW, read = Answer.DENY), "push-master")
+            val answerer = CompiledAnswerer(office.seats)
+
+            answerer.explained(request("""{"file_path": "/etc/hosts"}""", name = "Read")) shouldBe Explained(Answer.DENY, "a read no deny rule covers")
+            answerer.explained(request("""{"pattern": "x", "path": "/etc"}""", name = "Grep")) shouldBe Explained(Answer.DENY, "a read no deny rule covers")
+            answerer.explained(request("""{"path": "/etc/hosts"}""", name = "mcp__files__touch")) shouldBe Explained(Answer.ALLOW, "a write outside what the session may write")
+        }
+    }
+
+    "the answerer's source names no tool, path field or default: each comes from permissions.json" {
+        val source = root("kp-driver/src/main/kotlin/kp/driver/home/CompiledAnswerer.kt").readText()
+        val data = root("agents/packaging/claude.yaml").readText()
+        // `path` is left out: it is also the key of a rule's path expression in permissions.json, which the answerer reads.
+        val names = Regex("""(?m)^  (paths|read): \[(.*)]$""").findAll(data).flatMap { it.groupValues[2].split(", ") }.toList().minus("path") +
+            listOf("Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "allow_once", "write_inside", "write_outside")
+
+        names shouldBe listOf("file_path", "notebook_path", "Read", "Glob", "Grep", "LS", "NotebookRead",
+            "Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "allow_once", "write_inside", "write_outside")
+        names.filter { "\"$it\"" in source } shouldBe emptyList()
     }
 
     "the driver hands the answerer the tool's name the agent gave on the wire" {

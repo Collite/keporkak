@@ -21,7 +21,7 @@ if [ -z "$table" ] || [ ! -r "$table" ]; then
 	answer "Keporkak denied this call: the seat's permissions.json cannot be read."
 fi
 
-# A call's paths: file_path, path and notebook_path of its input, made absolute against the working directory,
+# A call's paths: the fields of its input that the table's `paths` names, made absolute against the working directory,
 # with ".", ".." and empty names removed. A call's command lines: its input's command, split at each newline, after a
 # backslash that is not itself escaped and ends a line has joined that line to the next, as the shell joins them. A
 # rule matches when its `tool` expression matches the whole tool name, its `command` expression is found in one of the
@@ -40,7 +40,7 @@ reason=$(jq -r --slurpfile table "$table" '
 	| (.tool_name // "") as $tool
 	| (.tool_input // null) as $input
 	| (if ($input | type) == "object" then $input else {} end) as $fields
-	| [$fields.file_path, $fields.path, $fields.notebook_path | strings | select(. != "") | normalize($t.working_directory)] as $paths
+	| [$t.paths[] as $field | $fields[$field] | strings | select(. != "") | normalize($t.working_directory)] as $paths
 	| (if ($fields.command | type) == "string" then $fields.command | lines else null end) as $lines
 	| first($t.rules[]
 		| select(.tool as $re | $tool | test($re))

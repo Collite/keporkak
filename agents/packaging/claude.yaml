@@ -23,7 +23,7 @@
 #              newline. A command is matched where one starts — at a line's beginning, or after `;`, `&`, `|`, `(` or a
 #              backtick — so a word inside an argument does not trip it; a command hidden in a script or `sh -c` is
 #              not seen, and a line of a heredoc or a quoted string is judged as if it were a command;
-#   path     — globs one of the call's paths matches (`file_path`, `path`, `notebook_path`, absolute or relative to the
+#   path     — globs one of the call's paths matches (the fields `requests.paths` names, absolute or relative to the
 #              working directory; `**` is any part of a path, `*` any part of one name), and `except` globs it does not;
 #   outside  — `writable`: a path outside what the session may write (below) — `path` is then every path.
 # `early` is the same rule in Claude Code's own syntax, for settings.json — the early no. A rule Claude Code cannot say
@@ -34,6 +34,14 @@ version: 1
 # `…-beyond-own-…` word leaves writable. A seat with no such word has no own file, and that glob is left out. The
 # default of engagement.yaml:permissions answers a write by this set, and `outside-worktree` denies a write outside it.
 writable: ["{worktree}/**", "{scratch}/**", "{own_file}"]
+
+# What a request is, for the default of engagement.yaml:permissions (contracts.md §4.3, §10). A request's paths are
+# these fields of its input, for the rules' `path` too. A request whose tool is one of `read` is a read; any other
+# request that names a path is a write, answered by its paths and the writable set; a request that names no path —
+# a command, an MCP tool, a fetch — is judged by the deny rules alone.
+requests:
+  paths: [file_path, path, notebook_path]
+  read: [Read, Glob, Grep, LS, NotebookRead]
 
 deny:
   side-channels:

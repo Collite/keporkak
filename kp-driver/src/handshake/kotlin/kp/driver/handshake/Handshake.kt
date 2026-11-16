@@ -327,7 +327,7 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             run.resolve("project/tasks-handshake.md"), listOf(run.resolve("code")), standIn.listen)
 
         val built = step("a home built by the builder for the coder's persona") {
-            val built = ConfigHomes(root, seats).build(coder, "coder", "keporkak", places, PermissionDefaults(writeInside = Answer.ALLOW, writeOutside = Answer.DENY, read = Answer.ALLOW)).ok()
+            val built = ConfigHomes(root, seats).build(coder, "coder", "keporkak", places, permissionDefaults()).ok()
             check(Files.readAllBytes(built.path.resolve("CLAUDE.md")).contentEquals(Files.readAllBytes(root.resolve("renders/coder.md")))) { "its CLAUDE.md is not renders/coder.md" }
             built to "${names(built.path)}; skills ${names(built.path.resolve("skills"))}; servers handed back: ${built.servers.joinToString { "${it.name} ${it.url}" }}"
         } ?: return@use
@@ -378,7 +378,7 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             val outsideAsked = permissions.filter { "kp-outside" in it }
             check(outsideRefused != null || outsideAsked.isNotEmpty() && outsideAsked.all { it.contains("→ reject_once") }) { "no refusal of the outside write: $outsideAsked" }
             val insideAsked = permissions.filter { "kp-inside" in it }
-            check(insideAsked.isNotEmpty() && insideAsked.all { it.endsWith("→ allow_once (inside the working directory)") }) { "the inside write was answered: $insideAsked" }
+            check(insideAsked.isNotEmpty() && insideAsked.all { it.endsWith("→ allow_once (a write inside what the session may write)") }) { "the inside write was answered: $insideAsked" }
             check(permissions.none { "_always" in it.substringAfter("→") }) { "an option that persists was chosen: $permissions" }
             val offered = asked.filter { "kp-inside" in it.input.toString() }.flatMap { request -> request.options.map { it.kind } }.distinct()
             Unit to "outside: ${outsideRefused?.let { "Claude Code logged '$it', no permission request" } ?: outsideAsked.joinToString(" | ")}; " +
@@ -410,6 +410,12 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             Unit to "${names(built.path)}; .claude.json names no MCP server"
         }
         driver.kill(coder, Duration.ofSeconds(5))
+    }
+
+    /** `engagement.yaml:permissions`, read as the daemon will hand it to the builder: the defaults the answerer follows. */
+    private fun permissionDefaults(): PermissionDefaults {
+        val block = Yaml.default.parseToYamlNode(root.resolve("rules/engagement.yaml").readText()).yamlMap.get<YamlMap>("permissions")!!
+        return PermissionDefaults.of(block.entries.entries.associate { (key, value) -> key.content to (value as YamlScalar).content }).ok()
     }
 
     private fun names(folder: Path): List<String> = Files.list(folder).use { paths -> paths.map { it.fileName.toString() }.sorted().toList() }
