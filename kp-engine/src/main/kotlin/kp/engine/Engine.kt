@@ -47,6 +47,9 @@ private const val BODY_LINES = "body_lines"
 private const val HOPS = "hops_per_thread"
 private const val MAX_FIRES_DEFAULT = "max_fires_default"
 
+/** The `by` of an emit the rules declare: a transition's effect, a kind's expiry (contracts.md §2.1). */
+private val DECLARED = listOf("effect:", "expiry:")
+
 private class Judgement(private val rules: RuleSet, private val state: State, private val context: Context, facts: Facts) {
     private val evaluation = Evaluation(rules, state, context, facts)
     private val machines = Machines(rules, state)
@@ -88,7 +91,8 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
     /**
      * What the engine enforces for every kind with no requirement written (contracts.md §4.1, §2.1): the sender's
      * role owns the kind, `args` against the declaration, the body's line cap, the thread's hop cap, `max_fires`
-     * within the window — `null` is `caps.max_fires_default` — and the addressee. A refusal quotes the rule file's field.
+     * within the window — `null` is `caps.max_fires_default` — and the addressee, when a seat, a robot or Bora names
+     * one: an emit the rules declare is addressed by the rule that declares it. A refusal quotes the rule file's field.
      */
     private fun everyKind(kind: Kind, message: View): Pair<String, Requirement?>? {
         if (kind.from.none { roleOwns(it, message.from) }) return "from: ${kind.from.joinToString(" | ")}" to null
@@ -102,7 +106,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
             val written = if (kind.maxFires != null) "max_fires: ${kind.maxFires}" else "caps.$MAX_FIRES_DEFAULT: ${maximum.toPlainString()}"
             return "$written, window: ${kind.window.key}" to null
         }
-        if (!addressed(kind.to, message)) return "to: ${destination(kind.to)}" to null
+        if (!declared(message) && !addressed(kind.to, message)) return "to: ${destination(kind.to)}" to null
         return null
     }
 
@@ -115,6 +119,9 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         val tickets = state.tickets.filterValues { it.item == item }
         return tickets.keys.maxOrNull()?.takeIf { tickets.values.all { it.answeredBy != null } }
     }
+
+    /** An emit the rules declare (contracts.md §2.1): `by` a transition's effect or a kind's expiry. */
+    private fun declared(message: View): Boolean = DECLARED.any(message.by::startsWith)
 
     /**
      * The addressee is a party the kind's `to` names (contracts.md §4.1): a seat of one of its roles, or one of its

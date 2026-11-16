@@ -4,7 +4,7 @@ import io.kotest.core.spec.style.FreeSpec
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import kp.engine.Datum
-import kp.model.Refused
+import kp.model.Delivered
 import kp.mailroom.Status.DELIVERED
 import kp.mailroom.Status.REFUSED
 import kotlin.time.Duration.Companion.hours
@@ -69,9 +69,10 @@ class TheMailroomSpec : FreeSpec({
 
             val (first, second) = office.readBack().expired(request)
             first.deadline?.value shouldBe "2026-11-16T11:01:00Z"
-            office.readBack().sent("nudge").single().let { "${it.to.value} ${it.by} ${it.re?.value}" } shouldBe "teamlead expiry:review-request $request"
-            // Judged like any other, the nudge is refused: its kind's `to: {re: from}` names the asker, not the teamlead (Found while doing).
-            office.readBack().records<Refused>().single().requirement shouldBe "to: {re: from}"
+            val nudge = office.readBack().sent("nudge").single()
+            "${nudge.to.value} ${nudge.by} ${nudge.re?.value}" shouldBe "teamlead expiry:review-request $request"
+            // Judged like any other, the nudge is delivered: the rule that declares it addresses it (S1.8, contracts.md §4.1).
+            office.readBack().records<Delivered>().single { it.id == nudge.id.value }.to shouldBe listOf("teamlead", "board")
             listOf(second.report, second.deliveryClass, second.deadline) shouldBe listOf("bora", "C", null)
             office.mailroom.state.openTickets().getValue(second.ticket!!.toLong()).item shouldBe request
             office.mailroom.state.deadlines shouldBe emptyMap()

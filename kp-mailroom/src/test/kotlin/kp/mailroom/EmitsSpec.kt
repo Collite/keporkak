@@ -3,8 +3,9 @@ package kp.mailroom
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kp.model.Delivered
+import kotlin.time.Duration.Companion.hours
 
-/** T4 — the declared emits: what the rules make the mailroom send goes through the same loop, `by` naming the transition. */
+/** T4 — the declared emits: what the rules make the mailroom send goes through the same loop, `by` naming the rule that declares it. */
 class EmitsSpec : StringSpec({
     afterTest {
         Office.everyLogIsWhole() shouldBe emptyList()
@@ -45,5 +46,18 @@ class EmitsSpec : StringSpec({
         listOf(fixFirst.transition, grant.by, grant.to.value, grant.re?.value) shouldBe listOf("T-24", "effect:T-24", "principal", fixFirst.id)
         office.readBack().records<Delivered>().single { it.id == grant.id.value }.rule shouldBe null
         office.stage() shouldBe "grant_pending"
+    }
+
+    "an assignment-proposal that expires with its proposals spent goes back to planned, and T-07's nudge reaches the principal (S1.8)" {
+        val office = Office(seed = "planned", counters = """{"proposals": 1}""")
+        office.send("teamlead", """{"kind": "assignment-proposal", "stage": "$STAGE", "subject": "propose", "args": {"role": "coder", "level": "senior", "seat": "coder-1"}}""")
+
+        office.clock.advance(24.hours)
+        office.mailroom.tick()
+
+        val nudge = office.readBack().sent("nudge").single()
+        office.stage() shouldBe "planned"
+        listOf(nudge.by, nudge.to.value) shouldBe listOf("effect:T-07", "principal")
+        office.readBack().records<Delivered>().single { it.id == nudge.id.value }.to shouldBe listOf("principal", "board")
     }
 })

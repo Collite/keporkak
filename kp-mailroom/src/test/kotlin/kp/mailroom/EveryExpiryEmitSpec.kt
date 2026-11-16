@@ -77,8 +77,12 @@ class EveryExpiryEmitSpec : StringSpec({
     }
 
     "repair-done: the first expiry nudges the reviewer, the second the teamlead" {
-        val office = Office(seed = "building")
-        office.play("review-request", "review-bind", "verdict", "repair-done")
+        val office = Office(seed = "fix_round")
+        office.facts.set("pr.head", "head-2")
+        office.facts.set("ci.state", "green")
+        office.facts.set("pr.commits_since", 1)
+        office.facts.set("pr.blocker_responses", emptyList<String>())
+        office.send("coder-1", """{"kind": "repair-done", "stage": "$STAGE", "subject": "repaired", "args": {"verdict": "m-panda-000001"}}""")
 
         office.clock.advance(8.hours)
         office.mailroom.tick()
