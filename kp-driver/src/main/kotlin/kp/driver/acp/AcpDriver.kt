@@ -53,6 +53,9 @@ internal class AcpDriver(
 
     fun transcript(seat: SeatId): Transcript = transcripts.computeIfAbsent(seat) { Transcript.of(seatsRoot, it, clock) }
 
+    /** How many of the processes this driver started are still held: those that have not ended. */
+    fun held(): Int = launched.size
+
     /** A process started with the built environment, its connection, and `initialize` answered (T2). */
     suspend fun launch(spec: SessionSpec, onClosed: () -> Unit = {}, wire: Wire = Wire.NONE): Outcome<Launched> {
         val transcript = transcript(spec.seat)
@@ -67,6 +70,8 @@ internal class AcpDriver(
             return failed(transcript, "the agent cannot be started: ${e.message}")
         }
         launched += process
+        // A process that ended is forgotten: a long-lived driver keeps only the processes still running (issue #16).
+        process.exit.thenRun { launched -= process }
         transcript.write("process ${process.pid} started: ${spec.command.joinToString(" ")} in ${spec.workingDirectory}")
         val connection = AcpConnection(process, scope, "kp-driver ${spec.seat.value}", onNote = { transcript.write(it) }, onClosed = onClosed, wire = wire)
         val info = try {

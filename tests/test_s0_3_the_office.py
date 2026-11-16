@@ -81,13 +81,13 @@ later  seats' permissions deny kp and sudo: S2.2 compiles them
 later  kubectl context bp-dsk: S4.1
 later  systemd user service keporkak.service: S1.5 delivers it (template office/systemd/keporkak.service)
 to do  lingering for {USER}: sudo loginctl enable-linger {USER}
-later  no vendor global configuration reachable from a seat's config home: S2.2
-RESULT: NOT READY — 5 to do, 7 later, 14 ok
+ok     no vendor global configuration reachable from a seat's config home: a seat reads its config home under ~/.local/share/keporkak/seats, not ~/.claude (S2.2's probe); no home names an MCP server
+RESULT: NOT READY — 5 to do, 6 later, 15 ok
 """)
         machine.bora_does_the_to_dos()
         done = machine.office_check()
         self.assertEqual(done.returncode, 0, done.stdout)
-        self.assertEqual(done.stdout.splitlines()[-1], "RESULT: READY — 0 to do, 7 later, 19 ok")
+        self.assertEqual(done.stdout.splitlines()[-1], "RESULT: READY — 0 to do, 6 later, 20 ok")
 
     def test_the_office_check_changes_nothing_on_the_machine(self):
         machine = FakeMachine(self, roots=["worktrees", "scratch"], linger="no")

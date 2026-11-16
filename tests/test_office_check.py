@@ -73,6 +73,23 @@ class OfficeCheckTests(unittest.TestCase):
         (self.machine.bin / "jq").unlink()
         self.assertIn("to do  jq: sudo apt install jq", self.lines())
 
+    def test_a_seat_home_whose_claude_json_names_an_mcp_server_is_to_do(self):
+        seat = self.machine.home / ".local/share/keporkak/seats/coder-1"
+        seat.mkdir(parents=True)
+        (seat / ".claude.json").write_text('{"userID": "x", "projects": {"/wt": {"mcpServers": {"slack": {}}}}, "mcpServers": {"poison": {"type": "http"}}}')
+        self.assertIn("to do  no vendor global configuration reachable from a seat's config home: ~/.local/share/keporkak/seats/coder-1/.claude.json names poison, slack"
+                      " — remove them: a seat's home is built at every start, never edited by hand (office/README.md)", self.lines())
+        (seat / ".claude.json").write_text('{"userID": "x", "projects": {"/wt": {"mcpServers": {}}}}')
+        self.assertIn("ok     no vendor global configuration reachable from a seat's config home: a seat reads its config home under ~/.local/share/keporkak/seats,"
+                      " not ~/.claude (S2.2's probe); no home names an MCP server", self.lines())
+
+    def test_a_seats_root_inside_the_office_users_claude_folder_is_to_do(self):
+        offices = self.machine.pool / "offices.yaml"
+        offices.write_text(offices.read_text().replace("seats: ~/.local/share/keporkak/seats", "seats: ~/.claude/seats"))
+        (self.machine.home / ".claude/seats").mkdir(parents=True)
+        self.assertIn("to do  no vendor global configuration reachable from a seat's config home: roots.seats ~/.claude/seats is ~/.claude or inside it:"
+                      " name a folder outside it in pool/offices.yaml", self.lines())
+
     def test_a_kp_the_office_user_can_write_is_to_do(self):
         self.machine.stub("kp", "exit 0")
         line = next(line for line in self.lines() if line.startswith("to do  kp root-owned"))
