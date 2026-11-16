@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kp.engine.Datum
 import kp.engine.Decision
 import kp.engine.Engine
+import kp.engine.FactRef
 import kp.engine.Facts
 import kp.engine.Outcome
 import kp.engine.State
@@ -17,6 +18,7 @@ import kp.engine.Trigger
 import kp.engine.fold
 import kp.log.LogReader
 import kp.log.LogWriter
+import kp.model.Delivered
 import kp.model.Envelope
 import kp.model.Message
 import kp.model.OfficeId
@@ -24,12 +26,15 @@ import kp.model.StageId
 import kp.model.utc
 import kp.rules.Destination
 import kp.rules.Loaded
+import kp.rules.MessageClass
+import kp.rules.PARTIES
 import kp.rules.Problem
 import kp.rules.RuleSet
 import kp.rules.Rules
 import java.nio.file.Path
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Who a message is submitted in the name of: the mailroom sets `from`, `by` and `signed` from it, never from the input. */
 sealed interface Sender {
@@ -82,6 +87,8 @@ class Mailroom private constructor(
     private val project: Path,
     private val office: OfficeId,
     private val facts: FactSource,
+    private val operations: Operations,
+    private val deliveries: Deliveries,
     private val clock: Clock,
     private val writer: LogWriter,
     private var rules: RuleSet,
@@ -89,16 +96,33 @@ class Mailroom private constructor(
     private var folded = State()
     /** Every message on the log the state was folded from, by id: what a reply, an inbox and a record's file read. */
     private val messages = HashMap<String, Message>()
+    /** Per seat, the messages delivered to it, in the order they were: what an inbox of read and unread mail returns. */
+    private val addressed = HashMap<String, MutableList<String>>()
+    /** What follows a judgement once its lines are written: operations to perform, results to judge, messages to carry. */
+    private val queue = ArrayDeque<() -> Unit>()
+    private var draining = false
+    private var closed = false
 
     /** The fold of the log as the mailroom works from it. */
     val state: State @Synchronized get() = folded
 
     /** Carries one message submitted in [sender]'s name; [input] holds what a sender supplies (contracts.md §2.1, §5). */
     @Synchronized
-    fun submit(sender: Sender, input: JsonObject): Answer = arrive(sender.author(), input)
+    fun submit(sender: Sender, input: JsonObject): Answer = arrive(sender.author(), input).also { drain() }
 
-    /** A seat's inbox (contracts.md §5): returning a message marks it read for the seat. */
-    fun inbox(seat: String, unread: Boolean = true, limit: Int? = null): Inbox = TODO()
+    /**
+     * A seat's inbox (contracts.md §5): its unread messages — or, with [unread] false, every message delivered to it —
+     * oldest first, at most [limit]. Returning a message marks it read for the seat: a `read` record names those it had
+     * not read.
+     */
+    @Synchronized
+    fun inbox(seat: String, unread: Boolean = true, limit: Int? = null): Inbox {
+        val ids = if (unread) folded.unread(seat) else addressed[seat].orEmpty()
+        val shown = limit?.let(ids::take) ?: ids
+        val seen = shown.filter { it in folded.unread(seat) }
+        if (seen.isNotEmpty()) write(line(now(), EVENT to text("read"), SEAT to text(seat), IDS to texts(seen)))
+        return Inbox(shown.map(messages::getValue), more = ids.size > shown.size)
+    }
 
     /** Fires every deadline the clock has passed. */
     fun tick(): Unit = TODO()
@@ -110,7 +134,10 @@ class Mailroom private constructor(
     fun reload(): Reload = TODO()
 
     @Synchronized
-    override fun close() = writer.close()
+    override fun close() {
+        closed = true
+        writer.close()
+    }
 
     // ---- the loop
 
@@ -133,11 +160,77 @@ class Mailroom private constructor(
                 FAILED to decision.failed?.element(), OBSERVED to fields(decision.observed), REFUSALS_TODAY to JsonPrimitive(refusals)))
             return Answer(Status.REFUSED, id, rule = decision.rule, requirement = decision.requirement, failed = decision.failed, refusalsToday = refusals)
         }
-        write(line(now, EVENT to text("delivered"), ID to text(id), TO to texts(listOf(message.to.value)), CLASS to text(decision.messageClass?.name),
-            RULE to text(decision.rule), COUNTED to counted(decision.counted), OBSERVED to fields(decision.observed),
-            ATTESTED to decision.attested.takeIf { it.isNotEmpty() }?.let(::texts), ANSWERS to text(decision.answers), DEADLINE to deadline?.let(::text)))
+        val written = messages.getValue(id)
+        val addressees = addressees(message)
+        val woke = listOf(addressees.first()).filter { it !in PARTIES && deliveries.idle(it) }
+        val ticket = (writer.last + 1).takeIf { decision.waitsForBora }
+        write(line(now, EVENT to text("delivered"), ID to text(id), TO to texts(addressees), WOKE to woke.takeIf { it.isNotEmpty() }?.let(::texts),
+            CLASS to text(decision.messageClass?.name), RULE to text(decision.rule), TICKET to ticket?.let(::JsonPrimitive),
+            COUNTED to counted(decision.counted), OBSERVED to fields(decision.observed), ATTESTED to decision.attested.takeIf { it.isNotEmpty() }?.let(::texts),
+            ANSWERS to text(decision.answers), DEADLINE to deadline?.let(::text)))
         transitions(decision, id, now)
+        if (ticket != null && decision.messageClass == MessageClass.B) notify(ticket, id, now)
+        woke.filter { deliveries.wake(it, written) }.forEach { seat -> write(line(now(), EVENT to text("read"), SEAT to text(seat), IDS to texts(listOf(id)))) }
         return Answer(Status.DELIVERED, id, transition = decision.rule)
+    }
+
+    /**
+     * Whom a message is delivered to: its addressee, then the kind's cc — a party as it is; a role or a seat as the
+     * seat the world names for it in the message's stage (`seat.name`), or as written when none is named.
+     */
+    private fun addressees(message: Message): List<String> {
+        fun seat(party: String): String = if (party in PARTIES) party
+            else (facts.observe(FactRef(SEAT_NAME, mapOf(OF to Datum.Text(party))), message.stage?.value) as? Datum.Text)?.value ?: party
+        return (listOf(message.to.value) + message.cc.orEmpty().map { it.value }).map(::seat).distinct()
+    }
+
+    /** `notify.bora` for a class-B item in Bora's inbox (contracts.md §4.4), requested for its ticket. */
+    private fun notify(ticket: Long, item: String, now: String) =
+        request(NOTIFY_BORA, "#$ticket", Datum.Fields(mapOf(TICKET to Datum.of(ticket), ITEM to Datum.Text(item))), now)
+
+    // ---- operations (contracts.md §7)
+
+    /** Writes the request, and performs it only once that line is on disk — after the judgement's own lines. */
+    private fun request(operation: String, cause: String, with: Datum.Fields, now: String) {
+        write(line(now, EVENT to text("op"), OP to text(operation), PHASE to text(REQUESTED), CAUSE to text(cause),
+            WITH to with.takeIf { it.fields.isNotEmpty() }?.element()))
+        queue += { perform(OperationRequest(operation, cause, with)) }
+    }
+
+    /** Hands the request to the performer once; a result it gives twice is taken once. */
+    private fun perform(request: OperationRequest) {
+        val answered = AtomicBoolean(false)
+        operations.perform(request) { result -> if (answered.compareAndSet(false, true)) finished(request, result) }
+    }
+
+    /** A result — now, from inside [perform], or later, from the performer's own thread — joins the queue. */
+    @Synchronized
+    private fun finished(request: OperationRequest, result: OperationResult) {
+        if (closed) return
+        queue += { complete(request, result) }
+        drain()
+    }
+
+    /** The result's record. */
+    private fun complete(request: OperationRequest, result: OperationResult) {
+        val now = now()
+        write(when (result) {
+            is OperationResult.Ok -> line(now, EVENT to text("op"), OP to text(request.operation), PHASE to text(OK), CAUSE to text(request.cause),
+                RESULT to result.result.takeIf { it.fields.isNotEmpty() }?.element())
+            is OperationResult.Failed -> line(now, EVENT to text("op"), OP to text(request.operation), PHASE to text(FAILED), CAUSE to text(request.cause),
+                REASON to text(result.reason))
+        })
+    }
+
+    /** Carries what the queue holds, in order, until it is empty; what a step adds runs after it. */
+    private fun drain() {
+        if (draining) return
+        draining = true
+        try {
+            while (queue.isNotEmpty() && !closed) queue.removeFirst()()
+        } finally {
+            draining = false
+        }
     }
 
     /**
@@ -213,9 +306,12 @@ class Mailroom private constructor(
         }
     }
 
-    /** Folds [lines] into the state and keeps their messages. */
+    /** Folds [lines] into the state and keeps their messages, and to whom each was delivered. */
     private fun take(lines: List<Envelope>) {
-        lines.filterIsInstance<Message>().forEach { messages[it.id.value] = it }
+        lines.forEach { line ->
+            if (line is Message) messages[line.id.value] = line
+            if (line is Delivered) line.to.forEach { addressed.getOrPut(it, ::ArrayList) += line.id }
+        }
         folded = fold(lines, folded)
     }
 
@@ -232,7 +328,7 @@ class Mailroom private constructor(
                     is Loaded.Valid -> loaded.ruleSet
                     is Loaded.Invalid -> throw MailroomRefusal("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
                 }
-                return Mailroom(project, office, facts, clock, writer, ruleSet).apply { take(read.lines.map { it.entry }) }
+                return Mailroom(project, office, facts, operations, deliveries, clock, writer, ruleSet).apply { take(read.lines.map { it.entry }) }
             } catch (error: Throwable) {
                 writer.close()
                 throw error
@@ -242,6 +338,12 @@ class Mailroom private constructor(
 }
 
 private const val BORA = "bora"
+private const val SEAT_NAME = "seat.name"
+private const val NOTIFY_BORA = "notify.bora"
+private const val REQUESTED = "requested"
+private const val OK = "ok"
+private const val OF = "of"
+private const val ITEM = "item"
 private const val BORA_CLI = "bora-cli"
 private const val NOW = "now"
 private const val SUBJECT_LIMIT = 120
@@ -276,3 +378,11 @@ private const val ANSWERS = "answers"
 private const val MACHINE = "machine"
 private const val CAUSE = "cause"
 private const val SEAT = "seat"
+private const val IDS = "ids"
+private const val WOKE = "woke"
+private const val TICKET = "ticket"
+private const val OP = "op"
+private const val PHASE = "phase"
+private const val WITH = "with"
+private const val RESULT = "result"
+private const val REASON = "reason"

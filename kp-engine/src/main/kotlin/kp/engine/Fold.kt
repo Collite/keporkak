@@ -108,6 +108,7 @@ fun fold(lines: Iterable<Envelope>, from: State = State()): State = lines.fold(f
  * One line's changes to the state. What ends a wait, from the records alone (contracts.md §2.2): the `delivered`
  * record that `answers` it — which also answers its ticket; an `ok` or `failed` operation the message caused, for a
  * request to the daemon; an expiry without a new deadline. A wait's deadline is the last one a line about it carries.
+ * A ticket is also answered by any signed delivery whose `re` names its item (Amendment 13).
  */
 private class Folding(state: State) {
     private var s = state
@@ -140,6 +141,8 @@ private class Folding(state: State) {
                     s = s.copy(answered = s.answered + answered, deadlines = s.deadlines - answered)
                     answer(answered, line.id)
                 }
+                // Bora answers an item by any signed delivery whose `re` names it (Amendment 13): an item that does not wait too.
+                message?.takeIf { it.signed }?.re?.let { answer(it, line.id) }
                 s = s.copy(
                     pending = s.pending - line.id,
                     held = s.held - line.id,
@@ -200,7 +203,7 @@ private class Folding(state: State) {
         if (number !in s.tickets) s = s.copy(tickets = s.tickets + (number to Ticket(item, event, at)))
     }
 
-    /** A ticket is answered once: by the first `delivered` record that `answers` its item. */
+    /** A ticket is answered once: by the first `delivered` record that `answers` its item, or that is Bora's signed reply to it. */
     private fun answer(item: String, by: String) {
         s = s.copy(tickets = s.tickets.mapValues { (_, ticket) -> if (ticket.item == item && ticket.answeredBy == null) ticket.copy(answeredBy = by) else ticket })
     }

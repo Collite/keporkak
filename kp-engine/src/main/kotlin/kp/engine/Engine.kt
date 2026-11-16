@@ -63,6 +63,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         val message = context.message!!
         val kind = rules.kinds[message.kind] ?: return refuse(message.kind, "kinds: no '${message.kind}'")
         everyKind(kind, message)?.let { (requirement, failed) -> return refuse(kind.name, requirement, failed) }
+        answeredTicket(message)?.let { ticket -> return refuse(kind.name, "ticket #$ticket: answered once") }
         evaluation.firstFailure(kind.require)?.let { return refuse(kind.name, kind.guard ?: render(it), it) }
         val fired = fireMachines(kind)
         if (fired.moves.isEmpty() && rules.lifecycle.machines.values.any { machine -> machine.transitions.any { it.kind == kind.name && it.on == Event.MESSAGE } }) {
@@ -103,6 +104,16 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         }
         if (!addressed(kind.to, message)) return "to: ${destination(kind.to)}" to null
         return null
+    }
+
+    /**
+     * A ticket is answered once (contracts.md §2.2, §6): a signed message whose `re` names an item every ticket of which
+     * is answered is a second answer. Its number — the last raised for the item — or null when this is no second answer.
+     */
+    private fun answeredTicket(message: View): Long? {
+        val item = message.re?.takeIf { message.signed } ?: return null
+        val tickets = state.tickets.filterValues { it.item == item }
+        return tickets.keys.maxOrNull()?.takeIf { tickets.values.all { it.answeredBy != null } }
     }
 
     /**

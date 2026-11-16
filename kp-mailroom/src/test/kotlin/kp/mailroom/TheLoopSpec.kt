@@ -75,7 +75,7 @@ class TheLoopSpec : StringSpec({
         officeFile.filterIsInstance<Transition>().filter { it.cause == answer.id }.map { "${it.machine} ${it.subject} ${it.to}" } shouldBe listOf("seat coder-1 busy")
     }
 
-    "the facts the engine names are collected for the message's stage, and now is the clock's" {
+    "the facts the engine names are collected for the message's stage, then the seats it is routed to; now is the clock's" {
         val office = Office(seed = "building")
         val asked = ArrayList<Pair<FactRef, String?>>()
         val walk = office.facts
@@ -90,7 +90,8 @@ class TheLoopSpec : StringSpec({
         val answer = office.send("coder-1", """{"kind": "review-request", "stage": "$STAGE", "subject": "review", "args": {"attest": ["done_lines_hold"]}}""")
 
         asked.map { it.second }.toSet() shouldBe setOf(STAGE)
-        asked.map { it.first.name } shouldBe listOf("pr.ready", "pr.head", "ci.state", "list.tasks_open", "list.found_untriaged")
+        asked.map { it.first.toString() } shouldBe
+            listOf("pr.ready", "pr.head", "ci.state(of=head-1)", "list.tasks_open", "list.found_untriaged", "seat.name(of=teamlead)", "seat.name(of=principal)")
         office.readBack().records<Delivered>().single { it.id == answer.id }.observed!!["now"].toString() shouldBe "\"$START\""
         office.readBack().message(answer.id).deadline?.value shouldBe "2026-11-16T10:00:00Z"
     }
