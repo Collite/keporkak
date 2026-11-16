@@ -41,6 +41,7 @@ def packaging_read(text):
         for rule in rules:
             rule = rule or {}
             if not rule.get("tools"): problems.append(f"deny word '{name}': a rule names no tool")
+            if rule.get("outside") is not None and rule["outside"] != "writable": problems.append(f"deny word '{name}': outside names '{rule['outside']}', not writable")
             texts += ([str(rule["command"])] if rule.get("command") is not None else []) + [str(t) for key in ("path", "except", "early") for t in (rule.get(key) or [])]
         if not rules: problems.append(f"deny word '{name}' has no rule")
         owners += [(f"deny word '{name}'", p) for p in dict.fromkeys(p for t in texts for p in PLACEHOLDER.findall(t))]
@@ -49,6 +50,7 @@ def packaging_read(text):
         url = (server or {}).get("url")
         if url is None: problems.append(f"MCP server '{name}' has no url")
         owners += [(f"MCP server '{name}'", p) for p in dict.fromkeys(PLACEHOLDER.findall(str(url or "")))]
+    owners += [("the writable set", p) for p in dict.fromkeys(p for glob in (data.get("writable") or []) for p in PLACEHOLDER.findall(str(glob)))]
     hooks = data.get("hooks") or {}
     for name, hook in hooks.items():
         if (hook or {}).get("event") is None: problems.append(f"hook '{name}' names no event")

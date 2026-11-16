@@ -1,6 +1,7 @@
 # A packaging data for the fixture: one word whose placeholder a profile does not fill, one whose placeholder nothing
-# fills, one MCP server.
+# fills, one MCP server, and a writable set with a placeholder nothing fills.
 version: 1
+writable: ["{worktree}/**", "{elsewhere}/**"]
 deny:
   alpha:
     denies: a push to the default branch

@@ -24,10 +24,16 @@
 #              backtick — so a word inside an argument does not trip it; a command hidden in a script or `sh -c` is
 #              not seen, and a line of a heredoc or a quoted string is judged as if it were a command;
 #   path     — globs one of the call's paths matches (`file_path`, `path`, `notebook_path`, absolute or relative to the
-#              working directory; `**` is any part of a path, `*` any part of one name), and `except` globs it does not.
+#              working directory; `**` is any part of a path, `*` any part of one name), and `except` globs it does not;
+#   outside  — `writable`: a path outside what the session may write (below) — `path` is then every path.
 # `early` is the same rule in Claude Code's own syntax, for settings.json — the early no. A rule Claude Code cannot say
 # (a path outside a folder) has no `early`; the deny hook and the answerer still hold it (permissions.json).
 version: 1
+
+# What a session may write (contracts.md §10): its working directory, its scratch and its own file — the one a
+# `…-beyond-own-…` word leaves writable. A seat with no such word has no own file, and that glob is left out. The
+# default of engagement.yaml:permissions answers a write by this set, and `outside-worktree` denies a write outside it.
+writable: ["{worktree}/**", "{scratch}/**", "{own_file}"]
 
 deny:
   side-channels:
@@ -51,11 +57,10 @@ deny:
         path: ["{worktree}/{pin_files}"]
         early: ["Edit(/{worktree}/{pin_files})"]
   outside-worktree:
-    denies: writes outside the session's working directory and scratch
+    denies: writes outside what the session may write — its working directory, its scratch, its own file
     rules:
       - tools: [Write, Edit, MultiEdit, NotebookEdit]
-        path: ["/**"]
-        except: ["{worktree}/**", "{scratch}/**"]
+        outside: writable
   live-target:
     denies: the profile's cluster tools and kp-qa, kp-cred
     rules:

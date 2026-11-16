@@ -63,7 +63,7 @@ class AnswererSpec : StringSpec({
             driver.prompt(seat, "write").ok()
 
             agent.received("permission").single()["kind"] shouldBe JsonPrimitive("allow_once")
-            office.transcript("coder-1").last { " permission p2: " in it }.substringAfter("→ ") shouldBe "allow_once (inside the working directory)"
+            office.transcript("coder-1").last { " permission p2: " in it }.substringAfter("→ ") shouldBe "allow_once (inside what the session may write)"
         }
     }
 
@@ -96,11 +96,11 @@ class AnswererSpec : StringSpec({
             office.permissions("push-master")
             val answerer = CompiledAnswerer(office.seats)
 
-            answerer.explained(request("""{"command": "just check"}""", name = "Bash")) shouldBe Explained(Answer.ALLOW, "inside the working directory")
-            answerer.explained(request("""{"to": "teamlead", "kind": "started"}""", name = "mcp__messaging__send")) shouldBe Explained(Answer.ALLOW, "inside the working directory")
-            answerer.explained(request("""{"file_path": "docs/a.md"}""")) shouldBe Explained(Answer.ALLOW, "inside the working directory")
-            answerer.explained(request("""{"file_path": "../elsewhere/a.md"}""")) shouldBe Explained(Answer.DENY, "outside the working directory")
-            answerer.explained(request("""{"notebook_path": "${office.worktree}/n.ipynb", "file_path": "/etc/hosts"}""")) shouldBe Explained(Answer.DENY, "outside the working directory")
+            answerer.explained(request("""{"command": "just check"}""", name = "Bash")) shouldBe Explained(Answer.ALLOW, "inside what the session may write")
+            answerer.explained(request("""{"to": "teamlead", "kind": "started"}""", name = "mcp__messaging__send")) shouldBe Explained(Answer.ALLOW, "inside what the session may write")
+            answerer.explained(request("""{"file_path": "docs/a.md"}""")) shouldBe Explained(Answer.ALLOW, "inside what the session may write")
+            answerer.explained(request("""{"file_path": "../elsewhere/a.md"}""")) shouldBe Explained(Answer.DENY, "outside what the session may write")
+            answerer.explained(request("""{"notebook_path": "${office.worktree}/n.ipynb", "file_path": "/etc/hosts"}""")) shouldBe Explained(Answer.DENY, "outside what the session may write")
         }
     }
 

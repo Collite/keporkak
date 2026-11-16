@@ -72,6 +72,30 @@ class PackagingDataSpec : StringSpec({
         val outcome = packaging.permissions(listOf("write-project-beyond-own-list"), profile("keporkak"), places.copy(ownFile = null), defaults)
 
         (outcome as Outcome.Failed).reason shouldBe "placeholder '{own_file}' of deny word 'write-project-beyond-own-list' is filled by nothing: the session gives none"
+        (packaging.permissions(listOf("write-code"), profile("keporkak"), places.copy(codeRepos = emptyList()), defaults) as Outcome.Failed).reason shouldBe
+            "placeholder '{code_repos}' of deny word 'write-code' is filled by nothing: the session gives none"
+    }
+
+    "what a session may write is its worktree, its scratch and its own file; a seat with no own file has none" {
+        val withList = packaging.permissions(listOf("push-master"), profile("keporkak"), places, defaults).ok()
+        val without = packaging.permissions(listOf("push-master"), profile("keporkak"), places.copy(ownFile = null), defaults).ok()
+
+        withList.field("writable") shouldBe "^(/office/_wt/keporkak-S2\\.2/.*|/office/_scratch/keporkak/S2\\.2/.*|/office/project/tasks-p2-s2\\.2\\.md)$"
+        without.field("writable") shouldBe "^(/office/_wt/keporkak-S2\\.2/.*|/office/_scratch/keporkak/S2\\.2/.*)$"
+    }
+
+    "outside-worktree denies a write to any path outside what the session may write" {
+        val permissions = packaging.permissions(listOf("outside-worktree"), profile("keporkak"), places, defaults).ok()
+        val rule = rules(permissions).single()
+
+        rule.field("path") shouldBe "^(/.*)$"
+        rule.field("except") shouldBe permissions.field("writable")
+    }
+
+    "a rule's outside names the writable set and nothing else" {
+        val data = root("agents/packaging/claude.yaml").readText().replace("outside: writable", "outside: readable")
+
+        (Packaging.read(data) as Outcome.Failed).reason shouldBe "deny word 'outside-worktree': outside names 'readable', not writable"
     }
 
     "permissions.json carries the working directory and the defaults the caller gives" {

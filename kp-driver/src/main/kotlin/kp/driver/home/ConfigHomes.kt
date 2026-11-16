@@ -23,16 +23,17 @@ import kotlin.io.path.readText
 /**
  * The values of one session that fill the packaging data's placeholders (contracts.md §10): its working directory —
  * the stage's worktree, or the project checkout for a seat with no stage — its scratch, the project checkout, the one
- * project file a `…-beyond-own-…` word leaves writable, the office's code checkouts, and the messaging server's
- * address. The caller gives them; the builder reads no office file.
+ * project file a `…-beyond-own-…` word leaves writable (none for a seat with no such word), the office's code
+ * checkouts, and the messaging server's address. The caller gives all six; the builder reads no office file, and reports
+ * a placeholder the data uses that the caller left empty.
  */
 data class Places(
     val worktree: Path,
     val scratch: Path,
     val project: Path,
-    val ownFile: Path? = null,
-    val codeRepos: List<Path> = emptyList(),
-    val mcpListen: String? = null,
+    val ownFile: Path?,
+    val codeRepos: List<Path>,
+    val mcpListen: String?,
 )
 
 /**
