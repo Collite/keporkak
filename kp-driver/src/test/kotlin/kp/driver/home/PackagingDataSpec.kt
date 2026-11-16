@@ -62,8 +62,8 @@ class PackagingDataSpec : StringSpec({
 
         pins.field("path") shouldBe "^(/office/_wt/keporkak-S2\\.2/gradle/libs\\.versions\\.toml|/office/_wt/keporkak-S2\\.2/gradle/wrapper/gradle-wrapper\\.properties)$"
         rules(packaging.permissions(listOf("demo-cluster"), profile("keporkak"), places, defaults).ok()).shouldBeEmpty()
-        rules(packaging.permissions(listOf("live-target"), profile("keporkak"), places, defaults).ok()).first().field("command") shouldBe
-            "(^|[;&|(`])\\s*((kubectl|kustomize|helm))(\\s|$|[;&|`])"
+        rules(packaging.permissions(listOf("live-target"), profile("keporkak"), places, defaults).ok()).first().field("command")!!
+            .substringAfterLast(")*(\\S*/)?") shouldBe "(?:((kubectl|kustomize|helm))(\\s|$|[;&|`)]))"
     }
 
     "a session placeholder the session leaves empty is a problem, not a rule left out" {
@@ -88,6 +88,24 @@ class PackagingDataSpec : StringSpec({
 
         rule.field("path") shouldBe "^(/.*)$"
         rule.field("except") shouldBe permissions.field("writable")
+    }
+
+    "every command rule is matched where a command starts: the data's command_start stands before it; a line rule stands alone" {
+        val start = Regex("""(?m)^command_start: '(.*)'$""").find(root("agents/packaging/claude.yaml").readText())!!.groupValues[1].replace("''", "'")
+        val words = listOf("side-channels", "push-master", "live-target", "browser", "demo-cluster")
+        val commands = rules(packaging.permissions(words, profile("tatrman"), places, defaults).ok()).mapNotNull { rule -> rule.field("command")?.let { rule.field("border") to it } }
+
+        commands.map { it.first } shouldBe listOf("side-channels", "push-master", "live-target", "live-target", "browser", "demo-cluster")
+        commands.dropLast(1).map { it.second.startsWith("$start(?:") } shouldBe List(5) { true }
+        commands.last().second shouldBe "(--context|--kube-context|use-context)[=\\s]+[\"']?hartland[\"']?(\\s|$|[;&|`)])"
+    }
+
+    "a rule that names a command and a line, or a command with no command_start, is refused" {
+        val data = root("agents/packaging/claude.yaml").readText()
+
+        (Packaging.read(data.replace("        line: '(--context", "        command: 'x'\n        line: '(--context")) as Outcome.Failed).reason shouldBe
+            "deny word 'demo-cluster': a rule names a command and a line"
+        (Packaging.read(data.replace(Regex("(?m)^command_start: .*\n"), "")) as Outcome.Failed).reason shouldBe "a rule names a command, and command_start is not given"
     }
 
     "a rule with a key it may not have — an early rule for settings.json — is refused" {

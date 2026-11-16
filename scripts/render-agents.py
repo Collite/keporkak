@@ -20,7 +20,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 # placeholder must be a key of each profile's frontmatter.
 SESSION_PLACEHOLDERS = ("worktree", "scratch", "project", "own_file", "code_repos", "mcp_listen")
 HOOKS = ("inbox-first", "deny", "stop-gate")
-RULE_KEYS = ("tools", "command", "path", "except", "outside")
+RULE_KEYS = ("tools", "command", "line", "path", "except", "outside")
 PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---", re.S)
 
@@ -44,7 +44,8 @@ def packaging_read(text):
             if not rule.get("tools"): problems.append(f"deny word '{name}': a rule names no tool")
             if rule.get("outside") is not None and rule["outside"] != "writable": problems.append(f"deny word '{name}': outside names '{rule['outside']}', not writable")
             problems += [f"deny word '{name}': a rule has an unknown key '{key}'" for key in rule if key not in RULE_KEYS]
-            texts += ([str(rule["command"])] if rule.get("command") is not None else []) + [str(t) for key in ("path", "except") for t in (rule.get(key) or [])]
+            if rule.get("command") is not None and rule.get("line") is not None: problems.append(f"deny word '{name}': a rule names a command and a line")
+            texts += [str(rule[key]) for key in ("command", "line") if rule.get(key) is not None] + [str(t) for key in ("path", "except") for t in (rule.get(key) or [])]
         if not rules: problems.append(f"deny word '{name}' has no rule")
         owners += [(f"deny word '{name}'", p) for p in dict.fromkeys(p for t in texts for p in PLACEHOLDER.findall(t))]
     servers = data.get("mcp") or {}
@@ -58,6 +59,8 @@ def packaging_read(text):
         if (hook or {}).get("event") is None: problems.append(f"hook '{name}' names no event")
     problems += [f"hook '{h}' is not in the packaging data" for h in HOOKS if h not in hooks]
     if not ((data.get("requests") or {}).get("paths") or []): problems.append("requests: no field of an input is named as a path")
+    if data.get("command_start") is None and any((rule or {}).get("command") is not None for word in (data.get("deny") or {}).values() for rule in ((word or {}).get("rules") or [])):
+        problems.append("a rule names a command, and command_start is not given")
     if problems: return None, "; ".join(problems)
     return {"words": set(data.get("deny") or {}), "servers": set(servers), "placeholders": owners}, None
 

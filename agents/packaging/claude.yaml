@@ -17,12 +17,13 @@
 #
 # A rule denies a call when its tool's name is one of `tools` (a name ending `__*` is every tool of that MCP server)
 # and, if given:
-#   command  — a regular expression found in one line of the call's `command` (placeholders are filled as literal
-#              text). Each line is judged on its own, and one matching line denies the call; a line that ends in a
-#              backslash, not itself escaped, goes on in the next, as in the shell — so a pattern never runs across a
-#              newline. A command is matched where one starts — at a line's beginning, or after `;`, `&`, `|`, `(` or a
-#              backtick — so a word inside an argument does not trip it; a command hidden in a script or `sh -c` is
-#              not seen, and a line of a heredoc or a quoted string is judged as if it were a command;
+#   command  — a regular expression for a command, its name and what follows, matched where a command starts in one
+#              line of the call's `command`: `command_start` (below) stands before it. Placeholders are filled as
+#              literal text. Each line is judged on its own, and one matching line denies the call; a line that ends
+#              in a backslash, not itself escaped, goes on in the next, as in the shell — so a pattern never runs across
+#              a newline. A word inside an argument does not trip it; a command hidden in a script, `sh -c`, `env` or
+#              `xargs` is not seen, and a line of a heredoc or a quoted string is judged as if it were a command;
+#   line     — a regular expression found anywhere in one line of the call's `command`, judged the same way;
 #   path     — globs one of the call's paths matches (the fields `requests.paths` names, absolute or relative to the
 #              working directory; `**` is any part of a path, `*` any part of one name), and `except` globs it does not;
 #   outside  — `writable`: a path outside what the session may write (below) — `path` is then every path.
@@ -34,6 +35,12 @@ version: 1
 # `…-beyond-own-…` word leaves writable. A seat with no such word has no own file, and that glob is left out. The
 # default of engagement.yaml:permissions answers a write by this set, and `outside-worktree` denies a write outside it.
 writable: ["{worktree}/**", "{scratch}/**", "{own_file}"]
+
+# Where a command starts in one line, and what may stand before its name (issue #22): the line's start, `;`, `&`,
+# `|`, `(`, `{` or a backtick; then any of a shell keyword (`if`, `then`, `else`, `elif`, `do`, `while`, `until`, `!`),
+# an environment assignment, a wrapper (`nohup`, `time`, `nice`, `exec`, `command`, `setsid`, `stdbuf`, `timeout`)
+# with its options and numbers; then a path to the program. It stands before every rule's `command`.
+command_start: '(^|[;&|(`{])\s*((if|then|else|elif|do|while|until|!)\s+|[A-Za-z_][A-Za-z0-9_]*=("[^"]*"|''[^'']*''|[^\s;&|`''"]*)\s+|(nohup|time|nice|exec|command|setsid|stdbuf|timeout)(\s+(-\S*|[0-9]\S*))*\s+)*(\S*/)?'
 
 # What a request is, for the default of engagement.yaml:permissions (contracts.md §4.3, §10). A request's paths are
 # these fields of its input, for the rules' `path` too. A request whose tool is one of `read` is a read; any other
@@ -49,12 +56,12 @@ deny:
     rules:
       - tools: [Agent, Task, SendMessage, ListAgents, Workflow, TeamCreate, TeamDelete, RemoteTrigger, SendToProject, SendToProjectContext, EnterWorktree, ExitWorktree]
       - tools: [Bash]
-        command: '(^|[;&|(`])\s*(tmux|ssh|claude|kp|sudo)(\s|$|[;&|`])'
+        command: '(tmux|ssh|claude|kp|sudo)(\s|$|[;&|`)])'
   push-master:
     denies: a push to the default branch (the ruleset is the fence; this is the early no)
     rules:
       - tools: [Bash]
-        command: '(^|[;&|(`])\s*git\s([^;&|]*\s)?push\b[^;&|]*[\s:/]{default_branch}(\s|$|[;&|`])'
+        command: 'git\s([^;&|]*\s)?push\b[^;&|]*[\s:/+]{default_branch}(\s|$|[;&|`)])'
   pin-files:
     denies: writes to the profile's pin files
     rules:
@@ -69,15 +76,16 @@ deny:
     denies: the profile's cluster tools and kp-qa, kp-cred
     rules:
       - tools: [Bash]
-        command: '(^|[;&|(`])\s*({cluster_tools})(\s|$|[;&|`])'
+        command: '({cluster_tools})(\s|$|[;&|`)])'
       - tools: [Bash]
-        command: '(^|[;&|(`])\s*(kp-qa|kp-cred)(\s|$|[;&|`])'
+        command: '(kp-qa|kp-cred)(\s|$|[;&|`)])'
   browser:
     denies: Playwright outside a test suite, opening URLs, computer use
     rules:
       - tools: ["mcp__playwright__*", "mcp__computer-use__*", "mcp__claude-in-chrome__*"]
       - tools: [Bash]
-        command: '(^|[;&|(`])\s*(npx\s+playwright|playwright|xdg-open|sensible-browser|x-www-browser|firefox|chromium|chromium-browser|google-chrome)(\s|$|[;&|`])'
+        # Playwright run as a test suite (`playwright test`, `npx playwright test`) is allowed (contracts.md §10).
+        command: '(npx\s+playwright|playwright)(?!\s+test(\s|$|[;&|`)]))(\s|$|[;&|`)])|(xdg-open|sensible-browser|x-www-browser|firefox|chromium|chromium-browser|google-chrome)(\s|$|[;&|`)])'
   write-code:
     denies: writes in any code repo
     rules:
@@ -104,7 +112,7 @@ deny:
     denies: any command naming the demo cluster's context
     rules:
       - tools: [Bash]
-        command: '(--context|--kube-context|use-context)[=\s]+{demo_context}(\s|$|[;&|`])'
+        line: '(--context|--kube-context|use-context)[=\s]+["'']?{demo_context}["'']?(\s|$|[;&|`)])'
 
 # The MCP servers a persona may name under tools.mcp, by address. The messaging server gets the session's token as
 # its bearer (contracts.md §5).

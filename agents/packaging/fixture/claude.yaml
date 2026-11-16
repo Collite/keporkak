@@ -3,6 +3,7 @@
 version: 1
 writable: ["{worktree}/**", "{elsewhere}/**"]
 requests: {paths: [file_path], read: [Read]}
+command_start: '(^|;)\s*'
 deny:
   alpha:
     denies: a push to the default branch
