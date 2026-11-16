@@ -327,7 +327,7 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             run.resolve("project/tasks-handshake.md"), listOf(run.resolve("code")), standIn.listen)
 
         val built = step("a home built by the builder for the coder's persona") {
-            val built = ConfigHomes(root, seats).build(coder, "coder", "keporkak", places, PermissionDefaults(inside = Answer.ALLOW, outside = Answer.DENY)).ok()
+            val built = ConfigHomes(root, seats).build(coder, "coder", "keporkak", places, PermissionDefaults(writeInside = Answer.ALLOW, writeOutside = Answer.DENY, read = Answer.ALLOW)).ok()
             check(Files.readAllBytes(built.path.resolve("CLAUDE.md")).contentEquals(Files.readAllBytes(root.resolve("renders/coder.md")))) { "its CLAUDE.md is not renders/coder.md" }
             built to "${names(built.path)}; skills ${names(built.path.resolve("skills"))}; servers handed back: ${built.servers.joinToString { "${it.name} ${it.url}" }}"
         } ?: return@use

@@ -90,8 +90,8 @@ class Packaging private constructor(
             put("version", 1)
             put("working_directory", places.worktree.toString())
             put("defaults", buildJsonObject {
-                put("inside_working_directory", defaults.inside.word())
-                put("outside_working_directory", defaults.outside.word())
+                put("inside_working_directory", defaults.writeInside.word())
+                put("outside_working_directory", defaults.writeOutside.word())
             })
             put("rules", JsonArray(compiled.map { it.json() }))
         })

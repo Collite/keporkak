@@ -35,8 +35,31 @@ data class Places(
     val mcpListen: String? = null,
 )
 
-/** The defaults of `engagement.yaml:permissions` as the caller read them: the answer inside and outside the working directory. */
-data class PermissionDefaults(val inside: Answer, val outside: Answer)
+/**
+ * The defaults of `engagement.yaml:permissions` as the caller read them (contracts.md §4.3, §10): what a write gets
+ * inside and outside what the session may write, and what a read gets.
+ */
+data class PermissionDefaults(val writeInside: Answer, val writeOutside: Answer, val read: Answer) {
+    companion object {
+        /** The block's keys, as `engagement.yaml:permissions` names them; `lifetime` is the driver's (one-time answers). */
+        const val WRITE_INSIDE = "write_inside"
+        const val WRITE_OUTSIDE = "write_outside"
+        const val READ = "read"
+
+        /** The defaults from the block's text values, each `allow` or `deny`; a missing or other value is reported. */
+        fun of(block: Map<String, String>): Outcome<PermissionDefaults> {
+            val problems = mutableListOf<String>()
+            fun answer(key: String) = when (block[key]) {
+                "allow" -> Answer.ALLOW
+                "deny" -> Answer.DENY
+                null -> Answer.DENY.also { problems += "engagement.yaml:permissions has no $key" }
+                else -> Answer.DENY.also { problems += "engagement.yaml:permissions.$key is neither allow nor deny" }
+            }
+            val defaults = PermissionDefaults(answer(WRITE_INSIDE), answer(WRITE_OUTSIDE), answer(READ))
+            return if (problems.isEmpty()) Outcome.Ok(defaults) else Outcome.Failed(problems.joinToString("; "))
+        }
+    }
+}
 
 /** A built config home, and the MCP servers its persona names, by address, for the caller to inject per session. */
 data class Home(val path: Path, val servers: List<McpServer>)

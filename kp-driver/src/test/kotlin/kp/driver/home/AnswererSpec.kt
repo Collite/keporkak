@@ -22,7 +22,7 @@ import kotlin.io.path.writeText
 /** T4 — the answerer, read from permissions.json, through the driver and the scripted fake agent, for the next developer. */
 class AnswererSpec : StringSpec({
     val seat = SeatId("coder-1")
-    val defaults = PermissionDefaults(Answer.ALLOW, Answer.DENY)
+    val defaults = PermissionDefaults(Answer.ALLOW, Answer.DENY, Answer.ALLOW)
 
     /** The coder's words compiled into the office's home for the seat, where the answerer reads them. */
     fun Office.permissions(vararg words: String) {

@@ -28,7 +28,7 @@ import kotlin.io.path.writeText
 
 /** T3 — the config home, for the next developer. */
 class ConfigHomeSpec : StringSpec({
-    val defaults = PermissionDefaults(Answer.ALLOW, Answer.DENY)
+    val defaults = PermissionDefaults(Answer.ALLOW, Answer.DENY, Answer.ALLOW)
     val roles = root("agents").listDirectoryEntries().filter { it.resolve("AGENT.md").exists() }.map { it.name }.sorted()
 
     "for every persona on master a home builds: its CLAUDE.md is the render byte for byte, and it has exactly the skills the persona lists" {

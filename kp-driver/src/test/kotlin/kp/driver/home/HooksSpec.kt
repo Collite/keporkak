@@ -13,7 +13,7 @@ import kotlin.io.path.writeText
 
 /** T5 — the three hooks as scripts, run as Claude Code runs them, for the next developer. */
 class HooksSpec : StringSpec({
-    val defaults = PermissionDefaults(Answer.ALLOW, Answer.DENY)
+    val defaults = PermissionDefaults(Answer.ALLOW, Answer.DENY, Answer.ALLOW)
     val call = """{"command":"git push origin master"}"""
 
     "inbox-first adds its one line of context and decides nothing" {

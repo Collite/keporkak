@@ -21,7 +21,7 @@ import kotlin.io.path.readText
 
 /** T2 — the packaging data, its reader and its compile, for the next developer. */
 class PackagingDataSpec : StringSpec({
-    val defaults = PermissionDefaults(Answer.ALLOW, Answer.DENY)
+    val defaults = PermissionDefaults(Answer.ALLOW, Answer.DENY, Answer.ALLOW)
     val places = Places(
         worktree = Path.of("/office/_wt/keporkak-S2.2"),
         scratch = Path.of("/office/_scratch/keporkak/S2.2"),
@@ -75,7 +75,7 @@ class PackagingDataSpec : StringSpec({
     }
 
     "permissions.json carries the working directory and the defaults the caller gives" {
-        val permissions = packaging.permissions(listOf("push-master"), profile("keporkak"), places, PermissionDefaults(Answer.DENY, Answer.DENY)).ok()
+        val permissions = packaging.permissions(listOf("push-master"), profile("keporkak"), places, PermissionDefaults(Answer.DENY, Answer.DENY, Answer.ALLOW)).ok()
 
         permissions.field("working_directory") shouldBe "/office/_wt/keporkak-S2.2"
         permissions.getValue("defaults").jsonObject.toString() shouldBe """{"inside_working_directory":"deny","outside_working_directory":"deny"}"""

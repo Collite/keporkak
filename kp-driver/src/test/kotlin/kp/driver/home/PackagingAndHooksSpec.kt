@@ -26,7 +26,7 @@ import kotlin.io.path.writeText
  * probe's JSON on stdin (Hooks.kt).
  */
 class PackagingAndHooksSpec : StringSpec({
-    val allow = PermissionDefaults(inside = Answer.ALLOW, outside = Answer.DENY)
+    val allow = PermissionDefaults(writeInside = Answer.ALLOW, writeOutside = Answer.DENY, read = Answer.ALLOW)
 
     "a config home holds, for its role, the render as CLAUDE.md, the skills its persona lists and no other, settings.json and permissions.json — and what an earlier build put there and this one does not is gone" {
         Sources().use { sources ->
