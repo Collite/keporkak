@@ -356,9 +356,9 @@ class Mailroom private constructor(
      * The message as the mailroom writes it (contracts.md §2.1): from the input only what a sender supplies — `kind`,
      * `to`, `stage`, `subject`, `body`, `pointers`, `args`, `re`; `id`, `thread`, `at`, `created`, `from`, `by` and
      * `signed` set here. A reply's thread, stage and addressee default to the message it answers'. An addressee that
-     * cannot be resolved — a `to` that is not a string naming a party, a `{re: from}` kind with no `re`, a seat kind
-     * with no seat — is written `to: mailroom`, and the judgement refuses it: nothing is thrown at a sender
-     * (contracts.md §3).
+     * cannot be resolved — a `to`, the sender's or a seat kind's `args.seat`, that is not a string naming a party; a
+     * `{re: from}` kind with no known `re`; a seat kind with no seat — is written `to: mailroom`, and the judgement
+     * refuses it: nothing is thrown at a sender (contracts.md §3).
      */
     private fun compose(author: Author, input: JsonObject, now: String): Message {
         fun field(name: String) = input[name]?.takeIf { it !is kotlinx.serialization.json.JsonNull }
@@ -369,14 +369,13 @@ class Mailroom private constructor(
         val re = string(RE)?.let(messages::get)
         val args = field(ARGS)?.jsonObject
         val declared = rules.kinds[kind]
-        val written = field(TO)?.let { (it as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content?.takeIf(::isParty) ?: MAILROOM }
-        val to = written ?: declared?.to?.let { destination ->
+        val to = partyName(field(TO) ?: declared?.to?.let { destination ->
             when (destination) {
-                is Destination.Parties -> destination.names.first()
-                is Destination.Reply -> re?.from?.value
-                Destination.AnySeat -> args?.get(SEAT)?.jsonPrimitive?.contentOrNull
+                is Destination.Parties -> JsonPrimitive(destination.names.first())
+                is Destination.Reply -> re?.from?.value?.let(::JsonPrimitive)
+                Destination.AnySeat -> args?.get(SEAT)
             }
-        } ?: MAILROOM
+        }) ?: MAILROOM
         val subject = string(SUBJECT) ?: re?.subject?.let { "re: $it".take(SUBJECT_LIMIT) } ?: kind
         return Message.read(line(now,
             ID to text(id), THREAD to text(re?.thread?.value ?: id), RE to field(RE), FROM to text(author.from), TO to text(to),
@@ -470,8 +469,9 @@ class Mailroom private constructor(
 /** A time the log writes (`at`, `deadline`), as an instant. */
 private fun instant(at: String): Instant = utc(at).toInstant(ZoneOffset.UTC)
 
-/** Whether [name] is a party's name as a message's `to` writes it (contracts.md §2.1). */
-private fun isParty(name: String): Boolean = runCatching { Party(name) }.isSuccess
+/** [element] as a message's `to` writes it (contracts.md §2.1) — a string naming a party; null when it is no such string. */
+private fun partyName(element: JsonElement?): String? =
+    (element as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content?.takeIf { runCatching { Party(it) }.isSuccess }
 
 private const val BORA = "bora"
 private const val MAILROOM = "mailroom"

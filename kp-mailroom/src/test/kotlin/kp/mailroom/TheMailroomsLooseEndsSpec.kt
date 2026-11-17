@@ -99,6 +99,20 @@ class TheMailroomsLooseEndsSpec : FreeSpec({
         office.readBack().records<Delivered>() shouldBe emptyList()
     }
 
+    "a seat kind whose args.seat is not a string naming a party is written to the mailroom and refused: nothing is thrown at its sender (review B1, round 2)" {
+        val office = Office(seed = "building")
+
+        val answers = listOf("\"Not A Seat\"", "7", "[\"coder-1\"]").map { seat ->
+            office.send("pool-1", """{"kind": "pause", "stage": "$STAGE", "subject": "pause the seat", "args": {"seat": $seat, "cause": "anomaly-stop"}}""")
+        }
+
+        answers.map { "${it.status} ${it.requirement}" } shouldBe
+            listOf("REFUSED to: a seat", "REFUSED args: 'seat' is not string", "REFUSED args: 'seat' is not string")
+        answers.map { office.readBack().message(it.id).to.value } shouldBe List(3) { "mailroom" }
+        office.readBack().records<Refused>().map { it.id } shouldBe answers.map { it.id }
+        office.readBack().records<Delivered>() shouldBe emptyList()
+    }
+
     "an invalid reload changes nothing and asks for Bora to be told, with its problems" {
         val office = Office()
         val inForce = office.mailroom.state.rules
