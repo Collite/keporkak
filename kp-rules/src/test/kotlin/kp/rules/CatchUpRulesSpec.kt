@@ -13,9 +13,8 @@ class CatchUpRulesSpec : StringSpec({
             kind.name to Regex("[a-z][a-z-]*").findAll(kind.reply.orEmpty()).map { it.value }.filter { it in master.kinds }.toList()
         }
 
-        // D-70: the Deputy's yes from the queue answers a proposal too; the prose names only Bora's answers.
-        master.kinds.values.associate { it.name to it.replies } shouldBe named + ("assignment-proposal" to named.getValue("assignment-proposal") + "queued-approval")
-        master.kinds.getValue("assignment-proposal").reply shouldBe "approval | decline"
+        master.kinds.values.associate { it.name to it.replies } shouldBe named
+        master.kinds.getValue("assignment-proposal").reply shouldBe "approval | decline | queued-approval"
         master.kinds.getValue("verdict").reply shouldBe "repair-done (if FIX FIRST)"
         master.kinds.getValue("verdict").replies shouldBe listOf("repair-done")
         master.kinds.values.count { it.replies.isNotEmpty() } shouldBe 18
