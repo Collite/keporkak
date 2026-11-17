@@ -21,8 +21,11 @@ import java.nio.file.StandardOpenOption.CREATE
 import java.nio.file.StandardOpenOption.READ
 import java.nio.file.StandardOpenOption.WRITE
 
-/** How the writer opens the files and directories it writes and syncs; a spec watches the writes and syncs through it. */
-internal fun interface Channels {
+/**
+ * How the writer reaches the disk: it opens the files and directories it writes and syncs through this. A spec watches
+ * the writes and syncs through it, or stops the writer after a line, as a daemon killed there.
+ */
+fun interface Channels {
     fun open(path: Path, vararg options: OpenOption): FileChannel
 
     companion object {
@@ -95,7 +98,8 @@ class LogWriter private constructor(
         /** Opens the writer for [office] on [project]; refused while another writer holds it or a file is torn. */
         fun open(project: Path, office: OfficeId): LogWriter = open(project, office, Channels.files)
 
-        internal fun open(project: Path, office: OfficeId, channels: Channels): LogWriter {
+        /** As [open], reaching the disk through [channels]. */
+        fun open(project: Path, office: OfficeId, channels: Channels): LogWriter {
             val mail = Layout.mail(project)
             createDirectories(mail, channels)
             val channel = FileChannel.open(mail.resolve(".writer.lock"), CREATE, WRITE)

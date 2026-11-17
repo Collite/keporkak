@@ -8,6 +8,7 @@ import kp.engine.Datum
 import kp.engine.FactRef
 import kp.engine.State
 import kp.engine.fold
+import kp.log.Channels
 import kp.log.LogWriter
 import kp.model.Envelope
 import kp.model.Expired
@@ -20,6 +21,12 @@ import kp.model.Transition
 import kp.model.parseLine
 import kp.model.plain
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.MappedByteBuffer
+import java.nio.channels.FileChannel
+import java.nio.channels.FileLock
+import java.nio.channels.ReadableByteChannel
+import java.nio.channels.WritableByteChannel
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -208,6 +215,9 @@ class WalkPlayed(name: String) {
     }
 }
 
+private fun Envelope.event(): String? = (this as? Record)?.event
+private fun Envelope.long(field: String): Long = (plain().getValue(field) as java.math.BigDecimal).toLong()
+
 /** Every fact of [values] for [stage]. */
 fun FakeFacts.setAll(stage: String, values: Map<String, Datum>) = values.forEach { (name, value) -> set(stage, name, value) }
 
@@ -262,6 +272,35 @@ class Office(
     fun start() { mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots) }
     fun stop() = mailroom.close()
     fun restart() { stop(); start() }
+
+    /**
+     * The daemon killed after the line [after] matches (S1.10): the mailroom is started again on a disk that, once the
+     * start is done, writes that line and no line after it — the next write throws [WriterStopped], and nothing more
+     * of the mailroom runs. [restart] then starts it on the real disk, as Panda's service would.
+     */
+    fun stopWriterAfter(after: (Envelope) -> Boolean) {
+        val disk = StoppingDisk(after)
+        stop()
+        mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, disk = disk)
+        disk.armed = true
+    }
+
+    /**
+     * Where the office's log ends — what a restart must reach again: every machine's state, the counters, the kinds
+     * delivered in order, the open waits, the open tickets, the operations in flight and each seat's unread mail, by
+     * kind. Ids are left out: a restart's own lines number what follows them differently.
+     */
+    fun end(): List<String> {
+        val state = fold(readBack().lines)
+        val kind = { id: String -> state.delivered[id]?.kind ?: state.pending[id]?.kind ?: id }
+        return state.machines.flatMap { (machine, subjects) -> subjects.map { (subject, at) -> "$machine $subject ${at.state}" } }.sorted() +
+            state.counters.flatMap { (subject, counters) -> counters.map { (name, value) -> "counter $subject $name=$value" } }.sorted() +
+            state.delivered.values.map { "delivered ${it.kind} from ${it.from}" } +
+            state.deadlines.keys.map { "waits ${kind(it)}" }.sorted() +
+            state.openTickets().values.map { "ticket ${kind(it.item)}" }.sorted() +
+            state.operations.map { "in flight ${it.op}" } +
+            state.unread.flatMap { (seat, ids) -> ids.map { "unread $seat ${kind(it)}" } }.sorted()
+    }
 
     fun send(seat: String, input: String): Answer = mailroom.submit(Sender.Seat(seat), json(input)).also { submitted += it.id }
     fun bora(input: String, signed: Boolean = true): Answer = mailroom.submit(Sender.Bora(signed), json(input)).also { submitted += it.id }
@@ -341,7 +380,7 @@ class Office(
             val log = office.readBack()
             listOfNotNull("${office.project}: seq has a gap".takeUnless { log.seqRunsWithoutGap() }) + log.requestedTwice() +
                 office.submitted.filterNot(log::hasLineAndRecord).map { "$it: no message line, or no record about it" } + log.borasOwnWaiting() +
-                log.robotRulesNotIn(robotRuleIds)
+                log.robotRulesNotIn(robotRuleIds) + log.outsideAJudgement()
         }
 
         /** The rules of the robot file [file] on master, each with whether it is marked `for: persona`. */
@@ -357,10 +396,106 @@ class Office(
     }
 }
 
+/** The writer was stopped after the line a spec named: what a daemon killed there leaves on disk is all there is. */
+class WriterStopped : RuntimeException("the writer was stopped here")
+
+/** A disk that, once [armed], lets one more line through after a line [after] matches, then throws [WriterStopped]. */
+private class StoppingDisk(private val after: (Envelope) -> Boolean) : Channels {
+    var armed = false
+    private var stopped = false
+
+    override fun open(path: Path, vararg options: java.nio.file.OpenOption): FileChannel = object : FileChannel() {
+        private val real = FileChannel.open(path, *options)
+        override fun write(src: ByteBuffer): Int {
+            if (stopped) throw WriterStopped()
+            val text = Charsets.UTF_8.decode(src.duplicate()).toString()
+            return real.write(src).also { if (armed && text.endsWith("\n") && after(parseLine(text.trimEnd('\n')))) stopped = true }
+        }
+        override fun write(srcs: Array<out ByteBuffer>, offset: Int, length: Int): Long = (offset until offset + length).sumOf { write(srcs[it]).toLong() }
+        override fun write(src: ByteBuffer, position: Long): Int = throw UnsupportedOperationException("the writer appends")
+        override fun force(metaData: Boolean) = real.force(metaData)
+        override fun read(dst: ByteBuffer): Int = real.read(dst)
+        override fun read(dsts: Array<out ByteBuffer>, offset: Int, length: Int): Long = real.read(dsts, offset, length)
+        override fun read(dst: ByteBuffer, position: Long): Int = real.read(dst, position)
+        override fun position(): Long = real.position()
+        override fun position(newPosition: Long): FileChannel = apply { real.position(newPosition) }
+        override fun size(): Long = real.size()
+        override fun truncate(size: Long): FileChannel = apply { real.truncate(size) }
+        override fun transferTo(position: Long, count: Long, target: WritableByteChannel): Long = real.transferTo(position, count, target)
+        override fun transferFrom(src: ReadableByteChannel, position: Long, count: Long): Long = real.transferFrom(src, position, count)
+        override fun map(mode: MapMode, position: Long, size: Long): MappedByteBuffer = real.map(mode, position, size)
+        override fun lock(position: Long, size: Long, shared: Boolean): FileLock = real.lock(position, size, shared)
+        override fun tryLock(position: Long, size: Long, shared: Boolean): FileLock? = real.tryLock(position, size, shared)
+        override fun implCloseChannel() = real.close()
+    }
+}
+
 /** The log read back: every line of every file under `mail/` (but `_hand/`), by kp-model's reader, in `seq` order. */
 class ReadBack(project: Path) {
     val lines: List<Envelope> = project.resolve("mail").walk().filter { it.isRegularFile() && it.name.endsWith(".jsonl") && "_hand" !in it.toString() }
         .flatMap { file -> file.readLines().map(::parseLine) }.sortedBy { it.seq }.toList()
+
+    /** The lines a `voided` record says count for nothing: those of its judgement but the first (contracts.md §2.2). */
+    fun voidedLines(): List<Envelope> {
+        val voided = lines.filter { it.event() == "voided" }.map { (it.long("first") + 1)..it.long("last") }
+        return lines.filter { line -> voided.any { line.seq.toLong() in it } }
+    }
+
+    /** The log less its voided lines: what counts. */
+    val counted: List<Envelope> get() = (lines - voidedLines().toSet())
+
+    /**
+     * Each judgement of the log, as its lines read — the first line to the `judged` that closes it (contracts.md §3);
+     * a voided line is left out. A message reads `<kind> by <by>`, a record its event and what it moved.
+     */
+    fun judgements(): List<List<String>> {
+        val all = ArrayList<List<String>>()
+        var open = ArrayList<String>()
+        counted.forEach { line ->
+            open += told(line)
+            if (line.event() == "judged") all += open.also { open = ArrayList() }
+        }
+        return all
+    }
+
+    /** Each judgement a `voided` record names, as its lines read on disk: its first line and those that count for nothing. */
+    fun voidedJudgements(): List<List<String>> = lines.filter { it.event() == "voided" }.map { voided ->
+        lines.filter { it.seq.toLong() in voided.long("first")..voided.long("last") }.map(::told)
+    }
+
+    private fun told(line: Envelope): String = when {
+        line is Message -> "${line.kind} by ${line.by}"
+        line is Transition -> "transition ${line.from}→${line.to}"
+        line is Op -> "op ${line.op} ${line.phase}"
+        line.event() == "fact" -> "fact ${line.plain()["fact"]}"
+        else -> line.event()!!
+    }
+
+    /**
+     * Every line that no `judged` closes and no `voided` voids, and a log that does not end with a `judged` line (S1.10's
+     * DONE): a judgement runs from its first line to the `judged` naming it; a `voided` names the judgement before it and
+     * opens the one that carries its first line again.
+     */
+    fun outsideAJudgement(): List<String> {
+        val problems = ArrayList<String>()
+        var first: Long? = null
+        lines.forEach { line ->
+            val seq = line.seq.toLong()
+            when (line.event()) {
+                "judged" -> {
+                    if (line.long("first") != first) problems += "$seq judged names ${line.long("first")}, not the first line of its judgement ($first)"
+                    first = null
+                }
+                "voided" -> {
+                    if (first == null || line.long("first") != first || line.long("last") != seq - 1) problems += "$seq voided names ${line.long("first")}–${line.long("last")}, not the judgement before it"
+                    first = seq
+                }
+                else -> if (first == null) first = seq
+            }
+        }
+        if (lines.isNotEmpty() && lines.last().event() != "judged") problems += "${lines.last().seq}: the log does not end with a judged line"
+        return problems
+    }
 
     val messages: List<Message> get() = lines.filterIsInstance<Message>()
     fun message(id: String): Message = messages.single { it.id.value == id }
@@ -393,7 +528,7 @@ class ReadBack(project: Path) {
      * The log as a story, in its order: one line per message that was delivered, held or refused — its kind, the
      * robot's rule that sent it, what became of it — and one per move of Bora's presence.
      */
-    fun story(): List<String> = lines.mapNotNull { line ->
+    fun story(): List<String> = counted.mapNotNull { line ->
         fun told(id: String, what: String): String {
             val message = message(id)
             return message.kind + (message.by.takeIf { it.startsWith("robot:") }?.let { " by $it" } ?: "") + " " + what
@@ -414,7 +549,7 @@ class ReadBack(project: Path) {
      * Every `(op, cause)` that is `requested` more than once (contracts.md §7: at most once per request). A robot's
      * wakes are one per rule: two rules may wake their seat for one cause, each in its own mode.
      */
-    fun requestedTwice(): List<String> = records<Op>().filter { it.phase == "requested" }
+    fun requestedTwice(): List<String> = counted.filterIsInstance<Op>().filter { it.phase == "requested" }
         .groupBy { "${it.op} ${it.cause}" + ((it.plain()["with"] as? Map<*, *>)?.get("rule")?.let { rule -> " $rule" } ?: "") }.filterValues { it.size > 1 }.keys.toList()
 
     /** Every record about a message — by its `id`, or a transition or operation it caused — that comes before the message's line. */

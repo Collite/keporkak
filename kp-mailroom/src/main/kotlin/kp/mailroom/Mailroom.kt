@@ -22,6 +22,7 @@ import kp.engine.RobotHold
 import kp.engine.State
 import kp.engine.Trigger
 import kp.engine.fold
+import kp.log.Channels
 import kp.log.LogReader
 import kp.log.LogWriter
 import kp.model.Delivered
@@ -738,12 +739,15 @@ class Mailroom private constructor(
     private fun now(): String = clock.now().truncatedTo(ChronoUnit.SECONDS).toString()
 
     companion object {
-        /** Opens the log, folds it, puts the rules in force and records what start-up records (contracts.md §2.2, §4.4). */
+        /**
+         * Opens the log, folds it, puts the rules in force and records what start-up records (contracts.md §2.2, §4.4).
+         * The writer reaches the disk through [disk].
+         */
         fun start(
             project: Path, office: OfficeId, rules: RuleTexts, facts: FactSource, operations: Operations, deliveries: Deliveries, clock: Clock,
-            robots: Boolean = false,
+            robots: Boolean = false, disk: Channels = Channels.files,
         ): Mailroom {
-            val writer = LogWriter.open(project, office)
+            val writer = LogWriter.open(project, office, disk)
             try {
                 val read = LogReader(project, office).read()
                 if (read.problems.isNotEmpty()) throw MailroomRefusal("the log has problems:\n" + read.problems.joinToString("\n"))
