@@ -17,9 +17,22 @@ import kotlin.io.path.readText
 
 /**
  * A walk of `rules/walks/` (contracts.md §4.8): a stage, its seats, a table of facts and the steps — who sends which
- * kind with which args, which operation ends how, which facts change. Scalars are read as YAML 1.2 reads them.
+ * kind with which args, which operation ends how, which facts change. A walk may name more stages (`stages:`), each with
+ * the state it starts in, its seat's state and facts of its own; it ends in [final] — one stage's state, or each named
+ * stage's — and may count the deliveries of some kinds ([expectedCounts]). Scalars are read as YAML 1.2 reads them.
  */
-class Walk(val name: String, val stage: String, val seats: Map<String, String>, val facts: Map<String, Datum>, val steps: List<Step>) {
+class Walk(
+    val name: String,
+    val stage: String,
+    val seats: Map<String, String>,
+    val facts: Map<String, Datum>,
+    val steps: List<Step>,
+    /** The state the walk's stages start in, unless a stage says otherwise. */
+    val initial: String = PLANNED,
+    val stages: Map<String, Setting> = emptyMap(),
+    val final: Datum? = null,
+    val expectedCounts: Map<String, Int> = emptyMap(),
+) {
     /** One step, as the walk writes it; [fields] holds every key. */
     class Step(val fields: Map<String, Datum>) {
         fun text(key: String): String? = (fields[key] as? Datum.Text)?.value
@@ -29,23 +42,56 @@ class Walk(val name: String, val stage: String, val seats: Map<String, String>, 
         val kind: String? get() = text("kind")
         val operation: String? get() = text("operation")
         val facts: Map<String, Datum> get() = fields("facts")
+        val expect: Map<String, Datum> get() = fields("expect")
+
+        /** This step with [key] set to [value]: what a spec adds to a walk that leaves it out. */
+        fun with(key: String, value: Datum): Step = Step(fields + (key to value))
     }
 
+    /** This walk with its steps replaced by [steps]. */
+    fun withSteps(steps: List<Step>): Walk = Walk(name, stage, seats, facts, steps, initial, stages, final, expectedCounts)
+
+    /** A stage the walk names besides its own: the state it starts in, its companions' states (`machines:`), its facts. */
+    class Setting(val initial: String?, val machines: Map<String, String>, val facts: Map<String, Datum>)
+
+    /** Every stage the walk names, its own first, then those of `stages:`, then those its steps switch to, in order. */
+    val stageNames: List<String>
+        get() = (listOf(stage) + stages.keys + steps.mapNotNull { it.text("stage") }).distinct()
+
+    /** The state [name] starts in. */
+    fun initialOf(name: String): String = stages[name]?.initial ?: initial
+
+    /** The facts [name] starts with: the walk's, then its own. */
+    fun factsOf(name: String): Map<String, Datum> = facts + stages[name]?.facts.orEmpty()
+
     companion object {
+        const val PLANNED = "planned"
+
         fun read(path: Path): Walk {
             val walk = (datum(Yaml.default.parseToYamlNode(path.readText())) as Datum.Fields).fields
             fun text(key: String) = (walk[key] as? Datum.Text)?.value
+            fun fields(datum: Datum?) = (datum as? Datum.Fields)?.fields.orEmpty()
             return Walk(
                 text("name") ?: path.fileName.toString(),
                 text("stage") ?: error("$path names no stage"),
-                (walk["seats"] as? Datum.Fields)?.fields.orEmpty().mapValues { (it.value as Datum.Text).value },
-                (walk["facts"] as? Datum.Fields)?.fields.orEmpty(),
+                fields(walk["seats"]).mapValues { (it.value as Datum.Text).value },
+                fields(walk["facts"]),
                 (walk["steps"] as? Datum.Items)?.items.orEmpty().map { Step((it as Datum.Fields).fields) },
+                text("initial") ?: PLANNED,
+                fields(walk["stages"]).mapValues { (_, setting) ->
+                    val values = fields(setting)
+                    Setting((values["initial"] as? Datum.Text)?.value, fields(values["machines"]).mapValues { (it.value as Datum.Text).value }, fields(values["facts"]))
+                },
+                walk["final"],
+                fields(walk["expected_counts"]).mapValues { (it.value as Datum.Number).value.toInt() },
             )
         }
 
         private val integer = Regex("-?(0|[1-9][0-9]*)")
         private val decimal = Regex("-?(0|[1-9][0-9]*)\\.[0-9]+([eE][-+]?[0-9]+)?")
+
+        /** A YAML text as data, its scalars read as YAML 1.2 reads them. */
+        fun parse(text: String): Datum = datum(Yaml.default.parseToYamlNode(text))
 
         private fun datum(node: YamlNode): Datum = when (node) {
             is YamlMap -> Datum.Fields(node.entries.entries.associate { (key, value) -> key.content to datum(value) })
@@ -75,14 +121,37 @@ class TableFacts(initial: Map<String, Datum> = emptyMap()) : FactSource {
 
     fun set(values: Map<String, Datum>) = table.putAll(values)
 
-    override fun observe(fact: FactRef, stage: String?): Datum? {
-        val value = table[fact.name] ?: return null
-        if (value !is Datum.Fields) return value
-        val key = KEYS.firstNotNullOfOrNull { fact.params[it] } ?: return null
-        return value.fields[(key as? Datum.Text)?.value ?: key.json()]
-    }
+    /** The value the table holds for [name], as written. */
+    operator fun get(name: String): Datum? = table[name]
 
-    private companion object {
-        val KEYS = listOf("of", "seat", "id", "dimension", "subscription", "pointer")
+    override fun observe(fact: FactRef, stage: String?): Datum? = lookup(table[fact.name], fact)
+
+    companion object {
+        private val KEYS = listOf("of", "seat", "id", "dimension", "subscription", "pointer")
+
+        /** [value] as [fact] reads it: plain, or keyed by the first of its parameters the walker keys by. */
+        fun lookup(value: Datum?, fact: FactRef): Datum? {
+            if (value !is Datum.Fields) return value
+            val key = KEYS.firstNotNullOfOrNull { fact.params[it] } ?: return null
+            return value.fields[(key as? Datum.Text)?.value ?: key.json()]
+        }
+    }
+}
+
+/**
+ * The facts of a walk that names several stages (`stages:`): each stage has a table of its own — the walk's facts,
+ * then the stage's — and a step's facts change the table of the stage it is about, as the walker's contexts do. A fact
+ * asked about no stage, or a stage the walk does not name, is read from the stage the walk is at.
+ */
+class WalkFacts(private val walk: Walk, private val ids: Map<String, String>) : FactSource {
+    private val tables = ConcurrentHashMap<String, TableFacts>()
+    @Volatile var current: String = walk.stage
+
+    /** The table of the stage named [name] in the walk. */
+    fun table(name: String): TableFacts = tables.getOrPut(name) { TableFacts(walk.factsOf(name)) }
+
+    override fun observe(fact: FactRef, stage: String?): Datum? {
+        val name = ids.entries.firstOrNull { it.value == stage }?.key ?: current
+        return table(name).observe(fact, stage)
     }
 }

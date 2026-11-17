@@ -63,6 +63,15 @@ class Office private constructor(
     /** Carries one message through the mailroom (contracts.md §2.1: it sets `from`, `by` and `signed`). */
     fun submit(sender: Sender, input: JsonObject): Answer = mailroom.submit(sender, input).also { changes.signal() }
 
+    /**
+     * A fact the world reports changed — what an observer reports (contracts.md §4.1 `on: fact`, §8): the mailroom
+     * judges what it triggers. Until the observers exist (P3), the rehearsal's harness reports a walk's facts here.
+     */
+    fun changed(fact: FactRef, value: Datum, stage: String? = null, evidence: String? = null) {
+        mailroom.changed(fact, value, stage, evidence)
+        changes.signal()
+    }
+
     /** Fires the deadlines that have passed. */
     fun tick() {
         mailroom.tick()
