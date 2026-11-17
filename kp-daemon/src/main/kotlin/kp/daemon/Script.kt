@@ -298,8 +298,9 @@ class Player internal constructor(private val script: Script, val office: Office
         val message = lines.filterIsInstance<Message>().firstOrNull { message ->
             message.id.value !in found && message.kind == step.kind && (if (by != null) message.by == by else message.from.value == MAILROOM) &&
                 (re == null || message.re?.value == re) && (step.text(TO)?.let { to -> message.to.value == to } ?: true)
-        } ?: throw WalkFailure(at(number, step) + ": ${by ?: MAILROOM} sent no ${step.kind}" + (re?.let { " in reply to $it" } ?: "") +
-            " — what it sent: " + lines.filterIsInstance<Message>().filter { if (by != null) it.by.startsWith(ROBOT) else it.from.value == MAILROOM }.joinToString { "${it.kind} ${it.by}" })
+        } ?: throw WalkFailure(at(number, step) + ": ${by ?: MAILROOM} sent no ${step.kind}" + (re?.let { " in reply to $it" } ?: "") + " — " +
+            lines.filterIsInstance<Message>().filter { if (by != null) it.by.startsWith(ROBOT) else it.from.value == MAILROOM }.map { "${it.kind} ${it.by}" }
+                .let { sent -> if (sent.isEmpty()) "${if (by != null) "the robots have" else "the mailroom has"} sent nothing yet" else "sent so far: ${sent.joinToString()}" })
         found += message.id.value
         return message.id.value to outcome(lines, message.id.value)
     }
