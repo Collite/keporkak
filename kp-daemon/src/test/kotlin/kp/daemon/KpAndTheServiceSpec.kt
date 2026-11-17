@@ -18,7 +18,7 @@ class KpAndTheServiceSpec : FreeSpec({
 
             inbox.code shouldBe 0
             inbox.text shouldBe """
-                #5 · B · assignment-proposal · REHEARSAL/P2/S2.1 · from teamlead — assignment-proposal
+                #5 · B · assignment-proposal · REHEARSAL/P2/S2.1 · from teamlead
                    rolls: none · live: none · touches: unknown
 
             """.trimIndent()
