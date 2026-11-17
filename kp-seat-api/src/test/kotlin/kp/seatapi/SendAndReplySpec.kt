@@ -46,6 +46,8 @@ class SendAndReplySpec : StringSpec({
                 """{"kind": "started", "subject": "$long"}""",
                 """{"kind": "started", "subject": 7}""",
                 """{"kind": 7, "subject": "a kind of the wrong type"}""",
+                """{"kind": "started", "subject": "a to of the wrong type", "to": 7}""",
+                """{"kind": "started", "subject": "a to of the wrong type", "to": ["teamlead"]}""",
                 """{"kind": "started", "subject": "a body of the wrong type", "body": ["x"]}""",
                 """{"kind": "started", "subject": "pointers of the wrong type", "pointers": "pr:Collite/keporkak#1"}""",
                 """{"kind": "started", "subject": "args of the wrong type", "args": ["x"]}""",
@@ -56,7 +58,7 @@ class SendAndReplySpec : StringSpec({
             ).map { coder.call("reply", it) }
 
             (sent + replied).map { it.isError to it.text.substringBefore(':') } shouldBe
-                listOf("kind", "kind", "stage", "subject", "subject", "kind", "body", "pointers", "args", "re", "re").map { true to it }
+                listOf("kind", "kind", "stage", "subject", "subject", "kind", "to", "to", "body", "pointers", "args", "re", "re").map { true to it }
             office.lines() shouldBe lines
         }
     }

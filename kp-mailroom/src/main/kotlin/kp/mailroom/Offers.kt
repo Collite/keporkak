@@ -18,15 +18,17 @@ sealed interface Offer {
 
 /**
  * The fields a sender supplies (contracts.md §2.1), each against its form in the message's schema: a kind, and — when
- * given and not null — a stage, a subject, a body, pointers, `args` and `re`. The first that is not, with what is
- * wrong; null when the input can be a message. `to` is not among them: an addressee that cannot be resolved is written
- * `to: mailroom` and refused (contracts.md §3). The problem names no value the input carried.
+ * given and not null — `to`, a stage, a subject, a body, pointers, `args` and `re`. The first that is not, with what is
+ * wrong; null when the input can be a message. Of `to` only its type is checked here (§5): text that names no party is
+ * an addressee that cannot be resolved, written `to: mailroom` and refused (contracts.md §3). The problem names no
+ * value the input carried.
  */
 internal fun malformed(input: JsonObject): Offer.Malformed? {
     fun given(name: String): JsonElement? = input[name]?.takeIf { it !is JsonNull }
     fun string(element: JsonElement?): String? = (element as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content
     val kind = given(KIND) ?: return Offer.Malformed(KIND, "missing — a message names its kind")
     if (string(kind)?.let(KIND_FORM::matches) != true) return Offer.Malformed(KIND, "not a kind's name (${KIND_FORM.pattern})")
+    given(TO)?.let { if (string(it) == null) return Offer.Malformed(TO, "not text — a party's name") }
     given(STAGE)?.let { if (string(it)?.let(STAGE_FORM::matches) != true) return Offer.Malformed(STAGE, "not a stage (${STAGE_FORM.pattern})") }
     given(SUBJECT)?.let { subject ->
         val length = string(subject)?.let { it.codePointCount(0, it.length) }
@@ -64,6 +66,7 @@ private const val SUBJECT_LIMIT = 120
 private const val POINTER_MIN = 3
 
 private const val KIND = "kind"
+private const val TO = "to"
 private const val STAGE = "stage"
 private const val SUBJECT = "subject"
 private const val BODY = "body"
