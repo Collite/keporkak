@@ -18,9 +18,9 @@ class CheckSpec : FreeSpec({
     "a daemon's log with a proposal, an unsigned and a signed approval and a refused second answer is reproduced line by line" {
         TestOffice().use { office ->
             office.send("teamlead", proposal())
-            office.kp("approve", "3")
-            office.kp("approve", "3", peer = ROOT)
-            office.kp("approve", "3", peer = ROOT)
+            office.kp("approve", "4")
+            office.kp("approve", "4", peer = ROOT)
+            office.kp("approve", "4", peer = ROOT)
             val mail = office.office.project.resolve("mail")
 
             val check = office.kp("check", mail.toString())
@@ -34,13 +34,13 @@ class CheckSpec : FreeSpec({
         TestOffice().use { office ->
             office.send("teamlead", proposal())
             val copy = copyOf(office.office.project.resolve("mail"))
-            edit(copy, """"event":"delivered","id":"m-panda-000002"""", """"list.tasks_total":8""", """"list.tasks_total":1""")
+            edit(copy, """"event":"delivered","id":"m-panda-000003"""", """"list.tasks_total":8""", """"list.tasks_total":1""")
 
             val check = office.kp("check", copy.toString())
 
             check.code shouldBe 1
-            check.text.lines().filter { "m-panda-000002" in it } shouldBe listOf(
-                "$copy/KP/p2-s2.1.jsonl:1 m-panda-000002 assignment-proposal: recorded delivered T-01 · stage KP/P2/S2.1 planned→proposed by T-01 proposals=1 · class B · ticket" +
+            check.text.lines().filter { "m-panda-000003" in it } shouldBe listOf(
+                "$copy/KP/p2-s2.1.jsonl:1 m-panda-000003 assignment-proposal: recorded delivered T-01 · stage KP/P2/S2.1 planned→proposed by T-01 proposals=1 · class B · ticket" +
                     " · deadline 2026-11-18T09:00:00Z · counted proposals=1; re-judged refused assignment-proposal: " + office.office.rules.ruleSet.kinds.getValue("assignment-proposal").guard +
                     """ · failed {"fact":"list.tasks_total","gte":{"cap":"stage_tasks_min"}}""",
             )

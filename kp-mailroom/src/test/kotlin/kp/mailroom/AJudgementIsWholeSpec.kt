@@ -32,7 +32,7 @@ class AJudgementIsWholeSpec : FreeSpec({
         val judgements = office.readBack().judgements()
         judgements shouldContain listOf("review-request by seat:coder-1", "delivered", "transition building→ready_for_review",
             "found-batch by effect:T-17", "delivered", "judged")
-        judgements shouldContain listOf("fact seat.process_gone", "seat-gone by robot:POOL-1", "delivered", "transition building→paused",
+        judgements shouldContain listOf("fact seat.process_gone", "seat-gone by robot:POOL-1", "delivered", "transition ready_for_review→paused",
             "transition ready→gone", "op seat.reseat requested", "judged")
     }
 

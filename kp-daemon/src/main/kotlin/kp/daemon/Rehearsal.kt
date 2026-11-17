@@ -211,12 +211,15 @@ class Rehearsal private constructor(private val walk: Walk, private val stage: S
             return Rehearsal(read, stage, daemon, facts, out).also { it.player.start() }
         }
 
-        /** The walk's seats, `ready` before the walk begins — what an earlier part of the log would have left. */
+        /** The walk's seats, `ready` before the walk begins — what an earlier part of the log would have left: one judgement, closed (contracts.md §3). */
         private fun seatsReady(project: Path, office: String, seats: Set<String>, clock: Clock) = LogWriter.open(project, OfficeId(office)).use { log ->
+            if (seats.isEmpty()) return@use
             val at = clock.now().truncatedTo(ChronoUnit.SECONDS).toString()
+            val judgement = log.judgement()
             seats.forEach { seat ->
-                log.append(Json.parseToJsonElement("""{"v":1,"at":"$at","event":"transition","machine":"seat","subject":"$seat","from":"provisioned","to":"ready","cause":"rehearsal"}""").jsonObject)
+                judgement.add(Json.parseToJsonElement("""{"v":1,"at":"$at","event":"transition","machine":"seat","subject":"$seat","from":"provisioned","to":"ready","cause":"rehearsal"}""").jsonObject)
             }
+            judgement.close(at)
         }
     }
 }

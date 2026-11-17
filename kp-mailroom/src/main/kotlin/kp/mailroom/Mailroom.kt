@@ -97,7 +97,9 @@ private fun Sender.author(): Author = when (this) {
 /**
  * The loop (architecture.md §3): one message from receipt to the log and on to its addressees. It collects the facts
  * the engine names, asks the engine, writes the lines and only then acts — delivers, performs, answers. It decides
- * nothing; its state is a cache of the log. One message, result or expiry is carried at a time.
+ * nothing; its state is a cache of the log. One message, result, expiry or fact is carried at a time, and what it
+ * produces is one judgement (contracts.md §3, Amendment 23): its lines, the messages the rules and the robots send in
+ * answer among them, reach the disk together, closed by a `judged` line — and the mailroom turns to the world only then.
  */
 class Mailroom private constructor(
     private val office: OfficeId,
@@ -122,8 +124,15 @@ class Mailroom private constructor(
     private val messages = HashMap<String, Message>()
     /** Per seat, the messages delivered to it, in the order they were: what an inbox of read and unread mail returns. */
     private val addressed = HashMap<String, MutableList<String>>()
-    /** What follows a judgement once its lines are written: operations to perform, results to judge, messages to carry. */
-    private val queue = ArrayDeque<() -> Unit>()
+    /** The judgement being written (contracts.md §3): its lines reach the disk together, closed by a `judged` line. */
+    private var judgement: LogWriter.Judgement? = null
+    private var judging = false
+    /** What the judgement being written still carries: the messages the rules and the robots send in answer, the held messages let go. */
+    private val carrying = ArrayDeque<() -> Unit>()
+    /** What waits for a judgement's `judged` line to be on disk: the operations it requested, performed, and the seats it wakes. */
+    private val world = ArrayDeque<() -> Unit>()
+    /** Results that arrived, each to be judged in a judgement of its own. */
+    private val arrivals = ArrayDeque<() -> Unit>()
     private var draining = false
     private var closed = false
 
@@ -137,7 +146,7 @@ class Mailroom private constructor(
     @Synchronized
     fun submit(sender: Sender, input: JsonObject): Answer {
         if (sender is Sender.Bora) command(sender.signed)
-        return arrive(sender.author(), input).also { drain() }
+        return judged { arrive(sender.author(), input) }.also { drain() }
     }
 
     /**
@@ -155,7 +164,7 @@ class Mailroom private constructor(
      */
     @Synchronized
     fun command(signed: Boolean) {
-        if (signed) fact(FactRef(BORA_ACTED), Datum.Bool(true), null, SIGNED_COMMAND)
+        if (signed) judged { fact(FactRef(BORA_ACTED), Datum.Bool(true), null, SIGNED_COMMAND) }
         drain()
     }
 
@@ -168,7 +177,7 @@ class Mailroom private constructor(
     @Synchronized
     fun changed(fact: FactRef, value: Datum, stage: String? = null, evidence: String? = null) {
         require(fact.name != BORA_ACTED) { "$BORA_ACTED is a signed command: command(signed = true)" }
-        fact(fact, value, stage, evidence)
+        judged { fact(fact, value, stage, evidence) }
         drain()
     }
 
@@ -182,7 +191,7 @@ class Mailroom private constructor(
         val ids = if (unread) folded.unread(seat) else addressed[seat].orEmpty()
         val shown = limit?.let(ids::take) ?: ids
         val seen = shown.filter { it in folded.unread(seat) }
-        if (seen.isNotEmpty()) write(line(now(), EVENT to text("read"), SEAT to text(seat), IDS to texts(seen)))
+        if (seen.isNotEmpty()) judged { write(line(now(), EVENT to text("read"), SEAT to text(seat), IDS to texts(seen))) }
         return Inbox(shown.map(messages::getValue), more = ids.size > shown.size)
     }
 
@@ -227,7 +236,7 @@ class Mailroom private constructor(
         val engine = Engine(rules)
         val gate = engine.turnEnds(folded, seat, blocks, table(engine.turnNeeds(folded, seat), null, now()))
         if (gate is Gate.End && gate.capped) {
-            fact(FactRef(TURN_BLOCKED, mapOf(SEAT to Datum.Text(seat))), Datum.of(blocks), null, AT_THE_CAP, always = true)
+            judged { fact(FactRef(TURN_BLOCKED, mapOf(SEAT to Datum.Text(seat))), Datum.of(blocks), null, AT_THE_CAP, always = true) }
             drain()
         }
         return if (gate is Gate.Block) Stop(block = true, reason = gate.reason) else Stop(block = false, reason = "")
@@ -246,7 +255,7 @@ class Mailroom private constructor(
         due.forEach { id ->
             val wait = folded.deadlines[id]?.deadline ?: return@forEach
             if (instant(wait).isAfter(now)) return@forEach
-            expire(id)
+            judged { expire(id) }
             drain()
         }
     }
@@ -265,12 +274,12 @@ class Mailroom private constructor(
     fun reload(): Reload {
         val (next, loaded) = InForce.load(texts.read())
         if (next == null) {
-            request(NOTIFY_BORA, RULES, Datum.Fields(mapOf(PROBLEMS to Datum.Items(loaded.problems.map { Datum.Text("$it") }))), now())
+            judged { request(NOTIFY_BORA, RULES, Datum.Fields(mapOf(PROBLEMS to Datum.Items(loaded.problems.map { Datum.Text("$it") }))), now()) }
             drain()
             return Reload.Rejected(loaded.problems)
         }
         inForce = next
-        recordRules()
+        judged { recordRules() }
         return Reload.Accepted(next.hash)
     }
 
@@ -367,7 +376,7 @@ class Mailroom private constructor(
         transitions(decision, id, now)
         effects(decision, id, now)
         if (raised == null && ticket != null && decision.messageClass == MessageClass.B) notify(ticket, id, now)
-        woke.filter { deliveries.wake(it, written) }.forEach { seat -> write(line(now(), EVENT to text("read"), SEAT to text(seat), IDS to texts(listOf(id)))) }
+        woke.forEach { seat -> world += { wake(seat, written) } }
         arrival?.let { carry(it, id, now) }
         hear(Trigger.Delivered(id), id, now, message.stage?.value)
         return Answer(Status.DELIVERED, id, transition = decision.rule)
@@ -398,6 +407,11 @@ class Mailroom private constructor(
         if (answer.status == Status.REFUSED) tell(message, answer)
     }
 
+    /** A seat woken with [message] once its judgement is on disk (contracts.md §2.2, `read`): it has seen it — a judgement of its own. */
+    private fun wake(seat: String, message: Message) {
+        if (deliveries.wake(seat, message)) judged { write(line(now(), EVENT to text("read"), SEAT to text(seat), IDS to texts(listOf(message.id.value)))) }
+    }
+
     /**
      * A refusal told later (contracts.md §5, §2.1): the sender of a held message refused when it was let go is sent a
      * `nudge` — in reply to it, with the rule and the guard that refused it, `by: mailroom`, the one message the mailroom
@@ -415,7 +429,7 @@ class Mailroom private constructor(
                 put(FAILED_GUARD, JsonPrimitive(refusal.requirement))
             })
         }
-        queue += { arrive(Author(MAILROOM, MAILROOM, false), input) }
+        carrying += { arrive(Author(MAILROOM, MAILROOM, false), input) }
     }
 
     // ---- the robots (contracts.md §8)
@@ -455,7 +469,7 @@ class Mailroom private constructor(
     /**
      * What a robot does (contracts.md §8): a wake is requested at once — `seat.wake` for its own seat, with its role,
      * mode and rule — and a send is carried after the lines being written, through the loop, from the robot's role,
-     * `by: robot:<rule>`.
+     * `by: robot:<rule>`: in the same judgement, judged in turn.
      */
     private fun carry(reaction: Reaction, cause: String, now: String) {
         reaction.wakes.forEach { wake ->
@@ -470,16 +484,16 @@ class Mailroom private constructor(
                 put(SUBJECT, JsonPrimitive("${send.kind} ($ROBOT${send.rule})"))
                 put(ARGS, fields(send.args))
             }
-            queue += { arrive(Author(send.role, ROBOT + send.rule, false), input) }
+            carrying += { arrive(Author(send.role, ROBOT + send.rule, false), input) }
         }
     }
 
     /**
      * What the robots keep that is let go now (contracts.md §2.2, §8): each robot that holds something is asked, with
-     * the facts about the last request its queue handed over; what it lets go is delivered in order, after what is
-     * already being carried.
+     * the facts about the last request its queue handed over; what it lets go is delivered in order, after what the
+     * judgement being written already carries — in it.
      */
-    private fun letGo() = freed(null, null, now()).forEach { id -> queue += { release(id) } }
+    private fun letGo() = freed(null, null, now()).forEach { id -> carrying += { release(id) } }
 
     /**
      * What the robots would let go now, in order — with [known], a fact just reported about [stage], read where the
@@ -495,7 +509,7 @@ class Mailroom private constructor(
         }
     }
 
-    /** What the judgement requested, in its order: a declared emit is carried after this judgement's lines. */
+    /** What the judgement requested, in its order: a declared emit is carried after the lines being written, in the same judgement. */
     private fun effects(decision: Decision, cause: String, now: String) = decision.effects.forEach { effect ->
         when (effect) {
             is Requested.Emit -> emit(effect, declaredBy(effect), cause)
@@ -550,7 +564,7 @@ class Mailroom private constructor(
             put(POINTERS, texts(listOf("mail:$cause")))
             put(ARGS, fields(effect.args))
         }
-        queue += { arrive(Author(MAILROOM, by, false), input) }
+        carrying += { arrive(Author(MAILROOM, by, false), input) }
     }
 
     /**
@@ -569,11 +583,11 @@ class Mailroom private constructor(
 
     // ---- operations (contracts.md §7)
 
-    /** Writes the request, and performs it only once that line is on disk — after the judgement's own lines. */
+    /** Writes the request, and performs it only once its judgement is on disk — closed by its `judged` line. */
     private fun request(operation: String, cause: String, with: Datum.Fields, now: String) {
         write(line(now, EVENT to text("op"), OP to text(operation), PHASE to text(REQUESTED), CAUSE to text(cause),
             WITH to with.takeIf { it.fields.isNotEmpty() }?.element()))
-        queue += { perform(OperationRequest(operation, cause, with)) }
+        world += { perform(OperationRequest(operation, cause, with)) }
     }
 
     /** Hands the request to the performer once; a result it gives twice is taken once. */
@@ -582,11 +596,11 @@ class Mailroom private constructor(
         operations.perform(request) { result -> if (answered.compareAndSet(false, true)) finished(request, result) }
     }
 
-    /** A result — now, from inside [perform], or later, from the performer's own thread — joins the queue. */
+    /** A result — now, from inside [perform], or later, from the performer's own thread — arrives: it is judged in its turn. */
     @Synchronized
     private fun finished(request: OperationRequest, result: OperationResult) {
         if (closed) return
-        queue += { complete(request, result) }
+        arrivals += { complete(request, result) }
         drain()
     }
 
@@ -616,7 +630,7 @@ class Mailroom private constructor(
      * another firing of its kind.
      */
     private fun interrupted() = folded.operations.forEach { flight ->
-        complete(OperationRequest(flight.op, flight.cause, flight.with), OperationResult.Failed(INTERRUPTED))
+        judged { complete(OperationRequest(flight.op, flight.cause, flight.with), OperationResult.Failed(INTERRUPTED)) }
     }
 
     /** `seat.start` and `seat.reseat` are `ok(seat)` (contracts.md §4.4, Amendment 13): the result names the seat, the one it was asked for when the performer did not. */
@@ -626,17 +640,46 @@ class Mailroom private constructor(
     }
 
     /**
-     * Carries what the queue holds, in order, until it is empty; what a step adds runs after it. Once it is empty, what
-     * the robots keep that is let go now joins it.
+     * One judgement (contracts.md §3, Amendment 23): [arrival] writes its first line and what it decides; then what it
+     * carries — the messages the rules and the robots send in answer, each judged in turn, and what the robots let go —
+     * until nothing is left; then the `judged` line, and the lines reach the disk together. An arrival that writes
+     * nothing makes no judgement.
+     */
+    private fun <T> judged(arrival: () -> T): T {
+        check(!judging) { "a judgement is being written" }
+        judging = true
+        try {
+            val result = arrival()
+            if (judgement != null) {
+                while (true) {
+                    if (carrying.isEmpty()) letGo()
+                    if (carrying.isEmpty()) break
+                    carrying.removeFirst()()
+                }
+                val judged = judgement!!.close(now())
+                judgement = null
+                take(listOf(judged))
+            }
+            return result
+        } finally {
+            judging = false
+        }
+    }
+
+    /**
+     * Turns to the world once the judgements are on disk: performs what they requested and wakes whom they woke, in
+     * order; then judges each result that arrived, a judgement of its own; until nothing is left.
      */
     private fun drain() {
         if (draining) return
         draining = true
         try {
             while (!closed) {
-                if (queue.isEmpty()) letGo()
-                if (queue.isEmpty()) break
-                queue.removeFirst()()
+                when {
+                    world.isNotEmpty() -> world.removeFirst()()
+                    arrivals.isNotEmpty() -> judged(arrivals.removeFirst())
+                    else -> break
+                }
             }
         } finally {
             draining = false
@@ -697,14 +740,16 @@ class Mailroom private constructor(
     // ---- the log
 
     /**
-     * Appends one line, synced, to the file of the stage it is about — a message to its own — or to the office's file
-     * when it is about no stage, or its stage's file is closed (contracts.md §3: the writer's to place); then folds it.
-     * Closing a file takes nothing out of the state. Nothing is acted on before this returns.
+     * Adds one line to the judgement being written — for the file of the stage it is about, a message to its own, or
+     * the office's file when it is about no stage, or its stage's file is closed (contracts.md §3: the writer's to
+     * place); then folds it. Closing a file takes nothing out of the state. The line reaches the disk with its
+     * judgement's `judged` line, and nothing is acted on before.
      */
     private fun write(draft: JsonObject): Envelope {
+        check(judging) { "a line is written in a judgement" }
         val expected = writer.last + 1
         val stage = if (draft[KIND] != null) null else about(draft)?.let(::StageId)
-        val written = writer.append(draft, stage)
+        val written = (judgement ?: writer.judgement().also { judgement = it }).add(draft, stage)
         check(written.seq.longValueExact() == expected) { "the log gave seq ${written.seq}, not $expected" }
         take(listOf(written))
         return written
@@ -758,7 +803,7 @@ class Mailroom private constructor(
                 return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce, robots).apply {
                     synchronized(this) {
                         take(read.lines.map { it.entry })
-                        recordRules()
+                        judged { recordRules() }
                         interrupted()
                         drain()
                     }

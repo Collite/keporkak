@@ -5,6 +5,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import kp.model.Refused
+import kp.model.Judged
 import kp.model.Rules
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -82,7 +83,7 @@ class RulesInForceSpec : StringSpec({
 
         reloadedWhileJudging shouldBe null
         answer!!.status shouldBe Status.DELIVERED
-        office.readBack().lines.last()::class.simpleName shouldBe "Rules"
+        office.readBack().lines.last { it !is Judged }::class.simpleName shouldBe "Rules"
         office.send("teamlead", twoLines).requirement shouldBe "caps.body_lines: 1"
         office.readBack().records<Refused>().size shouldBe 1
         office.readBack().records<Rules>().size shouldBe 3 // two starts and the reload

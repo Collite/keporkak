@@ -3,7 +3,6 @@ package kp.mailroom
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kp.engine.Datum
-import kp.model.Rules
 import kp.model.Op
 import kotlin.concurrent.thread
 
@@ -18,14 +17,15 @@ class OperationsSpec : StringSpec({
         val onDisk = ArrayList<List<String>>()
         office.stop()
         office.mailroom = Mailroom.start(office.project, panda, office.texts, office.facts, { request, done ->
-            onDisk += office.readBack().lines.filter { it.seq.toLong() > 3 && it !is Rules }.map { (it as? Op)?.let { op -> "${op.op} ${op.phase}" } ?: it::class.simpleName!! }
+            onDisk += office.readBack().lines.dropWhile { it !is kp.model.Message }.map { (it as? Op)?.let { op -> "${op.op} ${op.phase}" } ?: it::class.simpleName!! }
             done(OperationResult.Ok())
         }, office.seats, office.clock)
 
         office.bora(APPROVAL)
 
-        // Bora's own approval waits for no one: no notify.bora (S1.8, contracts.md §2.2).
-        onDisk.first() shouldBe listOf("Message", "Delivered", "Transition", "worktree.create requested", "Read")
+        // Bora's own approval waits for no one: no notify.bora (S1.8, contracts.md §2.2). The judgement is closed — and
+        // only then are its operation performed and its addressee woken, in the order it asked for them (S1.10).
+        onDisk.first() shouldBe listOf("Message", "Delivered", "Transition", "worktree.create requested", "Judged")
     }
 
     "a failed result is recorded with its reason and judged: nothing fires for worktree.create failed, and the stage stays assigned" {

@@ -71,7 +71,7 @@ class BeforeTheHeroesSpec : FreeSpec({
 
     "a refusal of Bora's own message, or of a robot's, pauses no one" {
         Rehearsed("h1-prime", root = deputyWhoSendsTwoDigests()).use { office ->
-            repeat(3) { office.kp("decline", "5") } // unsigned: refused, three times in a day
+            repeat(3) { office.kp("decline", "7") } // unsigned: refused, three times in a day
             repeat(3) {
                 office.kp("away", root = true)
                 office.clock.pass(Duration.ofHours(1))

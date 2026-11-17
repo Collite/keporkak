@@ -15,18 +15,18 @@ class AnsweringSpec : FreeSpec({
             office.send("teamlead", proposal("KP/P2/S2.2"))
             office.send("principal", """{"kind": "ruling-request", "stage": "KP/P2/S2.1", "subject": "which stage", "args": {"default": "cut it", "citation": "contracts.md §4.5"}}""")
 
-            office.kp("approve", "3", peer = ROOT)
-            office.kp("decline", "#8", "not", "now", peer = ROOT)
-            office.kp("rule", "13", "stage", "cut", "the", "owning", "stage", peer = ROOT)
-            office.kp("reverse", "m-panda-000002", "minor", peer = ROOT)
+            office.kp("approve", "4", peer = ROOT)
+            office.kp("decline", "#11", "not", "now", peer = ROOT)
+            office.kp("rule", "18", "stage", "cut", "the", "owning", "stage", peer = ROOT)
+            office.kp("reverse", "m-panda-000003", "minor", peer = ROOT)
             office.kp("queue", "KP/P2/S2.3", "KP/P2/S2.4", peer = ROOT)
             office.kp("away")
 
             office.messages().filter { it.by == "bora-cli" }.map { listOf(it.kind, it.re?.value, it.stage?.value, it.signed, it.args?.toString(), it.body) } shouldBe listOf(
-                listOf("approval", "m-panda-000002", "KP/P2/S2.1", true, null, null),
-                listOf("decline", "m-panda-000007", "KP/P2/S2.2", true, null, "not now"),
-                listOf("ruling", "m-panda-000012", "KP/P2/S2.1", true, """{"outcome":"stage"}""", "cut the owning stage"),
-                listOf("reverse", "m-panda-000002", "KP/P2/S2.1", true, """{"digest_item":"m-panda-000002","severity":"minor"}""", null),
+                listOf("approval", "m-panda-000003", "KP/P2/S2.1", true, null, null),
+                listOf("decline", "m-panda-000010", "KP/P2/S2.2", true, null, "not now"),
+                listOf("ruling", "m-panda-000017", "KP/P2/S2.1", true, """{"outcome":"stage"}""", "cut the owning stage"),
+                listOf("reverse", "m-panda-000003", "KP/P2/S2.1", true, """{"digest_item":"m-panda-000003","severity":"minor"}""", null),
                 listOf("queue-approval", null, null, true, """{"stages":["KP/P2/S2.3","KP/P2/S2.4"]}""", null),
                 listOf("away", null, null, false, null, null),
             )
@@ -37,9 +37,9 @@ class AnsweringSpec : FreeSpec({
         TestOffice().use { office ->
             office.send("teamlead", proposal())
 
-            val unsigned = office.kp("approve", "3")
+            val unsigned = office.kp("approve", "4")
 
-            unsigned shouldBe Ran(1, "refused m-panda-000007 — approval: signed by Bora's CLI\n   (unsigned: Bora's answers count only under sudo — sudo kp …)\n")
+            unsigned shouldBe Ran(1, "refused m-panda-000010 — approval: signed by Bora's CLI\n   (unsigned: Bora's answers count only under sudo — sudo kp …)\n")
             office.office.state.stage("KP/P2/S2.1") shouldBe "proposed"
         }
     }

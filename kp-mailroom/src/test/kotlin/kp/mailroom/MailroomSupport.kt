@@ -258,13 +258,16 @@ class Office(
     init {
         opened += this
         facts.set(this.walk.facts)
+        // What an earlier, unseen part of the log left: one judgement, closed (contracts.md §3).
         LogWriter.open(project, panda).use { log ->
-            fun line(text: String) = log.append(json("""{"v":1,"at":"$at",""" + text.removePrefix("{")))
+            val judgement = log.judgement()
+            fun line(text: String) = judgement.add(json("""{"v":1,"at":"$at",""" + text.removePrefix("{")))
             seed?.let { line("""{"event":"transition","machine":"stage","subject":"$STAGE","from":"planned","to":"$it","cause":"$SEEDED","counted":$counters}""") }
             others.forEach { (stage, state) ->
                 line("""{"event":"transition","machine":"stage","subject":"$stage","from":"planned","to":"$state","cause":"$SEEDED","counted":${otherCounters[stage] ?: "{}"}}""")
             }
             seats.forEach { line("""{"event":"transition","machine":"seat","subject":"$it","from":"provisioned","to":"${seatStates[it] ?: "ready"}","cause":"$SEEDED"}""") }
+            if (log.last > 0) judgement.close(at)
         }
         start()
     }

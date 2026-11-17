@@ -114,12 +114,15 @@ class SeatOffice(seed: String = "assigned", rules: RuleTexts = MasterRules()) : 
     val api: SeatApi
 
     init {
+        // What an earlier part of the log left: one judgement, closed (contracts.md §3).
         LogWriter.open(project, panda).use { log ->
-            fun line(text: String) = log.append(json("""{"v":1,"at":"$START",""" + text.removePrefix("{")))
+            val judgement = log.judgement()
+            fun line(text: String) = judgement.add(json("""{"v":1,"at":"$START",""" + text.removePrefix("{")))
             line("""{"event":"transition","machine":"stage","subject":"$STAGE","from":"planned","to":"$seed","cause":"$SEEDED"}""")
             listOf("coder-1", "teamlead", "reviewer-1").forEach {
                 line("""{"event":"transition","machine":"seat","subject":"$it","from":"provisioned","to":"ready","cause":"$SEEDED"}""")
             }
+            judgement.close(START)
         }
         mailroom = Mailroom.start(project, panda, rules, SpecFacts(), SpecOperations(), BusySeats(), FixedClock())
         api = SeatApi.start(mailroom, tokens, "127.0.0.1:0")
