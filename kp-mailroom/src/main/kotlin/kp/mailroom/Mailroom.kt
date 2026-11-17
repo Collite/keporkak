@@ -115,6 +115,25 @@ class Mailroom private constructor(
     fun submit(sender: Sender, input: JsonObject): Answer = arrive(sender.author(), input).also { drain() }
 
     /**
+     * Bora ran a command (contracts.md §6) — [signed] when it came over a root peer. Only a signed command counts as
+     * acting (`bora.acted`); an unsigned one leaves presence where it was. A message Bora submits is such a command.
+     */
+    @Synchronized
+    fun command(signed: Boolean) {
+        // T4
+    }
+
+    /**
+     * The world reports that [fact] changed (contracts.md §4.1 `on: fact`, §8): [value] is its value now, [stage] the
+     * stage it concerns, when one. What it triggers — a transition, a robot's rule — is judged; when it triggers
+     * anything, a `fact` record says so first (§2.2).
+     */
+    @Synchronized
+    fun changed(fact: FactRef, value: Datum, stage: String? = null, evidence: String? = null) {
+        // T3
+    }
+
+    /**
      * A seat's inbox (contracts.md §5): its unread messages — or, with [unread] false, every message delivered to it —
      * oldest first, at most [limit]. Returning a message marks it read for the seat: a `read` record names those it had
      * not read.
@@ -441,7 +460,10 @@ class Mailroom private constructor(
 
     companion object {
         /** Opens the log, folds it, puts the rules in force and records what start-up records (contracts.md §2.2, §4.4). */
-        fun start(project: Path, office: OfficeId, rules: RuleTexts, facts: FactSource, operations: Operations, deliveries: Deliveries, clock: Clock): Mailroom {
+        fun start(
+            project: Path, office: OfficeId, rules: RuleTexts, facts: FactSource, operations: Operations, deliveries: Deliveries, clock: Clock,
+            robots: Boolean = false,
+        ): Mailroom {
             val writer = LogWriter.open(project, office)
             try {
                 val read = LogReader(project, office).read()
