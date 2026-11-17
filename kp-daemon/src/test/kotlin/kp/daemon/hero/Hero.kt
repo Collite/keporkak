@@ -38,9 +38,8 @@ class SetClock(@Volatile var now: Instant) : Clock {
  * spec's own thread. Bora's steps are the real `scripts/kp` over the socket, `sudo` simulated ([AtTheSocket]); the clock
  * is injected and moves only when the spec sets it ([at]). The rules are the checkout's, or those under [root].
  */
-class Hero(walk: String, startsAt: String = "2026-11-17T09:00:00Z", root: Path = checkout, prepared: Path? = null, amend: (Walk) -> Walk = { it }) : AutoCloseable {
-    /** The throwaway project — or [prepared], a project whose log is already written: the daemon starts on it again, nothing seeded. */
-    val project: Path = prepared ?: Files.createTempDirectory(checkout.resolve("build").createDirectories(), "hero-")
+class Hero(walk: String, startsAt: String = "2026-11-17T09:00:00Z", root: Path = checkout, amend: (Walk) -> Walk = { it }) : AutoCloseable {
+    val project: Path = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "hero-")
     private val sockets: Path = Files.createTempDirectory("kp-")
     private val socket: Path = sockets.resolve("kp.sock")
     private val peers = SimulatedPeers()
@@ -52,7 +51,7 @@ class Hero(walk: String, startsAt: String = "2026-11-17T09:00:00Z", root: Path =
     val player: Player
 
     init {
-        if (prepared == null) script.seed(project, OFFICE, clock)
+        script.seed(project, OFFICE, clock)
         daemon = Daemon.start(Office.start(OFFICE, project, root, script.facts, script.operations, script.seats, clock), script.facts, socket, peers)
         player = script.player(office, AtTheSocket()) { said += it }
     }

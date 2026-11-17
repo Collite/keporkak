@@ -11,7 +11,8 @@ import io.kotest.matchers.shouldBe
  * scripted from a walk of `rules/walks/` and the facts from its table; Bora answers with the real `kp` (`sudo`
  * simulated), and the clock is injected. Each step below plays the walk's steps it names and reads what the log then
  * tells: one line per message — sender→addressees, what became of it — with the moves and operations it caused.
- * Where a walk and its scenario differ, the walk is played and the step says so (Found lines of S1.6).
+ * Where a walk and its scenario differ, the walk is played and the step says so (Found lines of S1.6). The restart —
+ * a daemon killed at any step of H-1′ and started again — is S1.10's (D-75).
  */
 class HeroesSpec : FreeSpec({
     "H-1′ runs from the proposal to the exit, with its stop and resume, its fix round, and the coder's seat dying and coming back" - {
@@ -268,12 +269,5 @@ class HeroesSpec : FreeSpec({
         // but for retire's moves of a seat that is not idle: the kind requires `seat.state eq idle` of the very seat they move.
         sweep.uncontrolled shouldBe listOf("SEAT-08", "SEAT-09", "SEAT-10", "SEAT-12", "SEAT-13")
         sweep.removalSurvivors.shouldBeEmpty()
-    }
-
-    "a daemon killed at any step of H-1′ and started again finishes in the same state" {
-        val restarts = Restarts.afterEveryLineOf("h1-prime").also(HeroReport::restarts)
-
-        restarts.cuts shouldBe restarts.linesOfTheWalk
-        restarts.endingElsewhere.shouldBeEmpty()
     }
 })

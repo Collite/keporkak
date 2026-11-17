@@ -192,24 +192,6 @@ class Player internal constructor(private val script: Script, val office: Office
         }
     }
 
-    /**
-     * Takes up a walk another player began on the same log — a daemon started again on what it had written: the steps
-     * before [index] are done; what they named by their ids is [ids], the robots' and the mailroom's messages they found
-     * are [found], and the walk is at the stage [at].
-     */
-    fun resume(index: Int, ids: Map<String, String>, found: Set<String>, at: String) {
-        require(next == 0) { "a player resumes only before it has played" }
-        next = index
-        this.ids += ids
-        this.found += found
-        stage = at
-        script.facts.current = at
-        walk.steps.take(index).forEach { step -> script.facts.table(step.text(STAGE) ?: stage).set(step.facts) }
-    }
-
-    /** The messages robot and mailroom steps found so far. */
-    val foundSoFar: Set<String> get() = found.toSet()
-
     /** Plays the steps up to and including the one whose id is [id]. */
     fun through(id: String): List<Played> {
         require(walk.steps.drop(next).any { it.id == id }) { "no step $id is left to play in ${walk.name}" }
