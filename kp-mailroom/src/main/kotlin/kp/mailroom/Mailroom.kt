@@ -661,15 +661,21 @@ class Mailroom private constructor(
      * a `voided` record, from its first line to the last on disk: its other lines count for nothing. Its first line
      * stands and is carried again as if it had just arrived — a message, an operation's result, an expiry, a fact — in
      * the judgement the `voided` record opens. A first line that was lost, or one that is no arrival (a `rules` or
-     * `read` record, a request), has nothing more to carry.
+     * `read` record, a request), has nothing more to carry. Returns the operations in flight once the `voided` record
+     * is written — a standing request among them, a request a standing result ended not — before the judgement it
+     * opens requests any: those the start records `failed`, `interrupted` (contracts.md §7).
      */
-    private fun unfinished(lines: List<LogLine>, first: Long) {
-        if (folded.opened == null) return
+    private fun unfinished(lines: List<LogLine>, first: Long): List<InFlight> {
+        if (folded.opened == null) return folded.operations
         val standing = folded.unjudged.firstOrNull()?.takeIf { folded.opened == first }
         val voided = line(now(), EVENT to text("voided"), FIRST to JsonPrimitive(first), LAST to JsonPrimitive(writer.last))
         // The `voided` record goes to its first line's file, and so does the `judged` that closes the judgement it opens.
         val stage = standing?.let { line -> lines.firstOrNull { it.entry === line }?.stage }
-        val stand: (JsonObject) -> Unit = { write(voided, stage) }
+        var flights = emptyList<InFlight>()
+        val stand: (JsonObject) -> Unit = {
+            write(voided, stage)
+            flights = folded.operations
+        }
         judged {
             when (standing) {
                 is Message -> arrived(standing, now()) { stand(it) }
@@ -688,6 +694,7 @@ class Mailroom private constructor(
                 else -> stand(voided)
             }
         }
+        return flights
     }
 
     /**
@@ -884,8 +891,7 @@ class Mailroom private constructor(
                         val first = entries.filterIsInstance<Voided>().lastOrNull { it.seq.longValueExact() > lastJudged }?.seq?.longValueExact() ?: (lastJudged + 1)
                         val voided = entries.filterIsInstance<Voided>().map { (it.first + 1)..it.last } + listOf((first + 1)..writer.last)
                         take(entries, asWritten = false) { line -> voided.none { line.seq.longValueExact() in it } }
-                        val flights = folded.operations
-                        unfinished(read.lines, first)
+                        val flights = unfinished(read.lines, first)
                         judged { recordRules() }
                         interrupted(flights.filter { flight -> folded.operations.any { it === flight } })
                         drain()

@@ -90,6 +90,19 @@ class AStartCarriesAgainSpec : StringSpec({
         office.end() shouldBe uninterrupted
     }
 
+    "a request whose judgement was stopped before its judged line stands, and the start records it failed, interrupted" {
+        val office = Office()
+        office.stopWriterAfter { it is kp.model.Op }
+        office.texts.edit("rules/vocabulary.yaml", "facts:", "facts: [")
+        shouldThrow<WriterStopped> { office.mailroom.reload() } // the refused reload's notify.bora: requested, its judged line never written
+        office.texts.edit("rules/vocabulary.yaml", "facts: [", "facts:")
+
+        office.restart()
+
+        office.readBack().ops("rules") shouldBe listOf("notify.bora requested", "notify.bora failed interrupted")
+        office.operations.requested shouldBe emptyList()
+    }
+
     "a fact about a stage is written to that stage's file: a start that carries it again reads its stage there" {
         val office = Office(seed = "building", robots = true)
 
