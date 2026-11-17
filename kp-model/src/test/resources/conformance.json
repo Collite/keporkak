@@ -5138,5 +5138,171 @@
       "until": "presence",
       "deadline": 3
     }
+  },
+  {
+    "name": "judged minimal",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 9,
+      "at": "2026-11-17T12:00:01Z",
+      "event": "judged",
+      "first": 5
+    }
+  },
+  {
+    "name": "judged closing itself",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 9,
+      "at": "2026-11-17T12:00:01Z",
+      "event": "judged",
+      "first": 9
+    }
+  },
+  {
+    "name": "judged extension retained",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 9,
+      "at": "2026-11-17T12:00:01Z",
+      "event": "judged",
+      "first": 5,
+      "extension": {
+        "nested": [
+          1,
+          null,
+          false
+        ]
+      }
+    }
+  },
+  {
+    "name": "judged missing first",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 9,
+      "at": "2026-11-17T12:00:01Z",
+      "event": "judged"
+    }
+  },
+  {
+    "name": "judged first zero",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 9,
+      "at": "2026-11-17T12:00:01Z",
+      "event": "judged",
+      "first": 0
+    }
+  },
+  {
+    "name": "judged first not an integer",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 9,
+      "at": "2026-11-17T12:00:01Z",
+      "event": "judged",
+      "first": "5"
+    }
+  },
+  {
+    "name": "judged first fractional",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 9,
+      "at": "2026-11-17T12:00:01Z",
+      "event": "judged",
+      "first": 5.5
+    }
+  },
+  {
+    "name": "voided minimal",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 9,
+      "at": "2026-11-17T12:00:01Z",
+      "event": "voided",
+      "first": 5,
+      "last": 8
+    }
+  },
+  {
+    "name": "voided of one line",
+    "schema": "record",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 9,
+      "at": "2026-11-17T12:00:01Z",
+      "event": "voided",
+      "first": 8,
+      "last": 8
+    }
+  },
+  {
+    "name": "voided missing first",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 9,
+      "at": "2026-11-17T12:00:01Z",
+      "event": "voided",
+      "last": 8
+    }
+  },
+  {
+    "name": "voided missing last",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 9,
+      "at": "2026-11-17T12:00:01Z",
+      "event": "voided",
+      "first": 5
+    }
+  },
+  {
+    "name": "voided last zero",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 9,
+      "at": "2026-11-17T12:00:01Z",
+      "event": "voided",
+      "first": 5,
+      "last": 0
+    }
+  },
+  {
+    "name": "voided first null",
+    "schema": "record",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 9,
+      "at": "2026-11-17T12:00:01Z",
+      "event": "voided",
+      "first": null,
+      "last": 8
+    }
   }
 ]

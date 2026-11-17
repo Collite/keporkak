@@ -12,6 +12,8 @@ import kotlin.io.path.writeText
 private val panda = OfficeId("panda")
 private fun fact(seq: Int, at: String) = """{"v":1,"seq":$seq,"at":"$at","event":"fact","fact":"bora.present","subject":"bora","value":true}"""
 private fun exited(seq: Int, at: String) = """{"v":1,"seq":$seq,"at":"$at","event":"transition","machine":"stage","subject":"KP/P0/S0.3","from":"merged","to":"exited","cause":"m-panda-000001"}"""
+private fun judged(seq: Int, first: Int, at: String) = """{"v":1,"seq":$seq,"at":"$at","event":"judged","first":$first}"""
+private fun voided(seq: Int, first: Int, last: Int, at: String) = """{"v":1,"seq":$seq,"at":"$at","event":"voided","first":$first,"last":$last}"""
 private fun Path.file(name: String, vararg lines: String): Path =
     resolve(name).also { it.parent.createDirectories(); it.writeText(lines.joinToString("") { line -> line + "\n" }) }
 private fun LogRead.seqs() = lines.map { it.entry.seq.toInt() }
@@ -43,21 +45,36 @@ class LogReaderSpec : StringSpec({
     }
     "a line that is not a message or record is reported with its path and line, and the lines around it are read" {
         val project = throwawayProject()
-        val file = project.file("mail/KP/p1-s1.1.jsonl", fact(1, "2026-11-01T10:00:00Z"), """{"v":1,"seq":2,"at":"2026-11-01T10:00:01Z","event":"nonsense"}""", "{broken", fact(4, "2026-11-01T10:00:03Z"))
+        val file = project.file("mail/KP/p1-s1.1.jsonl", fact(1, "2026-11-01T10:00:00Z"), """{"v":1,"seq":2,"at":"2026-11-01T10:00:01Z","event":"nonsense"}""", "{broken",
+            fact(4, "2026-11-01T10:00:03Z"), judged(5, 4, "2026-11-01T10:00:03Z"))
 
         val read = LogReader(project, panda).read()
 
-        read.seqs() shouldBe listOf(1, 4)
+        read.seqs() shouldBe listOf(1, 4, 5)
         read.problems.filterIsInstance<Unparseable>().map { it.line } shouldBe listOf(2, 3)
         read.texts().last() shouldBe "seq jumps from 1 to 4"
         read.texts().first().startsWith("$file:2: not a message or record") shouldBe true
     }
     "a gap in seq that no file accounts for is reported" {
         val project = throwawayProject()
-        project.file("mail/KP/p1-s1.1.jsonl", fact(1, "2026-11-01T10:00:00Z"), fact(4, "2026-11-01T10:00:03Z"))
+        project.file("mail/KP/p1-s1.1.jsonl", fact(1, "2026-11-01T10:00:00Z"), fact(4, "2026-11-01T10:00:03Z"), judged(5, 4, "2026-11-01T10:00:03Z"))
         project.file("mail/_office/panda-2026-11.jsonl", fact(2, "2026-11-01T10:00:01Z"))
 
         LogReader(project, panda).read().texts() shouldBe listOf("seq jumps from 2 to 4")
+    }
+    "a gap in seq inside the unfinished judgement at the end of the log is no problem: its lost lines were never judged" {
+        val project = throwawayProject()
+        project.file("mail/KP/p1-s1.1.jsonl", fact(1, "2026-11-01T10:00:00Z"), judged(2, 1, "2026-11-01T10:00:00Z"), fact(3, "2026-11-01T10:00:01Z"), fact(6, "2026-11-01T10:00:01Z"))
+
+        LogReader(project, panda).read().texts() shouldBe emptyList()
+    }
+    "a gap in seq inside a judgement a voided record names is no problem; one outside it, before the last judged line, is" {
+        val project = throwawayProject()
+        project.file("mail/KP/p1-s1.1.jsonl", fact(1, "2026-11-01T10:00:00Z"), judged(2, 1, "2026-11-01T10:00:00Z"), fact(3, "2026-11-01T10:00:01Z"),
+            fact(5, "2026-11-01T10:00:01Z"), voided(6, 3, 5, "2026-11-01T10:00:02Z"), judged(7, 6, "2026-11-01T10:00:02Z"),
+            fact(9, "2026-11-01T10:00:03Z"), judged(10, 9, "2026-11-01T10:00:03Z"))
+
+        LogReader(project, panda).read().texts() shouldBe listOf("seq jumps from 7 to 9")
     }
     "a repeated seq is reported where it is used again" {
         val project = throwawayProject()

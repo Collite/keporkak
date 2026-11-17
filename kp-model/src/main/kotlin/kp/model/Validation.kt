@@ -63,7 +63,9 @@ private val recordShapes = mapOf(
     "fact" to shape("fact subject value", "fact" to text, "subject" to text, "value" to { true }, "evidence" to text),
     "op" to shape("op phase cause", "op" to text, "phase" to choice("requested", "ok", "failed"), "cause" to text, "with" to objectValue, "result" to objectValue, "reason" to text, "attempt" to integer(1)),
     "rules" to shape("hash files", "hash" to text, "files" to dictionary(text)),
-    "read" to shape("seat ids", "seat" to text, "ids" to array(text, minItems = 1))
+    "read" to shape("seat ids", "seat" to text, "ids" to array(text, minItems = 1)),
+    "judged" to shape("first", "first" to integer(1)),
+    "voided" to shape("first last", "first" to integer(1), "last" to integer(1))
 )
 internal fun validateRecord(value: JsonObject) {
     val event = value["event"]
