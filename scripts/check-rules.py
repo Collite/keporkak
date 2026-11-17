@@ -734,9 +734,11 @@ class Walk:
         if name=="bora.present":return self.state("presence")=="present"
         if name=="thread.state":return self.state("flag_thread")
         if name=="thread.open":return self.state("flag_thread") in ("asked","held")
+        # The last signed delivery that carries `stages` (contracts.md §4.4, Amendment 12): the wave was checked when it
+        # was delivered and is not checked again.
         if name=="queue.names":
-            queues=[record for record in self.history if record.get("kind")=="queue-approval" and record.get("signed")=="bora" and record.get("status")=="delivered"]
-            return bool(queues) and self.stage in queues[-1]["args"]["stages"] and self.fact({"fact":"plan.in_current_wave"}) is True
+            queues=[record for record in self.history if record.get("signed")=="bora" and record.get("status")=="delivered" and isinstance(record.get("args",{}).get("stages"),list)]
+            return bool(queues) and self.stage in queues[-1]["args"]["stages"]
         if name=="log.count":
             kind=params.get("kind");scope=params.get("scope","stage");records=list(self.history)
             if scope=="stage":records=[record for record in records if record.get("stage")==self.stage]

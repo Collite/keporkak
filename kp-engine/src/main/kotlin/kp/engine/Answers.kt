@@ -38,9 +38,12 @@ internal class Answers(private val evaluation: Evaluation) {
 
     private fun now(): String? = (evaluation.fact(FactCall(NOW, emptyMap())) as? Datum.Text)?.value
 
-    /** In a signed queue: the last message Bora's command line delivered that names stages names this one. */
+    /**
+     * In a signed queue (contracts.md §4.4, Amendment 12): the last signed delivery that carries `stages` names this
+     * one. The wave was checked when that message was delivered; it is not checked again.
+     */
     private fun queued(stage: String): Datum? {
-        val queue = state.delivered.values.lastOrNull { it.by == BORA_CLI && it.args.fields[STAGES] is Datum.Items } ?: return Datum.Bool(false)
+        val queue = state.delivered.values.lastOrNull { it.signed && it.args.fields[STAGES] is Datum.Items } ?: return Datum.Bool(false)
         return Datum.Bool(Datum.Text(stage) in (queue.args.fields.getValue(STAGES) as Datum.Items).items)
     }
 
@@ -105,7 +108,6 @@ internal fun machineRead(fact: String): String? = when (fact) {
 
 internal const val NOW = "now"
 internal const val BORA = "bora"
-internal const val BORA_CLI = "bora-cli"
 internal const val PRESENT = "present"
 private const val STAGES = "stages"
 private const val BLOCKERS = "blockers"
