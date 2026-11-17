@@ -1,0 +1,72 @@
+#!/usr/bin/python3 -I
+"""kp — Bora's command line (contracts.md §6, D-27 j, D-43). A thin client: all logic is in the daemon.
+
+It sends one JSON line {v, cmd, args, tty} to the office daemon's control socket and prints the `text` of each answer
+line until {done, code}; it exits with that code. `kp inbox --follow` is the same exchange, left open: the daemon keeps
+writing lines until kp is interrupted. The only thing kp does to a command is make the paths `kp check` names absolute,
+since the daemon cannot see kp's working folder.
+
+A state-changing command is signed by running it under sudo: the daemon reads from the socket itself that its peer is
+root (contracts.md §6). Installed root-owned at /usr/local/bin/kp; it runs the system's Python in isolated mode and
+imports nothing outside the standard library.
+
+The socket: $KP_SOCKET, else <the office user's runtime folder>/keporkak/kp.sock — the runtime folder is
+$XDG_RUNTIME_DIR, or /run/user/<uid>; under sudo the uid is the caller's ($SUDO_UID), not root's.
+Exit codes: the daemon's (0 done · 1 refused or not found · 2 not a command · 3 the daemon failed); 4 when no daemon
+answers or the connection ends without a code; 130 on Ctrl-C.
+"""
+import json
+import os
+import socket
+import sys
+
+NO_DAEMON = 4
+
+
+def socket_path():
+    if os.environ.get("KP_SOCKET"):
+        return os.environ["KP_SOCKET"]
+    uid = os.getuid()
+    if uid == 0 and os.environ.get("SUDO_UID", "").isdigit():
+        uid = int(os.environ["SUDO_UID"])
+    runtime = os.environ.get("XDG_RUNTIME_DIR") if uid == os.getuid() else None
+    return os.path.join(runtime or f"/run/user/{uid}", "keporkak", "kp.sock")
+
+
+def request(argv):
+    cmd, args = (argv[0], argv[1:]) if argv else ("help", [])
+    if cmd == "check":
+        args = [arg if arg.startswith("-") else os.path.abspath(arg) for arg in args]
+    return {"v": 1, "cmd": cmd, "args": args, "tty": sys.stdout.isatty()}
+
+
+def main(argv):
+    path = socket_path()
+    try:
+        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        connection.connect(path)
+    except OSError as error:
+        print(f"kp: no daemon answers at {path} ({error.strerror or error}) — start it with `just run`, or rehearse a walk with `just rehearse <walk>`", file=sys.stderr)
+        return NO_DAEMON
+    with connection:
+        connection.sendall((json.dumps(request(argv)) + "\n").encode())
+        with connection.makefile("r", encoding="utf-8") as answer:
+            for line in answer:
+                message = json.loads(line)
+                if "text" in message:
+                    print(message["text"], flush=True)
+                if message.get("done"):
+                    return int(message.get("code", 0))
+    print("kp: the daemon closed the connection without an answer", file=sys.stderr)
+    return NO_DAEMON
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except BrokenPipeError:
+        # The reader went away (`kp inbox | head`): say nothing more, not even at exit.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(0)

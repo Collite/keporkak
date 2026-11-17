@@ -41,6 +41,28 @@ record *args: _python-env
 office-check *args: _python-env
     build/python/bin/python scripts/office-check.py "$@"
 
+# The office daemon (S1.5; architecture.md §4, §7). `just install` builds it, installs it and its systemd user unit for
+# the office user, and prints the one step that is Bora's, with sudo — it runs none (office/README.md).
+install: _python-env
+    build/python/bin/python scripts/install.py
+
+# The daemon as the systemd user service: start, stop, and follow its journal.
+run:
+    systemctl --user start keporkak.service
+
+stop:
+    systemctl --user stop keporkak.service
+
+logs:
+    journalctl --user --unit keporkak.service --lines 100 --follow
+
+# The daemon on a throwaway project under build/rehearsal/: the seats scripted and the facts tabled from
+# rules/walks/<walk>.yaml, pausing where the walk needs Bora — who answers with the real `kp` (`sudo kp approve <ticket>`).
+# It listens on the office's socket: stop the service first (`just stop`). Ctrl-C ends it.
+rehearse walk:
+    ./gradlew --console=plain -q :kp-daemon:installDist
+    kp-daemon/build/install/kp-daemon/bin/kp-daemon rehearse "rules/walks/$1.yaml" --root "$PWD"
+
 # Install the Claude adapter the roster pins, from office/adapter/package-lock.json and nothing else (contracts.md §9).
 adapter:
     cd office/adapter && npm ci --ignore-scripts --no-audit --no-fund

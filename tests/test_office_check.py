@@ -1,15 +1,44 @@
 """The office check's other paths, on the same fake machine as the S0.3 specs — for the next developer."""
 import importlib.util
+import os
 from pathlib import Path
+import stat as stat_module
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location("office_specs", Path(__file__).with_name("test_s0_3_the_office.py"))
 _specs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_specs)
 FakeMachine, USER, ADAPTER, PIN, SIDE_CHANNELS = _specs.FakeMachine, _specs.USER, _specs.ADAPTER, _specs.PIN, _specs.SIDE_CHANNELS
+
+
+_check = importlib.util.spec_from_file_location("office_check", ROOT / "scripts/office-check.py")
+office_check = importlib.util.module_from_spec(_check)
+_check.loader.exec_module(office_check)
+TEMPLATE = ROOT / "office/sudoers.d/zz-keporkak-kp"
+
+
+def installed(folder):
+    """The drop-in as Bora installs it: the template's bytes; its owner and mode are root's, which only root can make
+    them — the check reads them through os.stat, so they are given there."""
+    (folder / "zz-keporkak-kp").write_bytes(TEMPLATE.read_bytes())
+
+
+def sudo_rule_line(folder):
+    """The office check's line for the sudo rule, with the drop-in in [folder] read as root:root 0440."""
+    real = os.stat
+    def stat(path, *args, **kwargs):
+        info = real(path, *args, **kwargs)
+        if os.fspath(path) == os.fspath(folder / "zz-keporkak-kp"):
+            return os.stat_result((stat_module.S_IFREG | 0o440, info.st_ino, info.st_dev, info.st_nlink, 0, 0, info.st_size, info.st_atime, info.st_mtime, info.st_ctime))
+        return info
+    report = office_check.Report()
+    with mock.patch("os.stat", stat):
+        office_check.check_sudo_rule(report, folder, USER)
+    return report.lines[0]
 
 
 class OfficeCheckTests(unittest.TestCase):
@@ -23,9 +52,12 @@ class OfficeCheckTests(unittest.TestCase):
     def lines(self):
         return self.machine.office_check().stdout.splitlines()
 
-    def test_a_ready_machine_passes(self):
+    def test_a_machine_where_bora_did_his_steps_but_roots_lacks_only_those(self):
+        self.machine.stub("systemctl", "echo loaded")
         result = self.machine.office_check()
-        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertEqual([line.split(":")[0] for line in result.stdout.splitlines() if line.startswith("to do")],
+                         [f"to do  kp root-owned and not writable by {USER}", "to do  sudo asks every time for kp"])
 
     def test_every_home_whose_compiled_permissions_deny_kp_and_sudo_by_a_border_is_ok(self):
         self.machine.put_home("reviewer-keporkak", SIDE_CHANNELS)
@@ -110,17 +142,81 @@ class OfficeCheckTests(unittest.TestCase):
         self.assertIn("to do  no vendor global configuration reachable from a seat's config home: roots.seats ~/.claude/seats is ~/.claude or inside it:"
                       " name a folder outside it in pool/offices.yaml", self.lines())
 
-    def test_a_kp_the_office_user_can_write_is_to_do(self):
+    def test_no_kp_on_path_is_to_do_with_just_install_and_the_sudo_step(self):
+        line = next(line for line in self.lines() if line.startswith("to do  kp root-owned"))
+        self.assertEqual(line, f"to do  kp root-owned and not writable by {USER}: no kp on PATH: just install, then sudo install -o root -g root -m 0755 {ROOT}/scripts/kp /usr/local/bin/kp (office/README.md §3)")
+
+    def test_a_kp_elsewhere_than_where_the_sudo_rule_names_it_is_to_do(self):
         self.machine.stub("kp", "exit 0")
         line = next(line for line in self.lines() if line.startswith("to do  kp root-owned"))
-        self.assertEqual(line, f"to do  kp root-owned and not writable by {USER}: sudo install -o root -g root -m 0755 {self.machine.bin}/kp /usr/local/bin/kp, and keep it the only kp on PATH")
+        self.assertEqual(line, f"to do  kp root-owned and not writable by {USER}: the kp on PATH is {self.machine.bin}/kp, not /usr/local/bin/kp, where the sudo rule names it:"
+                               f" sudo install -o root -g root -m 0755 {ROOT}/scripts/kp /usr/local/bin/kp, and keep it the only kp on PATH")
+
+    def test_a_sudo_drop_in_that_is_not_roots_not_0440_not_the_templates_or_not_last_is_to_do(self):
+        drop_in = self.machine.sudoers / "zz-keporkak-kp"
+        drop_in.write_text("bora ALL=(root) NOPASSWD: /usr/local/bin/kp\n")
+        drop_in.chmod(0o644)
+        (self.machine.sudoers / "zzz-later").write_text("")
+        (self.machine.sudoers / "zzz-skipped.bak").write_text("")
+        line = next(line for line in self.lines() if line.startswith("to do  sudo asks"))
+        self.assertEqual(line, f"to do  sudo asks every time for kp: {drop_in}: it is not root:root's; its mode is 0644, not 0440; it is not the size of the template;"
+                               f" zzz-later sorts after it — sudo visudo -cf {ROOT}/office/sudoers.d/zz-keporkak-kp && sudo install -o root -g root -m 0440"
+                               f" {ROOT}/office/sudoers.d/zz-keporkak-kp {drop_in} (office/README.md §2);"
+                               f" {self.machine.sudoers}/zzz-later is a rule sudo reads that only sudo can read — it may say NOPASSWD for {USER}, which D-43 forbids:"
+                               f" sudo cat {self.machine.sudoers}/zzz-later, and sudo rm it if it does (office/README.md §2)")
+
+    def test_a_drop_in_in_place_beside_another_rule_sudo_reads_is_not_ok_and_alone_it_is(self):
+        """review-014 B1: with the drop-in installed as it must be — root's, 0440, the template's size, sorting last — a
+        NOPASSWD rule beside it (Panda's 90-bora-nopasswd) still lets anything running as the office user, a seat
+        among them, run `sudo sh -c 'kp …'` without a password. Its content needs sudo to read, so the check cannot
+        tell it from a harmless rule: any rule sudo reads but the drop-in and sudo's own README is to do (D-43)."""
+        folder = self.machine.sudoers
+        installed(folder)
+        (folder / "90-bora-nopasswd").write_text("bora ALL=(ALL) NOPASSWD: ALL\n")
+        beside = sudo_rule_line(folder)
+        (folder / "90-bora-nopasswd").unlink()
+        alone = sudo_rule_line(folder)
+
+        self.assertEqual(beside, f"to do  sudo asks every time for kp: {folder}/90-bora-nopasswd is a rule sudo reads that only sudo can read — it may say NOPASSWD"
+                                 f" for {USER}, which D-43 forbids: sudo cat {folder}/90-bora-nopasswd, and sudo rm it if it does (office/README.md §2)")
+        self.assertEqual(alone, f"ok     sudo asks every time for kp: {folder}/zz-keporkak-kp: root:root, 0440, sorts last, the size of office/sudoers.d/zz-keporkak-kp;"
+                                f" no other rule beside sudo's README (their content, and /etc/sudoers, need sudo to read: sudo -l, office/README.md §2)")
+
+    def test_a_loaded_service_whose_launcher_is_gone_is_to_do_and_one_whose_launcher_is_there_is_ok(self):
+        self.machine.stub("systemctl", 'case "$*" in *ExecStart*) echo "{ path=/nowhere/kp-daemon ; argv[]=/nowhere/kp-daemon run ; ignore_errors=no }";; *) echo loaded;; esac')
+        self.assertIn("to do  systemd user service keporkak.service: its launcher /nowhere/kp-daemon is not there: just install (office/README.md §3)", self.lines())
+        launcher = self.machine.base / "kp-daemon"
+        launcher.write_text("")
+        self.machine.stub("systemctl", f'case "$*" in *ExecStart*) echo "{{ path={launcher} ; argv[]={launcher} run ; ignore_errors=no }}";; *) echo loaded;; esac')
+        self.assertIn(f"ok     systemd user service keporkak.service: loaded; it starts {launcher}", self.lines())
+
+    def test_the_office_checks_build_of_the_homes_leaves_nothing_behind(self):
+        """Issue #24: without --homes the check builds every persona's home with kp-driver's builder, in a temporary folder
+        it removes; the machine is as it was, and so is the temporary folder (the checkout's build/ is Gradle's)."""
+        java_home = next(line.split("=", 1)[1].strip() for line in subprocess.run(["java", "-XshowSettings:properties", "-version"], text=True, capture_output=True).stderr.splitlines() if "java.home =" in line)
+        (self.machine.bin / "java").unlink()
+        temporary = self.machine.base / "tmp"
+        temporary.mkdir()
+        before = self.machine.snapshot()
+        environment = {"HOME": str(self.machine.home), "PATH": f"{self.machine.bin}:{java_home}/bin:/usr/bin:/bin", "LANG": "C.UTF-8", "TMPDIR": str(temporary),
+                       "JAVA_HOME": java_home, "GRADLE_USER_HOME": os.environ.get("GRADLE_USER_HOME") or str(Path.home() / ".gradle")}
+        result = subprocess.run([sys.executable, str(ROOT / "scripts/office-check.py"), "--pool", str(self.machine.pool), "--adapter", str(self.machine.adapter),
+                                 "--office", "panda", "--sudoers", str(self.machine.sudoers)], cwd=ROOT, env=environment, text=True, capture_output=True, timeout=900)
+        line = next(line for line in result.stdout.splitlines() if "seats' permissions deny kp and sudo" in line)
+        self.assertTrue(line.startswith("ok     seats' permissions deny kp and sudo: "), line)
+        self.assertIn("homes built from this checkout's personas and profiles", line)
+        self.assertEqual(list(temporary.iterdir()), [])
+        # The temporary folder's own time moves: a folder was made in it and removed. Nothing else on the machine moves.
+        after = self.machine.snapshot()
+        changed = {path for path in set(before) | set(after) if before.get(path) != after.get(path)}
+        self.assertEqual(changed, {"tmp"})
 
     def test_the_live_targets_context_and_a_loaded_service_are_ok(self):
         self.machine.stub("kubectl", "echo dsk; echo bp-dsk")
         self.machine.stub("systemctl", "echo loaded")
         lines = self.lines()
         self.assertIn("ok     kubectl context bp-dsk", lines)
-        self.assertIn("ok     systemd user service keporkak.service", lines)
+        self.assertIn("ok     systemd user service keporkak.service: loaded", lines)
 
     def test_an_unknown_office_is_refused_without_a_report(self):
         result = subprocess.run([sys.executable, "scripts/office-check.py", "--pool", str(self.machine.pool), "--office", "mac"], cwd=ROOT, text=True, capture_output=True)

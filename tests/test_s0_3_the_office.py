@@ -75,19 +75,22 @@ ok     project folder KP ~/Dev/keporkak/project
 ok     project folder TOY ~/Dev/keporkak/project/toy
 to do  secret claude-token: claude setup-token, then: install -m 0600 /dev/stdin ~/.config/keporkak/secrets/claude-token (office/README.md)
 later  secrets apps/kp-merger.pem, apps/kp-coder.pem, apps/kp-reviewer.pem, apps/kp-gardener.pem: S3.2 — the four GitHub Apps' keys
-later  kp root-owned and not writable by {USER}: S1.5 installs kp
-later  sudo asks every time for kp: S1.5 — Bora installs office/sudoers.d/zz-keporkak-kp before it (office/README.md)
+to do  kp root-owned and not writable by {USER}: no kp on PATH: just install, then sudo install -o root -g root -m 0755 {ROOT}/scripts/kp /usr/local/bin/kp (office/README.md §3)
+to do  sudo asks every time for kp: {machine.sudoers}/zz-keporkak-kp is not there: sudo visudo -cf {ROOT}/office/sudoers.d/zz-keporkak-kp && sudo install -o root -g root -m 0440 {ROOT}/office/sudoers.d/zz-keporkak-kp {machine.sudoers}/zz-keporkak-kp (office/README.md §2)
 ok     seats' permissions deny kp and sudo: 1 home read from {machine.homes}; each denies `kp approve 1` and `sudo kp approve 1`, by border side-channels
 later  kubectl context bp-dsk: S4.1
-later  systemd user service keporkak.service: S1.5 delivers it (template office/systemd/keporkak.service)
+to do  systemd user service keporkak.service: just install (office/README.md §3)
 to do  lingering for {USER}: sudo loginctl enable-linger {USER}
 ok     no vendor global configuration reachable from a seat's config home: a seat reads its config home under ~/.local/share/keporkak/seats, not ~/.claude (S2.2's probe); no home names an MCP server
-RESULT: NOT READY — 5 to do, 5 later, 16 ok
+RESULT: NOT READY — 8 to do, 2 later, 16 ok
 """)
         machine.bora_does_the_to_dos()
         done = machine.office_check()
-        self.assertEqual(done.returncode, 0, done.stdout)
-        self.assertEqual(done.stdout.splitlines()[-1], "RESULT: READY — 0 to do, 5 later, 21 ok")
+        # What is left needs root: kp and the sudo rule are root's files, which no fake machine can make.
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertEqual([line.split(":")[0] for line in done.stdout.splitlines() if line.startswith("to do")],
+                         [f"to do  kp root-owned and not writable by {USER}", "to do  sudo asks every time for kp"])
+        self.assertEqual(done.stdout.splitlines()[-1], "RESULT: NOT READY — 2 to do, 2 later, 22 ok")
 
     def test_the_office_check_changes_nothing_on_the_machine(self):
         machine = FakeMachine(self, roots=["worktrees", "scratch"], linger="no")
@@ -140,6 +143,9 @@ class FakeMachine:
         test.addCleanup(shutil.rmtree, self.base)
         self.home, self.bin, self.pool, self.adapter = self.base / "home", self.base / "bin", self.base / "pool", self.base / "adapter"
         self.homes = self.base / "homes"
+        self.sudoers = self.base / "sudoers.d"
+        self.sudoers.mkdir()
+        (self.sudoers / "README").write_text("sudo's own\n")
         self.put_home("coder-keporkak", SIDE_CHANNELS)
         self.home.mkdir()
         self.bin.mkdir()
@@ -165,6 +171,7 @@ class FakeMachine:
         (self.home / ROOTS["secrets"]).mkdir(parents=True, mode=0o700)
         (self.home / ROOTS["secrets"]).chmod(0o700)
         self.stub("loginctl", "echo yes")
+        self.stub("systemctl", "echo loaded")
         self.install_adapter()
         self.put_token()
     def install_adapter(self, version=PIN):
@@ -183,7 +190,7 @@ class FakeMachine:
         token.chmod(0o600)
     def office_check(self):
         environment = {"HOME": str(self.home), "PATH": str(self.bin), "LANG": "C.UTF-8"}
-        return subprocess.run([sys.executable, str(ROOT / "scripts/office-check.py"), "--pool", str(self.pool), "--adapter", str(self.adapter), "--office", "panda", "--homes", str(self.homes)], cwd=ROOT, env=environment, text=True, capture_output=True)
+        return subprocess.run([sys.executable, str(ROOT / "scripts/office-check.py"), "--pool", str(self.pool), "--adapter", str(self.adapter), "--office", "panda", "--homes", str(self.homes), "--sudoers", str(self.sudoers)], cwd=ROOT, env=environment, text=True, capture_output=True)
     def snapshot(self):
         entries = {}
         for folder, directories, files in os.walk(self.base):

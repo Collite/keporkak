@@ -20,10 +20,14 @@ class OfficeTemplateTests(unittest.TestCase):
         self.assertNotIn(".", name)
         self.assertFalse(name.endswith("~"))
 
-    def test_the_unit_names_its_two_placeholders_for_s1_5(self):
+    def test_the_unit_names_the_two_placeholders_just_install_replaces_and_a_path_with_mises_shims(self):
         unit = (ROOT / "office/systemd/keporkak.service").read_text()
         self.assertIn("ExecStart=@DAEMON_LAUNCHER@", unit)
         self.assertIn("WorkingDirectory=@DAEMON_WORKING_DIRECTORY@", unit)
+        self.assertIn("Environment=PATH=%h/.local/share/mise/shims:%h/.local/bin:", unit)
+        install = (ROOT / "scripts/install.py").read_text()
+        self.assertIn('"@DAEMON_LAUNCHER@"', install)
+        self.assertIn('"@DAEMON_WORKING_DIRECTORY@"', install)
 
 
 if __name__ == "__main__":

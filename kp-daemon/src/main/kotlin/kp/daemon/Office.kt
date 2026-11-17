@@ -1,0 +1,174 @@
+package kp.daemon
+
+import kotlinx.serialization.json.JsonObject
+import kp.engine.Datum
+import kp.engine.FactRef
+import kp.engine.State
+import kp.log.LogLine
+import kp.log.LogReader
+import kp.mailroom.Answer
+import kp.mailroom.Clock
+import kp.mailroom.Deliveries
+import kp.mailroom.FactSource
+import kp.mailroom.Mailroom
+import kp.mailroom.MailroomRefusal
+import kp.mailroom.Operations
+import kp.mailroom.Reload
+import kp.mailroom.Sender
+import kp.model.OfficeId
+import kp.model.utc
+import kp.rules.Problem
+import java.nio.file.Path
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
+
+/**
+ * One office's mailroom as the daemon holds it (architecture.md §2, `kp-daemon`): the mailroom on the project's log,
+ * the rule set in force, and what the daemon itself observes — Bora's signed commands. Every change it carries is
+ * signalled on [changes], which `kp inbox --follow` and a rehearsal wait on. It decides nothing: the mailroom judges.
+ */
+class Office private constructor(
+    val name: String,
+    val project: Path,
+    private val mailroom: Mailroom,
+    private val files: RuleFiles,
+    rules: InForceRules,
+    val presence: Presence,
+    val clock: Clock,
+) : AutoCloseable {
+    val changes = Changes()
+    @Volatile var rules: InForceRules = rules
+        private set
+    /** The last reload the mailroom refused, while no later one was accepted (contracts.md §2.2, Amendment 15). */
+    @Volatile var refusedReload: RefusedReload? = null
+        private set
+    @Volatile var closed = false
+        private set
+
+    /** The fold of the log, as the mailroom works from it. */
+    val state: State get() = mailroom.state
+
+    /** Carries one message through the mailroom (contracts.md §2.1: it sets `from`, `by` and `signed`). */
+    fun submit(sender: Sender, input: JsonObject): Answer = mailroom.submit(sender, input).also { changes.signal() }
+
+    /** Fires the deadlines that have passed. */
+    fun tick() {
+        mailroom.tick()
+        changes.signal()
+    }
+
+    fun nextDeadline(): Instant? = mailroom.nextDeadline()
+
+    /**
+     * Hot reload (architecture.md §3): when the checkout's rule texts differ from those in force — and from those of
+     * the last refused reload, which is not asked again — the mailroom reads and judges them. Null: nothing changed.
+     */
+    fun reloadIfChanged(): Reload? {
+        val texts = files.read()
+        if (texts == rules.texts || texts == refusedReload?.texts) return null
+        return when (val reload = mailroom.reload()) {
+            is Reload.Accepted -> reload.also {
+                rules = InForceRules.of(files.lastRead).first ?: error("the mailroom accepted rules kp-rules refuses")
+                refusedReload = null
+            }
+            is Reload.Rejected -> reload.also { refusedReload = RefusedReload(clock.now(), it.problems, files.lastRead) }
+        }.also {
+            Journal.say("rules: ${if (it is Reload.Accepted) "reloaded, ${it.hash}" else "a reload was refused; the old set stays in force"}")
+            changes.signal()
+        }
+    }
+
+    /** The log read back — every file the mailroom folds, in `seq` order — for what the state does not keep. */
+    fun lines(): List<LogLine> = LogReader(project, OfficeId(name)).read().lines
+
+    override fun close() {
+        closed = true
+        mailroom.close()
+        changes.signal()
+    }
+
+    companion object {
+        /**
+         * Starts the mailroom of office [name] on [project]'s log with the rule texts of the checkout [root] (architecture.md
+         * §4): it folds every file, puts the rules in force and records them. [world] is every fact the daemon does not
+         * observe itself. Throws [MailroomRefusal] when the log or the rules are not fit to work from.
+         */
+        fun start(name: String, project: Path, root: Path, world: FactSource, operations: Operations, deliveries: Deliveries, clock: Clock): Office {
+            val files = RuleFiles(root)
+            val presence = Presence(clock)
+            val facts = FactSource { fact, stage -> presence.observe(fact) ?: world.observe(fact, stage) }
+            val mailroom = Mailroom.start(project, OfficeId(name), files, facts, operations, deliveries, clock)
+            val rules = InForceRules.of(files.lastRead).first ?: error("the mailroom started on rules kp-rules refuses")
+            presence.seed(mailroom.state)
+            presence.state = { mailroom.state }
+            return Office(name, project, mailroom, files, rules, presence, clock)
+        }
+    }
+}
+
+/** A reload the mailroom refused: when, why, and the texts it read. */
+class RefusedReload(val at: Instant, val problems: List<Problem>, val texts: Map<String, String>)
+
+/** One signal per change of the office's state. */
+class Changes {
+    private val lock = Object()
+    private var version = 0L
+
+    fun signal() = synchronized(lock) {
+        version++
+        lock.notifyAll()
+    }
+
+    fun version(): Long = synchronized(lock) { version }
+
+    /** Waits until a change after [seen], at most [millis]; the version then. */
+    fun await(seen: Long, millis: Long): Long = synchronized(lock) {
+        val end = System.nanoTime() + millis * 1_000_000
+        while (version == seen) {
+            val left = (end - System.nanoTime()) / 1_000_000
+            if (left <= 0) break
+            lock.wait(left)
+        }
+        version
+    }
+}
+
+/**
+ * What the daemon observes of Bora itself (contracts.md §6, §4.4): when his last signed command came — any `kp`
+ * command run under `sudo`, reads too. `bora.idle_for` is the time since then; `bora.acted` holds while that command
+ * came after presence last moved. Before any signed command it knows of — none since the start, none on the log —
+ * both are unknown.
+ */
+class Presence(private val clock: Clock) {
+    @Volatile private var last: Instant? = null
+    /** The state presence is read from, once the mailroom has started. */
+    @Volatile var state: (() -> State)? = null
+
+    /** A signed command arrived now. */
+    fun signed() {
+        last = clock.now()
+    }
+
+    /** What the log knows: the last signed message on it. */
+    fun seed(state: State) {
+        last = state.delivered.values.filter { it.signed }.maxOfOrNull { instant(it.at) }
+    }
+
+    fun observe(fact: FactRef): Datum? {
+        val signed = last ?: return null
+        return when (fact.name) {
+            ACTED -> Datum.Bool(state?.invoke()?.machine(PRESENCE, BORA)?.since?.let { signed.isAfter(instant(it)) } ?: true)
+            IDLE_FOR -> Datum.of(ChronoUnit.SECONDS.between(signed, clock.now()))
+            else -> null
+        }
+    }
+
+    private companion object {
+        const val PRESENCE = "presence"
+        const val BORA = "bora"
+        const val ACTED = "bora.acted"
+        const val IDLE_FOR = "bora.idle_for"
+        fun instant(at: String): Instant = utc(at).toInstant(ZoneOffset.UTC)
+    }
+}
