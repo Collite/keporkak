@@ -93,6 +93,8 @@ if FIXTURE:
          "profile": given.get("profile", "supervised"), "autonomy_profiles": given.get("autonomy_profiles", {"supervised": {}})}
     if "second_key" in given:
         E["second_key"] = given["second_key"]
+    if "stop_gate" in given:
+        E["stop_gate"] = given["stop_gate"]
     V = given.get("vocabulary", V)
     W = given.get("walks", [])
 ROBOTS = ([(f"fixture-{index}.yaml", robot) for index, robot in enumerate(given.get("robots", []))]
@@ -129,8 +131,10 @@ def sender_thresholds(senders):
     names = {part.strip() for part in str(senders or "").split("|")}
     return {name for _, robot in ROBOTS if robot.get("role") in names for name in robot.get("thresholds", {})}
 
-# The blocks of requirements a `{holds: …}` may name (contracts.md §4.1, Amendment 7).
-BLOCKS = {name: E[name].get("require", []) for name in ("second_key", "stop_gate") if isinstance(E.get(name), dict)}
+# The blocks of requirements a `{holds: …}` may name (contracts.md §4.1, Amendment 7) — `second_key`. `stop_gate` is
+# none (Amendment 19): it is judged only when a turn is about to end, and a rule whose requirement equals its own
+# repeats nothing.
+BLOCKS = {name: E[name].get("require", []) for name in ("second_key",) if isinstance(E.get(name), dict)}
 
 # An attestation is described in prose (contracts.md §4.4): the loader reads its description as text, and so does this.
 for name, description in (V.get("attestations") or {}).items():
@@ -198,7 +202,9 @@ def check_references(value, owner, robot=None, thresholds=frozenset()):
                   "cap": "cap", "kind": "kind", "emit": "kind", "attest": "attestation", "counter": "counter", "count": "counter", "robot": "robot threshold",
                   "holds": "engagement block"}
         for key, item in value.items():
-            if key in namespaces and isinstance(item, str) and item not in namespaces[key]:
+            if key == "holds" and item == "stop_gate":
+                fail(f"{owner}: {{holds: stop_gate}} — stop_gate is no block a {{holds: …}} may name: it is judged only when a turn is about to end")
+            elif key in namespaces and isinstance(item, str) and item not in namespaces[key]:
                 fail(f"{owner}: unknown {labels[key]} '{item}'")
             if key == "since" and isinstance(item, str) and item not in K:
                 fail(f"{owner}: unknown kind '{item}'")
@@ -465,10 +471,20 @@ for section in ("second_key", "stop_gate"):
     if section in E:
         check_requirements(E[section].get("require", []), section)
         check_references(E[section],section)
-if "stop_gate" in E and E["stop_gate"].get("require") != []:
-    fail("stop_gate: requirements belong to S2.2 (Amendment 2)")
+# In the stop gate, {trigger: seat} is the seat whose turn is ending (contracts.md §4.1); nothing else triggers it.
+def trigger_paths(value):
+    if isinstance(value, dict):
+        found = [value["trigger"]] if set(value) == {"trigger"} else []
+        return found + [path for item in value.values() for path in trigger_paths(item)]
+    if isinstance(value, list):
+        return [path for item in value for path in trigger_paths(item)]
+    return []
+if isinstance(E.get("stop_gate"), dict):
+    for path in dict.fromkeys(trigger_paths(E["stop_gate"].get("require", []))):
+        if path != "seat":
+            fail(f"stop_gate: {{trigger: {path}}} names nothing here — in stop_gate, {{trigger: seat}} is the seat whose turn is ending")
 if not fails:
-    ok("engagement second key, cap references and empty v1 stop gate checked")
+    ok("engagement second key, cap references and the v1 stop gate checked")
 
 # What a request no deny: word covers gets (contracts.md §4.3, §10; D-18 (4)): these keys and these values, no other —
 # as kp-rules reads them.

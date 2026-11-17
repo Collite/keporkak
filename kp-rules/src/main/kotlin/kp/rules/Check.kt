@@ -4,6 +4,11 @@ internal const val LIFECYCLE = "rules/stage-lifecycle.yaml"
 internal const val KINDS = "rules/message-kinds.yaml"
 internal const val ENGAGEMENT = "rules/engagement.yaml"
 internal const val VOCABULARY = "rules/vocabulary.yaml"
+/** What `{trigger: …}` may name in `engagement.yaml:stop_gate` (contracts.md §4.1): the seat whose turn is ending. */
+private const val STOP_GATE_TRIGGER = "seat"
+private const val STOP_GATE = "stop_gate"
+/** `{holds: stop_gate}`, reported (contracts.md §4.1, Amendment 19). */
+private const val UNNAMEABLE_GATE = "{holds: stop_gate} — stop_gate is no block a {holds: …} may name: it is judged only when a turn is about to end"
 
 /** Where a name appears, for the problem that reports it. */
 internal data class Owner(val file: String, val id: String?)
@@ -155,7 +160,9 @@ internal class RulesCheck(
         names.caps.filterNot { it in engagement.caps }.forEach { problem(owner, "unknown cap '$it'") }
         names.counters.filterNot { it in lifecycle.counters }.forEach { problem(owner, "unknown counter '$it'") }
         names.attestations.filterNot { it in vocabulary.attestations }.forEach { problem(owner, "unknown attestation '$it'") }
-        names.blocks.filterNot { it in engagement.blocks }.forEach { problem(owner, "unknown engagement block '$it'") }
+        names.blocks.filterNot { it in engagement.blocks }.forEach { block ->
+            problem(owner, if (block == STOP_GATE) UNNAMEABLE_GATE else "unknown engagement block '$block'")
+        }
     }
 
     private fun transitions() {
@@ -245,11 +252,34 @@ internal class RulesCheck(
 
     private fun engagementRequirements() {
         engagement.secondKey?.let { key -> resolve(Owner(ENGAGEMENT, "second_key"), Names().apply { key.require.forEach(::requirement) }, emptySet()) }
-        engagement.stopGate?.let { gate ->
+        engagement.turnGate?.let { gate ->
             val owner = Owner(ENGAGEMENT, "stop_gate")
             resolve(owner, Names().apply { gate.require.forEach(::requirement); value(gate.maxConsecutiveBlocks) }, emptySet())
-            if (gate.require.isNotEmpty()) problem(owner, "requirements belong to S2.2 (Amendment 2)")
+            // In the stop gate, `{trigger: seat}` is the seat whose turn is ending (contracts.md §4.1); nothing else triggers it.
+            gate.require.flatMap(::triggers).filter { it != STOP_GATE_TRIGGER }.distinct().forEach { path ->
+                problem(owner, "{trigger: $path} names nothing here — in stop_gate, {trigger: $STOP_GATE_TRIGGER} is the seat whose turn is ending")
+            }
         }
+    }
+
+    /** The paths of every `{trigger: …}` a requirement reads, wherever it reads one. */
+    private fun triggers(requirement: Requirement): List<String> = when (requirement) {
+        is Requirement.Fact -> requirement.fact.params.values.flatMap(::triggers) + listOfNotNull(requirement.comparison?.value).flatMap(::triggers)
+        is Requirement.Arg -> listOfNotNull(requirement.comparison?.value).flatMap(::triggers)
+        is Requirement.Message -> listOfNotNull(requirement.comparison?.value).flatMap(::triggers)
+        is Requirement.Reply -> listOfNotNull(requirement.comparison?.value).flatMap(::triggers)
+        is Requirement.Counter -> listOfNotNull(requirement.comparison?.value).flatMap(::triggers)
+        is Requirement.Any -> requirement.items.flatMap(::triggers)
+        is Requirement.Not -> triggers(requirement.item)
+        else -> emptyList()
+    }
+
+    private fun triggers(value: Value): List<String> = when (value) {
+        is Value.Trigger -> listOf(value.path)
+        is Value.Items -> value.items.flatMap(::triggers)
+        is Value.Fields -> value.fields.values.flatMap(::triggers)
+        is Value.Fact -> value.fact.params.values.flatMap(::triggers)
+        else -> emptyList()
     }
 
     /** A wait goes on only under a cap (contracts.md §4.2): its `if` is a counter compared with `{cap: …}`. */
@@ -359,7 +389,7 @@ internal fun uses(lifecycle: Lifecycle, kinds: Map<String, Kind>, engagement: En
     }
     val engagementUses = listOfNotNull(
         engagement.secondKey?.let { key -> Owner(ENGAGEMENT, "second_key") to Names().apply { key.require.forEach(::requirement) } },
-        engagement.stopGate?.let { gate -> Owner(ENGAGEMENT, "stop_gate") to Names().apply { gate.require.forEach(::requirement); value(gate.maxConsecutiveBlocks) } },
+        engagement.turnGate?.let { gate -> Owner(ENGAGEMENT, "stop_gate") to Names().apply { gate.require.forEach(::requirement); value(gate.maxConsecutiveBlocks) } },
     )
     val robotUses = robots.flatMap { (path, robot) ->
         listOf(Owner(path, null) to Names().apply { requirement(robot.activeWhen); robot.queue?.let { requirement(it.nextWhen) } }) +

@@ -1,0 +1,69 @@
+name: "the stop gate has its rule in prose and its requirements, and {trigger: seat} is the seat whose turn is ending (contracts.md §4.1, §4.3, Amendment 17)"
+scenarios:
+  - name: the v1 block — the seat has no unread mail — is accepted
+    given:
+      vocabulary:
+        facts:
+          seat.inbox_replayed: {params: seat, returns: bool, source: L}
+        operations: {}
+      caps: {stop_gate_blocks: 3}
+      stop_gate:
+        rule: a turn ends only when the seat has no unread mail
+        max_consecutive_blocks: {cap: stop_gate_blocks}
+        require:
+          - {fact: seat.inbox_replayed, seat: {trigger: seat}}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, on: message, guard: '-', require: [], effects: []}
+    expect: {}
+  - name: "a {trigger: …} that names anything but the seat is reported, once per name"
+    given:
+      vocabulary:
+        facts:
+          seat.inbox_replayed: {params: seat, returns: bool, source: L}
+        operations: {}
+      caps: {stop_gate_blocks: 3}
+      stop_gate:
+        rule: a turn ends only when the seat has no unread mail
+        max_consecutive_blocks: {cap: stop_gate_blocks}
+        require:
+          - {fact: seat.inbox_replayed, seat: {trigger: stage}}
+          - {not: {fact: seat.inbox_replayed, seat: {trigger: from}}}
+          - {fact: seat.inbox_replayed, seat: {trigger: stage}}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, on: message, guard: '-', require: [], effects: []}
+    expect:
+      failures:
+        - "stop_gate: {trigger: stage} names nothing here — in stop_gate, {trigger: seat} is the seat whose turn is ending"
+        - "stop_gate: {trigger: from} names nothing here — in stop_gate, {trigger: seat} is the seat whose turn is ending"
+  - name: "{holds: stop_gate} is reported: the stop gate is no block a rule may name"
+    given:
+      vocabulary:
+        facts:
+          seat.inbox_replayed: {params: seat, returns: bool, source: L}
+        operations: {}
+      caps: {stop_gate_blocks: 3}
+      stop_gate:
+        rule: a turn ends only when the seat has no unread mail
+        max_consecutive_blocks: {cap: stop_gate_blocks}
+        require:
+          - {fact: seat.inbox_replayed, seat: {trigger: seat}}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, on: message, guard: '-', require: [{not: {holds: stop_gate}}], effects: []}
+    expect:
+      failures:
+        - "T-start: {holds: stop_gate} — stop_gate is no block a {holds: …} may name: it is judged only when a turn is about to end"
+  - name: a rule whose requirement equals the gate's repeats nothing
+    given:
+      vocabulary:
+        facts:
+          seat.inbox_replayed: {params: seat, returns: bool, source: L}
+        operations: {}
+      caps: {stop_gate_blocks: 3}
+      stop_gate:
+        rule: a turn ends only when the seat has no unread mail
+        max_consecutive_blocks: {cap: stop_gate_blocks}
+        require:
+          - {fact: seat.inbox_replayed, seat: {trigger: seat}}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, on: message, guard: '-', require: [{fact: seat.inbox_replayed, seat: {trigger: seat}}], effects: []}
+    expect: {}

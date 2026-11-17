@@ -71,7 +71,16 @@ adapter:
 # demand, not as a habit; it is no part of `check`, and CI never runs it. Its evidence file is named on its last line.
 # `just handshake models` runs only its models step — every roster model set and read back — and spends no tokens.
 # `just handshake hooks` (S2.2) runs a seat the builder made for the coder's persona through its hooks and borders,
-# with a poisoned HOME beside it: one prompt. Neither is part of `check`, and CI never runs them.
+# with a poisoned HOME beside it: one prompt. `just handshake tools` (S2.3) runs a seat the builder made for the coder's
+# persona in front of the seat API and a mailroom on a throwaway log, through the five tools and the stop gate: two
+# prompts. None of them is part of `check`, and CI never runs them.
 handshake *args:
+    #!/usr/bin/env sh
+    set -eu
+    if [ "${1:-}" = tools ]; then
+        shift
+        ./gradlew --console=plain -q :kp-seat-api:handshakeClasspath
+        exec java -cp "$(cat kp-seat-api/build/handshake.classpath)" kp.seatapi.handshake.ToolsHandshakeKt --root "$PWD" "$@"
+    fi
     ./gradlew --console=plain -q :kp-driver:handshakeClasspath
-    java -cp "$(cat kp-driver/build/handshake.classpath)" kp.driver.handshake.HandshakeKt --root "$PWD" "$@"
+    exec java -cp "$(cat kp-driver/build/handshake.classpath)" kp.driver.handshake.HandshakeKt --root "$PWD" "$@"

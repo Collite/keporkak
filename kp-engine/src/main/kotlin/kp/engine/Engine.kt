@@ -20,6 +20,8 @@ import kp.rules.Window
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * The mailroom's guard (architecture.md §1): the rule set applied to a trigger. Pure — it reads no file, no clock
@@ -64,6 +66,79 @@ class Engine(private val rules: RuleSet) {
 
     /** The robots that keep messages now, each as the [Trigger.Release] that asks what of it is released. */
     fun holders(state: State): List<Trigger.Release> = holders(rules, state)
+
+    /** The facts [turnEnds] will read for [seat] that the table must supply (contracts.md §4.4): none of source L. */
+    fun turnNeeds(state: State, seat: String): List<Need> = TurnGating(rules, state, seat).needs()
+
+    /**
+     * The gate at a turn's end (contracts.md §4.3, §11): given the state, the seat whose turn is about to end and the
+     * blocks so far, end the turn, or block it with the gate's rule in its prose. The cap is the rules'.
+     */
+    fun turnEnds(state: State, seat: String, blocks: Int, facts: Facts): Gate = TurnGating(rules, state, seat).judge(blocks, facts)
+
+    /**
+     * What [seat] may send about [stage] at [now] (contracts.md §5, `whoami`): every kind its role owns, in the rules'
+     * order — to whom, what answers it, its deadline, its window and how many firings are left in it, read from the
+     * rules and [state]. It decides nothing: a send is judged when it arrives.
+     */
+    fun allowed(state: State, seat: String, stage: String?, now: String): List<Allowance> =
+        rules.kinds.values.filter { kind -> kind.from.any { roleOwns(it, seat) } }.map { kind ->
+            val left = maximum(rules, kind)?.let { (it.toLong() - fires(state, kind, seat, stage) { now }).coerceAtLeast(0) }
+            Allowance(kind.name, describe(kind.to), kind.replies, kind.deadline?.let(::written), kind.window.key, left)
+        }
+}
+
+/**
+ * One kind a seat may send (contracts.md §5, `whoami`'s `allowed`): its addressee as the rules write it, the kinds that
+ * answer it, its deadline as the rules write a duration, its window, and how many firings are left in it — null when
+ * nothing counts it.
+ */
+data class Allowance(val kind: String, val to: String, val replies: List<String>, val deadline: String?, val window: String, val left: Long?)
+
+/** What the gate at a turn's end says (contracts.md §4.3, §11). */
+sealed interface Gate {
+    /**
+     * The turn may end. [capped]: a requirement failed, but the blocks so far had reached the cap — the turn ends, and
+     * that is what the fact the cap writes records.
+     */
+    data class End(val capped: Boolean) : Gate
+
+    /** The turn may not end yet; [reason] is the gate's `rule`, in the rules' own prose. */
+    data class Block(val reason: String) : Gate
+}
+
+/**
+ * The gate of `engagement.yaml` at a turn's end, applied to one seat (contracts.md §4.3): its requirements are read with
+ * `{trigger: seat}` as the seat whose turn is ending; a failed requirement blocks while the blocks so far are under the
+ * cap, and at the cap the turn ends. The cap is the rules' — no number is written here. A gate whose cap cannot be
+ * read holds no one: the turn ends.
+ */
+private class TurnGating(private val rules: RuleSet, private val state: State, seat: String) {
+    private val context = Context(Event.FACT, null, null, null, trigger = Datum.Fields(mapOf(SEAT_FIELD to Datum.Text(seat))))
+
+    fun needs(): List<Need> {
+        val gate = rules.engagement.turnGate ?: return emptyList()
+        return Needs(rules, state, context).apply { gate.require.forEach(::requirement); value(gate.maxConsecutiveBlocks) }.needs.toList()
+    }
+
+    fun judge(blocks: Int, facts: Facts): Gate {
+        val gate = rules.engagement.turnGate ?: return Gate.End(capped = false)
+        val evaluation = Evaluation(rules, state, context, facts)
+        val failed = evaluation.firstFailure(gate.require) ?: return Gate.End(capped = false)
+        val cap = (evaluation.value(gate.maxConsecutiveBlocks) as? Datum.Number)?.value
+        if (cap == null || blocks.toBigDecimal() >= cap) return Gate.End(capped = true)
+        return Gate.Block(gate.rule ?: render(failed))
+    }
+}
+
+/** What `{trigger: seat}` reads at a turn's end. */
+private const val SEAT_FIELD = "seat"
+
+/** A duration as the rules write one (contracts.md §4.4): whole hours, else whole minutes, else seconds. */
+private fun written(duration: Duration): String = when {
+    duration.inWholeHours > 0 && duration.inWholeHours.hours == duration -> "${duration.inWholeHours}h"
+    duration.inWholeMinutes > 0 && duration.inWholeMinutes.minutes == duration -> "${duration.inWholeMinutes}m"
+    else -> "${duration.inWholeSeconds}s"
 }
 
 /** The caps the engine enforces for every kind, by their names in `engagement.yaml:caps` (contracts.md §2.1, §4.1). */
@@ -136,14 +211,12 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         if (bodyLines != null && lines(message.body).toBigDecimal() > bodyLines) return "caps.$BODY_LINES: ${bodyLines.toPlainString()}" to null
         val hops = cap(HOPS)
         if (hops != null && state.hops(message.thread).toBigDecimal() >= hops) return "caps.$HOPS: ${hops.toPlainString()}" to null
-        // `max_fires: null` is `caps.max_fires_default`, but on a kind only the mailroom sends: each of its emits is bounded
-        // by the rule that declares it (contracts.md §4.2, Amendment 16).
-        val maximum = kind.maxFires?.toBigDecimal() ?: cap(MAX_FIRES_DEFAULT).takeUnless { kind.from == listOf(MAILROOM) }
-        if (maximum != null && fires(kind, message).toBigDecimal() >= maximum) {
+        val maximum = maximum(rules, kind)
+        if (maximum != null && fires(state, kind, message.from, message.stage, ::now).toBigDecimal() >= maximum) {
             val written = if (kind.maxFires != null) "max_fires: ${kind.maxFires}" else "caps.$MAX_FIRES_DEFAULT: ${maximum.toPlainString()}"
             return "$written, window: ${kind.window.key}" to null
         }
-        if (!declared(message) && !addressed(kind.to, message)) return "to: ${destination(kind.to)}" to null
+        if (!declared(message) && !addressed(kind.to, message)) return "to: ${describe(kind.to)}" to null
         return null
     }
 
@@ -173,28 +246,10 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         Destination.AnySeat -> message.to !in PARTIES && rules.engagement.roles.keys.any { roleOwns(it, message.to) }
     }
 
-    private fun destination(to: Destination): String = when (to) {
-        is Destination.Parties -> to.names.joinToString(" | ")
-        is Destination.Reply -> "{re: ${to.field.key}}"
-        Destination.AnySeat -> "a seat"
-    }
-
     private fun cap(name: String) = (rules.engagement.caps[name] as? Literal.Number)?.value
 
     /** A body's lines, as a reader counts them: a last line end opens no line. */
     private fun lines(body: String?): Int = body?.lines()?.let { if (it.last().isEmpty()) it.size.dec() else it.size } ?: 0
-
-    /** The kind's deliveries in the window this message falls in. */
-    private fun fires(kind: Kind, message: View): Int {
-        val earlier = state.delivered.values.filter { it.kind == kind.name }
-        val bySender = earlier.filter { it.from == message.from }
-        return when (kind.window) {
-            Window.STAGE -> earlier.count { it.stage == message.stage }
-            Window.DAY -> now()?.let { day(it) }?.let { today -> bySender.count { day(it.at) == today } } ?: bySender.size
-            Window.RETURN -> state.machine(PRESENCE_MACHINE, BORA)?.since?.let { since -> bySender.count { !before(it.at, since) } } ?: bySender.size
-            Window.SESSION -> state.sessions[message.from]?.let { since -> bySender.count { !before(it.at, since) } } ?: bySender.size
-        }
-    }
 
     /** `args` against the kind's declaration (contracts.md §2.1): an unknown key is refused, then each declared one. */
     private fun arguments(kind: Kind, args: Datum.Fields): String? {
@@ -320,6 +375,36 @@ private fun day(at: String): String = utc(at).toLocalDate().toString()
 private fun before(at: String, since: String): Boolean = utc(at).isBefore(utc(since))
 private fun plus(at: String, duration: Duration): String =
     utc(at).plusSeconds(duration.inWholeSeconds).atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME).replace("+00:00", "Z")
+
+/**
+ * How many times [kind] may fire in its window (contracts.md §4.2): its `max_fires`; `null` is `caps.max_fires_default`
+ * — but on a kind only the mailroom sends, each of its emits is bounded by the rule that declares it (Amendment 16),
+ * and there is no count.
+ */
+internal fun maximum(rules: RuleSet, kind: Kind): java.math.BigDecimal? =
+    kind.maxFires?.toBigDecimal() ?: (rules.engagement.caps[MAX_FIRES_DEFAULT] as? Literal.Number)?.value?.takeUnless { kind.from == listOf(MAILROOM) }
+
+/**
+ * [kind]'s deliveries in the window a message [from] about [stage] falls in — the stage's, or the sender's own. [now]
+ * is read only for a window of a day: a judgement observes what it reads.
+ */
+internal fun fires(state: State, kind: Kind, from: String, stage: String?, now: () -> String?): Int {
+    val earlier = state.delivered.values.filter { it.kind == kind.name }
+    val bySender = earlier.filter { it.from == from }
+    return when (kind.window) {
+        Window.STAGE -> earlier.count { it.stage == stage }
+        Window.DAY -> now()?.let { day(it) }?.let { today -> bySender.count { day(it.at) == today } } ?: bySender.size
+        Window.RETURN -> state.machine(PRESENCE_MACHINE, BORA)?.since?.let { since -> bySender.count { !before(it.at, since) } } ?: bySender.size
+        Window.SESSION -> state.sessions[from]?.let { since -> bySender.count { !before(it.at, since) } } ?: bySender.size
+    }
+}
+
+/** A kind's `to`, as a refusal quotes it and `whoami` shows it (contracts.md §4.1, §5). */
+internal fun describe(to: Destination): String = when (to) {
+    is Destination.Parties -> to.names.joinToString(" | ")
+    is Destination.Reply -> "{re: ${to.field.key}}"
+    Destination.AnySeat -> "a seat"
+}
 
 /**
  * The facts a judgement may read and the table must supply, found by reading the rules, not by judging. With a
