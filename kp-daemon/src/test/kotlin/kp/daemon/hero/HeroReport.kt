@@ -10,6 +10,8 @@ object HeroReport {
 
     fun sweep(sweep: Sweep) = write("sweep.txt", sweep.report())
 
+    fun restarts(restarts: Restarts) = write("restart.txt", restarts.report())
+
     fun write(name: String, lines: List<String>) {
         folder.createDirectories().resolve(name).writeText(lines.joinToString("") { "$it\n" })
     }

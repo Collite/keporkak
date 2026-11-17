@@ -271,7 +271,7 @@ class HeroesSpec : FreeSpec({
     }
 
     "a daemon killed at any step of H-1′ and started again finishes in the same state" {
-        val restarts = Restarts.afterEveryLineOf("h1-prime")
+        val restarts = Restarts.afterEveryLineOf("h1-prime").also(HeroReport::restarts)
 
         restarts.cuts shouldBe restarts.linesOfTheWalk
         restarts.endingElsewhere.shouldBeEmpty()
