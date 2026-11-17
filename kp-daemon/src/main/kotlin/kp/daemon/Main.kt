@@ -32,7 +32,7 @@ fun main(args: Array<String>) {
     val command = words.removeFirstOrNull()
     fun option(name: String): String? = words.indexOf(name).takeIf { it >= 0 }?.let { at -> words.removeAt(at); words.removeAtOrNull(at) ?: fail("$name needs a value") }
     val root = Path.of(option("--root") ?: ".").toAbsolutePath().normalize()
-    val office = option("--office") ?: InetAddress.getLocalHost().hostName.substringBefore('.')
+    val office = option("--office") ?: hostName().substringBefore('.')
     val project = option("--project")?.let(Path::of)
     val socket = option("--socket")?.let(Path::of) ?: defaultSocket()
     try {
@@ -66,6 +66,10 @@ private fun fail(why: String): Nothing {
     System.err.println("kp-daemon: $why\n$USAGE")
     exitProcess(2)
 }
+
+/** The short host name the office check also defaults to: the kernel's, without a lookup that may fail. */
+private fun hostName(): String =
+    runCatching { Files.readString(Path.of("/proc/sys/kernel/hostname")).trim() }.getOrNull()?.takeIf { it.isNotEmpty() } ?: InetAddress.getLocalHost().hostName
 
 private fun <T> MutableList<T>.removeAtOrNull(index: Int): T? = if (index < size) removeAt(index) else null
 

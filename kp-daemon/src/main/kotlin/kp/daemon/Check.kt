@@ -74,10 +74,23 @@ internal class Check(private val rules: InForceRules) {
         out += line
     }
 
-    private fun read(file: Path): List<LogLine> = file.readLines().mapIndexedNotNull { index, text ->
-        runCatching { LogLine(file, index + 1, parseLine(text)) }.getOrElse { error ->
-            finding("$file:${index + 1}: not a message or record of contracts.md §2 (${error.message ?: error.javaClass.simpleName})")
-            null
+    /**
+     * The file's lines that read as messages or records. What does not is reported by its place and why — never by its
+     * text: a file named by mistake (a key, a token) is not printed back.
+     */
+    private fun read(file: Path): List<LogLine> {
+        val texts = try {
+            file.readLines()
+        } catch (error: java.io.IOException) {
+            return emptyList<LogLine>().also { finding("$file: cannot be read as UTF-8 text (${error.javaClass.simpleName})") }
+        }
+        return texts.mapIndexedNotNull { index, text ->
+            runCatching { LogLine(file, index + 1, parseLine(text)) }.getOrElse { error ->
+                // The JSON reader's own message quotes its input; kp-model's names what is missing.
+                val why = (error.message ?: error.javaClass.simpleName).takeUnless { "JSON input" in it || (text.isNotBlank() && text.trim() in it) } ?: "not JSON"
+                finding("$file:${index + 1}: not a message or record of contracts.md §2 ($why)")
+                null
+            }
         }
     }
 

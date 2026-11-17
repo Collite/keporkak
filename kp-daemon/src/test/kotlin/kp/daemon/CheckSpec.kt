@@ -93,6 +93,21 @@ class CheckSpec : FreeSpec({
         }
     }
 
+    "a file that is not a log — a token named by mistake — is reported by its place, never by its text" {
+        TestOffice().use { office ->
+            val token = handLog("claude-token", """
+                sk-not-a-real-token-but-secret
+                {"token": sk-another-secret
+            """)
+
+            val check = office.kp("check", token.toString())
+
+            check.text shouldContain "$token:1: not a message or record of contracts.md §2 (a line is one JSON object)"
+            check.text shouldContain "$token:2: not a message or record of contracts.md §2 (not JSON)"
+            check.text shouldNotContain "secret"
+        }
+    }
+
     "a line that is no message or record is reported, and a path that is not there" {
         TestOffice().use { office ->
             val broken = handLog("p9-s9.9.jsonl", """{"v":1,"seq":1,"kind":"started"}""")
