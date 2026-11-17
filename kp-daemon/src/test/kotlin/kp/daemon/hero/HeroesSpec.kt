@@ -244,10 +244,30 @@ class HeroesSpec : FreeSpec({
     }
 
     "for every requirement on master, a message that breaks only that requirement is refused, naming it" {
-        val sweep = Sweep.ofTheRulesOnMaster()
+        val sweep = Sweep.ofTheRulesOnMaster().also(HeroReport::sweep)
 
         sweep.failures.shouldBeEmpty()
+        sweep.onMaster shouldBe 277
+        sweep.swept shouldBe 206
+        sweep.reasons() shouldBe listOf(
+            "36 · judged on an operation's result, which no message carries: nothing is refused — a result that breaks it fires nothing: T-03#1, T-05#1, T-36#1, " +
+                "T-37#1-2, T-39#1-2, T-41#1, T-42#1, T-43#1-2, T-45#1, T-46#1-2, T-49#1, T-52#1, T-58#1, T-61#1, T-62#1, T-63#1, T-64#1, T-65#1, T-66#1, T-67#1, T-68#1, " +
+                "T-69#1, T-71#1, T-73#1, SEAT-02#1, SEAT-04#1, SEAT-05#1, SEAT-14#1, SEAT-15#1, SEAT-34#1, PHASE-03#1, PHASE-04#1",
+            "9 · a later candidate from the same state: when none fires, the refusal names the first candidate's first failure (contracts.md §4.1): " +
+                "T-14#1 (T-13), T-20#1-3 (T-19), T-23#1-2 (T-21), T-31#2 (T-30), T-54#2 (T-53), T-56#2 (T-55)",
+            "10 · it tells two candidates from the same state apart: breaking it fires the other: T-21#3 (T-24), T-24#3 (T-29), T-25#1 (T-26), T-26#1 (T-25), " +
+                "T-29#3 (T-34), T-34#3 (T-29), T-35#6 (T-38), T-38#1 (T-35), T-70#1 (T-72), T-72#1 (T-70)",
+            "5 · judged when a deadline passes, which no message carries: nothing is refused — an expiry that breaks it fires nothing: T-32#1, FLAG_THREAD-04#1-2, FLAG_THREAD-05#1-2",
+            "4 · breaking it means Bora is absent, and the Deputy holds the message until he is back: held, not refused: T-35#1 (DEP-3), merge#1 (DEP-3), release#2 (DEP-14), deploy-request#3 (DEP-15)",
+            "4 · the kind's args declaration accepts no value that breaks it: what would is refused as args first: T-47#2 (smoke), T-50#1 (outcome), T-50#2 (rollback), triage#1 (outcome)",
+            "1 · another machine moves on the same message from any state: it is delivered: T-59#3 (SEAT-06)",
+            "2 · judged when a fact changes, which no message carries: nothing is refused — a fact that breaks it fires nothing: PRESENCE-02#1, PRESENCE-03#1",
+        )
         sweep.swept + sweep.exceptions.size shouldBe sweep.onMaster
+        // Every transition fires in a case of its own, and taking it out of a copy of the rules turns that case red —
+        // but for retire's moves of a seat that is not idle: the kind requires `seat.state eq idle` of the very seat they move.
+        sweep.uncontrolled shouldBe listOf("SEAT-08", "SEAT-09", "SEAT-10", "SEAT-12", "SEAT-13")
+        sweep.removalSurvivors.shouldBeEmpty()
     }
 
     "a daemon killed at any step of H-1′ and started again finishes in the same state" {
