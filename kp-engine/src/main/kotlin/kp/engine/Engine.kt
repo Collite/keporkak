@@ -157,8 +157,11 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         return tickets.keys.maxOrNull()?.takeIf { tickets.values.all { it.answeredBy != null } }
     }
 
-    /** An emit the rules declare (contracts.md §2.1): `by` a transition's effect or a kind's expiry. */
-    private fun declared(message: View): Boolean = DECLARED.any(message.by::startsWith)
+    /**
+     * An addressee no seat, robot or Bora named (contracts.md §4.1, §2.1): an emit the rules declare — `by` a
+     * transition's effect or a kind's expiry — or the one message the mailroom sends of itself, `by: mailroom`.
+     */
+    private fun declared(message: View): Boolean = message.by == MAILROOM || DECLARED.any(message.by::startsWith)
 
     /**
      * The addressee is a party the kind's `to` names (contracts.md §4.1): a seat of one of its roles, or one of its
