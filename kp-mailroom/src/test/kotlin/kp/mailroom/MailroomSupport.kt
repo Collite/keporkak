@@ -63,6 +63,11 @@ class Texts : RuleTexts {
         files[file] = text.replaceFirst(from, to)
     }
 
+    /** The file [from] under the name [to], its text unchanged. */
+    fun rename(from: String, to: String) {
+        files[to] = files.remove(from) ?: error("$from is not a file of the rule set")
+    }
+
     override fun read(): Map<String, String> = files.toMap()
 }
 

@@ -45,8 +45,8 @@ class HoldsSpec : StringSpec({
         val deploy = office.send("teamlead", """{"kind": "deploy-request", "stage": "KP/P3/S3.3", "args": {"pin": "image-head-1", "smoke": "the stage smoke"}}""")
         office.command(signed = true)
 
-        office.readBack().records<Held>().filter { it.id == deploy.id }.map { it.by } shouldBe listOf("robot:DEP-15", "robot:QA-1")
-        office.mailroom.state.held[deploy.id]?.by shouldBe "robot:QA-1"
+        office.readBack().records<Held>().filter { it.id == deploy.id }.map { it.by } shouldBe listOf("robot:DEP-15", "robot:QA-6")
+        office.mailroom.state.held[deploy.id]?.by shouldBe "robot:QA-6"
     }
 
     "a deploy QA's queue kept from before Bora left goes to the Deputy when the queue lets it go while he is away, and back to the queue on his return (review-015 B1)" {
@@ -62,10 +62,10 @@ class HoldsSpec : StringSpec({
         val whileAway = office.readBack()
         office.command(signed = true)
 
-        whileAway.records<Held>().filter { it.id == deploy.id }.map { listOf(it.by, it.deadline) } shouldBe listOf(listOf("robot:QA-1", null), listOf("robot:DEP-15", null))
+        whileAway.records<Held>().filter { it.id == deploy.id }.map { listOf(it.by, it.deadline) } shouldBe listOf(listOf("robot:QA-6", null), listOf("robot:DEP-15", null))
         whileAway.sent("hold").map { listOf(it.by, it.re?.value, it.to.value) } shouldBe listOf(listOf("robot:DEP-15", deploy.id, "teamlead"))
         whileAway.records<kp.model.Refused>() shouldBe emptyList()
-        office.readBack().records<Held>().filter { it.id == deploy.id }.map { it.by } shouldBe listOf("robot:QA-1", "robot:DEP-15", "robot:QA-1")
+        office.readBack().records<Held>().filter { it.id == deploy.id }.map { it.by } shouldBe listOf("robot:QA-6", "robot:DEP-15", "robot:QA-6")
         office.readBack().records<kp.model.Delivered>().single { it.id == deploy.id }.to shouldBe listOf("qa", "bora")
     }
 

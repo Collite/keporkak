@@ -1,0 +1,66 @@
+name: what S1.4 and S1.5 left the two validators to agree on (S1.9 T5, T7; contracts.md §8; issues #26, #30)
+scenarios:
+  - name: a queue with an id of its own is accepted
+    given:
+      vocabulary:
+        facts:
+          live.namespace_absent: {params: name, returns: bool, source: O}
+        operations: {}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+      robots:
+        - role: teamlead
+          active_when: {always: true}
+          intercepts: []
+          rules: [{id: TEST-1, for: persona, when: a job is done, note: say so}]
+          queue: {id: TEST-2, one_at_a_time: true, order: [started], then: fifo, next_when: {fact: live.namespace_absent}}
+    expect:
+      failures: []
+  - name: a queue without an id is reported
+    given:
+      vocabulary:
+        facts:
+          live.namespace_absent: {params: name, returns: bool, source: O}
+        operations: {}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+      robots:
+        - role: teamlead
+          active_when: {always: true}
+          intercepts: []
+          rules: []
+          queue: {one_at_a_time: true, order: [started], then: fifo, next_when: {fact: live.namespace_absent}}
+    expect:
+      failures: ["fixture-0.yaml: a queue has an id"]
+  - name: a queue whose id is no robot rule id is reported
+    given:
+      vocabulary:
+        facts:
+          live.namespace_absent: {params: name, returns: bool, source: O}
+        operations: {}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+      robots:
+        - role: teamlead
+          active_when: {always: true}
+          intercepts: []
+          rules: []
+          queue: {id: the-queue, one_at_a_time: true, order: [started], then: fifo, next_when: {fact: live.namespace_absent}}
+    expect:
+      failures: ["fixture-0.yaml: a queue's id must match [A-Z]+-[0-9]+"]
+  - name: a queue whose id is a rule's is reported
+    given:
+      vocabulary:
+        facts:
+          live.namespace_absent: {params: name, returns: bool, source: O}
+        operations: {}
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+      robots:
+        - role: teamlead
+          active_when: {always: true}
+          intercepts: []
+          rules: [{id: TEST-1, for: persona, when: a job is done, note: say so}]
+          queue: {id: TEST-1, one_at_a_time: true, order: [started], then: fifo, next_when: {fact: live.namespace_absent}}
+    expect:
+      failures: ["TEST-1: duplicate robot rule id"]

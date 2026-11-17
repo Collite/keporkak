@@ -92,6 +92,8 @@ private fun action(doc: Doc, id: String, forms: Forms, node: Node): Action? {
 
 private fun queue(doc: Doc, file: String, forms: Forms, node: Node): Queue? {
     val fields = doc.fields(doc.mapping(node, file, "queue") ?: return null, file)
+    val id = doc.text(fields["id"], file, "a queue's id") ?: "".also { doc.problem(file, "a queue has an id") }
+    if (id.isNotEmpty() && !robotRuleId.matches(id)) doc.problem(file, "a queue's id must match [A-Z]+-[0-9]+")
     val oneAtATime = (fields["one_at_a_time"] as? Node.Scalar)?.literal == Literal.Bool(true)
     val fifo = (fields["then"] as? Node.Scalar)?.text == "fifo"
     if (!oneAtATime || !fifo) doc.problem(file, "invalid queue discipline")
@@ -103,7 +105,7 @@ private fun queue(doc: Doc, file: String, forms: Forms, node: Node): Queue? {
         ProseRule(proseId, read["when"]?.let { doc.text(it, proseId, "when") }, read["note"]?.let { doc.text(it, proseId, "note") }).also { read.close() }
     }
     fields.close()
-    return Queue(order, nextWhen, prose)
+    return Queue(id, order, nextWhen, prose)
 }
 
 /** A persona's role and the modes its frontmatter declares; the rest of the persona is not the rules'. */

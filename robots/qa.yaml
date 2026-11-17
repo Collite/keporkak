@@ -16,7 +16,8 @@ rules:
   for: persona
   when: a job needs computer use and the office's class is off
   note: 'answer qa-report fail: ''computer use is not available in this office'''
-queue:
+queue:  # a hold by the queue names its id: by robot:QA-6 (contracts.md §8)
+  id: QA-6
   one_at_a_time: true
   order:
   - deploy-request

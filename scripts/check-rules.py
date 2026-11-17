@@ -580,6 +580,11 @@ for filename, robot in ROBOTS:
             fail(f"{filename}: invalid class intercept")
     if "queue" in robot:
         queue=robot["queue"]
+        queue_id=queue.get("id")
+        if not isinstance(queue_id,str): fail(f"{filename}: a queue has an id")
+        elif re.fullmatch(r"[A-Z]+-[0-9]+",queue_id) is None: fail(f"{filename}: a queue's id must match [A-Z]+-[0-9]+")
+        elif queue_id in robot_ids: fail(f"{queue_id}: duplicate robot rule id")
+        else: robot_ids.add(queue_id)
         if queue.get("one_at_a_time") is not True or queue.get("then")!="fifo":
             fail(f"{filename}: invalid queue discipline")
         for kind in queue.get("order",[]):

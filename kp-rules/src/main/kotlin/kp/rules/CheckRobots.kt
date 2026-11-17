@@ -28,6 +28,7 @@ internal class RobotsCheck(
                 is Intercept.ClassTo -> if (intercept.messageClass !in classes || intercept.to !in engagement.roles) report.add(path, null, "invalid class intercept")
             }
             robot.queue?.let { queue ->
+                if (!ids.add(queue.id)) report.add(path, queue.id, "duplicate robot rule id")
                 queue.order.filterNot { it in kinds }.forEach { report.add(path, null, "unknown queued kind '$it'") }
                 resolve(file, robot, Names().apply { requirement(queue.nextWhen) })
             }

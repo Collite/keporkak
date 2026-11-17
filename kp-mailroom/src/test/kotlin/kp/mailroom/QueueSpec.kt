@@ -20,7 +20,7 @@ class QueueSpec : StringSpec({
 
         val first = office.send("coder-1", """{"kind": "qa-request", "stage": "KP/P3/S3.1", "args": $certify}""")
 
-        office.readBack().story() shouldBe listOf("qa-request held by robot:QA-1", "qa-request delivered")
+        office.readBack().story() shouldBe listOf("qa-request held by robot:QA-6", "qa-request delivered")
         office.readBack().records<Held>().single().until shouldBe "live.namespace_absent"
         office.readBack().records<Delivered>().single { it.id == first.id }.deadline?.value shouldBe "2026-11-16T11:00:00Z"
     }
