@@ -129,11 +129,13 @@ class SeatOffice(seed: String = "assigned", rules: RuleTexts = MasterRules()) : 
     fun seat(name: String, role: String, stage: String? = STAGE): SeatClient {
         val token = "kp-spec-" + ByteArray(16).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
         made += token
+        names += name
         tokens.register(token, Binding(name, role, "panda", stage, "claude-haiku-5-5", "low"))
         return SeatClient(name, token, "http://127.0.0.1:${api.address.port}").also(clients::add)
     }
 
     private val clients = ArrayList<SeatClient>()
+    private val names = HashSet<String>()
 
     /** Every line of the log, in `seq` order, as written. */
     fun lines(): List<JsonObject> = project.resolve("mail").walk().filter { it.isRegularFile() && it.extension == "jsonl" }
@@ -145,10 +147,17 @@ class SeatOffice(seed: String = "assigned", rules: RuleTexts = MasterRules()) : 
     /** Every file under the project and the build's output a spec could leave a token in — the log, first of all. */
     fun written(): List<String> = project.walk().filter { it.isRegularFile() }.map { Files.readString(it) }.toList()
 
+    /**
+     * Closes the office — and checks its whole log (S2.3 DONE): every message a seat sent is carried in that seat's name,
+     * `from` the seat and `by: seat:<name>`, whatever its input named.
+     */
     override fun close() {
         clients.forEach(SeatClient::close)
         api.close()
         mailroom.close()
+        val bySeats = messages().filter { it.text("by")?.startsWith("seat:") == true }
+        val strays = bySeats.filter { it.text("from") !in names || it.text("by") != "seat:${it.text("from")}" }
+        check(strays.isEmpty()) { "a seat's message not carried in its own name: $strays" }
     }
 }
 

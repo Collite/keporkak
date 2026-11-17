@@ -220,10 +220,10 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
             )) { "the stop hook's calls: ${stops.map { "${it.body} → ${it.status} ${it.answer}" }}" }
             check(stops.all { it.authorization == "Bearer ${started.token.value}" }) { "a call to /hook/stop without the session token" }
             check(read == listOf(first, second.id)) { "read records for $CODER: $read" }
-            check(records("fact").none { it.text("fact") == STOP_BLOCKS }) { "the gate reached its cap" }
+            check(records("fact").none { it.text("fact") == TURN_BLOCKED }) { "the gate reached its cap" }
             check(end.stopReason == "end_turn") { "the turn ended ${end.stopReason}" }
             Unit to "${stops.size} calls to /hook/stop, each with the session token as bearer: ${stops.joinToString(" · ") { "${it.body} → ${it.answer}" }}; " +
-                "the seat read ${second.id} (inbox ${toolCalls("inbox", again).values.joinToString()}); the turn ended ${end.stopReason}; no ${STOP_BLOCKS} fact"
+                "the seat read ${second.id} (inbox ${toolCalls("inbox", again).values.joinToString()}); the turn ended ${end.stopReason}; no ${TURN_BLOCKED} fact"
         }
         spent = (driver.observe(SeatId(CODER), SeatFacts.USAGE, UsageWindow.SESSION) as? Outcome.Ok)?.value?.value?.jsonPrimitive?.content?.toLong() ?: 0
         driver.kill(SeatId(CODER), Duration.ofSeconds(5))
@@ -323,7 +323,7 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
         const val POOL = "pool-handshake"
         const val PROFILE = "keporkak"
         const val SEEDED = "m-handshake-000000"
-        const val STOP_BLOCKS = "seat.stop_blocks"
+        const val TURN_BLOCKED = "turn.blocked"
         const val REGISTRAR = "KP_HANDSHAKE_REGISTRAR"
         /** The gate's rule (engagement.yaml:stop_gate), as the API answers a block. */
         const val REASON = "a turn ends only when the seat has no unread mail"

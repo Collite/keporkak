@@ -82,7 +82,7 @@ class TheSeatsToolsSpec : StringSpec({
 
             val kept = json("""{"block": true, "reason": "a turn ends only when the seat has no unread mail"}""")
             answers shouldBe listOf(kept, kept, kept, json("""{"block": false, "reason": ""}"""))
-            office.records("fact").map { listOf(it.text("fact"), it.text("subject"), it.text("value")) } shouldBe listOf(listOf("seat.stop_blocks", "coder-1", "3"))
+            office.records("fact").map { listOf(it.text("fact"), it.text("subject"), it.text("value")) } shouldBe listOf(listOf("turn.blocked", "coder-1", "3"))
         }
     }
 })

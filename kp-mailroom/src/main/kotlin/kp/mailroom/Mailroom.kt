@@ -218,7 +218,7 @@ class Mailroom private constructor(
 
     /**
      * The stop gate (contracts.md §4.3, §11): [seat]'s turn is about to end after [blocks] consecutive blocks. The engine
-     * says end, or block with the gate's rule. At the cap the turn ends and one `fact` record, `seat.stop_blocks`, says
+     * says end, or block with the gate's rule. At the cap the turn ends and one `fact` record, `turn.blocked`, says
      * so — written whatever else the fact triggers (§2.2), and heard like any fact that changed.
      */
     @Synchronized
@@ -226,7 +226,7 @@ class Mailroom private constructor(
         val engine = Engine(rules)
         val gate = engine.turnEnds(folded, seat, blocks, table(engine.turnNeeds(folded, seat), null, now()))
         if (gate is Gate.End && gate.capped) {
-            fact(FactRef(STOP_BLOCKS, mapOf(SEAT to Datum.Text(seat))), Datum.of(blocks), null, AT_THE_CAP, always = true)
+            fact(FactRef(TURN_BLOCKED, mapOf(SEAT to Datum.Text(seat))), Datum.of(blocks), null, AT_THE_CAP, always = true)
             drain()
         }
         return if (gate is Gate.Block) Stop(block = true, reason = gate.reason) else Stop(block = false, reason = "")
@@ -423,7 +423,7 @@ class Mailroom private constructor(
      * A fact that changed: the guard judges its `on: fact` transitions and the robots hear it. When it triggers
      * nothing, nothing is written; otherwise its `fact` record first — about whom its parameters name, else its stage,
      * else the party its name is about, else the office — then the transitions, effects, sends and wakes it caused.
-     * [always]: the record is written though it triggers nothing — `seat.stop_blocks` at the stop gate's cap (§2.2).
+     * [always]: the record is written though it triggers nothing — `turn.blocked` at the stop gate's cap (§2.2).
      */
     private fun fact(fact: FactRef, value: Datum, stage: String?, evidence: String?, always: Boolean = false) {
         val now = now()
@@ -795,8 +795,8 @@ private const val FACT = "fact"
 private const val VALUE = "value"
 private const val EVIDENCE = "evidence"
 private const val SEAT_NAME = "seat.name"
-/** The fact the stop gate's cap writes (contracts.md §2.2, §4.4, §11), and what shows it. */
-private const val STOP_BLOCKS = "seat.stop_blocks"
+/** The fact the stop gate's cap writes (contracts.md §2.2, §4.4, §11, Amendment 20) — the seat API's, not the driver's — and what shows it. */
+private const val TURN_BLOCKED = "turn.blocked"
 private const val AT_THE_CAP = "engagement.yaml:stop_gate — at its cap the turn ended"
 private const val NOTIFY_BORA = "notify.bora"
 private const val REQUESTED = "requested"
