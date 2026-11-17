@@ -6,6 +6,9 @@ internal const val ENGAGEMENT = "rules/engagement.yaml"
 internal const val VOCABULARY = "rules/vocabulary.yaml"
 /** What `{trigger: …}` may name in `engagement.yaml:stop_gate` (contracts.md §4.1): the seat whose turn is ending. */
 private const val STOP_GATE_TRIGGER = "seat"
+private const val STOP_GATE = "stop_gate"
+/** `{holds: stop_gate}`, reported (contracts.md §4.1, Amendment 19). */
+private const val UNNAMEABLE_GATE = "{holds: stop_gate} — stop_gate is no block a {holds: …} may name: it is judged only when a turn is about to end"
 
 /** Where a name appears, for the problem that reports it. */
 internal data class Owner(val file: String, val id: String?)
@@ -157,7 +160,9 @@ internal class RulesCheck(
         names.caps.filterNot { it in engagement.caps }.forEach { problem(owner, "unknown cap '$it'") }
         names.counters.filterNot { it in lifecycle.counters }.forEach { problem(owner, "unknown counter '$it'") }
         names.attestations.filterNot { it in vocabulary.attestations }.forEach { problem(owner, "unknown attestation '$it'") }
-        names.blocks.filterNot { it in engagement.blocks }.forEach { problem(owner, "unknown engagement block '$it'") }
+        names.blocks.filterNot { it in engagement.blocks }.forEach { block ->
+            problem(owner, if (block == STOP_GATE) UNNAMEABLE_GATE else "unknown engagement block '$block'")
+        }
     }
 
     private fun transitions() {

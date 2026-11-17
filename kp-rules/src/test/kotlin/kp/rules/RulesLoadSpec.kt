@@ -48,7 +48,7 @@ class RulesLoadSpec : StringSpec({
     "what the Kotlin loader accepts and what it rejects, the Python validator accepts and rejects, on the shared fixtures under rules/fixtures/" {
         val scenarios = sharedFixtureScenarios()
 
-        scenarios.size shouldBe 47
+        scenarios.size shouldBe 49
         scenarios.associate { it.name to loaderFailures(it) } shouldBe scenarios.associate { it.name to pythonFailures(it) }
     }
 

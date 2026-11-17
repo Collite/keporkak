@@ -145,9 +145,12 @@ data class Engagement(
     /** Every scalar of the file by its dotted path — what `{engagement: <path>}` reads. */
     val values: Map<String, Literal>,
 ) {
-    /** The blocks of requirements a `{holds: …}` may name, by name. */
+    /**
+     * The blocks of requirements a `{holds: …}` may name, by name — `second_key`. `stop_gate` is none (contracts.md §4.1,
+     * Amendment 19): it is judged only when a turn is about to end, and a rule whose requirement equals its own repeats nothing.
+     */
     val blocks: Map<String, List<Requirement>>
-        get() = listOfNotNull(secondKey?.let { "second_key" to it.require }, stopGate?.let { "stop_gate" to it.require }).toMap()
+        get() = listOfNotNull(secondKey?.let { "second_key" to it.require }).toMap()
 }
 
 // rules/vocabulary.yaml (contracts.md §4.4)

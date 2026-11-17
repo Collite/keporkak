@@ -131,8 +131,10 @@ def sender_thresholds(senders):
     names = {part.strip() for part in str(senders or "").split("|")}
     return {name for _, robot in ROBOTS if robot.get("role") in names for name in robot.get("thresholds", {})}
 
-# The blocks of requirements a `{holds: …}` may name (contracts.md §4.1, Amendment 7).
-BLOCKS = {name: E[name].get("require", []) for name in ("second_key", "stop_gate") if isinstance(E.get(name), dict)}
+# The blocks of requirements a `{holds: …}` may name (contracts.md §4.1, Amendment 7) — `second_key`. `stop_gate` is
+# none (Amendment 19): it is judged only when a turn is about to end, and a rule whose requirement equals its own
+# repeats nothing.
+BLOCKS = {name: E[name].get("require", []) for name in ("second_key",) if isinstance(E.get(name), dict)}
 
 # An attestation is described in prose (contracts.md §4.4): the loader reads its description as text, and so does this.
 for name, description in (V.get("attestations") or {}).items():
@@ -200,7 +202,9 @@ def check_references(value, owner, robot=None, thresholds=frozenset()):
                   "cap": "cap", "kind": "kind", "emit": "kind", "attest": "attestation", "counter": "counter", "count": "counter", "robot": "robot threshold",
                   "holds": "engagement block"}
         for key, item in value.items():
-            if key in namespaces and isinstance(item, str) and item not in namespaces[key]:
+            if key == "holds" and item == "stop_gate":
+                fail(f"{owner}: {{holds: stop_gate}} — stop_gate is no block a {{holds: …}} may name: it is judged only when a turn is about to end")
+            elif key in namespaces and isinstance(item, str) and item not in namespaces[key]:
                 fail(f"{owner}: unknown {labels[key]} '{item}'")
             if key == "since" and isinstance(item, str) and item not in K:
                 fail(f"{owner}: unknown kind '{item}'")
