@@ -24,9 +24,9 @@ import java.util.concurrent.ConcurrentLinkedDeque
 /**
  * `just rehearse <walk>` (architecture.md §7): the daemon on a throwaway project, with the walk's table of facts, its
  * seats scripted — each sends its step's kind with the step's args, the scripted performer ends each operation as the
- * walk says — pausing where the walk needs Bora, who answers with the real `kp` on the daemon's socket. A fact the walk
- * triggers is skipped: the mailroom takes facts as triggers from S1.4 on. A refused step ends the playing; the daemon
- * keeps answering `kp` until the rehearsal is closed.
+ * walk says — pausing where the walk needs Bora, who answers with the real `kp` on the daemon's socket. The robots are
+ * the daemon's: a step a robot sends (`by: robot:…`) is theirs, not the walk's to play. A fact the walk triggers is
+ * skipped. A refused step ends the playing; the daemon keeps answering `kp` until the rehearsal is closed.
  */
 class Rehearsal private constructor(private val walk: Walk, private val stage: String, private val daemon: Daemon, private val facts: TableFacts, private val out: (String) -> Unit) : AutoCloseable {
     /** The office the daemon runs: what a spec fires the deadlines of once it has moved the clock. */
@@ -84,6 +84,7 @@ class Rehearsal private constructor(private val walk: Walk, private val stage: S
             step.operation != null -> true
             step.fields.containsKey(EVENT) -> true.also { out("$number · a fact the walk triggers (${(step.fields[EVENT] as? Datum.Fields)?.fields?.get(FACT)?.let { (it as? Datum.Text)?.value }}): skipped — the mailroom takes facts as triggers from S1.4 on") }
             who == MAILROOM -> true
+            step.text(BY)?.startsWith(ROBOT) == true -> true.also { robots(number, step, kind) }
             who == BORA && kind != null -> bora(number, step, kind)
             who != null && kind != null -> send(number, step, who, kind)
             else -> true
@@ -101,6 +102,17 @@ class Rehearsal private constructor(private val walk: Walk, private val stage: S
             (answer.requirement?.let { " — ${answer.rule}: $it" } ?: "") + " · the stage is ${office.state.stage(stage)}")
         if (answer.status == Status.REFUSED) out("the walk stops here: its step $number was refused")
         return answer.status != Status.REFUSED
+    }
+
+    /**
+     * A step the robots host sends, not the walk: what a later step names by its id is the last message of its kind that
+     * rule sent, when it has sent one.
+     */
+    private fun robots(number: Int, step: Walk.Step, kind: String?) {
+        val by = step.text(BY)
+        val sent = office.state.delivered.values.lastOrNull { it.kind == kind && it.by == by }
+        step.id?.let { id -> sent?.let { ids[id] = it.id } }
+        out("$number · $by $kind: the robots' to send" + (sent?.let { " — ${it.id}" } ?: ", not sent"))
     }
 
     /** Waits for Bora's message of [kind], answered with `kp` on the socket; the walk goes on once it is delivered. */
@@ -173,6 +185,7 @@ class Rehearsal private constructor(private val walk: Walk, private val stage: S
         private const val ARGS = "args"
         private const val RE = "re"
         private const val BY = "by"
+        private const val ROBOT = "robot:"
         private const val OUTCOME = "outcome"
         private const val RESULT = "result"
         private const val REASON = "reason"

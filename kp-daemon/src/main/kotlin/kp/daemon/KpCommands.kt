@@ -11,14 +11,15 @@ import kp.mailroom.Status
 
 /**
  * `kp`'s commands (contracts.md §6), carried for one peer. Every command a root peer sends is a signed command — reads
- * too — and is noted as Bora acting (§6: "any command may be run with `sudo` and then counts"). Nothing here decides:
- * reads come from the folded state, and Bora's answers are messages the mailroom judges like any other.
+ * too — and reaches the mailroom as Bora acting before it is carried (§6: "any command may be run with `sudo` and then
+ * counts"); an unsigned one moves nothing. Nothing here decides: reads come from the folded state, and Bora's answers
+ * are messages the mailroom judges like any other.
  */
 class KpCommands(private val office: Office, world: FactSource) : Commands {
     private val views = Views(office, world)
 
     override fun run(request: Request, peer: Peer, out: Out): Int {
-        if (peer.root) office.presence.signed()
+        if (peer.root) office.acted()
         val args = request.args
         return when (request.cmd) {
             "inbox" -> inbox(args, out)

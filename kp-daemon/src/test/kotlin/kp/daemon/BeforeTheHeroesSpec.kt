@@ -74,7 +74,8 @@ class BeforeTheHeroesSpec : FreeSpec({
             repeat(3) { office.kp("decline", "5") } // unsigned: refused, three times in a day
             repeat(3) {
                 office.kp("away", root = true)
-                office.kp("status", root = true) // back: the Deputy's second digest of this return is refused
+                office.clock.pass(Duration.ofHours(1))
+                office.kp("status", root = true) // back an hour later: the Deputy's second digest of this return is refused
             }
 
             office.log().story().count { it == "decline refused" } shouldBe 3

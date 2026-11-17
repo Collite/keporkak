@@ -49,6 +49,17 @@ class Office private constructor(
     /** The fold of the log, as the mailroom works from it. */
     val state: State get() = mailroom.state
 
+    /**
+     * Bora ran a signed command — any `kp` command under `sudo`, a read too (contracts.md §6): it is the time his
+     * presence is read from, and it reaches the mailroom as Bora acting, which brings him back when he was away. A
+     * command that is a message is also judged as one ([submit]); it acts only once.
+     */
+    fun acted() {
+        presence.signed()
+        mailroom.command(signed = true)
+        changes.signal()
+    }
+
     /** Carries one message through the mailroom (contracts.md §2.1: it sets `from`, `by` and `signed`). */
     fun submit(sender: Sender, input: JsonObject): Answer = mailroom.submit(sender, input).also { changes.signal() }
 
@@ -91,14 +102,15 @@ class Office private constructor(
     companion object {
         /**
          * Starts the mailroom of office [name] on [project]'s log with the rule texts of the checkout [root] (architecture.md
-         * §4): it folds every file, puts the rules in force and records them. [world] is every fact the daemon does not
-         * observe itself. Throws [MailroomRefusal] when the log or the rules are not fit to work from.
+         * §4): it folds every file, puts the rules in force and records them, and hosts the robots (contracts.md §8).
+         * [world] is every fact the daemon does not observe itself. Throws [MailroomRefusal] when the log or the rules are
+         * not fit to work from.
          */
         fun start(name: String, project: Path, root: Path, world: FactSource, operations: Operations, deliveries: Deliveries, clock: Clock): Office {
             val files = RuleFiles(root)
             val presence = Presence(clock)
             val facts = FactSource { fact, stage -> presence.observe(fact) ?: world.observe(fact, stage) }
-            val mailroom = Mailroom.start(project, OfficeId(name), files, facts, operations, deliveries, clock)
+            val mailroom = Mailroom.start(project, OfficeId(name), files, facts, operations, deliveries, clock, robots = true)
             val rules = InForceRules.of(files.lastRead).first ?: error("the mailroom started on rules kp-rules refuses")
             presence.seed(mailroom.state)
             presence.state = { mailroom.state }
