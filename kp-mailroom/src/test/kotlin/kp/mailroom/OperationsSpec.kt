@@ -78,6 +78,7 @@ class OperationsSpec : StringSpec({
 
     "seat.start names its seat in with.seat, and in result.seat when ok" {
         val office = Office()
+        office.facts.set("roster.model_allowed", true)
         val request = office.send("teamlead", """{"kind": "session-request", "subject": "a coder", "args": {"action": "add", "seat": "coder-2", "role": "coder", "level": "senior"}}""")
 
         office.send("pool-1", """{"kind": "session-report", "re": "${request.id}", "subject": "coder-2", "args": {"seat": "coder-2", "role": "coder"}}""")

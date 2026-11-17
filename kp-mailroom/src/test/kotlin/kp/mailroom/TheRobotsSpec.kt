@@ -8,6 +8,8 @@ import kp.model.Held
 import kp.model.Op
 import kp.model.Refused
 import kp.model.plain
+import kp.rules.Loaded
+import kp.rules.Rules
 import kotlin.time.Duration.Companion.minutes
 
 /** H-2′'s three stages (design/11-c2-converged.md §3): the tail has passed; S2.2 is proposed tonight; S2.3 is in review. */
@@ -135,6 +137,26 @@ class TheRobotsSpec : StringSpec({
         afterItsWaitIsOverButItsNamespaceStays shouldBe listOf(first.id)
         office.handedToQa() shouldBe listOf(first.id, deploy.id)
         office.mailroom.state.held.keys shouldBe setOf(second.id)
+    }
+
+    "DONE — the H-3 and H-3 roll-back walks pass through the mailroom with the states the Python walker gives" {
+        val certification = WalkPlayed("H-3").compared
+        val rollback = WalkPlayed("H-3-rollback").compared
+
+        certification.map { it.mailroom } shouldBe certification.map { it.python }
+        rollback.map { it.mailroom } shouldBe rollback.map { it.python }
+        listOf(certification.last().stages, rollback.last().stages) shouldBe listOf(mapOf("S3.2" to "exited"), mapOf("S3.2-rollback" to "tail_failed"))
+    }
+
+    "DONE — the walk that seats a coder on the reserved model ends in a refusal naming the seat machine's rule, and no level of the roster points at a reserved model" {
+        val played = WalkPlayed("reserved-model").compared
+        val roster = (Rules.load(Texts().read()) as Loaded.Valid).ruleSet.pool.roster
+
+        val refused = played.last().outcome as Refused
+        listOf(refused.rule, refused.failed.toString()) shouldBe listOf("SEAT-01", """{"fact":"roster.model_allowed","seat":{"arg":"seat"}}""")
+        played.map { it.mailroom } shouldBe played.map { it.python }
+        roster.reserved shouldBe mapOf("claude-fable-5-2" to listOf("principal"))
+        roster.levels.values.flatMap { it.values }.filter { it.model in roster.reserved } shouldBe emptyList()
     }
 
     "a rule marked for the persona is never executed" {

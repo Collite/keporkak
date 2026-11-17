@@ -9,8 +9,6 @@ vendors:
     # Pinned by S2.1's handshake test (D-48). office/adapter/package-lock.json names the same version; `just office-check`
     # fails when the two, or what is installed, differ.
     adapter_version: "0.106.0"
-    # master's pin in gradle/libs.versions.toml (`acp`); check-rules.py fails when the two differ.
-    sdk: "com.agentclientprotocol:acp:0.34.0"
 # low → high; one line per (model, effort) pair; model before effort (D-45). Efforts: every one the adapter offers but default.
 order:
   - {vendor: claude, model: claude-haiku-5-5, effort: low}
@@ -28,7 +26,12 @@ order:
   - {vendor: claude, model: claude-opus-5-5, effort: high}
   - {vendor: claude, model: claude-opus-5-5, effort: xhigh}
   - {vendor: claude, model: claude-opus-5-5, effort: max}
-# skill × thinking → a line of `order`. Senior → the top model, junior → the cheapest;
+  - {vendor: claude, model: claude-fable-5-2, effort: low}
+  - {vendor: claude, model: claude-fable-5-2, effort: medium}
+  - {vendor: claude, model: claude-fable-5-2, effort: high}
+  - {vendor: claude, model: claude-fable-5-2, effort: xhigh}
+  - {vendor: claude, model: claude-fable-5-2, effort: max}
+# skill × thinking → a line of `order`. Senior → the top model that is not reserved, junior → the cheapest;
 # thinking: S the lowest effort the adapter offers, M medium, L high, XL the highest it offers.
 levels:
   junior:
@@ -44,3 +47,8 @@ levels:
 review:
   # a reviewer's model is at least this; its (model, effort) at or above the coder's (D-45)
   floor: claude-opus-5-5
+# A model only these roles may run (D-53): Fable 5.2 is the Principal's. No level points at it.
+reserved:
+  claude-fable-5-2: [principal]
+# A role put on a model outright. None yet: the Principal stays on Opus 5.5 until this says otherwise (plan.md §4.1).
+role_models: {}

@@ -113,21 +113,98 @@ class FakeClock(var now: Instant = Instant.parse(START)) : Clock {
     override fun now(): Instant = now
 }
 
-/** A walk of `rules/walks/`, as the Python walker reads it (`check-rules.py --trace`). */
-class Walk private constructor(val facts: Map<String, Datum>, val steps: List<Map<String, Datum>>) {
+/** A walk of `rules/walks/`, as the Python walker reads it (`check-rules.py --trace`), and the walker's own trace of it. */
+class Walk private constructor(val definition: Map<String, Datum>, val trace: List<Map<String, Datum>>) {
+    val facts: Map<String, Datum> get() = definition["facts"].fields()
+    val steps: List<Map<String, Datum>> get() = (definition.getValue("steps") as Datum.Items).items.map { (it as Datum.Fields).fields }
+
+    /** Whether the walker refused step [step] (1-based). */
+    fun walkerRefused(step: Int): Boolean = (trace.single { (it.getValue("step") as Datum.Number).value.toInt() == step }["refused"] as Datum.Bool).value
+
+    /** The stages the walker gives after step [step] (1-based), by the walk's names for them. */
+    fun walkerStages(step: Int): Map<String, String> = trace.single { (it.getValue("step") as Datum.Number).value.toInt() == step }["stages"].fields()
+        .mapValues { it.value.text()!! }
+
     companion object {
         private val read = HashMap<String, Walk>()
 
         fun named(name: String): Walk = read.getOrPut(name) {
             val process = ProcessBuilder(File(root, "build/python/bin/python").path, "scripts/check-rules.py", "--trace", name)
                 .directory(root).redirectErrorStream(true).start()
-            val line = process.inputStream.bufferedReader().readLines().single { it.startsWith("WALK ") }
+            val lines = process.inputStream.bufferedReader().readLines()
             process.waitFor()
-            val walk = (Datum.of(plain(line.removePrefix("WALK "))) as Datum.Fields).fields
-            Walk((walk.getValue("facts") as Datum.Fields).fields, (walk.getValue("steps") as Datum.Items).items.map { (it as Datum.Fields).fields })
+            check(lines.none { it.startsWith("FAIL walk $name") }) { lines.filter { it.startsWith("FAIL") }.joinToString("\n") }
+            val walk = (Datum.of(plain(lines.single { it.startsWith("WALK ") }.removePrefix("WALK "))) as Datum.Fields).fields
+            Walk(walk, lines.filter { it.startsWith("TRACE ") }.map { (Datum.of(plain(it.removePrefix("TRACE "))) as Datum.Fields).fields })
         }
     }
 }
+
+/**
+ * A walk played through the mailroom with the robots host on (S1.4's DONE): each of its stages an id of its own, in
+ * its initial state; its seats `ready`; its facts, per stage; each message step submitted by its sender — Bora signed
+ * when the walk signs — and each operation finished by the fake performer as the walk says. After each message and
+ * the operations that follow it, every stage's state as the log gives it, beside the walker's after the same steps.
+ */
+class WalkPlayed(name: String) {
+    private val walk = Walk.named(name)
+    private val names = LinkedHashMap<String, String>()
+    private val settings = walk.definition["stages"].fields()
+    /** Each walk stage's id: `WALK/P1/S1.<n>`, in the order the walk names them. */
+    private fun id(stage: String): String = names.getOrPut(stage) { "WALK/P1/S1.${names.size + 1}" }
+    private val first = walk.definition["stage"].text()!!
+
+    init {
+        id(first)
+        settings.keys.forEach(::id)
+        walk.steps.mapNotNull { it["stage"].text() }.forEach(::id)
+    }
+
+    private fun initial(stage: String): String = settings[stage].fields()["initial"].text() ?: walk.definition["initial"].text() ?: "planned"
+
+    val office = Office(walk = name, others = names.filterKeys { initial(it) != "planned" }.entries.associate { (stage, id) -> id to initial(stage) },
+        robots = true, seats = walk.definition["seats"].fields().keys.toList()).also { office ->
+        names.forEach { (stage, id) -> office.facts.setAll(id, settings[stage].fields()["facts"].fields()) }
+    }
+
+    /** Per message step: the walk's step number after its operations, the mailroom's stages, the walker's, and what became of it. */
+    val compared: List<Played> = run {
+        val ids = HashMap<String, String>()
+        var current = first
+        val steps = walk.steps
+        steps.withIndex().filter { (_, step) -> step["operation"] == null }.map { (index, step) ->
+            current = step["stage"].text() ?: current
+            val group = listOf(step) + steps.drop(index + 1).takeWhile { it["operation"] != null }
+            group.forEach { office.facts.setAll(id(current), it["facts"].fields()) }
+            group.filter { it["operation"] != null && it["result"].text() == "failed" }.forEach { office.operations.failing[it["operation"].text()!!] = "the walk's" }
+            val kind = step["kind"].text()!!
+            val re = step["re"].text()?.let(ids::getValue)
+            val input = """{"kind":"$kind","stage":"${id(current)}","args":${(step["args"] ?: Datum.Fields(emptyMap())).json()}""" +
+                (re?.let { ""","re":"$it"""" } ?: "") + (step["body"]?.let { ""","body":${it.json()}""" } ?: "") + "}"
+            val who = step["who"].text()!!
+            office.clock.advance(1.minutes)
+            val answer = if (who == "bora") office.bora(input, signed = step["signed"].text() == "bora") else office.send(who, input)
+            office.operations.failing.clear()
+            step["id"].text()?.let { ids[it] = answer.id }
+            val last = index + group.size
+            val outcome = office.readBack().lines.filterIsInstance<Record>().last { it.plain()["id"] == answer.id && it.event in setOf("delivered", "refused") }
+            Played(last, outcome.event == "refused", names.entries.associate { (stage, id) -> stage to (office.stage(id) ?: "planned") }, outcome,
+                walk.walkerRefused(index + 1), walk.walkerStages(last))
+        }
+    }
+
+    /**
+     * Walk step [step] — a message and the operations after it: whether the mailroom refused the message and every
+     * stage's state then, the record that says what became of it, and what the walker gives for the same steps.
+     */
+    data class Played(val step: Int, val refused: Boolean, val stages: Map<String, String>, val outcome: Record, val walkerRefused: Boolean, val walker: Map<String, String>) {
+        val mailroom get() = refused to stages
+        val python get() = walkerRefused to walker
+    }
+}
+
+/** Every fact of [values] for [stage]. */
+fun FakeFacts.setAll(stage: String, values: Map<String, Datum>) = values.forEach { (name, value) -> set(stage, name, value) }
 
 private fun Datum?.text(): String? = (this as? Datum.Text)?.value
 private fun Datum?.fields(): Map<String, Datum> = (this as? Datum.Fields)?.fields.orEmpty()

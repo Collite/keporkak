@@ -15,7 +15,6 @@ private val effortId = Regex("[A-Z][A-Z0-9-]*")
 
 /** A folder of the project checkout, written relative to it: not absolute, not from home, never above it. */
 private fun insideCheckout(folder: String) = folder.isNotEmpty() && !folder.startsWith("/") && !folder.startsWith("~") && ".." !in folder.split("/")
-private val sdkCoordinate = Regex("[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[A-Za-z0-9_.+-]+")
 
 private fun Doc.textOrNull(node: Node?): String? = ((node as? Node.Scalar)?.literal as? Literal.Text)?.value?.takeIf { it.isNotBlank() }
 
@@ -44,10 +43,8 @@ internal fun readRoster(doc: Doc, node: Node): Roster? {
         if (adapterVersion != null && (adapterVersion as? Node.Scalar)?.literal != Literal.Null && doc.textOrNull(adapterVersion) == null) {
             doc.problem(null, "vendor '$name' adapter_version must be a version or null")
         }
-        val sdk = doc.textOrNull(read?.get("sdk"))
-        if (sdk == null || !sdkCoordinate.matches(sdk)) doc.problem(null, "vendor '$name' sdk must be group:artifact:version")
         read?.close()
-        Vendor(name, adapter ?: "", doc.textOrNull(adapterVersion), sdk ?: "")
+        Vendor(name, adapter ?: "", doc.textOrNull(adapterVersion))
     }.associateBy { it.name }
     if (vendors.isEmpty()) doc.problem(null, "vendors must name at least one vendor")
 

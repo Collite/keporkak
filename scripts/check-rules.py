@@ -15,7 +15,7 @@ Usage: python3 scripts/check-rules.py [--pool DIR] [--render out.md] [--self-tes
   --trace WALK  also prints the named walk as a `WALK <json>` line and, after each step, a `TRACE <json>` line: whether
                 it was refused, the transitions it fired and every stage's state — the engine's second opinion (S1.2)
 """
-import sys, re, yaml, pathlib, itertools, subprocess, json, copy, tomllib
+import sys, re, yaml, pathlib, itertools, subprocess, json, copy
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -87,7 +87,8 @@ if FIXTURE:
         "from": "coder", "to": "teamlead", "guard": "-", "args": {},
         "class": {"default": "A"}, "window": "stage", "max_fires": None, "deadline": None, "expiry": [], "require": [],
     }})
-    E = {"roles": {"coder": {}, "teamlead": {}}, "graduation": {"never": []},
+    # The roles master's pool names besides — the roster reserves a model for the principal (contracts.md §9).
+    E = {"roles": {"coder": {}, "teamlead": {}, "principal": {}}, "graduation": {"never": []},
          "mailroom_declared_effects": given.get("mailroom_declared_effects", []), "caps": given.get("caps", {}),
          "profile": given.get("profile", "supervised"), "autonomy_profiles": given.get("autonomy_profiles", {"supervised": {}})}
     if "second_key" in given:
@@ -154,10 +155,15 @@ def check_destination(to, owner):
 # A declared emit carries the args its kind requires (contracts.md §4.2, Amendment 16): every arg it gives is declared,
 # every required one is given, and a value written as a literal is of the declared type and in the declared enum.
 # A value the mailroom resolves at run time ({arg: …}, {re: …}, {fact: …}) is the engine's to check.
+# A boolean is no number, and a number with no fraction is an integer, `1.0` too — as the engine types an arg at run
+# time and as JSON Schema reads `integer`; the Kotlin loader reads them so as well (issue #26).
 ARG_TYPES = {"string": lambda v: isinstance(v, str), "boolean": lambda v: isinstance(v, bool),
-             "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
+             "integer": lambda v: (isinstance(v, int) and not isinstance(v, bool)) or (isinstance(v, float) and v.is_integer()),
              "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
              "array": lambda v: False, "object": lambda v: False}
+def same_literal(a, b):
+    """Two literals of a rules file are the same: a boolean only as a boolean (Python's `True == 1` is not the rules')."""
+    return isinstance(a, bool) == isinstance(b, bool) and a == b
 def literal_text(value):
     return ("true" if value else "false") if isinstance(value, bool) else str(value)
 def check_emit_args(effect, owner):
@@ -174,7 +180,7 @@ def check_emit_args(effect, owner):
         spec = declared.get(name)
         if not isinstance(spec, dict) or not isinstance(value, (str, bool, int, float)):
             continue
-        if "enum" in spec and value not in spec["enum"]:
+        if "enum" in spec and not any(same_literal(value, item) for item in spec["enum"]):
             fail(f"{owner}: emit '{kind}' arg '{name}' is not one of {' | '.join(literal_text(item) for item in spec['enum'])}")
         elif "enum" not in spec and spec.get("type") in ARG_TYPES and not ARG_TYPES[spec["type"]](value):
             fail(f"{owner}: emit '{kind}' arg '{name}' is not {spec['type']}")
@@ -1100,15 +1106,13 @@ def check_roster(roster):
     label = "pool/roster.yaml"
     vendors = roster.get("vendors") if isinstance(roster.get("vendors"), dict) else {}
     if not vendors: fail(f"{label}: vendors must name at least one vendor")
-    catalog = tomllib.loads((ROOT / "gradle/libs.versions.toml").read_text())
-    pins = {item["module"]: catalog["versions"][item["version"]["ref"]] for item in catalog["libraries"].values() if isinstance(item, dict) and "ref" in item.get("version", {})}
+    # The SDK's pin lives in the version catalog only (contracts.md §9, Amendment 10): a vendor names its adapter and its pin.
     for name, vendor in vendors.items():
         vendor = vendor if isinstance(vendor, dict) else {}
         if not text(vendor.get("adapter")): fail(f"{label}: vendor '{name}' has no adapter")
         if vendor.get("adapter_version") is not None and not text(vendor.get("adapter_version")): fail(f"{label}: vendor '{name}' adapter_version must be a version or null")
-        module, _, version = str(vendor.get("sdk", "")).rpartition(":")
-        if module not in pins: fail(f"{label}: vendor '{name}' sdk '{vendor.get('sdk')}' is not a library of gradle/libs.versions.toml")
-        elif version != pins[module]: fail(f"{label}: vendor '{name}' sdk version {version} differs from the catalog's pin {pins[module]}")
+        for key in vendor:
+            if key not in ("adapter", "adapter_version"): fail(f"{label}: unknown field '{key}'")
     order = roster.get("order") if isinstance(roster.get("order"), list) else []
     if not order: fail(f"{label}: order must list (model, effort) pairs")
     pairs, models = [], []
@@ -1133,7 +1137,33 @@ def check_roster(roster):
                 fail(f"{label}: level {skill} {size} is not a line of the order")
     floor = (roster.get("review") or {}).get("floor") if isinstance(roster.get("review"), dict) else None
     if floor not in models: fail(f"{label}: review floor '{floor}' is not a model of the order")
-    ok(f"{label}: {len(pairs)} (model, effort) pairs of {len(models)} models; {len(levels)} levels × {len(SIZES)} sizes on the order; review floor {floor}")
+    # A reserved model is in the order like any other; no level points at it, and a role runs it only through
+    # role_models — and only a role it is reserved for (contracts.md §9, D-53).
+    reserved = roster.get("reserved") if isinstance(roster.get("reserved"), dict) else {}
+    if "reserved" in roster and not isinstance(roster.get("reserved"), dict): fail(f"{label}: reserved must be a map")
+    roles_known = set(E.get("roles", {}))
+    for model, allowed in reserved.items():
+        if model not in models: fail(f"{label}: reserved model '{model}' is not a model of the order")
+        if not isinstance(allowed, list) or not all(text(role) for role in allowed):
+            fail(f"{label}: reserved {model} must be a list of roles")
+            continue
+        for role in allowed:
+            if role not in roles_known: fail(f"{label}: reserved model '{model}' names unknown role '{role}'")
+    for skill, sizes in levels.items():
+        for size, line in (sizes if isinstance(sizes, dict) else {}).items():
+            if isinstance(line, dict) and line.get("model") in reserved: fail(f"{label}: level {skill} {size} points at {line['model']}, which is reserved")
+    role_models = roster.get("role_models") if isinstance(roster.get("role_models"), dict) else {}
+    if "role_models" in roster and not isinstance(roster.get("role_models"), dict): fail(f"{label}: role_models must be a map")
+    for role, line in role_models.items():
+        if not isinstance(line, dict) or set(line) != {"model", "effort"} or not all(text(line[key]) for key in line):
+            fail(f"{label}: role_models {role} must be {{model, effort}}")
+            continue
+        if not any(pair[1] == line["model"] and pair[2] == line["effort"] for pair in pairs): fail(f"{label}: role_models {role} is not a line of the order")
+        allowed = reserved.get(line["model"])
+        if isinstance(allowed, list) and role not in allowed: fail(f"{label}: role_models {role} runs {line['model']}, which is reserved for {', '.join(allowed)}")
+        if role not in roles_known: fail(f"{label}: role_models names unknown role '{role}'")
+    kept = "; ".join(model + " for " + ", ".join(map(str, roles)) for model, roles in reserved.items() if isinstance(roles, list)) or "none"
+    ok(f"{label}: {len(pairs)} (model, effort) pairs of {len(models)} models; {len(levels)} levels × {len(SIZES)} sizes on the order; review floor {floor}; reserved {kept}")
     return vendors
 
 def relative_folder(value):

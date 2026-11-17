@@ -209,7 +209,8 @@ data class Robot(
 
 data class Line(val vendor: String, val model: String, val effort: String)
 
-data class Vendor(val name: String, val adapter: String, val adapterVersion: String?, val sdk: String)
+/** A vendor's adapter and its pin; the SDK's pin lives in the version catalog only (contracts.md §9, Amendment 10). */
+data class Vendor(val name: String, val adapter: String, val adapterVersion: String?)
 
 data class RoleModel(val model: String, val effort: String)
 
