@@ -64,6 +64,12 @@ fun sent(id: String, kind: String, from: String, to: String = "teamlead", args: 
     """{"event":"delivered","id":"$id","to":["$to"],"class":"A"}""",
 )
 
+/**
+ * [lines] folded as they are written: a spec's log has no `judged` line (contracts.md §3), so each line counts as it is
+ * read — as in the mailroom's own state while it writes a judgement ([settled]).
+ */
+fun folded(lines: Iterable<kp.model.Envelope>, from: State = State()): State = fold(lines, from).settled()
+
 /** One JSON text as a datum, read by kp-model's plain view as the engine reads a line. */
 fun parseDatum(json: String): Datum = Datum.of(plain(json))
 
@@ -122,12 +128,12 @@ fun unstamped(message: Message): String = Datum.of(message.plain() - setOf("v", 
 /** What a mailroom writes for [message] and its [decision] — the message, its record, its transitions — read back through kp-model and folded onto this state. */
 fun State.recorded(message: Message, decision: Decision): State {
     val record = if (decision.outcome == Outcome.REFUSE) refusedRecord(decision, message.id.value) else deliveredRecord(decision, message.id.value, message.to.value)
-    return fold(after(this, unstamped(message), record, *transitionRecords(decision, message.id.value).toTypedArray()), this)
+    return folded(after(this, unstamped(message), record, *transitionRecords(decision, message.id.value).toTypedArray()), this)
 }
 
 /** What a mailroom writes when the deadline of [id] passed and the engine decided [decision]: the `expired` record and its transitions, folded. */
 fun State.expired(id: String, decision: Decision): State =
-    fold(after(this, expiredRecord(decision, id), *transitionRecords(decision, id).toTypedArray()), this)
+    folded(after(this, expiredRecord(decision, id), *transitionRecords(decision, id).toTypedArray()), this)
 
 /** One `transition` record per machine the decision moves, caused by [cause]. */
 fun transitionRecords(decision: Decision, cause: String): List<String> = decision.moves.map { move ->

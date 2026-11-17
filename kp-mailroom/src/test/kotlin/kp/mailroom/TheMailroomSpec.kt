@@ -45,8 +45,8 @@ class TheMailroomSpec : FreeSpec({
         val restarted = H1_PRIME.indices.map { step -> Office().apply { play(H1_PRIME.take(step + 1)); restart() }.mailroom.state }
         val carriedOn = Office().apply { play(H1_PRIME.take(5)); restart(); play(H1_PRIME.drop(5)) }
 
-        // The start writes its own `rules` record: one line more, and nothing else.
-        restarted.map { it.copy(seq = 0) } shouldBe uninterrupted.map { it.copy(seq = 0) }
+        // The start writes its own `rules` record, a judgement of its own: two lines more, and nothing else.
+        restarted.map { it.copy(seq = 0, judged = 0) } shouldBe uninterrupted.map { it.copy(seq = 0, judged = 0) }
         carriedOn.stage() shouldBe "exited"
     }
 

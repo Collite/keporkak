@@ -5,7 +5,7 @@ import io.kotest.matchers.shouldBe
 import kp.engine.Trigger.Arrival
 import kp.rules.MessageClass
 
-private val passed = fold(log(move("stage", STAGE, "in_review", "passed")))
+private val passed = folded(log(move("stage", STAGE, "in_review", "passed")))
 private val merge = Arrival(message("merge", from = "teamlead", to = "daemon"))
 private val audit = arrayOf("now" to NOW, "pr.evidence_present" to true, "list.tasks_open" to 0, "project.proof_files" to 0, "list.found_untriaged" to 0, "git.stray_changes" to 0,
     "roster.rank(of=reviewer)" to 2, "roster.rank(of=coder)" to 1, "roster.model_rank(of=reviewer)" to 2, "roster.floor_rank" to 2, "seat.name(of=coder)" to "coder-1")
@@ -17,16 +17,16 @@ private fun Decision.cls(): Pair<MessageClass?, Boolean> = messageClass to waits
 /** T6: classes (contracts.md §4.2, §4.3; engagement.yaml: classes, second_key, autonomy_profiles). */
 class ClassesSpec : StringSpec({
     "a kind's default class, when no case holds; Bora's own class-B message waits for no one (Amendment 15)" {
-        val assigned = fold(log(move("stage", STAGE, "planned", "assigned")))
-        val proposed = fold(log(move("stage", STAGE, "planned", "proposed")))
-        val building = fold(log(move("stage", STAGE, "assigned", "building")))
+        val assigned = folded(log(move("stage", STAGE, "planned", "assigned")))
+        val proposed = folded(log(move("stage", STAGE, "planned", "proposed")))
+        val building = folded(log(move("stage", STAGE, "assigned", "building")))
 
         supervised().judge(assigned, Arrival(message("started", from = "coder-1")), table("now" to NOW, "git.branch_exists" to true)).cls() shouldBe (MessageClass.A to false)
         supervised().judge(building, Arrival(message("stop", from = "coder-1", to = "principal", args = """{"sc": "SC-3"}""")), table("now" to NOW, "list.stop_conditions" to listOf("SC-3"))).cls() shouldBe (MessageClass.C to false)
         supervised().judge(proposed, Arrival(message("decline", from = "bora", signed = true)), table("now" to NOW)).cls() shouldBe (MessageClass.B to false)
     }
     "a kind's first case that holds gives its class" {
-        val stopped = fold(log(move("stage", STAGE, "building", "stopped")))
+        val stopped = folded(log(move("stage", STAGE, "building", "stopped")))
         fun triage(outcome: String) = supervised().judge(stopped, Arrival(message("triage", from = "principal", to = "coder", args = """{"outcome": "$outcome", "found": "F1", "since": "t0"}""")),
             table("now" to NOW, "list.sections_changed(since=t0)" to listOf("Found while doing"))).cls()
 

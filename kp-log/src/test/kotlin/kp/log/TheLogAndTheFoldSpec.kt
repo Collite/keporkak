@@ -11,6 +11,7 @@ import kp.engine.MachineState
 import kp.engine.State
 import kp.engine.Wait
 import kp.engine.fold
+import kp.engine.settled
 import kp.model.EffortId
 import kp.model.Message
 import kp.model.OfficeId
@@ -60,7 +61,8 @@ class TheLogAndTheFoldSpec : StringSpec({
     "folding a recorded stage gives its state, its counters, its open deadlines and what each seat has not read" {
         val read = LogReader(recordedStage(), OfficeId("panda")).read()
 
-        val state = fold(read.lines.map { it.entry })
+        // S1.1's recorded stage was written before judgements (S1.10): its lines are folded as written.
+        val state = fold(read.lines.map { it.entry }).settled()
 
         read.problems shouldBe emptyList()
         state shouldBe State(

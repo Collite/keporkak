@@ -4,7 +4,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 
 private const val REVIEW = "m-panda-000020"
-private fun waiting(state: String) = fold(log(move("stage", STAGE, "building", "ready_for_review"), *sent(REVIEW, "review-request", from = "coder-1"),
+private fun waiting(state: String) = folded(log(move("stage", STAGE, "building", "ready_for_review"), *sent(REVIEW, "review-request", from = "coder-1"),
     move("stage", STAGE, "ready_for_review", state, cause = "m-panda-000021")))
 
 /** S1.3, Amendment 13 (contracts.md §4.2): `{wait: again}` holds only when this expiry fired a transition that moved the counter its `if` reads. */

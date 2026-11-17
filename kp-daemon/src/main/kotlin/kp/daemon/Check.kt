@@ -15,6 +15,7 @@ import kp.engine.State
 import kp.engine.Trigger
 import kp.engine.UNKNOWN_FACT
 import kp.engine.fold
+import kp.engine.settled
 import kp.log.LogLine
 import kp.model.Delivered
 import kp.model.Envelope
@@ -136,7 +137,8 @@ internal class Check(private val rules: InForceRules) {
             } else if (message != null) {
                 finding("${line.file}:${line.number} ${message.id.value}: a hand-recorded line among the daemon's")
             }
-            state = fold(listOf(line.entry), state)
+            // Each line as written: a message inside a judgement is judged on what the lines before it in that judgement did.
+            state = fold(listOf(line.entry), state).settled()
         }
         out += "$judged message${if (judged == 1) "" else "s"} re-judged: " + if (differ == 0) "every recorded outcome is reproduced" else "$differ differ${if (differ == 1) "s" else ""}"
         notJudged.forEach { out += "not re-judged: $it" }
@@ -214,7 +216,7 @@ internal class Check(private val rules: InForceRules) {
         val moved = HashSet<String>()
         val middle = LinkedHashSet<String>()
         fun take(entry: JsonObject) {
-            state = fold(listOf(readEnvelope(JsonObject(entry + (SEQ to JsonPrimitive(++seq))))), state)
+            state = fold(listOf(readEnvelope(JsonObject(entry + (SEQ to JsonPrimitive(++seq))))), state).settled()
         }
         fun position(stage: String) = if (stage in middle && stage !in moved) "the state of $stage is not known" else "$stage is ${stageOf(state, stage)}"
         lines.forEach { line ->

@@ -22,6 +22,7 @@ import kp.engine.RobotHold
 import kp.engine.State
 import kp.engine.Trigger
 import kp.engine.fold
+import kp.engine.settled
 import kp.log.Channels
 import kp.log.LogReader
 import kp.log.LogWriter
@@ -772,13 +773,17 @@ class Mailroom private constructor(
         }
     }
 
-    /** Folds [lines] into the state and keeps their messages, and to whom each was delivered. */
-    private fun take(lines: List<Envelope>) {
+    /**
+     * Folds [lines] into the state and keeps their messages, and to whom each was delivered. The mailroom's own lines
+     * count as it writes them ([asWritten]): its next decision in the judgement reads them. The log read at a start-up
+     * is folded as any reader folds it — whole judgements only — and what it leaves open is the start's to settle.
+     */
+    private fun take(lines: List<Envelope>, asWritten: Boolean = true) {
         lines.forEach { line ->
             if (line is Message) messages[line.id.value] = line
             if (line is Delivered) line.to.forEach { addressed.getOrPut(it, ::ArrayList) += line.id }
         }
-        folded = fold(lines, folded)
+        folded = fold(lines, folded).let { if (asWritten) it.settled() else it }
     }
 
     private fun now(): String = clock.now().truncatedTo(ChronoUnit.SECONDS).toString()
@@ -802,7 +807,7 @@ class Mailroom private constructor(
                 // start is carrying its queue waits for it (issue #21).
                 return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce, robots).apply {
                     synchronized(this) {
-                        take(read.lines.map { it.entry })
+                        take(read.lines.map { it.entry }, asWritten = false)
                         judged { recordRules() }
                         interrupted()
                         drain()
