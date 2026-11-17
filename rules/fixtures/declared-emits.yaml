@@ -103,3 +103,45 @@ scenarios:
       transitions:
         - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: [{emit: nudge, to: teamlead, args: {rule: T-start, failed_guard: '-'}}]}
     expect: {}
+  - name: a boolean is in no enum of numbers, and 1.0 is an integer — as the engine types an arg at run time (issue #26)
+    given:
+      mailroom_declared_effects: [nudge]
+      kinds:
+        started: {from: coder, to: teamlead, guard: '-', args: {}, class: {default: A}, window: stage, max_fires: null, deadline: null, expiry: [], require: []}
+        nudge:
+          from: mailroom
+          to: teamlead
+          guard: '-'
+          args: {rule: {type: string, required: true}, failed_guard: {type: string, required: true}, level: {enum: [1, 2]}, count: {type: integer}}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: null
+          expiry: []
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [],
+           effects: [{emit: nudge, to: teamlead, args: {rule: T-start, failed_guard: '-', level: true, count: 1.0}}]}
+    expect:
+      failures: ["T-start: emit 'nudge' arg 'level' is not one of 1 | 2"]
+  - name: a number written 1.0 is in an enum of whole numbers, and a boolean is no integer (issue #26)
+    given:
+      mailroom_declared_effects: [nudge]
+      kinds:
+        started: {from: coder, to: teamlead, guard: '-', args: {}, class: {default: A}, window: stage, max_fires: null, deadline: null, expiry: [], require: []}
+        nudge:
+          from: mailroom
+          to: teamlead
+          guard: '-'
+          args: {rule: {type: string, required: true}, failed_guard: {type: string, required: true}, level: {enum: [1, 2]}, count: {type: integer}}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: null
+          expiry: []
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [],
+           effects: [{emit: nudge, to: teamlead, args: {rule: T-start, failed_guard: '-', level: 1.0, count: true}}]}
+    expect:
+      failures: ["T-start: emit 'nudge' arg 'count' is not integer"]

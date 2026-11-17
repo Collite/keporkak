@@ -99,9 +99,12 @@ class FactsSpec : StringSpec({
             "{fact: refusals.today, seat: coder-1, eq: {cap: tail_retries}}", "{fact: seat.inbox_replayed, seat: coder-1}").failure(state = thread) shouldBe null
         requiring("{fact: seat.inbox_replayed, seat: bora}").failure(state = thread) shouldBe "{fact: seat.inbox_replayed, seat: bora}"
     }
-    "queue.names: the last delivered queue Bora signed names the stage" {
-        val queued = fold(log(*sent("m-panda-000001", "queue-approval", from = "bora", to = "teamlead", args = """{"stages": ["$STAGE"]}""").let { arrayOf(it[0].replace("seat:bora", "bora-cli"), it[1]) }))
-        requiring("{fact: queue.names}").failure(state = queued) shouldBe null
+    "queue.names: the last delivered queue Bora signed names the stage; an unsigned one names none, and the wave is not read again" {
+        fun queue(signed: Boolean) = fold(log(*sent("m-panda-000001", "queue-approval", from = "bora", to = "teamlead", args = """{"stages": ["$STAGE"]}""")
+            .let { arrayOf(it[0].replace("\"by\":\"seat:bora\"", "\"by\":\"bora-cli\"" + if (signed) ",\"signed\":true" else ""), it[1]) }))
+        requiring("{fact: queue.names}").failure(state = queue(signed = true)) shouldBe null
+        requiring("{fact: queue.names}").failure(state = queue(signed = false)) shouldBe "{fact: queue.names}"
         requiring("{fact: queue.names}").failure(state = State()) shouldBe "{fact: queue.names}"
+        supervised().needs(queue(signed = true), Trigger.Arrival(message("queued-approval", "deputy", by = "robot:DEP-2"))).map { it.name }.contains("plan.in_current_wave") shouldBe false
     }
 })

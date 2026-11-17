@@ -73,7 +73,9 @@ fun fixtureFiles(given: YamlMap): Map<String, String> {
         "rules/stage-lifecycle.yaml" to """{"version": 1, "states": ${part("states")}, "active_states": ["planned"],
             "counters": ${part("counters")}, "transitions": ${jsonOf(given.get<YamlList>("transitions")!!)}}""",
         "rules/message-kinds.yaml" to """{"version": 1, "kinds": ${part("kinds")}}""",
-        "rules/engagement.yaml" to """{"version": 1, "roles": {"coder": {}, "teamlead": {}}, "graduation": {"never": []},
+        // The roles master's pool files name besides — the roster reserves a model for the principal — so that the pool,
+        // which no fixture is about, raises nothing.
+        "rules/engagement.yaml" to """{"version": 1, "roles": {"coder": {}, "teamlead": {}, "principal": {}}, "graduation": {"never": []},
             "mailroom_declared_effects": $declared, "caps": ${part("caps")}, "profile": $profile, "autonomy_profiles": $profiles$secondKey}""",
         "rules/vocabulary.yaml" to vocabulary,
     ) + robots.mapIndexed { index, robot -> "robots/fixture-$index.yaml" to jsonOf(robot) }

@@ -73,7 +73,11 @@ private class WalkThrough(private val walk: Datum.Fields) {
     private fun stage(name: String): String = stageIds.getOrPut(name) {
         val id = "WALK/P1/S1.${stageIds.size + 1}"
         val setting = definition["stages"].fields()[name].fields()
-        check(setting["machines"] == null) { "a walk that sets companion machines is not one this harness seeds" }
+        // A seat in the seat machine's first state needs no seeding: a subject no record has moved is in it (contracts.md §2.2).
+        val first = master.lifecycle.machines.getValue("seat").states.keys.first()
+        check(setting["machines"].fields().all { (machine, state) -> machine == "seat" && state.text() == first }) {
+            "a walk that sets companion machines is not one this harness seeds"
+        }
         val initial = setting["initial"].text() ?: definition["initial"].text() ?: "planned"
         if (initial != "planned") write("""{"event":"transition","machine":"stage","subject":"$id","from":"planned","to":"$initial","cause":"m-walk-000000"}""")
         facts[name] = (definition["facts"].fields() + setting["facts"].fields()).toMutableMap()

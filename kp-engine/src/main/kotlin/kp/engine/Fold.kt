@@ -83,6 +83,11 @@ data class State(
     val sessions: Map<String, String> = emptyMap(),
     /** The operations in flight, in the order they were requested (contracts.md §4.4). */
     val operations: List<InFlight> = emptyList(),
+    /**
+     * role → mode → how many messages had been delivered when that robot's own seat was last woken in that mode: a
+     * wake is an `op` `seat.wake` with its `role` and `mode`, counted when it is `ok` (`log.count … since: {wake: …}`).
+     */
+    val wakes: Map<String, Map<String, Int>> = emptyMap(),
 ) {
     fun stage(id: String): String? = machine("stage", id)?.state
     fun machine(machine: String, subject: String): MachineState? = machines[machine]?.get(subject)
@@ -155,7 +160,8 @@ private class Folding(state: State) {
                     val earlier = s.refusals[message.from]?.takeIf { it.day == day }?.count ?: 0L
                     s = s.copy(refusals = s.refusals + (message.from to Refusals(day, line.refusalsToday?.longValueExact() ?: earlier.inc())))
                 }
-                s = s.copy(pending = s.pending - line.id, held = s.held - line.id)
+                // A held message refused when it is released waits no more.
+                s = s.copy(pending = s.pending - line.id, held = s.held - line.id, deadlines = s.deadlines - line.id)
             }
             is Held -> {
                 s = s.copy(held = s.held + (line.id to Hold(line.by, line.until, at)))
@@ -173,6 +179,7 @@ private class Folding(state: State) {
                 }
             }
             is Op -> {
+                if (line.op == SEAT_WAKE && line.phase == OK) s.operations.firstOrNull { it.op == line.op && it.cause == line.cause }?.let(::woken)
                 s = if (line.phase == REQUESTED) s.copy(operations = s.operations + InFlight(line.op, line.cause, Datum.of(line.plain()[WITH] ?: emptyMap<String, Any?>()) as Datum.Fields, at))
                 else s.copy(deadlines = s.deadlines - line.cause, operations = s.operations.minusFirst { it.op == line.op && it.cause == line.cause })
                 if (line.op == SEAT_START && line.phase == OK) seatUp(line)?.let { seat -> s = s.copy(sessions = s.sessions + (seat to at)) }
@@ -198,6 +205,13 @@ private class Folding(state: State) {
         s = s.copy(deadlines = s.deadlines + (id to (open?.copy(deadline = deadline) ?: Wait(message.kind, message.stage, message.from, message.to, deadline, 0))))
     }
 
+    /** A robot's own seat woken in a mode: from here on, `log.count … since: {wake: <mode>}` counts. */
+    private fun woken(wake: InFlight) {
+        val role = (wake.with.fields[ROLE] as? Datum.Text)?.value ?: return
+        val mode = (wake.with.fields[MODE] as? Datum.Text)?.value ?: return
+        s = s.copy(wakes = s.wakes + (role to (s.wakes[role].orEmpty() + (mode to s.delivered.size))))
+    }
+
     private fun raise(ticket: java.math.BigInteger?, item: String, event: String, at: String) {
         val number = ticket?.longValueExact() ?: return
         if (number !in s.tickets) s = s.copy(tickets = s.tickets + (number to Ticket(item, event, at)))
@@ -218,6 +232,9 @@ private class Folding(state: State) {
 }
 
 private const val SEAT_START = "seat.start"
+private const val SEAT_WAKE = "seat.wake"
+private const val ROLE = "role"
+private const val MODE = "mode"
 private const val REQUESTED = "requested"
 private const val OK = "ok"
 private const val SEAT = "seat"

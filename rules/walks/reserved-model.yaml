@@ -1,0 +1,33 @@
+# A coder seated on the reserved model (D-53, contracts.md §9): the seat machine refuses to start it.
+name: reserved-model
+stage: S2.4
+initial: building
+final: building
+stages:
+  S2.4:
+    machines:
+      seat: provisioned
+facts:
+  budget.slot_open: true
+  seat.model:
+    coder-3: claude-fable-5-2
+  roster.model_allowed:
+    coder-3: false
+steps:
+- id: request
+  who: teamlead
+  kind: session-request
+  args:
+    action: add
+    role: coder
+    level: senior
+    seat: coder-3
+- who: pool
+  kind: session-report
+  re: request
+  args:
+    seat: coder-3
+    role: coder
+  expect:
+    refused: true
+    refusal_contains: session-report

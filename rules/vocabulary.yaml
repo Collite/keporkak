@@ -234,6 +234,10 @@ facts:
     params: —
     returns: int — the model rank of the roster's review floor
     source: C
+  roster.model_allowed:
+    params: seat
+    returns: bool — the seat's model is not reserved, or is reserved for the seat's role
+    source: C
   budget.slot_open:
     params: dimension
     returns: bool

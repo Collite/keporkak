@@ -29,9 +29,21 @@ class PoolValidationTests(unittest.TestCase):
     def test_the_repository_pool_passes(self):
         self.assertEqual(self.failures(), [])
 
-    def test_an_sdk_version_other_than_the_catalog_pin_fails(self):
-        self.edit("roster.yaml", "acp:0.34.0", "acp:0.35.0")
-        self.assertEqual(self.failures(), ["pool/roster.yaml: vendor 'claude' sdk version 0.35.0 differs from the catalog's pin 0.34.0"])
+    def test_an_sdk_line_is_no_field_of_a_vendor(self):
+        self.edit("roster.yaml", '    adapter_version: "0.106.0"\n', '    adapter_version: "0.106.0"\n    sdk: "com.agentclientprotocol:acp:0.34.0"\n')
+        self.assertEqual(self.failures(), ["pool/roster.yaml: unknown field 'sdk'"])
+
+    def test_a_level_that_points_at_a_reserved_model_fails(self):
+        self.edit("roster.yaml", "  claude-fable-5-2: [principal]", "  claude-opus-5-5: [principal]")
+        self.assertIn("pool/roster.yaml: level senior XL points at claude-opus-5-5, which is reserved", self.failures())
+
+    def test_a_role_put_on_a_model_reserved_for_another_role_fails(self):
+        self.edit("roster.yaml", "role_models: {}", "role_models: {coder: {model: claude-fable-5-2, effort: high}}")
+        self.assertEqual(self.failures(), ["pool/roster.yaml: role_models coder runs claude-fable-5-2, which is reserved for principal"])
+
+    def test_the_principal_may_be_put_on_its_reserved_model(self):
+        self.edit("roster.yaml", "role_models: {}", "role_models: {principal: {model: claude-fable-5-2, effort: high}}")
+        self.assertEqual(self.failures(), [])
 
     def test_a_level_that_is_not_a_line_of_the_order_fails(self):
         self.edit("roster.yaml", "XL: {vendor: claude, model: claude-opus-5-5, effort: max}", "XL: {vendor: claude, model: claude-opus-5-5, effort: ultra}")

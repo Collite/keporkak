@@ -48,14 +48,14 @@ class RulesLoadSpec : StringSpec({
     "what the Kotlin loader accepts and what it rejects, the Python validator accepts and rejects, on the shared fixtures under rules/fixtures/" {
         val scenarios = sharedFixtureScenarios()
 
-        scenarios.size shouldBe 38
+        scenarios.size shouldBe 40
         scenarios.associate { it.name to loaderFailures(it) } shouldBe scenarios.associate { it.name to pythonFailures(it) }
     }
 
     "a pool file that breaks its shape is reported, and so is a roster level that points at a reserved model" {
         problemsAfter("pool/budgets.yaml", "total: 4,", "total: four,") shouldContain
             "pool/budgets.yaml: slots.total must be a positive integer"
-        problemsAfter("pool/roster.yaml", "review:", "reserved:\n  claude-opus-5-5: [principal]\nreview:") shouldContain
+        problemsAfter("pool/roster.yaml", "  claude-fable-5-2: [principal]", "  claude-opus-5-5: [principal]") shouldContain
             "pool/roster.yaml: level senior S points at claude-opus-5-5, which is reserved"
     }
 

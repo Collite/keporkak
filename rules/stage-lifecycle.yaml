@@ -1393,6 +1393,9 @@ seat:
     require:
     - re: kind
       eq: session-request
+    - fact: roster.model_allowed
+      seat:
+        arg: seat
     - fact: budget.slot_open
       dimension: office
     - fact: budget.slot_open

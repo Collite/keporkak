@@ -66,15 +66,20 @@ class Texts : RuleTexts {
     override fun read(): Map<String, String> = files.toMap()
 }
 
-/** Facts from a table, looked up the walker's way: a plain value, or a map keyed by the parameter the fact is asked with. */
+/**
+ * Facts from a table, looked up the walker's way: a plain value, or a map keyed by the parameter the fact is asked
+ * with. A stage's own value, when it has one, comes before the office-wide one.
+ */
 class FakeFacts : FactSource {
     private val table = HashMap<String, Datum>()
+    private val byStage = HashMap<String, HashMap<String, Datum>>()
 
     fun set(values: Map<String, Datum>) = table.putAll(values)
     fun set(name: String, value: Any?) { table[name] = Datum.of(value) }
+    fun set(stage: String, name: String, value: Any?) { byStage.getOrPut(stage, ::HashMap)[name] = Datum.of(value) }
 
     override fun observe(fact: FactRef, stage: String?): Datum? {
-        val value = table[fact.name] ?: return null
+        val value = stage?.let { byStage[it]?.get(fact.name) } ?: table[fact.name] ?: return null
         if (value !is Datum.Fields) return value
         val key = listOf("of", "seat", "id", "dimension", "subscription", "pointer").firstNotNullOfOrNull { fact.params[it] } ?: return null
         return value.fields[(key as? Datum.Text)?.value ?: key.json()]
@@ -108,21 +113,98 @@ class FakeClock(var now: Instant = Instant.parse(START)) : Clock {
     override fun now(): Instant = now
 }
 
-/** A walk of `rules/walks/`, as the Python walker reads it (`check-rules.py --trace`). */
-class Walk private constructor(val facts: Map<String, Datum>, val steps: List<Map<String, Datum>>) {
+/** A walk of `rules/walks/`, as the Python walker reads it (`check-rules.py --trace`), and the walker's own trace of it. */
+class Walk private constructor(val definition: Map<String, Datum>, val trace: List<Map<String, Datum>>) {
+    val facts: Map<String, Datum> get() = definition["facts"].fields()
+    val steps: List<Map<String, Datum>> get() = (definition.getValue("steps") as Datum.Items).items.map { (it as Datum.Fields).fields }
+
+    /** Whether the walker refused step [step] (1-based). */
+    fun walkerRefused(step: Int): Boolean = (trace.single { (it.getValue("step") as Datum.Number).value.toInt() == step }["refused"] as Datum.Bool).value
+
+    /** The stages the walker gives after step [step] (1-based), by the walk's names for them. */
+    fun walkerStages(step: Int): Map<String, String> = trace.single { (it.getValue("step") as Datum.Number).value.toInt() == step }["stages"].fields()
+        .mapValues { it.value.text()!! }
+
     companion object {
         private val read = HashMap<String, Walk>()
 
         fun named(name: String): Walk = read.getOrPut(name) {
             val process = ProcessBuilder(File(root, "build/python/bin/python").path, "scripts/check-rules.py", "--trace", name)
                 .directory(root).redirectErrorStream(true).start()
-            val line = process.inputStream.bufferedReader().readLines().single { it.startsWith("WALK ") }
+            val lines = process.inputStream.bufferedReader().readLines()
             process.waitFor()
-            val walk = (Datum.of(plain(line.removePrefix("WALK "))) as Datum.Fields).fields
-            Walk((walk.getValue("facts") as Datum.Fields).fields, (walk.getValue("steps") as Datum.Items).items.map { (it as Datum.Fields).fields })
+            check(lines.none { it.startsWith("FAIL walk $name") }) { lines.filter { it.startsWith("FAIL") }.joinToString("\n") }
+            val walk = (Datum.of(plain(lines.single { it.startsWith("WALK ") }.removePrefix("WALK "))) as Datum.Fields).fields
+            Walk(walk, lines.filter { it.startsWith("TRACE ") }.map { (Datum.of(plain(it.removePrefix("TRACE "))) as Datum.Fields).fields })
         }
     }
 }
+
+/**
+ * A walk played through the mailroom with the robots host on (S1.4's DONE): each of its stages an id of its own, in
+ * its initial state; its seats `ready`; its facts, per stage; each message step submitted by its sender — Bora signed
+ * when the walk signs — and each operation finished by the fake performer as the walk says. After each message and
+ * the operations that follow it, every stage's state as the log gives it, beside the walker's after the same steps.
+ */
+class WalkPlayed(name: String) {
+    private val walk = Walk.named(name)
+    private val names = LinkedHashMap<String, String>()
+    private val settings = walk.definition["stages"].fields()
+    /** Each walk stage's id: `WALK/P1/S1.<n>`, in the order the walk names them. */
+    private fun id(stage: String): String = names.getOrPut(stage) { "WALK/P1/S1.${names.size + 1}" }
+    private val first = walk.definition["stage"].text()!!
+
+    init {
+        id(first)
+        settings.keys.forEach(::id)
+        walk.steps.mapNotNull { it["stage"].text() }.forEach(::id)
+    }
+
+    private fun initial(stage: String): String = settings[stage].fields()["initial"].text() ?: walk.definition["initial"].text() ?: "planned"
+
+    val office = Office(walk = name, others = names.filterKeys { initial(it) != "planned" }.entries.associate { (stage, id) -> id to initial(stage) },
+        robots = true, seats = walk.definition["seats"].fields().keys.toList()).also { office ->
+        names.forEach { (stage, id) -> office.facts.setAll(id, settings[stage].fields()["facts"].fields()) }
+    }
+
+    /** Per message step: the walk's step number after its operations, the mailroom's stages, the walker's, and what became of it. */
+    val compared: List<Played> = run {
+        val ids = HashMap<String, String>()
+        var current = first
+        val steps = walk.steps
+        steps.withIndex().filter { (_, step) -> step["operation"] == null }.map { (index, step) ->
+            current = step["stage"].text() ?: current
+            val group = listOf(step) + steps.drop(index + 1).takeWhile { it["operation"] != null }
+            group.forEach { office.facts.setAll(id(current), it["facts"].fields()) }
+            group.filter { it["operation"] != null && it["result"].text() == "failed" }.forEach { office.operations.failing[it["operation"].text()!!] = "the walk's" }
+            val kind = step["kind"].text()!!
+            val re = step["re"].text()?.let(ids::getValue)
+            val input = """{"kind":"$kind","stage":"${id(current)}","args":${(step["args"] ?: Datum.Fields(emptyMap())).json()}""" +
+                (re?.let { ""","re":"$it"""" } ?: "") + (step["body"]?.let { ""","body":${it.json()}""" } ?: "") + "}"
+            val who = step["who"].text()!!
+            office.clock.advance(1.minutes)
+            val answer = if (who == "bora") office.bora(input, signed = step["signed"].text() == "bora") else office.send(who, input)
+            office.operations.failing.clear()
+            step["id"].text()?.let { ids[it] = answer.id }
+            val last = index + group.size
+            val outcome = office.readBack().lines.filterIsInstance<Record>().last { it.plain()["id"] == answer.id && it.event in setOf("delivered", "refused") }
+            Played(last, outcome.event == "refused", names.entries.associate { (stage, id) -> stage to (office.stage(id) ?: "planned") }, outcome,
+                walk.walkerRefused(index + 1), walk.walkerStages(last))
+        }
+    }
+
+    /**
+     * Walk step [step] — a message and the operations after it: whether the mailroom refused the message and every
+     * stage's state then, the record that says what became of it, and what the walker gives for the same steps.
+     */
+    data class Played(val step: Int, val refused: Boolean, val stages: Map<String, String>, val outcome: Record, val walkerRefused: Boolean, val walker: Map<String, String>) {
+        val mailroom get() = refused to stages
+        val python get() = walkerRefused to walker
+    }
+}
+
+/** Every fact of [values] for [stage]. */
+fun FakeFacts.setAll(stage: String, values: Map<String, Datum>) = values.forEach { (name, value) -> set(stage, name, value) }
 
 private fun Datum?.text(): String? = (this as? Datum.Text)?.value
 private fun Datum?.fields(): Map<String, Datum> = (this as? Datum.Fields)?.fields.orEmpty()
@@ -132,13 +214,25 @@ private fun Datum?.fields(): Map<String, Datum> = (this as? Datum.Fields)?.field
  * a minute per step. [seed] puts the stage in a state, with [counters], before the mailroom starts — what an earlier
  * part of the log would have left — [others] puts other stages in theirs, and each of the walk's seats is in `ready`.
  */
-class Office(walk: String = "H-1-prime", seed: String? = null, counters: String = "{}", others: Map<String, String> = emptyMap()) {
+class Office(
+    walk: String = "H-1-prime", seed: String? = null, counters: String = "{}", others: Map<String, String> = emptyMap(),
+    /** The robots host (contracts.md §8): off, the mailroom of S1.3 only carries messages. */
+    val robots: Boolean = false,
+    /** The seats in `ready` before the mailroom starts. */
+    seats: List<String> = listOf("coder-1", "reviewer-1"),
+    /** When the office's clock starts. */
+    at: String = START,
+    /** Counters an other stage has moved, as its seeded transition carries them. */
+    otherCounters: Map<String, String> = emptyMap(),
+    /** Seats in another state than `ready`. */
+    seatStates: Map<String, String> = emptyMap(),
+) {
     val project: Path = throwawayProject()
     val texts = Texts()
     val facts = FakeFacts()
     val operations = FakeOperations()
     val seats = FakeSeats()
-    val clock = FakeClock()
+    val clock = FakeClock(Instant.parse(at))
     private val walk = Walk.named(walk)
     private val ids = HashMap<String, String>()
     private var next = 0
@@ -150,20 +244,39 @@ class Office(walk: String = "H-1-prime", seed: String? = null, counters: String 
         opened += this
         facts.set(this.walk.facts)
         LogWriter.open(project, panda).use { log ->
-            fun line(text: String) = log.append(json("""{"v":1,"at":"$START",""" + text.removePrefix("{")))
+            fun line(text: String) = log.append(json("""{"v":1,"at":"$at",""" + text.removePrefix("{")))
             seed?.let { line("""{"event":"transition","machine":"stage","subject":"$STAGE","from":"planned","to":"$it","cause":"$SEEDED","counted":$counters}""") }
-            others.forEach { (stage, state) -> line("""{"event":"transition","machine":"stage","subject":"$stage","from":"planned","to":"$state","cause":"$SEEDED"}""") }
-            listOf("coder-1", "reviewer-1").forEach { line("""{"event":"transition","machine":"seat","subject":"$it","from":"provisioned","to":"ready","cause":"$SEEDED"}""") }
+            others.forEach { (stage, state) ->
+                line("""{"event":"transition","machine":"stage","subject":"$stage","from":"planned","to":"$state","cause":"$SEEDED","counted":${otherCounters[stage] ?: "{}"}}""")
+            }
+            seats.forEach { line("""{"event":"transition","machine":"seat","subject":"$it","from":"provisioned","to":"${seatStates[it] ?: "ready"}","cause":"$SEEDED"}""") }
         }
         start()
     }
 
-    fun start() { mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock) }
+    fun start() { mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots) }
     fun stop() = mailroom.close()
     fun restart() { stop(); start() }
 
     fun send(seat: String, input: String): Answer = mailroom.submit(Sender.Seat(seat), json(input)).also { submitted += it.id }
     fun bora(input: String, signed: Boolean = true): Answer = mailroom.submit(Sender.Bora(signed), json(input)).also { submitted += it.id }
+
+    /** Bora runs a command that is no message (`kp status`): signed when he ran it with `sudo` (contracts.md §6). */
+    fun command(signed: Boolean) = mailroom.command(signed)
+
+    /** The world reports that [fact] changed — about [params], for [stage] — with [value]; the fact table says so from now on. */
+    fun changed(fact: String, value: Any?, stage: String? = null, params: Map<String, String> = emptyMap()) {
+        if (stage != null) facts.set(stage, fact, value) else facts.set(fact, value)
+        mailroom.changed(FactRef(fact, params.mapValues { Datum.Text(it.value) }), Datum.of(value), stage)
+    }
+
+    /** Sets the clock to [time] (`HH:MM`) on the day it shows, or the next day when that time has passed. */
+    fun at(time: String): Office = apply {
+        val (hours, minutes) = time.split(':').map(String::toInt)
+        var next = clock.now.atZone(java.time.ZoneOffset.UTC).withHour(hours).withMinute(minutes).withSecond(0).toInstant()
+        if (next.isBefore(clock.now)) next = next.plus(java.time.Duration.ofDays(1))
+        clock.now = next
+    }
 
     /**
      * Plays the walk's next step of each kind, in order, from its sender with its args and facts — and the facts of the
@@ -222,7 +335,19 @@ class Office(walk: String = "H-1-prime", seed: String? = null, counters: String 
         fun everyLogIsWhole(): List<String> = opened.flatMap { office ->
             val log = office.readBack()
             listOfNotNull("${office.project}: seq has a gap".takeUnless { log.seqRunsWithoutGap() }) + log.requestedTwice() +
-                office.submitted.filterNot(log::hasLineAndRecord).map { "$it: no message line, or no record about it" } + log.borasOwnWaiting()
+                office.submitted.filterNot(log::hasLineAndRecord).map { "$it: no message line, or no record about it" } + log.borasOwnWaiting() +
+                log.robotRulesNotIn(robotRuleIds)
+        }
+
+        /** The rules of the robot file [file] on master, each with whether it is marked `for: persona`. */
+        fun robotRules(file: String): Map<String, Boolean> =
+            (kp.rules.Rules.load(Texts().read()) as kp.rules.Loaded.Valid).ruleSet.robots.getValue(file).rules.associate { it.id to it.forPersona }
+
+        /** Every rule id of `robots/` — executed, `for: persona`, or a queue's prose. */
+        val robotRuleIds: Set<String> by lazy {
+            File(root, "robots").listFiles { file -> file.name.endsWith(".yaml") }!!.flatMap { file ->
+                Regex("""(?m)^\s*-?\s*id: ([A-Z]+-[0-9]+)$""").findAll(file.readText()).map { it.groupValues[1] }.toList()
+            }.toSet()
         }
     }
 }
@@ -253,11 +378,39 @@ class ReadBack(project: Path) {
         return tickets + notified
     }
 
+    /** Each line `by: robot:<id>` — a message or a `held` record — whose rule id is not one of [known] (S1.4's DONE). */
+    fun robotRulesNotIn(known: Set<String>): List<String> = lines.mapNotNull { line ->
+        val by = line.plain()["by"] as? String ?: return@mapNotNull null
+        by.takeIf { it.startsWith("robot:") && it.removePrefix("robot:") !in known }?.let { "${line.seq}: by $it, which is no rule of robots/" }
+    }
+
+    /**
+     * The log as a story, in its order: one line per message that was delivered, held or refused — its kind, the
+     * robot's rule that sent it, what became of it — and one per move of Bora's presence.
+     */
+    fun story(): List<String> = lines.mapNotNull { line ->
+        fun told(id: String, what: String): String {
+            val message = message(id)
+            return message.kind + (message.by.takeIf { it.startsWith("robot:") }?.let { " by $it" } ?: "") + " " + what
+        }
+        when (line) {
+            is kp.model.Delivered -> told(line.id, "delivered")
+            is kp.model.Held -> told(line.id, "held by ${line.by}")
+            is kp.model.Refused -> told(line.id, "refused")
+            is Transition -> if (line.machine == "presence") "presence ${line.from}→${line.to}" else null
+            else -> null
+        }
+    }
+
     /** `seq` runs 1, 2, 3 … with no gap and no repeat (contracts.md §2.2). */
     fun seqRunsWithoutGap(): Boolean = lines.map { it.seq.toLong() } == (1L..lines.size).toList()
 
-    /** Every `(op, cause)` that is `requested` more than once (contracts.md §7: at most once per request). */
-    fun requestedTwice(): List<String> = records<Op>().filter { it.phase == "requested" }.groupBy { "${it.op} ${it.cause}" }.filterValues { it.size > 1 }.keys.toList()
+    /**
+     * Every `(op, cause)` that is `requested` more than once (contracts.md §7: at most once per request). A robot's
+     * wakes are one per rule: two rules may wake their seat for one cause, each in its own mode.
+     */
+    fun requestedTwice(): List<String> = records<Op>().filter { it.phase == "requested" }
+        .groupBy { "${it.op} ${it.cause}" + ((it.plain()["with"] as? Map<*, *>)?.get("rule")?.let { rule -> " $rule" } ?: "") }.filterValues { it.size > 1 }.keys.toList()
 
     /** Every record about a message — by its `id`, or a transition or operation it caused — that comes before the message's line. */
     fun recordsBeforeTheirMessage(): List<String> {

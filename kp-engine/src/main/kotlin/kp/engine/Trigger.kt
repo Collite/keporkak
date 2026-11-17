@@ -9,12 +9,33 @@ sealed interface Trigger {
      * began is in the log (its last `seat.start` that is `ok`).
      */
     data class Arrival(val message: Message) : Trigger
-    /** `on: op-result`: [operation], which the delivered message [request] requested, ended `ok` or not. */
-    data class Result(val request: String, val operation: String, val ok: Boolean) : Trigger
+    /**
+     * `on: op-result`: [operation], which the delivered message [request] requested, ended `ok` or not. [with] is what
+     * it was asked with and [result] what it gave back — a robot's `{trigger: seat}` reads the seat they name.
+     */
+    data class Result(
+        val request: String, val operation: String, val ok: Boolean,
+        val with: Datum.Fields = Datum.Fields(emptyMap()), val result: Datum.Fields = Datum.Fields(emptyMap()),
+    ) : Trigger
     /** `on: expiry`: the deadline of the delivered message [message] passed. */
     data class Expiry(val message: String) : Trigger
-    /** `on: fact`: [fact] changed; such a transition names no sender. */
-    data class Changed(val fact: String) : Trigger
+    /**
+     * `on: fact`: [fact] changed; such a transition names no sender. [params] say whom it is about — a seat, a
+     * subscription — and [stage] the stage it concerns, when one: what a robot's `{trigger: …}` reads.
+     */
+    data class Changed(val fact: String, val params: Map<String, Datum> = emptyMap(), val stage: String? = null) : Trigger
+
+    // What only a robot hears (contracts.md §8): the engine's guard judges none of these.
+
+    /** `{delivered: <kind>}`: the message [message] was delivered. */
+    data class Delivered(val message: String) : Trigger
+    /** `{presence: present|absent}`: Bora's presence moved to [state]; the robots hear it as they were before it moved. */
+    data class Presence(val state: String) : Trigger
+    /**
+     * What holds the messages the robot of [robot] (its file) holds: its `active_when`, or — for its queue — whether
+     * [job], the last request it handed over, is done and its `next_when` holds (contracts.md §8).
+     */
+    data class Release(val robot: String, val job: String?) : Trigger
 }
 
 /** A fact as the engine reads it: its name and its parameters, resolved. Written `name` or `name(key=value, …)`. */

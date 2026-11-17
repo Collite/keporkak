@@ -29,7 +29,10 @@ class RobotsPoolSpec : StringSpec({
     }
 
     "the roster's order, levels, floor, reserved models and role models are typed" {
-        rules.pool.roster.order.size shouldBe 15
+        rules.pool.roster.order.size shouldBe 20
+        rules.pool.roster.order.last() shouldBe Line("claude", "claude-fable-5-2", "max")
+        rules.pool.roster.reserved shouldBe mapOf("claude-fable-5-2" to listOf("principal"))
+        rules.pool.roster.roleModels shouldBe emptyMap()
         rules.pool.roster.levels.getValue("senior").getValue("XL") shouldBe Line("claude", "claude-opus-5-5", "max")
         rules.pool.roster.reviewFloor shouldBe "claude-opus-5-5"
         rules.pool.offices.getValue("panda").computerUse shouldBe "off"
@@ -45,8 +48,8 @@ class RobotsPoolSpec : StringSpec({
     }
 
     "a reserved model only its roles may run outright, and a pool value the rules use resolves" {
-        val reserved = """, "reserved": {"claude-sonnet-5-5": ["principal"]}, "role_models": {"principal": {"model": "claude-sonnet-5-5", "effort": "high"}, "coder": {"model": "claude-sonnet-5-5", "effort": "low"}}}"""
-        problemsAfterExpanded("pool/roster.yaml", "\"floor\": \"claude-opus-5-5\"}}", "\"floor\": \"claude-opus-5-5\"}$reserved") shouldBe
+        val reserved = """"reserved": {"claude-sonnet-5-5": ["principal"]}, "role_models": {"principal": {"model": "claude-sonnet-5-5", "effort": "high"}, "coder": {"model": "claude-sonnet-5-5", "effort": "low"}}}"""
+        problemsAfterExpanded("pool/roster.yaml", "\"reserved\": {\"claude-fable-5-2\": [\"principal\"]}, \"role_models\": {}}", reserved) shouldBe
             listOf("pool/roster.yaml: role_models coder runs claude-sonnet-5-5, which is reserved for principal")
         problemsAfterExpanded("pool/budgets.yaml", "\"warn\": [", "\"cautions\": [") shouldContain
             "robots/pool.yaml: POOL-7: {budget: warn.0} does not resolve in pool/"
