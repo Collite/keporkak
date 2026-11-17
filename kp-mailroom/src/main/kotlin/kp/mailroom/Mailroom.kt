@@ -255,12 +255,21 @@ class Mailroom private constructor(
         write(JsonObject(message.json - "seq"))
         if (refusal != null) return settle(message, refusal, now)
         val id = message.id.value
-        val ticket = (writer.last + 1).takeIf { held.ticket }
-        write(line(now, EVENT to text("held"), ID to text(id), BY to text(held.by), UNTIL to text(held.until), TICKET to ticket?.let(::JsonPrimitive),
-            DEADLINE to null, keepNull = setOf(DEADLINE)))
-        if (ticket != null && held.messageClass == MessageClass.B) notify(ticket, id, now)
+        writeHeld(id, held, now)
         carry(reaction, id, now)
         return Answer(Status.HELD, id, rule = held.by)
+    }
+
+    /**
+     * The `held` record (contracts.md §2.2): by the rule, until what ends it, its deadline suspended; one that waits for
+     * Bora has a ticket — the one its item already has, else a new one, with `notify.bora` for class B.
+     */
+    private fun writeHeld(id: String, held: RobotHold, now: String) {
+        val raised = folded.tickets.entries.firstOrNull { it.value.item == id }?.key
+        val ticket = if (held.ticket) raised ?: (writer.last + 1) else null
+        write(line(now, EVENT to text("held"), ID to text(id), BY to text(held.by), UNTIL to text(held.until), TICKET to ticket?.let(::JsonPrimitive),
+            DEADLINE to null, keepNull = setOf(DEADLINE)))
+        if (raised == null && ticket != null && held.messageClass == MessageClass.B) notify(ticket, id, now)
     }
 
     /**
@@ -299,8 +308,10 @@ class Mailroom private constructor(
 
     /**
      * A held message is let go (contracts.md §2.2): judged now, under the state now, and delivered — or refused — like
-     * an arrival whose line is already written. Let go by one robot, it may be another's queue's to keep (§8): a deploy
-     * the Deputy kept goes to QA's queue, held again by it, and is handed over in its turn.
+     * an arrival whose line is already written. Let go by one robot, it may be another active robot's to keep (§8),
+     * held again by it: a deploy the Deputy kept goes to QA's queue and is handed over in its turn; one QA's queue
+     * kept, let go while Bora is away, goes to the Deputy — an arrival there, so the Deputy answers the asker and wakes
+     * as it would have on arrival (review-015 B1).
      */
     private fun release(id: String) {
         val hold = folded.held[id] ?: return
@@ -309,9 +320,11 @@ class Mailroom private constructor(
         val engine = Engine(rules)
         val trigger = Trigger.Arrival(message)
         val facts = table(engine.needs(folded, trigger) + hears(engine, trigger), message.stage?.value, now)
-        val queued = if (robots) engine.react(folded, trigger, facts).held?.takeIf { !it.ticket && it.by != hold.by } else null
-        if (queued != null) {
-            write(line(now, EVENT to text("held"), ID to text(id), BY to text(queued.by), UNTIL to text(queued.until), DEADLINE to null, keepNull = setOf(DEADLINE)))
+        val reaction = if (robots) engine.react(folded, trigger, facts) else null
+        val other = reaction?.held?.takeIf { it.by != hold.by }
+        if (reaction != null && other != null) {
+            writeHeld(id, other, now)
+            if (other.ticket) carry(reaction, id, now)
             return
         }
         settle(message, engine.judge(folded, trigger, facts), now)

@@ -49,6 +49,26 @@ class HoldsSpec : StringSpec({
         office.mailroom.state.held[deploy.id]?.by shouldBe "robot:QA-1"
     }
 
+    "a deploy QA's queue kept from before Bora left goes to the Deputy when the queue lets it go while he is away, and back to the queue on his return (review-015 B1)" {
+        val office = Office(walk = "H-3", others = mapOf("KP/P3/S3.1" to "building", "KP/P3/S3.3" to "released"), robots = true, at = "2026-11-13T22:00:00Z")
+        office.facts.set("KP/P3/S3.1", "live.namespace_absent", false)
+        val job = office.send("coder-1", """{"kind": "qa-request", "stage": "KP/P3/S3.1", "args": {"task": "T5", "done": "D1", "verify": "the candidate"}}""")
+        val deploy = office.send("teamlead", """{"kind": "deploy-request", "stage": "KP/P3/S3.3", "args": {"pin": "image-head-1", "smoke": "the stage smoke"}}""")
+        office.bora("""{"kind": "away"}""")
+
+        office.changed("live.namespace_absent", true, stage = "KP/P3/S3.1")
+        office.send("qa", """{"kind": "qa-report", "re": "${job.id}",
+            "args": {"outcome": "pass", "fixture": "fixtures/a", "command": "fake check", "counts": {"checks": 1}, "sha": "head-1"}}""")
+        val whileAway = office.readBack()
+        office.command(signed = true)
+
+        whileAway.records<Held>().filter { it.id == deploy.id }.map { listOf(it.by, it.deadline) } shouldBe listOf(listOf("robot:QA-1", null), listOf("robot:DEP-15", null))
+        whileAway.sent("hold").map { listOf(it.by, it.re?.value, it.to.value) } shouldBe listOf(listOf("robot:DEP-15", deploy.id, "teamlead"))
+        whileAway.records<kp.model.Refused>() shouldBe emptyList()
+        office.readBack().records<Held>().filter { it.id == deploy.id }.map { it.by } shouldBe listOf("robot:QA-1", "robot:DEP-15", "robot:QA-1")
+        office.readBack().records<kp.model.Delivered>().single { it.id == deploy.id }.to shouldBe listOf("qa", "bora")
+    }
+
     "Bora's ruling on a question the Deputy kept answers its ticket once the question is delivered" {
         val office = absent()
         val asked = office.send("reviewer-1", """{"kind": "classify-request", "stage": "$STAGE", "args": {"question": "blocker?", "default": "follow-up"}}""")
