@@ -24,6 +24,7 @@ class KpCommands(private val office: Office, world: FactSource) : Commands {
             "inbox" -> inbox(args, out)
             "status" -> if (args.size > 1) usage(out, "kp status [effort | stage | seat]") else print(out, views.status(args.firstOrNull()))
             "help" -> print(out, HELP)
+            "check" -> if (args.isEmpty()) usage(out, "kp check <log…>") else Check(office.rules).run(args.map { java.nio.file.Path.of(it) }).let { (lines, code) -> code.also { lines.forEach(out::line) } }
             "approve" -> answer(out, peer, args, 1..1, "kp approve <ticket>") { item -> message(APPROVAL, item) }
             "decline" -> answer(out, peer, args, 1..Int.MAX_VALUE, "kp decline <ticket> [reason]") { item -> message(DECLINE, item, body = args.drop(1)) }
             "rule" -> answer(out, peer, args, 2..Int.MAX_VALUE, "kp rule <ticket> <outcome> [text]") { item ->
