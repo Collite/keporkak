@@ -817,10 +817,12 @@ class Walk:
     def require(self, requirements):
         return next((item for item in requirements if not self.holds(item)),None)
     def typed(self,value,definition):
-        if "enum" in definition and value not in definition["enum"]:return False
+        """An arg against its declaration as both validators and the engine type it (issue #26): an enum holds a
+        boolean only as a boolean, a boolean is no number, and a number with no fraction is an integer, `1.0` too."""
+        if "enum" in definition and not any(same_literal(value,item) for item in definition["enum"]):return False
         typename=definition.get("type")
-        types={"string":str,"array":list,"object":dict,"boolean":bool,"integer":int,"number":(int,float)}
-        if typename and (typename not in types or not isinstance(value,types[typename]) or typename in ("number","integer") and isinstance(value,bool)):return False
+        containers={"array":list,"object":dict}
+        if typename and not (isinstance(value,containers[typename]) if typename in containers else typename in ARG_TYPES and ARG_TYPES[typename](value)):return False
         if isinstance(value,list) and "items" in definition and not all(self.typed(item,definition["items"]) for item in value):return False
         if isinstance(value,dict) and not all(field in value for field in definition.get("required_fields",[])):return False
         return True

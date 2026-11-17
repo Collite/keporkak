@@ -30,8 +30,9 @@ demo_context: null
 - **Pins live in** `gradle/libs.versions.toml` (Kotlin, the ACP and MCP SDKs, their libraries; each with where it was
   checked) · `gradle/wrapper/gradle-wrapper.properties` (Gradle, with its checksum) · `requirements.txt` (the Python
   tools behind `just`) · `.github/workflows/*.yml` (actions by commit) · `pool/roster.yaml`
-  `vendors.claude.adapter_version` (the Claude adapter, from S2.1; its `sdk` repeats the catalog's `acp` pin and
-  `check-rules.py` fails when they differ) (EX-4).
+  `vendors.claude.adapter_version` (the Claude adapter, from S2.1; `office/adapter/package-lock.json` names the same
+  version, and `just office-check` compares the two) · the SDKs' pins are the catalog's alone (contracts.md §9,
+  Amendment 10) (EX-4).
 - **Releases:** none in v1. The daemon is upgraded on Panda only at a phase exit, by Bora (`just install`), never by a
   merge (plan.md §4.2).
 - **Library references (PL-12):** context7 — the ACP Kotlin SDK `/websites/deepwiki_agentclientprotocol_kotlin-sdk`,

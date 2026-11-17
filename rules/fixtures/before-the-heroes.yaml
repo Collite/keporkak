@@ -64,3 +64,32 @@ scenarios:
           queue: {id: TEST-1, one_at_a_time: true, order: [started], then: fifo, next_when: {fact: live.namespace_absent}}
     expect:
       failures: ["TEST-1: duplicate robot rule id"]
+  - name: the walker types an arg as both validators do — 1.0 is an integer, and true is in no enum of numbers
+    given:
+      states: {planned: {bora_gate: true}, exited: {terminal: true}}
+      kinds:
+        started:
+          from: coder
+          to: teamlead
+          guard: '-'
+          args:
+            count: {type: integer}
+            level: {enum: [1, 2]}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: null
+          expiry: []
+          require: []
+      transitions:
+        - {id: T-again, from: planned, to: planned, kind: started, 'on': message, guard: '-', require: [], effects: []}
+      walks:
+        - name: one point zero is a count, and true is no level
+          initial: planned
+          steps:
+            - {who: coder, kind: started, args: {count: 1.0, level: 1}}
+            - {who: coder, kind: started, args: {level: true}, expect: {refused: true, refusal_contains: "invalid argument 'level'"}}
+          final: planned
+    expect:
+      failures: []
+      output: ["ok   walk one point zero is a count, and true is no level reached planned"]
