@@ -19,10 +19,7 @@ private fun sha256sum(text: String): String {
 
 /** T7 — the rules in force: through `kp-rules` at start and on reload; a `rules` record with the hashes of §2.2. */
 class RulesInForceSpec : StringSpec({
-    afterTest {
-        Office.everyLogIsWhole() shouldBe emptyList()
-        Office.closeAll()
-    }
+    afterTest { Office.checkAndCloseAll() }
 
     "at start the rules record names every file of the set with its SHA-256, and the set's hash is that of the lines `<path> <hash>`, sorted" {
         val office = Office()
@@ -49,7 +46,7 @@ class RulesInForceSpec : StringSpec({
         Office.opened.remove(office)
     }
 
-    "an accepted reload records the set even when nothing changed; a rejected one writes nothing" {
+    "an accepted reload records the set even when nothing changed; a rejected one writes no rules record" {
         val office = Office()
 
         val same = office.mailroom.reload()

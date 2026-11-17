@@ -60,6 +60,16 @@ class EveryKindSpec : StringSpec({
         supervised().judge(threeAways, Arrival(message("away", from = "bora", to = "mailroom", signed = true)), table("now" to NOW)).refusal() shouldBe
             ("away" to "caps.max_fires_default: 3, window: stage")
     }
+    "max_fires: null on a kind only the mailroom sends counts nothing of its own: a stage's fourth nudge is delivered (S1.8, Amendment 16)" {
+        val threeNudges = fold(log(*sent("m-panda-000060", "review-request", from = "coder-1"),
+            *sent("m-panda-000061", "nudge", from = "mailroom", re = "m-panda-000060", thread = "m-panda-000060", args = """{"rule": "T-74", "failed_guard": "x"}"""),
+            *sent("m-panda-000062", "nudge", from = "mailroom", re = "m-panda-000060", thread = "m-panda-000060", args = """{"rule": "T-74", "failed_guard": "x"}"""),
+            *sent("m-panda-000063", "nudge", from = "mailroom", re = "m-panda-000060", thread = "m-panda-000060", args = """{"rule": "T-74", "failed_guard": "x"}""")))
+        val fourth = Arrival(message("nudge", from = "mailroom", re = "m-panda-000060", thread = "m-panda-000060", by = "expiry:review-request",
+            args = """{"rule": "T-74", "failed_guard": "x"}"""))
+
+        supervised().judge(threeNudges, fourth, table("now" to NOW)).outcome shouldBe Outcome.DELIVER
+    }
     "a delivery sets the kind's deadline, counted from now; a kind with none sets none" {
         val building = fold(log(move("stage", STAGE, "assigned", "building")))
         val review = message("review-request", from = "coder-1", args = """{"attest": ["done_lines_hold"]}""")
@@ -101,5 +111,15 @@ class EveryKindSpec : StringSpec({
         supervised().judge(State(), compact("coder-1"), crowded).outcome shouldBe Outcome.DELIVER
         supervised().judge(State(), compact("bora"), crowded).refusal() shouldBe ("compact" to "to: a seat")
         supervised().judge(assigned, Arrival(message("started", from = "coder-1", to = "teamlead-panda")), branch).outcome shouldBe Outcome.DELIVER
+    }
+    "an emit the rules declare is addressed by the rule that declares it: the kind's to is checked for what a seat, a robot or Bora sends (S1.8)" {
+        val waiting = fold(log(move("stage", STAGE, "building", "ready_for_review"), *sent("m-panda-000060", "review-request", from = "coder-1")))
+        fun nudge(to: String, by: String) = Arrival(message("nudge", from = "mailroom", to = to, re = "m-panda-000060", thread = "m-panda-000060", by = by,
+            args = """{"rule": "T-74", "failed_guard": "nudge teamlead"}"""))
+
+        supervised().judge(waiting, nudge("teamlead", "expiry:review-request"), table("now" to NOW)).outcome shouldBe Outcome.DELIVER
+        supervised().judge(waiting, nudge("principal", "effect:T-07"), table("now" to NOW)).outcome shouldBe Outcome.DELIVER
+        supervised().judge(waiting, nudge("teamlead", "robot:DEP-1"), table("now" to NOW)).refusal() shouldBe ("nudge" to "to: {re: from}")
+        supervised().judge(waiting, nudge("coder-1", "robot:DEP-1"), table("now" to NOW)).outcome shouldBe Outcome.DELIVER
     }
 })

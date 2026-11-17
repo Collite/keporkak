@@ -166,17 +166,19 @@ class LogWriterSpec : StringSpec({
             shouldThrow<LogRefusal> { log.append(message("m-panda-000001"), StageId("TOY/P0/S0.1")) }
         }
     }
-    "a stage file that ended in exited or closed takes no more lines, now or after a restart" {
+    "a stage file that ended in exited or closed takes no more lines: a line about its stage goes to the office's file, now or after a restart" {
         val project = throwawayProject()
         LogWriter.open(project, panda).use { log ->
             log.append(stageMove("exited"), stage)
-            shouldThrow<LogRefusal> { log.append(record(), stage) }.message shouldContain "closed"
+            log.append(record(), stage)
         }
         LogWriter.open(project, panda).use { log ->
-            shouldThrow<LogRefusal> { log.append(message("m-panda-000002")) }
+            log.append(message("m-panda-000003"))
             log.append(record(), StageId("KP/P1/S1.2"))
         }
-        project.resolve("mail/KP/p1-s1.2.jsonl").seqs() shouldBe listOf(2)
+        project.resolve("mail/KP/p1-s1.1.jsonl").seqs() shouldBe listOf(1)
+        project.resolve("mail/_office/panda-2026-11.jsonl").seqs() shouldBe listOf(2, 3)
+        project.resolve("mail/KP/p1-s1.2.jsonl").seqs() shouldBe listOf(4)
     }
     "a stage's file is closed by that stage's own exit only: another stage's exit appended to it closes nothing, now or after a restart" {
         val project = throwawayProject()

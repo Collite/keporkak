@@ -16,14 +16,14 @@ private fun Decision.cls(): Pair<MessageClass?, Boolean> = messageClass to waits
 
 /** T6: classes (contracts.md §4.2, §4.3; engagement.yaml: classes, second_key, autonomy_profiles). */
 class ClassesSpec : StringSpec({
-    "a kind's default class, when no case holds; class B waits for Bora" {
+    "a kind's default class, when no case holds; Bora's own class-B message waits for no one (Amendment 15)" {
         val assigned = fold(log(move("stage", STAGE, "planned", "assigned")))
         val proposed = fold(log(move("stage", STAGE, "planned", "proposed")))
         val building = fold(log(move("stage", STAGE, "assigned", "building")))
 
         supervised().judge(assigned, Arrival(message("started", from = "coder-1")), table("now" to NOW, "git.branch_exists" to true)).cls() shouldBe (MessageClass.A to false)
         supervised().judge(building, Arrival(message("stop", from = "coder-1", to = "principal", args = """{"sc": "SC-3"}""")), table("now" to NOW, "list.stop_conditions" to listOf("SC-3"))).cls() shouldBe (MessageClass.C to false)
-        supervised().judge(proposed, Arrival(message("decline", from = "bora", signed = true)), table("now" to NOW)).cls() shouldBe (MessageClass.B to true)
+        supervised().judge(proposed, Arrival(message("decline", from = "bora", signed = true)), table("now" to NOW)).cls() shouldBe (MessageClass.B to false)
     }
     "a kind's first case that holds gives its class" {
         val stopped = fold(log(move("stage", STAGE, "building", "stopped")))

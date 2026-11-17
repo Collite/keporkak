@@ -12,10 +12,7 @@ private const val BIND = """{"kind": "review-bind", "stage": "$STAGE", "subject"
 
 /** T3 — routing: to and cc, who is woken and who finds it in the inbox, tickets and `notify.bora`, `read` records. */
 class RoutingSpec : StringSpec({
-    afterTest {
-        Office.everyLogIsWhole() shouldBe emptyList()
-        Office.closeAll()
-    }
+    afterTest { Office.checkAndCloseAll() }
 
     "the addressee and the kind's cc are delivered to, a role as the seat the stage binds to it; only the addressee is woken, and has then read it" {
         val office = Office(seed = "ready_for_review")

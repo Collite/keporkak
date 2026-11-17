@@ -171,9 +171,50 @@ internal class RulesCheck(
             for (state in listOf(transition.from, transition.to)) {
                 if (state !in machine.states && state !in reservedStates) problem(owner, "unknown state '$state' in ${machine.name}")
             }
+            transition.effects.filterIsInstance<Effect.Emit>().forEach { emitArgs(owner, it) }
             val declared = kinds[transition.kind]?.args ?: continue
             names.args.distinct().filterNot { it in declared }.forEach { problem(owner, "undeclared argument '$it'") }
         }
+    }
+
+    /**
+     * A declared emit carries the args its kind requires (contracts.md §4.2, Amendment 16): every arg it gives is
+     * declared, every required one is given, and a value written as a literal is of the declared type and in the
+     * declared enum. A value resolved at run time (`{arg: …}`, `{re: …}`, `{fact: …}`) is the engine's to check.
+     */
+    private fun emitArgs(owner: Owner, emit: Effect.Emit) {
+        val declared = kinds[emit.kind]?.args ?: return
+        emit.args.keys.filterNot { it in declared }.forEach { problem(owner, "emit '${emit.kind}' gives undeclared arg '$it'") }
+        declared.filter { (name, spec) -> spec.required && name !in emit.args }.keys.forEach { problem(owner, "emit '${emit.kind}' lacks required arg '$it'") }
+        for ((name, value) in emit.args) {
+            val spec = declared[name] ?: continue
+            val literal = (value as? Value.Constant)?.literal?.takeUnless { it == Literal.Null } ?: continue
+            val enum = spec.enum
+            val type = spec.type
+            if (enum != null && enum.none { sameLiteral(it, literal) }) {
+                problem(owner, "emit '${emit.kind}' arg '$name' is not one of ${enum.joinToString(" | ", transform = ::literalText)}")
+            } else if (enum == null && type != null && !ofType(literal, type)) {
+                problem(owner, "emit '${emit.kind}' arg '$name' is not ${type.key}")
+            }
+        }
+    }
+
+    private fun sameLiteral(a: Literal, b: Literal): Boolean =
+        if (a is Literal.Number && b is Literal.Number) a.value.compareTo(b.value) == 0 else a == b
+
+    private fun ofType(literal: Literal, type: ArgType): Boolean = when (type) {
+        ArgType.STRING -> literal is Literal.Text
+        ArgType.BOOLEAN -> literal is Literal.Bool
+        ArgType.INTEGER -> literal is Literal.Number && literal.value.stripTrailingZeros().scale() <= 0
+        ArgType.NUMBER -> literal is Literal.Number
+        ArgType.ARRAY, ArgType.OBJECT -> false
+    }
+
+    private fun literalText(literal: Literal): String = when (literal) {
+        is Literal.Text -> literal.value
+        is Literal.Number -> literal.value.toPlainString()
+        is Literal.Bool -> literal.value.toString()
+        Literal.Null -> "null"
     }
 
     private fun kindsAgainstRules() {
@@ -187,6 +228,7 @@ internal class RulesCheck(
             }
             resolve(owner, names, thresholdsOf(kind.from))
             names.args.distinct().filterNot { it in kind.args }.forEach { problem(owner, "undeclared argument '$it'") }
+            kind.expiry.filterIsInstance<Effect.Emit>().forEach { emitArgs(owner, it) }
             for (effect in kind.expiry) {
                 if (effect is Effect.Transition && effect.id !in transitionIds) problem(owner, "expiry names unknown transition '${effect.id}'")
                 if (effect is Effect.Emit && effect.kind !in engagement.mailroomDeclaredEffects) problem(owner, "undeclared expiry emit '${effect.kind}'")

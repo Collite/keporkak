@@ -13,10 +13,7 @@ private const val STOP = """{"kind": "stop", "stage": "$STAGE", "subject": "stop
 
 /** T6 — deadlines and expiry: timers from the state, rebuilt at start; the `expired` record and what §4.2's forms say. */
 class ExpiriesSpec : StringSpec({
-    afterTest {
-        Office.everyLogIsWhole() shouldBe emptyList()
-        Office.closeAll()
-    }
+    afterTest { Office.checkAndCloseAll() }
 
     "a deadline fires when the clock has passed it, not before; the next deadline says when" {
         val office = Office(seed = "building")
@@ -59,7 +56,7 @@ class ExpiriesSpec : StringSpec({
         office.readBack().records<Op>().map { "${it.op} ${it.phase} ${it.cause}" } shouldBe listOf("notify.bora requested #${expired.seq}", "notify.bora ok #${expired.seq}")
     }
 
-    "an expiry's emit is by the transition the kind's expiry names, in reply to the waiting message, judged and delivered like any other" {
+    "an expiry's emit is by the expiry of its kind, in reply to the waiting message, judged and delivered like any other" {
         val office = Office(seed = "ready_for_review")
         val bind = office.send("teamlead", """{"kind": "review-bind", "stage": "$STAGE", "subject": "bind", "args": {"reviewer": "reviewer-1"}}""")
 
@@ -67,11 +64,11 @@ class ExpiriesSpec : StringSpec({
         office.mailroom.tick()
 
         val nudge = office.readBack().sent("nudge").single()
-        listOf(nudge.by, nudge.re?.value, nudge.thread.value, nudge.to.value, nudge.from.value) shouldBe listOf("effect:T-75", bind.id, bind.id, "teamlead", "mailroom")
+        listOf(nudge.by, nudge.re?.value, nudge.thread.value, nudge.to.value, nudge.from.value) shouldBe listOf("expiry:review-bind", bind.id, bind.id, "teamlead", "mailroom")
         office.readBack().records<Delivered>().single { it.id == nudge.id.value }.woke shouldBe listOf("teamlead")
     }
 
-    "an expiry of a kind whose expiry names no transition is recorded, and its emit is not sent: no `by` the contract allows names it" {
+    "an expiry of a kind whose expiry names no transition is recorded, and its emit is sent by the expiry of its kind" {
         val office = Office()
         val request = office.send("teamlead", """{"kind": "session-request", "subject": "a coder", "args": {"action": "add", "seat": "coder-2", "role": "coder"}}""")
 
@@ -79,7 +76,21 @@ class ExpiriesSpec : StringSpec({
         office.mailroom.tick()
 
         office.readBack().expired(request.id).map { it.deadline } shouldBe listOf(null)
-        office.readBack().sent("nudge") shouldBe emptyList()
+        office.readBack().sent("nudge").map { "${it.by} ${it.to.value} ${it.re?.value}" } shouldBe listOf("expiry:session-request pool ${request.id}")
+    }
+
+    "a stage's fourth nudge is delivered: a kind only the mailroom sends has no count of its own (S1.8, Amendment 16)" {
+        val office = Office(seed = "building")
+        office.play("review-request", "review-bind", "verdict", "repair-done")
+
+        office.clock.advance(8.hours)
+        office.mailroom.tick()
+        office.clock.advance(8.hours)
+        office.mailroom.tick()
+
+        val nudges = office.readBack().sent("nudge").map { it.id.value }
+        nudges.size shouldBe 4
+        office.readBack().records<Delivered>().map { it.id }.filter { it in nudges } shouldBe nudges
     }
 
     "an expired record that ends the wait writes its deadline as null" {

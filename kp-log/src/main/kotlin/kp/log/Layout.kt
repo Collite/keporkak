@@ -45,8 +45,6 @@ internal object Layout {
         return mail(project).resolve("_office").children { name.matches(it.name) }
     }
 
-    fun officeFileMonth(file: Path): String = file.name.removeSuffix(".jsonl").takeLast(7)
-
     fun handFiles(project: Path, effort: EffortId): List<Path> =
         mail(project).resolve(effort.value).resolve("_hand").children { it.name.endsWith(".jsonl") }
 

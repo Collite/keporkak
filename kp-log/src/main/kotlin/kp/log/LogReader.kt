@@ -11,34 +11,28 @@ import java.nio.file.Path
 class LogReader(private val project: Path, private val office: OfficeId) {
 
     /**
-     * What start-up folds: every open stage file and this office's files from the month of the oldest open stage's
-     * first line (with no open stage, the office's current file), merged in `seq` order. A stage file whose last line
-     * moves its stage to `exited` or `closed` is skipped; its lines' `seq` still count, so they are not a gap.
+     * What start-up folds (contracts.md §3, Amendment 15): every stage file, closed ones too, and every one of this
+     * office's files, merged in `seq` order — closing a file takes nothing out of the state.
      */
     fun read(): LogRead {
-        val (closed, open) = Layout.stageFiles(project).map(ParsedFile::of).partition { file -> file.last?.let { Layout.closes(it.entry, Layout.stageOf(file.file)) } == true }
-        val officeFiles = Layout.officeFiles(project, office)
-        val since = open.mapNotNull { it.lines.firstOrNull() }.minOfOrNull { Layout.month(it.entry.at.value) }
-        val offices = if (since == null) listOfNotNull(officeFiles.lastOrNull()) else officeFiles.filter { Layout.officeFileMonth(it) >= since }
-        val files = open + offices.map(ParsedFile::of)
+        val files = (Layout.stageFiles(project) + Layout.officeFiles(project, office)).map(ParsedFile::of)
         val lines = files.flatMap { it.lines }.sortedBy { it.seq }
-        return LogRead(lines, files.flatMap { it.problems } + sequence(lines, closed.flatMap { it.lines }.map { it.seq }))
+        return LogRead(lines, files.flatMap { it.problems } + sequence(lines))
     }
 
     /** The hand logs of [effort] (`mail/<effort>/_hand/`), only when asked: file by file, each `seq` running from 1. */
     fun readHand(effort: EffortId): LogRead {
         val files = Layout.handFiles(project, effort).map(ParsedFile::of)
-        return LogRead(files.flatMap { it.lines }, files.flatMap { it.problems + sequence(it.lines.sortedBy { line -> line.seq }, emptyList(), it.file) })
+        return LogRead(files.flatMap { it.lines }, files.flatMap { it.problems + sequence(it.lines.sortedBy { line -> line.seq }, it.file) })
     }
 
-    /** Repeats and gaps among [lines] (sorted by `seq`); [elsewhere] are the `seq` of lines that exist but were skipped. */
-    private fun sequence(lines: List<LogLine>, elsewhere: List<Long>, file: Path? = null): List<Problem> {
+    /** Repeats and gaps among [lines] (sorted by `seq`); with [file], a hand log's, whose `seq` runs from 1. */
+    private fun sequence(lines: List<LogLine>, file: Path? = null): List<Problem> {
         if (lines.isEmpty()) return emptyList()
-        val skipped = elsewhere.toSet()
         val used = mutableSetOf<Long>()
-        val repeats = lines.filter { !used.add(it.seq) || it.seq in skipped }.map { Repeat(it.seq, it.file, it.number) }
+        val repeats = lines.filter { !used.add(it.seq) }.map { Repeat(it.seq, it.file, it.number) }
         val low = if (file != null) 0L else lines.first().seq
-        val known = (used + skipped.filter { it >= low } + listOfNotNull(low.takeIf { file != null })).sorted()
+        val known = (used + listOfNotNull(low.takeIf { file != null })).sorted()
         val gaps = known.zipWithNext().filter { (a, b) -> b > a + 1 }.map { (a, b) -> Gap(a, b, file) }
         return repeats + gaps
     }

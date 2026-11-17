@@ -13,10 +13,7 @@ import kotlin.io.path.readLines
 
 /** T2 — the loop: what the mailroom sets on a message, the order of its lines, and the file each record goes to. */
 class TheLoopSpec : StringSpec({
-    afterTest {
-        Office.everyLogIsWhole() shouldBe emptyList()
-        Office.closeAll()
-    }
+    afterTest { Office.checkAndCloseAll() }
 
     "what the mailroom sets is never taken from the input: id, thread, from, by, signed, seq, at, created, deadline" {
         val office = Office(seed = "building")

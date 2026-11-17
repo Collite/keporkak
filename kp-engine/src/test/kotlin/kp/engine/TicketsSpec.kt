@@ -43,6 +43,21 @@ class TicketsSpec : StringSpec({
         decision.failed shouldBe null
     }
 
+    "Bora's own class-B message waits for no one; a seat's class-B message waits for Bora (S1.8, Amendment 15)" {
+        val proposed = fold(log(move("stage", STAGE, "planned", "proposed")))
+        val approval = message("approval", from = "bora", signed = true)
+        val proposal = message("assignment-proposal", from = "teamlead", to = "bora", args = """{"role": "coder", "level": "senior", "seat": "coder-1"}""")
+        val facts = table("now" to NOW, "plan.predecessors_exited" to true, "pool.seat_available(level=senior, role=coder)" to true, "budget.slot_open(dimension=office)" to true,
+            "budget.slot_open(dimension=subscription)" to true, "budget.slot_open(dimension=effort)" to true, "list.fence_complete" to true, "list.tasks_total" to 8, "list.lines" to 90)
+        val planned = State()
+
+        val bora = supervised().judge(proposed, Arrival(approval), table("now" to NOW))
+        val seat = supervised().judge(planned, Arrival(proposal), facts)
+
+        listOf(bora.outcome, bora.messageClass, bora.waitsForBora) shouldBe listOf(Outcome.DELIVER, kp.rules.MessageClass.B, false)
+        listOf(seat.outcome, seat.messageClass, seat.waitsForBora) shouldBe listOf(Outcome.DELIVER, kp.rules.MessageClass.B, true)
+    }
+
     "a signed answer to an item with a ticket still open is judged by the rules alone" {
         val first = ruling("m-panda-000011", signed = true)
 

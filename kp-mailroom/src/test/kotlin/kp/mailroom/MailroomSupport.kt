@@ -1,5 +1,6 @@
 package kp.mailroom
 
+import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -129,9 +130,9 @@ private fun Datum?.fields(): Map<String, Datum> = (this as? Datum.Fields)?.field
 /**
  * One office on a throwaway project: master's rules, facts from a walk, faked operations and seats, a clock that moves
  * a minute per step. [seed] puts the stage in a state, with [counters], before the mailroom starts — what an earlier
- * part of the log would have left — and each of the walk's seats in `ready`.
+ * part of the log would have left — [others] puts other stages in theirs, and each of the walk's seats is in `ready`.
  */
-class Office(walk: String = "H-1-prime", seed: String? = null, counters: String = "{}") {
+class Office(walk: String = "H-1-prime", seed: String? = null, counters: String = "{}", others: Map<String, String> = emptyMap()) {
     val project: Path = throwawayProject()
     val texts = Texts()
     val facts = FakeFacts()
@@ -141,6 +142,8 @@ class Office(walk: String = "H-1-prime", seed: String? = null, counters: String 
     private val walk = Walk.named(walk)
     private val ids = HashMap<String, String>()
     private var next = 0
+    /** The id of every message submitted through this office: each must have its line and a record about it. */
+    val submitted = ArrayList<String>()
     lateinit var mailroom: Mailroom
 
     init {
@@ -149,6 +152,7 @@ class Office(walk: String = "H-1-prime", seed: String? = null, counters: String 
         LogWriter.open(project, panda).use { log ->
             fun line(text: String) = log.append(json("""{"v":1,"at":"$START",""" + text.removePrefix("{")))
             seed?.let { line("""{"event":"transition","machine":"stage","subject":"$STAGE","from":"planned","to":"$it","cause":"$SEEDED","counted":$counters}""") }
+            others.forEach { (stage, state) -> line("""{"event":"transition","machine":"stage","subject":"$stage","from":"planned","to":"$state","cause":"$SEEDED"}""") }
             listOf("coder-1", "reviewer-1").forEach { line("""{"event":"transition","machine":"seat","subject":"$it","from":"provisioned","to":"ready","cause":"$SEEDED"}""") }
         }
         start()
@@ -158,8 +162,8 @@ class Office(walk: String = "H-1-prime", seed: String? = null, counters: String 
     fun stop() = mailroom.close()
     fun restart() { stop(); start() }
 
-    fun send(seat: String, input: String): Answer = mailroom.submit(Sender.Seat(seat), json(input))
-    fun bora(input: String, signed: Boolean = true): Answer = mailroom.submit(Sender.Bora(signed), json(input))
+    fun send(seat: String, input: String): Answer = mailroom.submit(Sender.Seat(seat), json(input)).also { submitted += it.id }
+    fun bora(input: String, signed: Boolean = true): Answer = mailroom.submit(Sender.Bora(signed), json(input)).also { submitted += it.id }
 
     /**
      * Plays the walk's next step of each kind, in order, from its sender with its args and facts — and the facts of the
@@ -189,8 +193,8 @@ class Office(walk: String = "H-1-prime", seed: String? = null, counters: String 
     /** The id the walk's step [id] was given. */
     fun idOf(id: String): String = ids.getValue(id)
 
-    /** The stage's state as its log gives it: every line of every file, folded. */
-    fun stage(): String? = fold(readBack().lines).stage(STAGE)
+    /** A stage's state as its log gives it: every line of every file, folded. */
+    fun stage(id: String = STAGE): String? = fold(readBack().lines).stage(id)
 
     fun readBack() = ReadBack(project)
 
@@ -203,10 +207,22 @@ class Office(walk: String = "H-1-prime", seed: String? = null, counters: String 
             opened.clear()
         }
 
-        /** In the log of every office a spec opened, `seq` has no gap and no operation is requested twice for one request. */
+        /** What every spec of the mailroom ends with: its logs are whole — and its offices closed even when they are not (issue #21). */
+        fun checkAndCloseAll() = try {
+            everyLogIsWhole() shouldBe emptyList()
+        } finally {
+            closeAll()
+        }
+
+        /**
+         * In the log of every office a spec opened: `seq` has no gap; no operation is requested twice for one request;
+         * every submission has its message line and a record about it — none ended in an exception; and Bora's own
+         * message waits for no one — no ticket and no `notify.bora` for a message `by: bora-cli`.
+         */
         fun everyLogIsWhole(): List<String> = opened.flatMap { office ->
             val log = office.readBack()
-            listOfNotNull("${office.project}: seq has a gap".takeUnless { log.seqRunsWithoutGap() }) + log.requestedTwice()
+            listOfNotNull("${office.project}: seq has a gap".takeUnless { log.seqRunsWithoutGap() }) + log.requestedTwice() +
+                office.submitted.filterNot(log::hasLineAndRecord).map { "$it: no message line, or no record about it" } + log.borasOwnWaiting()
         }
     }
 }
@@ -224,6 +240,18 @@ class ReadBack(project: Path) {
     fun ops(cause: String): List<String> = records<Op>().filter { it.cause == cause }.map { listOfNotNull(it.op, it.phase, it.reason).joinToString(" ") }
     fun transitions(cause: String): List<String> = records<Transition>().filter { it.cause == cause }.map { "${it.rule} ${it.from}→${it.to}" }
     fun rules(): List<Rules> = records()
+
+    /** [id] has its message line and a `delivered`, `refused` or `held` record. */
+    fun hasLineAndRecord(id: String): Boolean =
+        messages.any { it.id.value == id } && lines.any { it is Record && it.event in setOf("delivered", "refused", "held") && it.plain()["id"] == id }
+
+    /** Each ticket or `notify.bora` about a message by Bora's command line (contracts.md §2.2: Bora's own message gets neither). */
+    fun borasOwnWaiting(): List<String> {
+        val boras = messages.filter { it.by == "bora-cli" }.map { it.id.value }.toSet()
+        val tickets = lines.filterIsInstance<Record>().filter { it.plain()["ticket"] != null && it.plain()["id"] in boras }.map { "${it.seq}: a ticket for ${it.plain()["id"]}" }
+        val notified = records<Op>().filter { it.op == "notify.bora" && (it.plain()["with"] as? Map<*, *>)?.get("item") in boras }.map { "${it.seq}: notify.bora for Bora's own message" }
+        return tickets + notified
+    }
 
     /** `seq` runs 1, 2, 3 … with no gap and no repeat (contracts.md §2.2). */
     fun seqRunsWithoutGap(): Boolean = lines.map { it.seq.toLong() } == (1L..lines.size).toList()

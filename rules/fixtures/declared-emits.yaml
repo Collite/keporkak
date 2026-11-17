@@ -1,0 +1,105 @@
+name: 'a declared emit carries the args its kind requires (contracts.md §4.2, Amendment 16)'
+scenarios:
+  - name: a transition's emit that lacks an arg its kind requires is reported
+    given:
+      mailroom_declared_effects: [nudge]
+      kinds:
+        started: {from: coder, to: teamlead, guard: '-', args: {}, class: {default: A}, window: stage, max_fires: null, deadline: null, expiry: [], require: []}
+        nudge:
+          from: mailroom
+          to: teamlead
+          guard: '-'
+          args: {rule: {type: string, required: true}, failed_guard: {type: string, required: true}, level: {enum: [low, high]}}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: null
+          expiry: []
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: [{emit: nudge, to: teamlead, args: {rule: T-start}}]}
+    expect:
+      failures: ["T-start: emit 'nudge' lacks required arg 'failed_guard'"]
+  - name: an expiry's emit that lacks an arg its kind requires is reported
+    given:
+      mailroom_declared_effects: [nudge]
+      kinds:
+        started: {from: coder, to: teamlead, guard: '-', args: {}, class: {default: A}, window: stage, max_fires: null, deadline: 1h, require: [],
+                  expiry: [{emit: nudge, to: teamlead, args: {failed_guard: nudge the teamlead}}]}
+        nudge:
+          from: mailroom
+          to: teamlead
+          guard: '-'
+          args: {rule: {type: string, required: true}, failed_guard: {type: string, required: true}, level: {enum: [low, high]}}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: null
+          expiry: []
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: []}
+    expect:
+      failures: ["started: emit 'nudge' lacks required arg 'rule'"]
+  - name: an emit that gives an arg its kind does not declare is reported
+    given:
+      mailroom_declared_effects: [nudge]
+      kinds:
+        started: {from: coder, to: teamlead, guard: '-', args: {}, class: {default: A}, window: stage, max_fires: null, deadline: null, expiry: [], require: []}
+        nudge:
+          from: mailroom
+          to: teamlead
+          guard: '-'
+          args: {rule: {type: string, required: true}, failed_guard: {type: string, required: true}, level: {enum: [low, high]}}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: null
+          expiry: []
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [],
+           effects: [{emit: nudge, to: teamlead, args: {rule: T-start, failed_guard: '-', reason: late}}]}
+    expect:
+      failures: ["T-start: emit 'nudge' gives undeclared arg 'reason'"]
+  - name: an emit whose written value is outside its kind's enum, or not of its type, is reported
+    given:
+      mailroom_declared_effects: [nudge]
+      kinds:
+        started: {from: coder, to: teamlead, guard: '-', args: {}, class: {default: A}, window: stage, max_fires: null, deadline: null, expiry: [], require: []}
+        nudge:
+          from: mailroom
+          to: teamlead
+          guard: '-'
+          args: {rule: {type: string, required: true}, failed_guard: {type: string, required: true}, level: {enum: [low, high]}}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: null
+          expiry: []
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [],
+           effects: [{emit: nudge, to: teamlead, args: {rule: true, failed_guard: '-', level: urgent}}]}
+    expect:
+      failures: ["T-start: emit 'nudge' arg 'rule' is not string", "T-start: emit 'nudge' arg 'level' is not one of low | high"]
+  - name: an emit that carries every arg its kind requires is not reported
+    given:
+      mailroom_declared_effects: [nudge]
+      kinds:
+        started: {from: coder, to: teamlead, guard: '-', args: {}, class: {default: A}, window: stage, max_fires: null, deadline: 1h, require: [],
+                  expiry: [{emit: nudge, to: teamlead, args: {rule: started, failed_guard: nudge the teamlead, level: high}}]}
+        nudge:
+          from: mailroom
+          to: teamlead
+          guard: '-'
+          args: {rule: {type: string, required: true}, failed_guard: {type: string, required: true}, level: {enum: [low, high]}}
+          class: {default: A}
+          window: stage
+          max_fires: null
+          deadline: null
+          expiry: []
+          require: []
+      transitions:
+        - {id: T-start, from: planned, to: exited, kind: started, 'on': message, guard: '-', require: [], effects: [{emit: nudge, to: teamlead, args: {rule: T-start, failed_guard: '-'}}]}
+    expect: {}

@@ -187,6 +187,9 @@ transitions:
   effects:
   - emit: nudge
     to: principal
+    args:
+      rule: T-07
+      failed_guard: back to planned; principal pinged
     if:
       counter: proposals
       gte:
@@ -576,6 +579,9 @@ transitions:
   effects:
   - emit: ruling-request
     to: bora
+    args:
+      default: recut
+      citation: T-29
   - do: issue.file
     with:
       follow_ups:

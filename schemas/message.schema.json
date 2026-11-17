@@ -23,7 +23,7 @@
     "deadline": {"type": ["string", "null"], "format": "date-time"},
     "created":  {"type": "string", "format": "date-time"},
     "signed":   {"type": "boolean"},
-    "by":       {"type": "string", "pattern": "^(seat:[a-z][a-z0-9-]*|robot:[A-Z]+-[0-9]+|bora-cli|effect:T-[0-9]+|hand:[a-z][a-z0-9-]*)$"}
+    "by":       {"type": "string", "pattern": "^(seat:[a-z][a-z0-9-]*|robot:[A-Z]+-[0-9]+|bora-cli|effect:T-[0-9]+|expiry:[a-z][a-z-]*|hand:[a-z][a-z0-9-]*)$"}
   },
   "$defs": {
     "party": {"type": "string", "pattern": "^(bora|daemon|mailroom|ledger|board|[a-z]+(-[a-z0-9]+)*)$"}

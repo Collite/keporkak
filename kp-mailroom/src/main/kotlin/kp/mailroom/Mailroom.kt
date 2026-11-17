@@ -24,10 +24,10 @@ import kp.model.Delivered
 import kp.model.Envelope
 import kp.model.Message
 import kp.model.OfficeId
+import kp.model.Party
 import kp.model.StageId
 import kp.model.utc
 import kp.rules.Destination
-import kp.rules.Effect
 import kp.rules.MessageClass
 import kp.rules.PARTIES
 import kp.rules.Problem
@@ -86,7 +86,6 @@ private fun Sender.author(): Author = when (this) {
  * nothing; its state is a cache of the log. One message, result or expiry is carried at a time.
  */
 class Mailroom private constructor(
-    private val project: Path,
     private val office: OfficeId,
     private val facts: FactSource,
     private val operations: Operations,
@@ -107,15 +106,13 @@ class Mailroom private constructor(
     private val queue = ArrayDeque<() -> Unit>()
     private var draining = false
     private var closed = false
-    /** A stage's file closed: the state is read again once the step that closed it is done. */
-    private var reread = false
 
     /** The fold of the log as the mailroom works from it. */
     val state: State @Synchronized get() = folded
 
     /** Carries one message submitted in [sender]'s name; [input] holds what a sender supplies (contracts.md §2.1, §5). */
     @Synchronized
-    fun submit(sender: Sender, input: JsonObject): Answer = arrive(sender.author(), input).also { settle(); drain() }
+    fun submit(sender: Sender, input: JsonObject): Answer = arrive(sender.author(), input).also { drain() }
 
     /**
      * A seat's inbox (contracts.md §5): its unread messages — or, with [unread] false, every message delivered to it —
@@ -145,7 +142,6 @@ class Mailroom private constructor(
             val wait = folded.deadlines[id]?.deadline ?: return@forEach
             if (instant(wait).isAfter(now)) return@forEach
             expire(id)
-            settle()
             drain()
         }
     }
@@ -156,13 +152,18 @@ class Mailroom private constructor(
 
     /**
      * Reads the rule texts again and puts them through `kp-rules` (architecture.md §3, hot reload). A valid set is in
-     * force from the next message and leaves a `rules` record; an invalid one changes nothing — no line — and its
-     * problems are the answer, for the caller to report. A message in flight finishes under the set it began with.
+     * force from the next message and leaves a `rules` record. An invalid one leaves the old set in force, writes no
+     * `rules` record and requests `notify.bora` with the cause `rules` and its problems in `with` (contracts.md §2.2);
+     * the problems are also the answer. A message in flight finishes under the set it began with.
      */
     @Synchronized
     fun reload(): Reload {
         val (next, loaded) = InForce.load(texts.read())
-        if (next == null) return Reload.Rejected(loaded.problems)
+        if (next == null) {
+            request(NOTIFY_BORA, RULES, Datum.Fields(mapOf(PROBLEMS to Datum.Items(loaded.problems.map { Datum.Text("$it") }))), now())
+            drain()
+            return Reload.Rejected(loaded.problems)
+        }
         inForce = next
         recordRules()
         return Reload.Accepted(next.hash)
@@ -217,21 +218,18 @@ class Mailroom private constructor(
     /** What the judgement requested, in its order: a declared emit is carried after this judgement's lines. */
     private fun effects(decision: Decision, cause: String, now: String) = decision.effects.forEach { effect ->
         when (effect) {
-            is Requested.Emit -> declaredBy(effect)?.let { emit(effect, it, cause) }
+            is Requested.Emit -> emit(effect, declaredBy(effect), cause)
             is Requested.Do -> request(effect.operation, cause, Datum.Fields(effect.with), now)
             is Requested.Report -> Unit
         }
     }
 
     /**
-     * The transition an emit is `by` (contracts.md §2.1: `effect:T-n`): the one that declared it — for a kind's expiry,
-     * the transition that expiry names. A kind whose expiry names none gives its emit no `by` the contract allows, and
-     * the emit is not sent (Found while doing).
+     * What an emit is `by` (contracts.md §2.1): `expiry:<kind>` when a kind's expiry declares it — whether or not that
+     * expiry fired a transition — and `effect:T-n` when a transition's effects declare it.
      */
-    private fun declaredBy(effect: Requested.Emit): String? {
-        val kind = rules.kinds[effect.rule] ?: return effect.rule
-        return kind.expiry.filterIsInstance<Effect.Transition>().firstOrNull()?.id
-    }
+    private fun declaredBy(effect: Requested.Emit): String =
+        if (effect.rule in rules.kinds) "$EXPIRY_OF${effect.rule}" else "$EFFECT_OF${effect.rule}"
 
     /**
      * A deadline passed (contracts.md §4.2): the engine judges the expiry, and its `expired` record says what became of
@@ -258,20 +256,20 @@ class Mailroom private constructor(
     }
 
     /**
-     * A message the rules make the mailroom send (T4: `engagement.yaml:mailroom_declared_effects`): from `mailroom`, by
-     * the transition that declared it, in reply to the message that caused it — its stage, its thread — and judged like
-     * any other, once the lines of the judgement that requested it are written.
+     * A message the rules make the mailroom send (`engagement.yaml:mailroom_declared_effects`): from `mailroom`, [by]
+     * the rule that declared it, in reply to the message that caused it — its stage, its thread — and judged like any
+     * other, once the lines of the judgement that requested it are written.
      */
-    private fun emit(effect: Requested.Emit, transition: String, cause: String) {
+    private fun emit(effect: Requested.Emit, by: String, cause: String) {
         val input = buildJsonObject {
             put(KIND, JsonPrimitive(effect.kind))
             effect.to?.let { put(TO, JsonPrimitive(it)) }
             put(RE, JsonPrimitive(cause))
-            put(SUBJECT, JsonPrimitive("${effect.kind} ($transition)"))
+            put(SUBJECT, JsonPrimitive("${effect.kind} ($by)"))
             put(POINTERS, texts(listOf("mail:$cause")))
             put(ARGS, fields(effect.args))
         }
-        queue += { arrive(Author(MAILROOM, "effect:$transition", false), input) }
+        queue += { arrive(Author(MAILROOM, by, false), input) }
     }
 
     /**
@@ -348,32 +346,19 @@ class Mailroom private constructor(
         if (draining) return
         draining = true
         try {
-            while (queue.isNotEmpty() && !closed) {
-                queue.removeFirst()()
-                settle()
-            }
+            while (queue.isNotEmpty() && !closed) queue.removeFirst()()
         } finally {
             draining = false
         }
     }
 
     /**
-     * When a stage's file has closed, the state is what start-up would fold from the log now (contracts.md §3: the
-     * open stage files and the office's), so that a mailroom started again works from the same state as this one.
-     */
-    private fun settle() {
-        if (!reread) return
-        reread = false
-        folded = State()
-        messages.clear()
-        addressed.clear()
-        take(LogReader(project, office).read().lines.map { it.entry })
-    }
-
-    /**
      * The message as the mailroom writes it (contracts.md §2.1): from the input only what a sender supplies — `kind`,
      * `to`, `stage`, `subject`, `body`, `pointers`, `args`, `re`; `id`, `thread`, `at`, `created`, `from`, `by` and
-     * `signed` set here. A reply's thread, stage and addressee default to the message it answers'.
+     * `signed` set here. A reply's thread, stage and addressee default to the message it answers'. An addressee that
+     * cannot be resolved — a `to`, the sender's or a seat kind's `args.seat`, that is not a string naming a party; a
+     * `{re: from}` kind with no known `re`; a seat kind with no seat — is written `to: mailroom`, and the judgement
+     * refuses it: nothing is thrown at a sender (contracts.md §3).
      */
     private fun compose(author: Author, input: JsonObject, now: String): Message {
         fun field(name: String) = input[name]?.takeIf { it !is kotlinx.serialization.json.JsonNull }
@@ -384,14 +369,13 @@ class Mailroom private constructor(
         val re = string(RE)?.let(messages::get)
         val args = field(ARGS)?.jsonObject
         val declared = rules.kinds[kind]
-        val to = string(TO) ?: declared?.to?.let { destination ->
+        val to = partyName(field(TO) ?: declared?.to?.let { destination ->
             when (destination) {
-                is Destination.Parties -> destination.names.first()
-                is Destination.Reply -> re?.from?.value
-                Destination.AnySeat -> args?.get(SEAT)?.jsonPrimitive?.contentOrNull
+                is Destination.Parties -> JsonPrimitive(destination.names.first())
+                is Destination.Reply -> re?.from?.value?.let(::JsonPrimitive)
+                Destination.AnySeat -> args?.get(SEAT)
             }
-        }
-        requireNotNull(to) { "a message of kind '$kind' names its addressee" }
+        }) ?: MAILROOM
         val subject = string(SUBJECT) ?: re?.subject?.let { "re: $it".take(SUBJECT_LIMIT) } ?: kind
         return Message.read(line(now,
             ID to text(id), THREAD to text(re?.thread?.value ?: id), RE to field(RE), FROM to text(author.from), TO to text(to),
@@ -415,14 +399,14 @@ class Mailroom private constructor(
 
     /**
      * Appends one line, synced, to the file of the stage it is about — a message to its own — or to the office's file
-     * when it is about no stage, or its stage's file is closed; then folds it. Nothing is acted on before this returns.
+     * when it is about no stage, or its stage's file is closed (contracts.md §3: the writer's to place); then folds it.
+     * Closing a file takes nothing out of the state. Nothing is acted on before this returns.
      */
     private fun write(draft: JsonObject): Envelope {
         val expected = writer.last + 1
-        val stage = if (draft[KIND] != null) null else about(draft)?.let(::StageId)?.takeUnless(writer::isClosed)
+        val stage = if (draft[KIND] != null) null else about(draft)?.let(::StageId)
         val written = writer.append(draft, stage)
         check(written.seq.longValueExact() == expected) { "the log gave seq ${written.seq}, not $expected" }
-        if (stage != null && writer.isClosed(stage)) reread = true
         take(listOf(written))
         return written
     }
@@ -464,12 +448,15 @@ class Mailroom private constructor(
                 if (read.problems.isNotEmpty()) throw MailroomRefusal("the log has problems:\n" + read.problems.joinToString("\n"))
                 val (inForce, loaded) = InForce.load(rules.read())
                 if (inForce == null) throw MailroomRefusal("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
-                return Mailroom(project, office, facts, operations, deliveries, clock, writer, rules, inForce).apply {
-                    take(read.lines.map { it.entry })
-                    recordRules()
-                    interrupted()
-                    settle()
-                    drain()
+                // Under the mailroom's lock, as every other step: a performer that answers from its own thread while the
+                // start is carrying its queue waits for it (issue #21).
+                return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce).apply {
+                    synchronized(this) {
+                        take(read.lines.map { it.entry })
+                        recordRules()
+                        interrupted()
+                        drain()
+                    }
                 }
             } catch (error: Throwable) {
                 writer.close()
@@ -482,6 +469,10 @@ class Mailroom private constructor(
 /** A time the log writes (`at`, `deadline`), as an instant. */
 private fun instant(at: String): Instant = utc(at).toInstant(ZoneOffset.UTC)
 
+/** [element] as a message's `to` writes it (contracts.md §2.1) — a string naming a party; null when it is no such string. */
+private fun partyName(element: JsonElement?): String? =
+    (element as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content?.takeIf { runCatching { Party(it) }.isSuccess }
+
 private const val BORA = "bora"
 private const val MAILROOM = "mailroom"
 private const val SEAT_NAME = "seat.name"
@@ -491,9 +482,15 @@ private const val OK = "ok"
 private const val OF = "of"
 private const val ITEM = "item"
 private const val INTERRUPTED = "interrupted"
+/** The cause of the `notify.bora` an invalid reload requests, and where its problems go (contracts.md §2.2). */
+private const val RULES = "rules"
+private const val PROBLEMS = "problems"
 /** The operations whose `ok` names a seat (contracts.md §4.4). */
 private val SEATING = setOf("seat.start", "seat.reseat")
 private const val BORA_CLI = "bora-cli"
+/** The `by` of an emit a kind's expiry declares, and of one a transition's effects declare (contracts.md §2.1). */
+private const val EXPIRY_OF = "expiry:"
+private const val EFFECT_OF = "effect:"
 private const val NOW = "now"
 private const val SUBJECT_LIMIT = 120
 
