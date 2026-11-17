@@ -19,12 +19,19 @@ kaml = "0.104.0"
 # Checked 2026-11-15: Maven Central slf4j-api maven-metadata.xml (2.0.18 is the newest that is not an alpha) and the version
 # the MCP SDK 0.16.0 resolves on kp-model's test classpath. The ACP SDK's kotlin-logging needs an SLF4J API at run time (S2.1).
 slf4j = "2.0.18"
+# Checked 2026-11-17: the MCP SDK 0.16.0's server and client POMs name Ktor 3.5.2, and Maven Central has ktor-server-cio-jvm and
+# ktor-client-cio-jvm at 3.5.2 (their POMs: ktor 3.5.2, kotlinx-coroutines 1.11.0, slf4j-api 2.0.18). The seat API's HTTP engine (S2.3).
+ktor = "3.5.2"
 
 [libraries]
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 acp = { module = "com.agentclientprotocol:acp", version.ref = "acp" }
 mcp = { module = "io.modelcontextprotocol:kotlin-sdk", version.ref = "mcp" }
+mcp-server = { module = "io.modelcontextprotocol:kotlin-sdk-server", version.ref = "mcp" }
+mcp-client = { module = "io.modelcontextprotocol:kotlin-sdk-client", version.ref = "mcp" }
+ktor-server-cio = { module = "io.ktor:ktor-server-cio", version.ref = "ktor" }
+ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
 kotest = { module = "io.kotest:kotest-runner-junit5", version.ref = "kotest" }
 kotest-assertions = { module = "io.kotest:kotest-assertions-core", version.ref = "kotest" }
 kaml = { module = "com.charleskorn.kaml:kaml", version.ref = "kaml" }
