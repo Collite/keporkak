@@ -47,7 +47,8 @@ class SeatApi private constructor(private val server: EmbeddedServer<CIOApplicat
                 "listen.mcp '$listen' is not on the loopback address"
             }
             val tools = Tools(mailroom)
-            val server = embeddedServer(CIO, host = host, port = port) { module(tokens, tools) }
+            val gate = StopGate(mailroom)
+            val server = embeddedServer(CIO, host = host, port = port) { module(tokens, tools, gate) }
             return SeatApi(server.start(wait = false))
         }
     }
@@ -58,12 +59,13 @@ internal class Bound(val binding: Binding, val session: String)
 
 internal val BOUND = AttributeKey<Bound>("kp.seat")
 
-private fun Application.module(tokens: Tokens, tools: Tools) {
+private fun Application.module(tokens: Tokens, tools: Tools, gate: StopGate) {
     install(tokenGate(tokens))
     // Stateless (contracts.md §5): each POST is served by a server made for the seat the call's token names, so a
     // call is bound to the token it carries — not to one an earlier call carried. The pinned Claude Code speaks it
     // (S2.1's handshake: the stand-in answered the same way).
     mcpStatelessStreamableHttp(path = MCP) { tools.server(call.attributes[BOUND].binding) }
+    gate.route(this)
 }
 
 /**

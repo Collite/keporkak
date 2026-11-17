@@ -23,7 +23,7 @@ class RuleFormsSpec : StringSpec({
         rules.vocabulary.facts.getValue("plan.predecessors_exited").sources shouldBe setOf(Source.P, Source.L)
         rules.kinds.getValue("merge").classRule.cases.single().condition shouldBe Requirement.Not(Requirement.Holds("second_key"))
         rules.engagement.blocks.keys shouldBe setOf("second_key")
-        rules.engagement.stopGate!!.rule shouldBe "a turn ends only when the seat has no unread mail"
+        rules.engagement.turnGate!!.rule shouldBe "a turn ends only when the seat has no unread mail"
     }
 
     "a requirement types as its form, with its comparison" {

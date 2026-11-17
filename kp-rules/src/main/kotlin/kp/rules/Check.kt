@@ -252,7 +252,7 @@ internal class RulesCheck(
 
     private fun engagementRequirements() {
         engagement.secondKey?.let { key -> resolve(Owner(ENGAGEMENT, "second_key"), Names().apply { key.require.forEach(::requirement) }, emptySet()) }
-        engagement.stopGate?.let { gate ->
+        engagement.turnGate?.let { gate ->
             val owner = Owner(ENGAGEMENT, "stop_gate")
             resolve(owner, Names().apply { gate.require.forEach(::requirement); value(gate.maxConsecutiveBlocks) }, emptySet())
             // In the stop gate, `{trigger: seat}` is the seat whose turn is ending (contracts.md §4.1); nothing else triggers it.
@@ -389,7 +389,7 @@ internal fun uses(lifecycle: Lifecycle, kinds: Map<String, Kind>, engagement: En
     }
     val engagementUses = listOfNotNull(
         engagement.secondKey?.let { key -> Owner(ENGAGEMENT, "second_key") to Names().apply { key.require.forEach(::requirement) } },
-        engagement.stopGate?.let { gate -> Owner(ENGAGEMENT, "stop_gate") to Names().apply { gate.require.forEach(::requirement); value(gate.maxConsecutiveBlocks) } },
+        engagement.turnGate?.let { gate -> Owner(ENGAGEMENT, "stop_gate") to Names().apply { gate.require.forEach(::requirement); value(gate.maxConsecutiveBlocks) } },
     )
     val robotUses = robots.flatMap { (path, robot) ->
         listOf(Owner(path, null) to Names().apply { requirement(robot.activeWhen); robot.queue?.let { requirement(it.nextWhen) } }) +

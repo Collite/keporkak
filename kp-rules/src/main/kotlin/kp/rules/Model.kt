@@ -140,7 +140,11 @@ data class Engagement(
     val qa: EngagementQa?,
     val identity: Map<String, String>,
     val whatNoGuardHolds: List<String>,
-    val stopGate: StopGate?,
+    /**
+     * `stop_gate`, named by the turn it guards: the engine reads it, and the engine's source holds no kind's name —
+     * `stop` is one (contracts.md §4.3, S1.2's fence).
+     */
+    val turnGate: StopGate?,
     val permissions: Map<String, String>,
     /** Every scalar of the file by its dotted path — what `{engagement: <path>}` reads. */
     val values: Map<String, Literal>,

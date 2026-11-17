@@ -12,6 +12,7 @@ import kp.engine.Datum
 import kp.engine.Decision
 import kp.engine.Engine
 import kp.engine.FactRef
+import kp.engine.Gate
 import kp.engine.Facts
 import kp.engine.Need
 import kp.engine.Outcome
@@ -71,6 +72,9 @@ sealed interface Reload {
 
 /** What a seat's inbox returns (contracts.md §5): its messages, and whether more are left. */
 data class Inbox(val messages: List<Message>, val more: Boolean)
+
+/** The stop gate's answer to the stop hook (contracts.md §11): block, with the rule's prose as [reason], or let the turn end. */
+data class Stop(val block: Boolean, val reason: String)
 
 /**
  * A kind a seat may send (contracts.md §5, `whoami`'s `allowed`): to whom, the kinds that answer it, its deadline as the
@@ -210,6 +214,22 @@ class Mailroom private constructor(
     fun open(seat: String): List<String> {
         val received = addressed[seat].orEmpty().toSet()
         return folded.deadlines.filter { (id, wait) -> wait.from == seat || id in received }.keys.mapNotNull { messages[it]?.thread?.value }.distinct()
+    }
+
+    /**
+     * The stop gate (contracts.md §4.3, §11): [seat]'s turn is about to end after [blocks] consecutive blocks. The engine
+     * says end, or block with the gate's rule. At the cap the turn ends and one `fact` record, `seat.stop_blocks`, says
+     * so — written whatever else the fact triggers (§2.2), and heard like any fact that changed.
+     */
+    @Synchronized
+    fun stopGate(seat: String, blocks: Int): Stop {
+        val engine = Engine(rules)
+        val gate = engine.turnEnds(folded, seat, blocks, table(engine.turnNeeds(folded, seat), null, now()))
+        if (gate is Gate.End && gate.capped) {
+            fact(FactRef(STOP_BLOCKS, mapOf(SEAT to Datum.Text(seat))), Datum.of(blocks), null, AT_THE_CAP, always = true)
+            drain()
+        }
+        return if (gate is Gate.Block) Stop(block = true, reason = gate.reason) else Stop(block = false, reason = "")
     }
 
     /**
@@ -403,15 +423,16 @@ class Mailroom private constructor(
      * A fact that changed: the guard judges its `on: fact` transitions and the robots hear it. When it triggers
      * nothing, nothing is written; otherwise its `fact` record first — about whom its parameters name, else its stage,
      * else the party its name is about, else the office — then the transitions, effects, sends and wakes it caused.
+     * [always]: the record is written though it triggers nothing — `seat.stop_blocks` at the stop gate's cap (§2.2).
      */
-    private fun fact(fact: FactRef, value: Datum, stage: String?, evidence: String?) {
+    private fun fact(fact: FactRef, value: Datum, stage: String?, evidence: String?, always: Boolean = false) {
         val now = now()
         val engine = Engine(rules)
         val trigger = Trigger.Changed(fact.name, fact.params, stage)
         val facts = table(engine.needs(folded, trigger) + hears(engine, trigger), stage, now, mapOf(fact to value))
         val decision = engine.judge(folded, trigger, facts)
         val reaction = if (robots) engine.react(folded, trigger, facts) else null
-        if (decision.moves.isEmpty() && decision.effects.isEmpty() && reaction?.fired.isNullOrEmpty() && freed(fact to value, stage, now).isEmpty()) return
+        if (!always && decision.moves.isEmpty() && decision.effects.isEmpty() && reaction?.fired.isNullOrEmpty() && freed(fact to value, stage, now).isEmpty()) return
         val party = fact.name.substringBefore('.').takeIf { it in PARTIES }
         val subject = fact.params.values.joinToString(", ") { (it as? Datum.Text)?.value ?: it.json() }.ifEmpty { stage ?: party ?: office.value }
         write(line(now, EVENT to text("fact"), FACT to text(fact.name), SUBJECT to text(subject), VALUE to value.element(), EVIDENCE to text(evidence)))
@@ -774,6 +795,9 @@ private const val FACT = "fact"
 private const val VALUE = "value"
 private const val EVIDENCE = "evidence"
 private const val SEAT_NAME = "seat.name"
+/** The fact the stop gate's cap writes (contracts.md §2.2, §4.4, §11), and what shows it. */
+private const val STOP_BLOCKS = "seat.stop_blocks"
+private const val AT_THE_CAP = "engagement.yaml:stop_gate — at its cap the turn ended"
 private const val NOTIFY_BORA = "notify.bora"
 private const val REQUESTED = "requested"
 private const val OK = "ok"
