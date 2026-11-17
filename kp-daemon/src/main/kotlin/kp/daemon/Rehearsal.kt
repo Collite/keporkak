@@ -24,12 +24,13 @@ import java.util.concurrent.ConcurrentLinkedDeque
 /**
  * `just rehearse <walk>` (architecture.md §7): the daemon on a throwaway project, with the walk's table of facts, its
  * seats scripted — each sends its step's kind with the step's args, the scripted performer ends each operation as the
- * walk says — pausing where the walk needs Bora, who answers with the real `kp` on the daemon's socket. A fact the walk
- * triggers is skipped: the mailroom takes facts as triggers from S1.4 on. A refused step ends the playing; the daemon
- * keeps answering `kp` until the rehearsal is closed.
+ * walk says — pausing where the walk needs Bora, who answers with the real `kp` on the daemon's socket. The robots are
+ * the daemon's: a step a robot sends (`by: robot:…`) is theirs, not the walk's to play. A fact the walk triggers is
+ * skipped. A refused step ends the playing; the daemon keeps answering `kp` until the rehearsal is closed.
  */
 class Rehearsal private constructor(private val walk: Walk, private val stage: String, private val daemon: Daemon, private val facts: TableFacts, private val out: (String) -> Unit) : AutoCloseable {
-    private val office: Office get() = daemon.office
+    /** The office the daemon runs: what a spec fires the deadlines of once it has moved the clock. */
+    internal val office: Office get() = daemon.office
     private val ids = ConcurrentHashMap<String, String>()
     private val lock = Object()
     private var pauses = 0
@@ -83,6 +84,7 @@ class Rehearsal private constructor(private val walk: Walk, private val stage: S
             step.operation != null -> true
             step.fields.containsKey(EVENT) -> true.also { out("$number · a fact the walk triggers (${(step.fields[EVENT] as? Datum.Fields)?.fields?.get(FACT)?.let { (it as? Datum.Text)?.value }}): skipped — the mailroom takes facts as triggers from S1.4 on") }
             who == MAILROOM -> true
+            step.text(BY)?.startsWith(ROBOT) == true -> true.also { robots(number, step, kind) }
             who == BORA && kind != null -> bora(number, step, kind)
             who != null && kind != null -> send(number, step, who, kind)
             else -> true
@@ -100,6 +102,17 @@ class Rehearsal private constructor(private val walk: Walk, private val stage: S
             (answer.requirement?.let { " — ${answer.rule}: $it" } ?: "") + " · the stage is ${office.state.stage(stage)}")
         if (answer.status == Status.REFUSED) out("the walk stops here: its step $number was refused")
         return answer.status != Status.REFUSED
+    }
+
+    /**
+     * A step the robots host sends, not the walk: what a later step names by its id is the last message of its kind that
+     * rule sent, when it has sent one.
+     */
+    private fun robots(number: Int, step: Walk.Step, kind: String?) {
+        val by = step.text(BY)
+        val sent = office.state.delivered.values.lastOrNull { it.kind == kind && it.by == by }
+        step.id?.let { id -> sent?.let { ids[id] = it.id } }
+        out("$number · $by $kind: the robots' to send" + (sent?.let { " — ${it.id}" } ?: ", not sent"))
     }
 
     /** Waits for Bora's message of [kind], answered with `kp` on the socket; the walk goes on once it is delivered. */
@@ -172,6 +185,7 @@ class Rehearsal private constructor(private val walk: Walk, private val stage: S
         private const val ARGS = "args"
         private const val RE = "re"
         private const val BY = "by"
+        private const val ROBOT = "robot:"
         private const val OUTCOME = "outcome"
         private const val RESULT = "result"
         private const val REASON = "reason"
@@ -182,22 +196,24 @@ class Rehearsal private constructor(private val walk: Walk, private val stage: S
         /**
          * Rehearses [walk] on the throwaway project [project] as office [office]: its seats start `ready`, the daemon
          * starts with the walk's facts and listens on [socket], and the walk is played until it needs Bora. [out] hears
-         * what happens.
+         * what happens. [clock] is the wall clock unless a spec moves it.
          */
-        fun start(root: Path, walk: Path, project: Path, office: String, socket: Path, peers: PeerReader, out: (String) -> Unit): Rehearsal {
+        fun start(
+            root: Path, walk: Path, project: Path, office: String, socket: Path, peers: PeerReader,
+            clock: Clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }, out: (String) -> Unit,
+        ): Rehearsal {
             val read = Walk.read(walk)
             val stage = "$EFFORT/P${read.stage.removePrefix("S").substringBefore('.')}/${read.stage}"
-            seatsReady(project, office, read.seats.keys)
+            seatsReady(project, office, read.seats.keys, clock)
             val facts = TableFacts(read.facts)
-            val clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }
             val started = Office.start(office, project, root, facts, ScriptedOperations(read, facts), ScriptedSeats(read.seats.keys), clock)
             val daemon = Daemon.start(started, facts, socket, peers)
             return Rehearsal(read, stage, daemon, facts, out).also { it.player.start() }
         }
 
         /** The walk's seats, `ready` before the walk begins — what an earlier part of the log would have left. */
-        private fun seatsReady(project: Path, office: String, seats: Set<String>) = LogWriter.open(project, OfficeId(office)).use { log ->
-            val at = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()
+        private fun seatsReady(project: Path, office: String, seats: Set<String>, clock: Clock) = LogWriter.open(project, OfficeId(office)).use { log ->
+            val at = clock.now().truncatedTo(ChronoUnit.SECONDS).toString()
             seats.forEach { seat ->
                 log.append(Json.parseToJsonElement("""{"v":1,"at":"$at","event":"transition","machine":"seat","subject":"$seat","from":"provisioned","to":"ready","cause":"rehearsal"}""").jsonObject)
             }

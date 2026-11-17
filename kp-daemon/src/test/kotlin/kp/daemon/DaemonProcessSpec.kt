@@ -45,6 +45,24 @@ class DaemonProcessSpec : FreeSpec({
         TestOffice(project = project).use { again -> again.office.lines().map { it.entry }.filterIsInstance<Rules>().size shouldBe 2 }
     }
 
+    "a daemon started through its launcher reads its peer from the socket: `kp away` from this spec's own user is refused, logged, and leaves Bora present" {
+        val project = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "service-")
+        val socket = Files.createTempDirectory("kp-").resolve("kp.sock")
+        val daemon = Launched(project, socket)
+        daemon.awaitLine("started: office panda")
+
+        val away = kp(socket, "away")
+        val presence = kp(socket, "status").presence
+        daemon.process.toHandle().destroy()
+        daemon.process.waitFor(60, TimeUnit.SECONDS)
+        val log = Log(project.resolve("mail"))
+
+        away.code shouldBe 1
+        away.text shouldContain "(unsigned: Bora's answers count only under sudo — sudo kp …)"
+        log.messages("away").map { "signed=${it.signed} ${log.outcome(it)}" } shouldBe listOf("signed=false refused: no action from Bora's CLI for N hours (default 4), or `kp away`")
+        presence shouldBe "present"
+    }
+
     "a daemon whose log has a torn line says why and exits 1" {
         val socket = Files.createTempDirectory("kp-").resolve("kp.sock")
         val project = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "torn-")

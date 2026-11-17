@@ -182,6 +182,39 @@ class OfficeCheckTests(unittest.TestCase):
         self.assertEqual(alone, f"ok     sudo asks every time for kp: {folder}/zz-keporkak-kp: root:root, 0440, sorts last, the size of office/sudoers.d/zz-keporkak-kp;"
                                 f" no other rule beside sudo's README (their content, and /etc/sudoers, need sudo to read: sudo -l, office/README.md §2)")
 
+    def test_a_kp_and_a_drop_in_installed_as_bora_installs_them_are_ok(self):
+        """Issue #29: the office check's ok for kp and for the sudo rule, both reached. Only root can make a file
+        root's or keep the office user from writing it; the check reads that through os.stat and os.access, so it is
+        given there — for the kp the sudo rule names, here a copy of scripts/kp, and for the installed drop-in."""
+        folder = self.machine.sudoers
+        installed(folder)
+        kp = Path(os.path.realpath(self.machine.home)) / "usr/local/bin/kp"
+        kp.parent.mkdir(parents=True)
+        kp.write_bytes((ROOT / "scripts/kp").read_bytes())
+        roots = {os.fspath(kp): 0o755, os.fspath(folder / "zz-keporkak-kp"): 0o440}
+        real_stat, real_access = os.stat, os.access
+        def stat(path, *args, **kwargs):
+            info = real_stat(path, *args, **kwargs)
+            mode = roots.get(os.fspath(path))
+            if mode is None:
+                return info
+            return os.stat_result((stat_module.S_IFREG | mode, info.st_ino, info.st_dev, info.st_nlink, 0, 0, info.st_size, info.st_atime, info.st_mtime, info.st_ctime))
+        def access(path, mode, *args, **kwargs):
+            if mode == os.W_OK and os.fspath(path) in (os.fspath(kp), os.fspath(kp.parent)):
+                return False
+            return real_access(path, mode, *args, **kwargs)
+        report = office_check.Report()
+        with mock.patch("os.stat", stat), mock.patch("os.access", access), mock.patch.object(office_check, "KP_TARGET", os.fspath(kp)), \
+                mock.patch("shutil.which", lambda name, *args, **kwargs: os.fspath(kp) if name == "kp" else None):
+            office_check.check_kp(report, {"user": USER})
+            office_check.check_sudo_rule(report, folder, USER)
+
+        self.assertEqual(report.lines, [
+            f"ok     kp root-owned and not writable by {USER}: {kp}",
+            f"ok     sudo asks every time for kp: {folder}/zz-keporkak-kp: root:root, 0440, sorts last, the size of office/sudoers.d/zz-keporkak-kp;"
+            f" no other rule beside sudo's README (their content, and /etc/sudoers, need sudo to read: sudo -l, office/README.md §2)",
+        ])
+
     def test_a_loaded_service_whose_launcher_is_gone_is_to_do_and_one_whose_launcher_is_there_is_ok(self):
         self.machine.stub("systemctl", 'case "$*" in *ExecStart*) echo "{ path=/nowhere/kp-daemon ; argv[]=/nowhere/kp-daemon run ; ignore_errors=no }";; *) echo loaded;; esac')
         self.assertIn("to do  systemd user service keporkak.service: its launcher /nowhere/kp-daemon is not there: just install (office/README.md §3)", self.lines())

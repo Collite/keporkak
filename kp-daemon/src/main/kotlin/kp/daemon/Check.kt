@@ -42,8 +42,9 @@ import kotlin.io.path.walk
  * the message's line is printed with both. A `rules` record naming another rule set is announced first. A hand log
  * (`by: hand:…`) has no observed fact: it is judged for what needs none — the sender's role, the `args`, the addressee
  * against the kind's declaration, the caps and windows, the state the stage is in — and what it could not check is
- * listed; the check says in which state it leaves each stage. A repeated id is reported in either. The check reads the
- * files and writes nothing.
+ * listed; the check says in which state it leaves each stage. A hand log that starts in the middle of a stage is said
+ * to: a line refused only for the state the stage was in before the log began is not checked, not a slip. A repeated
+ * id is reported in either. The check reads the files and writes nothing.
  */
 internal class Check(private val rules: InForceRules) {
     private val engine = Engine(rules.ruleSet)
@@ -193,20 +194,35 @@ internal class Check(private val rules: InForceRules) {
      * A hand log, on its own: each message judged with no fact but the time it was recorded at. What the engine cannot
      * decide without an observed fact — a requirement that reads one, or a signature, which a hand-carried line does not
      * have — is not checked, and moves nothing. What it decides is applied as the mailroom would record it, so the next
-     * line is judged in the state the last one left.
+     * line is judged in the state the last one left. A stage the log has not moved, whose line is refused for the state
+     * it is in, began before the log (D-55): its state is not known, and no line is a slip for it — the log says so once.
      */
     private fun handLog(file: Path, lines: List<LogLine>) {
+        // A first, silent reading finds the stages the log began in the middle of; the second says so from their first line.
+        val began = handLog(lines, emptySet(), say = {}, slip = {})
+        handLog(lines, began, say = { out += it }, slip = ::finding)
+    }
+
+    /** One reading of a hand log, knowing the stages it [began] in the middle of; what it finds of them, returned. */
+    private fun handLog(lines: List<LogLine>, began: Set<String>, say: (String) -> Unit, slip: (String) -> Unit): Set<String> {
         var state = State()
         var seq = 0L
         val unread = sortedSetOf<String>()
         var unsigned = false
         val stages = LinkedHashSet<String>()
+        // The stages a delivered line of this log moved, and those it began in the middle of.
+        val moved = HashSet<String>()
+        val middle = LinkedHashSet<String>()
         fun take(entry: JsonObject) {
             state = fold(listOf(readEnvelope(JsonObject(entry + (SEQ to JsonPrimitive(++seq))))), state)
         }
+        fun position(stage: String) = if (stage in middle && stage !in moved) "the state of $stage is not known" else "$stage is ${stageOf(state, stage)}"
         lines.forEach { line ->
             val message = line.entry as? Message ?: return@forEach
-            message.stage?.value?.let(stages::add)
+            message.stage?.value?.let { stage ->
+                stages += stage
+                if (stage in began && stage !in moved && middle.add(stage)) say("${line.file}: starts in the middle of $stage: the state it was in before line ${line.number} is not known")
+            }
             val renumbered = readEnvelope(JsonObject(message.json + (SEQ to JsonPrimitive(seq + 1)))) as Message
             val trigger = Trigger.Arrival(renumbered)
             val decision = engine.judge(state, trigger, Facts.collect(engine.needs(state, trigger)) { ref -> if (ref.name == NOW) Datum.Text(message.at.value) else null })
@@ -214,10 +230,11 @@ internal class Check(private val rules: InForceRules) {
             take(renumbered.json)
             when (decision.outcome) {
                 Outcome.DELIVER -> {
-                    out += "$where: delivered" + (decision.rule?.let { " $it" } ?: "") + decision.moves.joinToString("") { " · ${it.machine} ${it.subject} ${it.from}→${it.to}" }
+                    say("$where: delivered" + (decision.rule?.let { " $it" } ?: "") + decision.moves.joinToString("") { " · ${it.machine} ${it.subject} ${it.from}→${it.to}" })
                     take(record(message, "delivered", TO to JsonPrimitive(message.to.value).let { kotlinx.serialization.json.JsonArray(listOf(it)) },
                         CLASS to JsonPrimitive(decision.messageClass?.name ?: "A"), RULE to decision.rule?.let(::JsonPrimitive),
                         ANSWERS to decision.answers?.let(::JsonPrimitive), DEADLINE to decision.deadline?.let(::JsonPrimitive)))
+                    decision.moves.filter { it.machine == STAGE_MACHINE }.forEach { moved += it.subject }
                     decision.moves.forEach { move ->
                         take(record(message, "transition", MACHINE to JsonPrimitive(move.machine), SUBJECT to JsonPrimitive(move.subject), FROM to JsonPrimitive(move.from),
                             TO to JsonPrimitive(move.to), RULE to JsonPrimitive(move.rule), CAUSE to JsonPrimitive(message.id.value),
@@ -230,26 +247,32 @@ internal class Check(private val rules: InForceRules) {
                     when {
                         failed?.fields?.containsKey(SIGNED) == true -> {
                             unsigned = true
-                            out += "$where: not checked — it needs a signature, which a hand-carried line does not have"
+                            say("$where: not checked — it needs a signature, which a hand-carried line does not have")
                         }
                         facts.any { name -> decision.unsupplied.any { it.name == name } } -> {
                             unread += facts
-                            out += "$where: not checked — it reads ${facts.distinct().joinToString(", ")}, which a hand log does not record" +
-                                (message.stage?.value?.let { "; $it is ${stageOf(state, it)}" } ?: "")
+                            say("$where: not checked — it reads ${facts.distinct().joinToString(", ")}, which a hand log does not record" +
+                                (message.stage?.value?.let { "; " + position(it) } ?: ""))
                         }
                         else -> {
-                            val position = message.stage?.value?.takeIf { rules.ruleSet.kinds[message.kind]?.fires == decision.requirement }?.let { " — $it is ${stageOf(state, it)}" } ?: ""
-                            finding("$where: refused — ${decision.requirement}$position")
+                            val stage = message.stage?.value?.takeIf { rules.ruleSet.kinds[message.kind]?.fires == decision.requirement }
+                            if (stage != null && stage !in moved) {
+                                if (middle.add(stage)) say("${line.file}: starts in the middle of $stage: the state it was in before line ${line.number} is not known")
+                                say("$where: not checked — the state of $stage is not known (${decision.requirement})")
+                                return@forEach
+                            }
+                            slip("$where: refused — ${decision.requirement}" + (stage?.let { " — " + position(it) } ?: ""))
                             take(record(message, "refused", RULE to JsonPrimitive(decision.rule ?: message.kind), REQUIREMENT to JsonPrimitive(decision.requirement ?: "")))
                         }
                     }
                 }
-                else -> out += "$where: ${decision.outcome.name.lowercase()}"
+                else -> say("$where: ${decision.outcome.name.lowercase()}")
             }
         }
-        stages.forEach { stage -> out += "$stage is left in ${stageOf(state, stage)}" }
-        if (unread.isNotEmpty()) out += "not checked, a hand log records no observed fact: ${unread.joinToString(", ")}"
-        if (unsigned) out += "not checked: signatures — a hand-carried line has none"
+        stages.forEach { stage -> say(if (stage in middle && stage !in moved) "$stage is left in a state the log does not show" else "$stage is left in ${stageOf(state, stage)}") }
+        if (unread.isNotEmpty()) say("not checked, a hand log records no observed fact: ${unread.joinToString(", ")}")
+        if (unsigned) say("not checked: signatures — a hand-carried line has none")
+        return middle
     }
 
     private fun stageOf(state: State, stage: String): String = state.stage(stage) ?: rules.ruleSet.lifecycle.stage.states.keys.first()
@@ -272,6 +295,7 @@ internal class Check(private val rules: InForceRules) {
 
     private companion object {
         const val HASH = 12
+        const val STAGE_MACHINE = "stage"
         const val HAND = "hand:"
         const val NOW = "now"
         const val OBSERVED = "observed"

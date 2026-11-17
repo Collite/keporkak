@@ -121,6 +121,25 @@ class CheckSpec : FreeSpec({
             check.text shouldNotContain "re-judged"
         }
     }
+    "a hand log that moves a stage says the state it leaves it in; a later line refused for that state is a slip" {
+        val rules = TestOffice.copyOfTheRules().also(::proposalsReadNoFact)
+        TestOffice(root = rules).use { office ->
+            val hand = Files.createTempDirectory(checkout.resolve("build"), "hand-").resolve("p9-s9.1.jsonl").apply {
+                writeText("""
+                    {"v":1,"seq":1,"at":"2026-11-17T09:00:00Z","id":"m-hand-000001","thread":"m-hand-000001","from":"teamlead","to":"bora","kind":"assignment-proposal","stage":"KP/P9/S9.1","subject":"a proposal","args":{"role":"coder","level":"senior","seat":"coder-1"},"created":"2026-11-17T09:00:00Z","by":"hand:teamlead"}
+                    {"v":1,"seq":2,"at":"2026-11-17T09:05:00Z","id":"m-hand-000002","thread":"m-hand-000002","from":"coder","to":"reviewer","kind":"repair-done","stage":"KP/P9/S9.1","subject":"repair-done","args":{"verdict":"m-hand-000000"},"created":"2026-11-17T09:05:00Z","by":"hand:coder"}
+                """.trimIndent() + "\n")
+            }
+
+            val check = office.kp("check", hand.toString())
+
+            check.text.lines() shouldContain "$hand:1 m-hand-000001 assignment-proposal: delivered T-01 · stage KP/P9/S9.1 planned→proposed"
+            check.text.lines() shouldContain "$hand:2 m-hand-000002 repair-done: refused — fix_round|fix_round_3|fix_round_4→re_review — KP/P9/S9.1 is proposed"
+            check.text.lines() shouldContain "KP/P9/S9.1 is left in proposed"
+            check.text shouldNotContain "middle"
+            check.code shouldBe 1
+        }
+    }
 })
 
 private fun handLog(name: String, lines: String): Path =
@@ -129,3 +148,19 @@ private fun handLog(name: String, lines: String): Path =
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 private fun copyOf(mail: Path): Path = Files.createTempDirectory(checkout.resolve("build"), "copy-").resolve("mail").also { mail.copyToRecursively(it, followLinks = false, overwrite = false) }
 
+/** In a copy of the rules: the proposal and T-01 read no fact, so a hand log can move a stage out of `planned`. */
+private fun proposalsReadNoFact(rules: Path) {
+    fun replace(file: String, from: String, to: String) {
+        val path = rules.resolve(file)
+        val text = path.toFile().readText()
+        check(text.split(from).size == 2) { "'${from.lines().first()}…' is not once in $file" }
+        path.toFile().writeText(text.replace(from, to))
+    }
+    val facts = "  - fact: plan.predecessors_exited\n  - fact: pool.seat_available\n    role:\n      arg: role\n    level:\n      arg: level\n" +
+        "  - fact: budget.slot_open\n    dimension: office\n  - fact: budget.slot_open\n    dimension: subscription\n  - fact: budget.slot_open\n    dimension: effort\n" +
+        "  - fact: list.fence_complete\n"
+    replace("rules/stage-lifecycle.yaml", "  require:\n$facts  effects:\n  - count: proposals\n", "  require: []\n  effects:\n  - count: proposals\n")
+    val sizes = "    - fact: list.tasks_total\n      gte:\n        cap: stage_tasks_min\n    - fact: list.tasks_total\n      lte:\n        cap: stage_tasks_max\n" +
+        "    - fact: list.lines\n      lte:\n        cap: stage_list_lines\n"
+    replace("rules/message-kinds.yaml", "    require:\n" + facts.lines().filter { it.isNotEmpty() }.joinToString("") { "  $it\n" } + sizes + "    expiry:\n    - transition: T-07\n", "    require: []\n    expiry:\n    - transition: T-07\n")
+}

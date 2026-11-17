@@ -1834,6 +1834,44 @@
     }
   },
   {
+    "name": "producer mailroom",
+    "schema": "message",
+    "accepted": true,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "re": "m-panda-000000",
+      "from": "mailroom",
+      "to": "teamlead",
+      "kind": "nudge",
+      "subject": "nudge (mailroom)",
+      "args": {"rule": "assignment-proposal", "failed_guard": "fence has SC ids"},
+      "created": "2026-11-13T12:00:00Z",
+      "by": "mailroom"
+    }
+  },
+  {
+    "name": "mailroom names no rule after it",
+    "schema": "message",
+    "accepted": false,
+    "value": {
+      "v": 1,
+      "seq": 1,
+      "at": "2026-11-13T12:00:00Z",
+      "id": "m-panda-000001",
+      "thread": "m-panda-000001",
+      "from": "mailroom",
+      "to": "teamlead",
+      "kind": "nudge",
+      "subject": "nudge",
+      "created": "2026-11-13T12:00:00Z",
+      "by": "mailroom:T-14"
+    }
+  },
+  {
     "name": "producer hand:teamlead",
     "schema": "message",
     "accepted": true,

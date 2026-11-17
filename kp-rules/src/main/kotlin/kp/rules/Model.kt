@@ -191,7 +191,8 @@ sealed interface Intercept {
 
 data class ProseRule(val id: String, val whenText: String?, val note: String?)
 
-data class Queue(val order: List<String>, val nextWhen: Requirement, val prose: List<ProseRule>)
+/** A delivery discipline (contracts.md §8): [id] is what a hold by the queue names, `by: robot:<id>`. */
+data class Queue(val id: String, val order: List<String>, val nextWhen: Requirement, val prose: List<ProseRule>)
 
 data class Robot(
     val file: String,

@@ -2,8 +2,12 @@
 
 package kp.daemon
 
+import kp.mailroom.Clock
 import kp.model.Delivered
 import kp.model.Envelope
+import kp.model.Expired
+import kp.model.Fact
+import kp.model.Held
 import kp.model.Message
 import kp.model.Refused
 import kp.model.Transition
@@ -11,11 +15,15 @@ import kp.model.parseLine
 import java.nio.channels.SocketChannel
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.copyToRecursively
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteRecursively
+import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
 import kotlin.io.path.readLines
@@ -37,20 +45,39 @@ data class Ran(val code: Int, val text: String) {
     val presence: String get() = text.lines().first { it.startsWith("Bora: ") }.removePrefix("Bora: ")
 }
 
+/** The wall clock, moved on by what a spec lets pass: [pass] a day, and the daemon's "now" is a day later. */
+class MovingClock : Clock {
+    @Volatile private var moved: Duration = Duration.ZERO
+
+    override fun now(): Instant = Instant.now().plus(moved).truncatedTo(ChronoUnit.SECONDS)
+
+    fun pass(time: Duration) {
+        moved = moved.plus(time)
+    }
+}
+
 /**
  * A rehearsal of a walk on a throwaway project (S1.5 T1's seam): the daemon's control socket, a `kp` run as a
  * subprocess, and the peer of each connection read through [SimulatedPeers]. It starts paused where the walk first needs
- * Bora.
+ * Bora. The walk is one of `rules/walks/`, or one of this module's own (`src/test/resources/walks/`); the rules are
+ * the checkout's, or those under [root].
  */
-class Rehearsed(walk: String = "h1-prime") : AutoCloseable {
+class Rehearsed(walk: String = "h1-prime", root: Path = checkout) : AutoCloseable {
     val project: Path = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "rehearsal-")
     /** A Unix socket's path has at most 107 bytes: this one is under the system's temporary folder. */
     private val sockets: Path = Files.createTempDirectory("kp-")
     val socket: Path = sockets.resolve("kp.sock")
     val peers = SimulatedPeers()
     val said = CopyOnWriteArrayList<String>()
-    val rehearsal: Rehearsal = Rehearsal.start(checkout, checkout.resolve("rules/walks/$walk.yaml"), project, OFFICE, socket, peers) { said += it }
+    val clock = MovingClock()
+    val rehearsal: Rehearsal = Rehearsal.start(root, walkFile(walk), project, OFFICE, socket, peers, clock) { said += it }
     val waitingFor: String? = rehearsal.awaitBora()
+
+    /** Lets [time] pass on the daemon's clock and fires the deadlines that have then passed, as its timers would. */
+    fun pass(time: Duration) {
+        clock.pass(time)
+        rehearsal.office.tick()
+    }
 
     /** Runs `scripts/kp` with [args]; with [root], the daemon reads its peer as root — `sudo kp …`, simulated. */
     fun kp(vararg args: String, root: Boolean = false): Ran {
@@ -83,6 +110,9 @@ class Rehearsed(walk: String = "h1-prime") : AutoCloseable {
 
     companion object {
         const val OFFICE = "panda"
+
+        private fun walkFile(walk: String): Path =
+            checkout.resolve("rules/walks/$walk.yaml").takeIf { it.exists() } ?: checkout.resolve("kp-daemon/src/test/resources/walks/$walk.yaml")
     }
 }
 
@@ -92,6 +122,25 @@ class Log(folder: Path) {
         .flatMap { file -> file.readLines().map(::parseLine) }.sortedBy { it.seq }.toList()
 
     fun messages(vararg kinds: String): List<Message> = lines.filterIsInstance<Message>().filter { it.kind in kinds }
+
+    fun message(id: String): Message = lines.filterIsInstance<Message>().single { it.id.value == id }
+
+    /**
+     * The log as a reader tells it: each message's fate (`digest by robot:DEP-8 delivered`), each move of Bora's
+     * presence, each fact that triggered something, each expiry.
+     */
+    fun story(): List<String> = lines.mapNotNull { line ->
+        fun told(id: String, what: String): String = message(id).let { it.kind + (it.by.takeIf { by -> by.startsWith("robot:") || by == "mailroom" }?.let { by -> " by $by" } ?: "") + " " + what }
+        when (line) {
+            is Delivered -> told(line.id, "delivered")
+            is Held -> told(line.id, "held by ${line.by}")
+            is Refused -> told(line.id, "refused")
+            is Expired -> told(line.id, "expired")
+            is Fact -> "fact ${line.fact}"
+            is Transition -> if (line.machine == "presence") "presence ${line.from}→${line.to}" else null
+            else -> null
+        }
+    }
 
     /** What happened to [message], as its record and the transitions it caused say. */
     fun outcome(message: Message): String {

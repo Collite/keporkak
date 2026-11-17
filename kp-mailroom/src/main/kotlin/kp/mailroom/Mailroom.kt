@@ -280,11 +280,12 @@ class Mailroom private constructor(
     private fun settle(message: Message, decision: Decision, now: String, arrival: Reaction? = null): Answer {
         val id = message.id.value
         if (decision.outcome == Outcome.REFUSE) {
-            val refusals = folded.refusalsOn(message.from.value, utc(now).toLocalDate().toString()) + 1
+            // `refusals.today` is a seat's (contracts.md §4.4): Bora's, a robot's and the mailroom's refusals are not reported.
+            val refusals = if (message.by.startsWith(SEAT_BY)) folded.refusalsOn(message.from.value, utc(now).toLocalDate().toString()) + 1 else null
             write(line(now, EVENT to text("refused"), ID to text(id), RULE to text(decision.rule), REQUIREMENT to text(decision.requirement),
-                FAILED to decision.failed?.element(), OBSERVED to fields(decision.observed), REFUSALS_TODAY to JsonPrimitive(refusals)))
+                FAILED to decision.failed?.element(), OBSERVED to fields(decision.observed), REFUSALS_TODAY to refusals?.let(::JsonPrimitive)))
             // The one fact a robot triggers on that only the log changes (POOL-4): a seat's refusals today.
-            fact(FactRef(REFUSALS_TODAY_FACT, mapOf(SEAT to Datum.Text(message.from.value))), Datum.of(refusals), message.stage?.value, "refused $id")
+            refusals?.let { fact(FactRef(REFUSALS_TODAY_FACT, mapOf(SEAT to Datum.Text(message.from.value))), Datum.of(it), message.stage?.value, "refused $id") }
             return Answer(Status.REFUSED, id, rule = decision.rule, requirement = decision.requirement, failed = decision.failed, refusalsToday = refusals)
         }
         val deadline = decision.deadline.takeIf { decision.outcome == Outcome.DELIVER }
@@ -311,7 +312,7 @@ class Mailroom private constructor(
      * an arrival whose line is already written. Let go by one robot, it may be another active robot's to keep (§8),
      * held again by it: a deploy the Deputy kept goes to QA's queue and is handed over in its turn; one QA's queue
      * kept, let go while Bora is away, goes to the Deputy — an arrival there, so the Deputy answers the asker and wakes
-     * as it would have on arrival (review-015 B1).
+     * as it would have on arrival (review-015 B1). Refused when it is let go, its sender is told ([tell]).
      */
     private fun release(id: String) {
         val hold = folded.held[id] ?: return
@@ -327,7 +328,28 @@ class Mailroom private constructor(
             if (other.ticket) carry(reaction, id, now)
             return
         }
-        settle(message, engine.judge(folded, trigger, facts), now)
+        val answer = settle(message, engine.judge(folded, trigger, facts), now)
+        if (answer.status == Status.REFUSED) tell(message, answer)
+    }
+
+    /**
+     * A refusal told later (contracts.md §5, §2.1): the sender of a held message refused when it was let go is sent a
+     * `nudge` — in reply to it, with the rule and the guard that refused it, `by: mailroom`, the one message the mailroom
+     * sends of itself — in place of the tool result it could not be given when it was answered `held`. It is carried
+     * after the refusal's lines.
+     */
+    private fun tell(message: Message, refusal: Answer) {
+        val input = buildJsonObject {
+            put(KIND, JsonPrimitive(NUDGE))
+            put(RE, JsonPrimitive(message.id.value))
+            put(SUBJECT, JsonPrimitive("$NUDGE ($MAILROOM)"))
+            put(POINTERS, texts(listOf("mail:${message.id.value}")))
+            put(ARGS, buildJsonObject {
+                put(RULE, JsonPrimitive(refusal.rule))
+                put(FAILED_GUARD, JsonPrimitive(refusal.requirement))
+            })
+        }
+        queue += { arrive(Author(MAILROOM, MAILROOM, false), input) }
     }
 
     // ---- the robots (contracts.md §8)
@@ -688,10 +710,15 @@ private fun partyName(element: JsonElement?): String? =
 
 private const val BORA = "bora"
 private const val MAILROOM = "mailroom"
+/** The kind that tells a sender of a refusal, and the guard it names (`message-kinds.yaml`: `nudge`). */
+private const val NUDGE = "nudge"
+private const val FAILED_GUARD = "failed_guard"
 /** A signed command: the one way Bora acts (contracts.md §6). */
 private const val BORA_ACTED = "bora.acted"
 private const val SIGNED_COMMAND = "signed command"
 private const val REFUSALS_TODAY_FACT = "refusals.today"
+/** The `by` of a seat's own message (contracts.md §2.1): `seat:<name>`. */
+private const val SEAT_BY = "seat:"
 private const val PRESENCE = "presence"
 private const val SEAT_WAKE = "seat.wake"
 private const val ROBOT = "robot:"

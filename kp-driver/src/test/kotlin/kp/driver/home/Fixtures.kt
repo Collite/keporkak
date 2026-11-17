@@ -176,7 +176,11 @@ object Hooks {
         builder.environment().putAll(mapOf("PATH" to "/usr/local/bin:/usr/bin:/bin", "LANG" to "C.UTF-8") + environment)
         builder.redirectError(ProcessBuilder.Redirect.DISCARD)
         val process = builder.start()
-        process.outputStream.use { it.write(stdin.toByteArray()) }
+        try {
+            process.outputStream.use { it.write(stdin.toByteArray()) }
+        } catch (_: java.io.IOException) {
+            // The hook answered and went before it read its input (`deny` without its permissions): what it said is read below.
+        }
         val out = process.inputStream.bufferedReader().readText()
         check(process.waitFor(30, TimeUnit.SECONDS)) { "hook $hook did not end" }
         check(process.exitValue() == 0) { "hook $hook exited ${process.exitValue()}: $out" }

@@ -580,6 +580,11 @@ for filename, robot in ROBOTS:
             fail(f"{filename}: invalid class intercept")
     if "queue" in robot:
         queue=robot["queue"]
+        queue_id=queue.get("id")
+        if not isinstance(queue_id,str): fail(f"{filename}: a queue has an id")
+        elif re.fullmatch(r"[A-Z]+-[0-9]+",queue_id) is None: fail(f"{filename}: a queue's id must match [A-Z]+-[0-9]+")
+        elif queue_id in robot_ids: fail(f"{queue_id}: duplicate robot rule id")
+        else: robot_ids.add(queue_id)
         if queue.get("one_at_a_time") is not True or queue.get("then")!="fifo":
             fail(f"{filename}: invalid queue discipline")
         for kind in queue.get("order",[]):
@@ -812,10 +817,12 @@ class Walk:
     def require(self, requirements):
         return next((item for item in requirements if not self.holds(item)),None)
     def typed(self,value,definition):
-        if "enum" in definition and value not in definition["enum"]:return False
+        """An arg against its declaration as both validators and the engine type it (issue #26): an enum holds a
+        boolean only as a boolean, a boolean is no number, and a number with no fraction is an integer, `1.0` too."""
+        if "enum" in definition and not any(same_literal(value,item) for item in definition["enum"]):return False
         typename=definition.get("type")
-        types={"string":str,"array":list,"object":dict,"boolean":bool,"integer":int,"number":(int,float)}
-        if typename and (typename not in types or not isinstance(value,types[typename]) or typename in ("number","integer") and isinstance(value,bool)):return False
+        containers={"array":list,"object":dict}
+        if typename and not (isinstance(value,containers[typename]) if typename in containers else typename in ARG_TYPES and ARG_TYPES[typename](value)):return False
         if isinstance(value,list) and "items" in definition and not all(self.typed(item,definition["items"]) for item in value):return False
         if isinstance(value,dict) and not all(field in value for field in definition.get("required_fields",[])):return False
         return True

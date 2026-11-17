@@ -1,0 +1,33 @@
+# S1.9 T1 — Bora queues tonight's stage and goes away; the TeamLead's proposal arrives after he left, and the Deputy
+# answers it from the queue (DEP-2). The Deputy is the daemon's robot: the walk has no step for it.
+name: queued-proposal
+stage: S2.1
+seats:
+  coder-1: coder
+facts:
+  plan.predecessors_exited: true
+  pool.seat_available: true
+  budget.slot_open: true
+  list.fence_complete: true
+  list.tasks_total: 8
+  list.lines: 90
+  plan.in_current_wave: true
+  stage.cut_at: '2026-11-13T20:00:00Z'
+steps:
+- who: bora
+  kind: queue-approval
+  signed: bora
+  args:
+    stages:
+    - REHEARSAL/P2/S2.1
+- who: bora
+  kind: away
+  signed: bora
+  args: {}
+- id: proposal
+  who: teamlead
+  kind: assignment-proposal
+  args:
+    role: coder
+    level: senior
+    seat: coder-1

@@ -99,8 +99,9 @@ internal class Reacting(private val rules: RuleSet, private val state: State, pr
     }
 
     /**
-     * Whether an active robot takes the arriving message (contracts.md §8). Its queue takes every request of a kind
-     * the queue orders that is addressed to the robot's role: it is handed over by [freed]. Its `intercepts` — a
+     * Whether an active robot takes the arriving message (contracts.md §8), asked in the order of their files' names.
+     * Its queue takes every request of a kind the queue orders that is addressed to the robot's role, held `by` the
+     * queue's own id: it is handed over by [freed]. Its `intercepts` — a
      * kind, or a class and an addressee — route the message to the robot, which holds it when its rules answer the
      * asker with a kind addressed back to the asker (`to: {re: from}`, as DEP-1 says: send it "to the asker"); a message a robot
      * intercepts and answers otherwise goes on to its addressee.
@@ -113,7 +114,7 @@ internal class Reacting(private val rules: RuleSet, private val state: State, pr
             if (!evaluation.active(robot)) return@forEach
             val queue = robot.queue
             if (queue != null && message.kind in queue.order && roleOwns(robot.role, message.to)) {
-                return RobotHold(ROBOT + (queue.prose.firstOrNull()?.id ?: robot.role), releasedBy(queue.nextWhen), ticket = false, classOf(rules, kind, evaluation))
+                return RobotHold(ROBOT + queue.id, releasedBy(queue.nextWhen), ticket = false, classOf(rules, kind, evaluation))
             }
             val messageClass = classOf(rules, kind, evaluation).also { observed.putAll(evaluation.observed) }
             val intercepted = robot.intercepts.any { intercept ->
@@ -138,9 +139,9 @@ internal class Reacting(private val rules: RuleSet, private val state: State, pr
     private fun freed(asked: Trigger.Release): Reaction {
         val robot = rules.robots[asked.robot] ?: return Reaction.NONE
         val evaluation = evaluation(robot)
-        val queueIds = robot.queue?.prose.orEmpty().map { ROBOT + it.id }.ifEmpty { listOf(ROBOT + robot.role) }.toSet()
+        val queueIds = setOfNotNull(robot.queue?.let { ROBOT + it.id })
         val ruleIds = robot.rules.map { ROBOT + it.id }.toSet()
-        val held = state.held.filterValues { it.by in ruleIds || (robot.queue != null && it.by in queueIds) }
+        val held = state.held.filterValues { it.by in ruleIds || it.by in queueIds }
         val intercepted = held.filterValues { it.by in ruleIds }.keys.toList()
         val released = ArrayList<String>()
         if (intercepted.isNotEmpty() && !evaluation.active(robot)) released += intercepted
@@ -191,7 +192,7 @@ internal class RobotNeeds(private val rules: RuleSet, private val state: State, 
 
 /** The robots holding something, each with the last request its queue handed over: what [Trigger.Release] asks about. */
 internal fun holders(rules: RuleSet, state: State): List<Trigger.Release> = rules.robots.mapNotNull { (file, robot) ->
-    val ids = robot.rules.map { ROBOT + it.id } + robot.queue?.prose.orEmpty().map { ROBOT + it.id } + (ROBOT + robot.role)
+    val ids = robot.rules.map { ROBOT + it.id } + listOfNotNull(robot.queue?.let { ROBOT + it.id })
     if (state.held.values.none { it.by in ids }) return@mapNotNull null
     val job = robot.queue?.let { queue -> state.delivered.values.lastOrNull { it.kind in queue.order && roleOwns(robot.role, it.to) }?.id }
     Trigger.Release(file, job)
