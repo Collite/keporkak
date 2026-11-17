@@ -130,6 +130,14 @@ class Mailroom private constructor(
     }
 
     /**
+     * As [submit], for input a seat's tool hands on as it came (contracts.md §5): input that is no message at all — no
+     * kind, a kind, stage, subject, body, pointers, `args` or `re` outside its form — is answered [Offer.Malformed],
+     * naming the field, and nothing is written.
+     */
+    @Synchronized
+    fun offer(sender: Sender, input: JsonObject): Offer = malformed(input) ?: Offer.Answered(submit(sender, input))
+
+    /**
      * Bora ran a command (contracts.md §6) — [signed] when it came over a root peer. Only a signed command counts as
      * acting: it is the fact `bora.acted`, which moves presence through its `on: fact` transitions (§4.1). An unsigned
      * command leaves presence where it was.
