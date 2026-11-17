@@ -26,3 +26,28 @@ tasks.named<Test>("test") {
         inputs.files(rootProject.fileTree(folder)).withPropertyName("checkout_$folder").withPathSensitivity(PathSensitivity.RELATIVE)
     }
 }
+
+// `just handshake tools` (S2.3 T8): a seat built by S2.2's builder, on the pinned adapter, in front of this server and a
+// mailroom on a throwaway log. A source set of its own: it may use kp-driver, the API's main source may not. `check`
+// compiles it and never runs it, and CI never runs it — it spends tokens.
+val handshake: SourceSet = sourceSets.create("handshake") {
+    compileClasspath += sourceSets["main"].output
+    runtimeClasspath += sourceSets["main"].output
+}
+configurations["handshakeImplementation"].extendsFrom(configurations["implementation"])
+configurations["handshakeRuntimeOnly"].extendsFrom(configurations["runtimeOnly"])
+dependencies {
+    "handshakeImplementation"(project(":kp-driver"))
+    "handshakeImplementation"(project(":kp-engine"))
+    "handshakeImplementation"(project(":kp-log"))
+    "handshakeImplementation"(libs.kaml)
+}
+tasks.named("check") { dependsOn(handshake.classesTaskName) }
+tasks.register("handshakeClasspath") {
+    description = "Writes the tools handshake's run-time classpath to build/handshake.classpath for `just handshake tools`."
+    dependsOn(handshake.classesTaskName)
+    val out = layout.buildDirectory.file("handshake.classpath")
+    val classpath = handshake.runtimeClasspath
+    outputs.file(out)
+    doLast { out.get().asFile.writeText(classpath.asPath) }
+}
