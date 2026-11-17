@@ -98,8 +98,6 @@ data class State(
     val unjudged: List<Envelope> = emptyList(),
     /** The `seq` of the first line on disk of the judgement [unjudged] holds; null when none is open. */
     val opened: Long? = null,
-    /** The `seq` of the last `judged` line read: the next judgement's first line is the one after it. */
-    val judged: Long = 0,
 ) {
     fun stage(id: String): String? = machine("stage", id)?.state
     fun machine(machine: String, subject: String): MachineState? = machines[machine]?.get(subject)
@@ -133,7 +131,7 @@ fun fold(lines: Iterable<Envelope>, from: State = State()): State = lines.fold(f
 fun State.settled(): State = unjudged.fold(copy(unjudged = emptyList(), opened = null)) { state, line -> Folding(state).apply(line).state }
 
 private fun State.read(line: Envelope, seq: Long): State = when {
-    line is Judged -> settled().copy(judged = seq)
+    line is Judged -> settled()
     line is Voided -> copy(unjudged = listOfNotNull(unjudged.firstOrNull()?.takeIf { opened == line.first }), opened = seq)
     line is Message && line.by.startsWith(HAND) -> Folding(this).apply(line).state
     else -> copy(unjudged = unjudged + line, opened = opened ?: seq)

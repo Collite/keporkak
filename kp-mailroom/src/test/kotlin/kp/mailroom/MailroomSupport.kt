@@ -288,6 +288,11 @@ class Office(
         disk.armed = true
     }
 
+    /** As [start], on a disk that stops the writer after the line [after] matches — what the start itself writes included. */
+    fun startStoppedAfter(after: (Envelope) -> Boolean) {
+        mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, disk = StoppingDisk(after).also { it.armed = true })
+    }
+
     /**
      * Where the office's log ends — what a restart must reach again: every machine's state, the counters, the kinds
      * delivered in order, the open waits, the open tickets, the operations in flight and each seat's unread mail, by
@@ -448,13 +453,15 @@ class ReadBack(project: Path) {
     val counted: List<Envelope> get() = (lines - voidedLines().toSet())
 
     /**
-     * Each judgement of the log, as its lines read — the first line to the `judged` that closes it (contracts.md §3);
-     * a voided line is left out. A message reads `<kind> by <by>`, a record its event and what it moved.
+     * Each judgement of the log a `judged` line closes, as its lines read — its first line to that `judged` (contracts.md
+     * §3). A `voided` record opens the judgement that carries a voided one's first line again; the voided judgement is
+     * in [voidedJudgements]. A message reads `<kind> by <by>`, a record its event and what it moved.
      */
     fun judgements(): List<List<String>> {
         val all = ArrayList<List<String>>()
         var open = ArrayList<String>()
-        counted.forEach { line ->
+        lines.forEach { line ->
+            if (line.event() == "voided") open = ArrayList()
             open += told(line)
             if (line.event() == "judged") all += open.also { open = ArrayList() }
         }

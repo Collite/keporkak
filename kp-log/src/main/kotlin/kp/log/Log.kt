@@ -4,7 +4,10 @@ import kp.model.Envelope
 import java.nio.file.Path
 
 /** One line of a log file: where it is and what it holds (a message or a record). */
-data class LogLine(val file: Path, val number: Int, val entry: Envelope)
+data class LogLine(val file: Path, val number: Int, val entry: Envelope) {
+    /** The stage whose file holds the line (`mail/<effort>/p<n>-s<n.m>.jsonl`, contracts.md §3); null for the office's file or a hand log. */
+    val stage: String? get() = Layout.stageOfOrNull(file)
+}
 
 /** What a read found: the lines in `seq` order, and every problem — reported, never repaired. */
 data class LogRead(val lines: List<LogLine>, val problems: List<Problem>)
