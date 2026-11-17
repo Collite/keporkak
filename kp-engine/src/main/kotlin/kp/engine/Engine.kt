@@ -42,6 +42,16 @@ class Engine(private val rules: RuleSet) {
         return Judgement(rules, state, context, facts).run()
     }
 
+    /**
+     * What holds for every kind (contracts.md §4.1), for an arriving message a robot keeps instead of its addressee: the
+     * refusal when the sender's role, the `args`, a cap, the thread, the body, the addressee or a ticket answered once
+     * breaks it — null when it may be kept. The kind's own requirements are judged when it is let go.
+     */
+    fun admit(state: State, trigger: Trigger.Arrival, facts: Facts): Decision? {
+        val context = Context.of(trigger, state) ?: return null
+        return Judgement(rules, state, context, facts).admission()
+    }
+
     /** The facts [react] will read that the table must supply: as [needs], for the robots' files. */
     fun hears(state: State, trigger: Trigger): List<Need> = RobotNeeds(rules, state, trigger).collect()
 
@@ -77,12 +87,20 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         unsupplied = evaluation.unsupplied.toList(), observed = evaluation.observed.toMap(), attested = evaluation.attested(),
     )
 
-    /** `on: message` — what holds for every kind, the kind's own requirements, then the candidates of every machine. */
-    private fun arrival(): Decision {
+    /** What holds for every kind, and a ticket answered once: the refusal, or null. */
+    fun admission(): Decision? {
         val message = context.message!!
         val kind = rules.kinds[message.kind] ?: return refuse(message.kind, "kinds: no '${message.kind}'")
         everyKind(kind, message)?.let { (requirement, failed) -> return refuse(kind.name, requirement, failed) }
         answeredTicket(message)?.let { ticket -> return refuse(kind.name, "ticket #$ticket: answered once") }
+        return null
+    }
+
+    /** `on: message` — what holds for every kind, the kind's own requirements, then the candidates of every machine. */
+    private fun arrival(): Decision {
+        val message = context.message!!
+        admission()?.let { return it }
+        val kind = rules.kinds.getValue(message.kind)
         evaluation.firstFailure(kind.require)?.let { return refuse(kind.name, kind.guard ?: render(it), it) }
         val fired = fireMachines(kind)
         if (fired.moves.isEmpty() && rules.lifecycle.machines.values.any { machine -> machine.transitions.any { it.kind == kind.name && it.on == Event.MESSAGE } }) {

@@ -167,7 +167,7 @@ class Office(
         opened += this
         facts.set(this.walk.facts)
         LogWriter.open(project, panda).use { log ->
-            fun line(text: String) = log.append(json("""{"v":1,"at":"$START",""" + text.removePrefix("{")))
+            fun line(text: String) = log.append(json("""{"v":1,"at":"$at",""" + text.removePrefix("{")))
             seed?.let { line("""{"event":"transition","machine":"stage","subject":"$STAGE","from":"planned","to":"$it","cause":"$SEEDED","counted":$counters}""") }
             others.forEach { (stage, state) ->
                 line("""{"event":"transition","machine":"stage","subject":"$stage","from":"planned","to":"$state","cause":"$SEEDED","counted":${otherCounters[stage] ?: "{}"}}""")
@@ -328,8 +328,12 @@ class ReadBack(project: Path) {
     /** `seq` runs 1, 2, 3 … with no gap and no repeat (contracts.md §2.2). */
     fun seqRunsWithoutGap(): Boolean = lines.map { it.seq.toLong() } == (1L..lines.size).toList()
 
-    /** Every `(op, cause)` that is `requested` more than once (contracts.md §7: at most once per request). */
-    fun requestedTwice(): List<String> = records<Op>().filter { it.phase == "requested" }.groupBy { "${it.op} ${it.cause}" }.filterValues { it.size > 1 }.keys.toList()
+    /**
+     * Every `(op, cause)` that is `requested` more than once (contracts.md §7: at most once per request). A robot's
+     * wakes are one per rule: two rules may wake their seat for one cause, each in its own mode.
+     */
+    fun requestedTwice(): List<String> = records<Op>().filter { it.phase == "requested" }
+        .groupBy { "${it.op} ${it.cause}" + ((it.plain()["with"] as? Map<*, *>)?.get("rule")?.let { rule -> " $rule" } ?: "") }.filterValues { it.size > 1 }.keys.toList()
 
     /** Every record about a message — by its `id`, or a transition or operation it caused — that comes before the message's line. */
     fun recordsBeforeTheirMessage(): List<String> {

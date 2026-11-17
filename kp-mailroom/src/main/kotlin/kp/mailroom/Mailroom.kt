@@ -13,8 +13,11 @@ import kp.engine.Decision
 import kp.engine.Engine
 import kp.engine.FactRef
 import kp.engine.Facts
+import kp.engine.Need
 import kp.engine.Outcome
+import kp.engine.Reaction
 import kp.engine.Requested
+import kp.engine.RobotHold
 import kp.engine.State
 import kp.engine.Trigger
 import kp.engine.fold
@@ -94,6 +97,12 @@ class Mailroom private constructor(
     private val writer: LogWriter,
     private val texts: RuleTexts,
     private var inForce: InForce,
+    /**
+     * The robots host (contracts.md §8, architecture.md §1): each active robot hears what its rules trigger on, and
+     * what it sends goes through the loop like any seat's message, `by: robot:<rule>`; what it keeps is held. Off,
+     * the mailroom only carries messages.
+     */
+    private val robots: Boolean,
 ) : AutoCloseable {
     /** The rule set every judgement reads: one per message, replaced only between two (architecture.md §3). */
     private val rules: RuleSet get() = inForce.ruleSet
@@ -110,27 +119,38 @@ class Mailroom private constructor(
     /** The fold of the log as the mailroom works from it. */
     val state: State @Synchronized get() = folded
 
-    /** Carries one message submitted in [sender]'s name; [input] holds what a sender supplies (contracts.md §2.1, §5). */
+    /**
+     * Carries one message submitted in [sender]'s name; [input] holds what a sender supplies (contracts.md §2.1, §5).
+     * A message from Bora's command line is a command of his: what it does to his presence comes first.
+     */
     @Synchronized
-    fun submit(sender: Sender, input: JsonObject): Answer = arrive(sender.author(), input).also { drain() }
+    fun submit(sender: Sender, input: JsonObject): Answer {
+        if (sender is Sender.Bora) command(sender.signed)
+        return arrive(sender.author(), input).also { drain() }
+    }
 
     /**
      * Bora ran a command (contracts.md §6) — [signed] when it came over a root peer. Only a signed command counts as
-     * acting (`bora.acted`); an unsigned one leaves presence where it was. A message Bora submits is such a command.
+     * acting: it is the fact `bora.acted`, which moves presence through its `on: fact` transitions (§4.1). An unsigned
+     * command leaves presence where it was.
      */
     @Synchronized
     fun command(signed: Boolean) {
-        // T4
+        if (signed) fact(FactRef(BORA_ACTED), Datum.Bool(true), null, SIGNED_COMMAND)
+        drain()
     }
 
     /**
      * The world reports that [fact] changed (contracts.md §4.1 `on: fact`, §8): [value] is its value now, [stage] the
-     * stage it concerns, when one. What it triggers — a transition, a robot's rule — is judged; when it triggers
-     * anything, a `fact` record says so first (§2.2).
+     * stage it concerns, when one, and [evidence] what shows it. What it triggers — a transition, a robot's rule — is
+     * judged; when it triggers anything, a `fact` record says so first (§2.2). `bora.acted` is no fact the world
+     * reports: only a signed command is one ([command]).
      */
     @Synchronized
     fun changed(fact: FactRef, value: Datum, stage: String? = null, evidence: String? = null) {
-        // T3
+        require(fact.name != BORA_ACTED) { "$BORA_ACTED is a signed command: command(signed = true)" }
+        fact(fact, value, stage, evidence)
+        drain()
     }
 
     /**
@@ -209,29 +229,161 @@ class Mailroom private constructor(
         val message = compose(author, input, now)
         val engine = Engine(rules)
         val trigger = Trigger.Arrival(message)
-        val decision = engine.judge(folded, trigger, table(engine, trigger, message.stage?.value, now))
-        val id = message.id.value
+        val stage = message.stage?.value
+        val facts = table(engine.needs(folded, trigger) + hears(engine, trigger), stage, now)
+        val reaction = if (robots) engine.react(folded, trigger, facts) else null
+        val decision = engine.judge(folded, trigger, facts)
+        // A message QA's queue keeps waits for QA: it is judged now, and refused now when it would be. One the Deputy
+        // keeps waits for Bora: only what holds for every kind is checked — its kind's own requirements may hold only
+        // once he is back (the deadman of `merge`).
+        reaction?.held?.let { held ->
+            val refusal = if (held.ticket) engine.admit(folded, trigger, facts) else decision.takeIf { it.outcome == Outcome.REFUSE }
+            return keep(message, held, refusal, reaction, now)
+        }
         val deadline = decision.deadline.takeIf { decision.outcome == Outcome.DELIVER }
         write(JsonObject(message.json - "seq" + listOfNotNull(deadline?.let { DEADLINE to JsonPrimitive(it) })))
+        return settle(message, decision, now, arrival = reaction)
+    }
+
+    /**
+     * A robot keeps the arriving message instead of its addressee (contracts.md §2.2, §8) — unless what holds for every
+     * kind refuses it ([refusal]): it is then written and refused like any other. Kept, its line carries no deadline —
+     * holding suspends it — and its `held` record names the rule, what ends it, and, when it waits for Bora, its ticket
+     * (`notify.bora` for class B). Then the robot's sends and wakes.
+     */
+    private fun keep(message: Message, held: RobotHold, refusal: Decision?, reaction: Reaction, now: String): Answer {
+        write(JsonObject(message.json - "seq"))
+        if (refusal != null) return settle(message, refusal, now)
+        val id = message.id.value
+        val ticket = (writer.last + 1).takeIf { held.ticket }
+        write(line(now, EVENT to text("held"), ID to text(id), BY to text(held.by), UNTIL to text(held.until), TICKET to ticket?.let(::JsonPrimitive),
+            DEADLINE to null, keepNull = setOf(DEADLINE)))
+        if (ticket != null && held.messageClass == MessageClass.B) notify(ticket, id, now)
+        carry(reaction, id, now)
+        return Answer(Status.HELD, id, rule = held.by)
+    }
+
+    /**
+     * What a judgement of a written message decided, written — the refusal, or the delivery and its transitions — and
+     * then acted on: effects, notification, wakes, what the robots hear. A message let go after a robot held it keeps
+     * the ticket its hold raised, and its deadline is counted from now (contracts.md §2.2, Amendment 8).
+     */
+    private fun settle(message: Message, decision: Decision, now: String, arrival: Reaction? = null): Answer {
+        val id = message.id.value
         if (decision.outcome == Outcome.REFUSE) {
-            val refusals = folded.refusalsOn(author.from, utc(now).toLocalDate().toString()) + 1
+            val refusals = folded.refusalsOn(message.from.value, utc(now).toLocalDate().toString()) + 1
             write(line(now, EVENT to text("refused"), ID to text(id), RULE to text(decision.rule), REQUIREMENT to text(decision.requirement),
                 FAILED to decision.failed?.element(), OBSERVED to fields(decision.observed), REFUSALS_TODAY to JsonPrimitive(refusals)))
+            // The one fact a robot triggers on that only the log changes (POOL-4): a seat's refusals today.
+            fact(FactRef(REFUSALS_TODAY_FACT, mapOf(SEAT to Datum.Text(message.from.value))), Datum.of(refusals), message.stage?.value, "refused $id")
             return Answer(Status.REFUSED, id, rule = decision.rule, requirement = decision.requirement, failed = decision.failed, refusalsToday = refusals)
         }
+        val deadline = decision.deadline.takeIf { decision.outcome == Outcome.DELIVER }
         val written = messages.getValue(id)
         val addressees = addressees(message)
         val woke = listOf(addressees.first()).filter { it !in PARTIES && deliveries.idle(it) }
-        val ticket = (writer.last + 1).takeIf { decision.waitsForBora }
+        val raised = folded.tickets.entries.firstOrNull { it.value.item == id }?.key
+        val ticket = raised ?: (writer.last + 1).takeIf { decision.waitsForBora }
         write(line(now, EVENT to text("delivered"), ID to text(id), TO to texts(addressees), WOKE to woke.takeIf { it.isNotEmpty() }?.let(::texts),
             CLASS to text(decision.messageClass?.name), RULE to text(decision.rule), TICKET to ticket?.let(::JsonPrimitive),
             COUNTED to counted(decision.counted), OBSERVED to fields(decision.observed), ATTESTED to decision.attested.takeIf { it.isNotEmpty() }?.let(::texts),
             ANSWERS to text(decision.answers), DEADLINE to deadline?.let(::text)))
         transitions(decision, id, now)
         effects(decision, id, now)
-        if (ticket != null && decision.messageClass == MessageClass.B) notify(ticket, id, now)
+        if (raised == null && ticket != null && decision.messageClass == MessageClass.B) notify(ticket, id, now)
         woke.filter { deliveries.wake(it, written) }.forEach { seat -> write(line(now(), EVENT to text("read"), SEAT to text(seat), IDS to texts(listOf(id)))) }
+        arrival?.let { carry(it, id, now) }
+        hear(Trigger.Delivered(id), id, now, message.stage?.value)
         return Answer(Status.DELIVERED, id, transition = decision.rule)
+    }
+
+    /**
+     * A held message is let go (contracts.md §2.2): judged now, under the state now, and delivered — or refused — like
+     * an arrival whose line is already written.
+     */
+    private fun release(id: String) {
+        if (id !in folded.held) return
+        val message = messages.getValue(id)
+        val now = now()
+        val engine = Engine(rules)
+        val trigger = Trigger.Arrival(message)
+        settle(message, engine.judge(folded, trigger, table(engine, trigger, message.stage?.value, now)), now)
+    }
+
+    // ---- the robots (contracts.md §8)
+
+    /**
+     * A fact that changed: the guard judges its `on: fact` transitions and the robots hear it. When it triggers
+     * nothing, nothing is written; otherwise its `fact` record first — about whom its parameters name, else its stage,
+     * else the party its name is about, else the office — then the transitions, effects, sends and wakes it caused.
+     */
+    private fun fact(fact: FactRef, value: Datum, stage: String?, evidence: String?) {
+        val now = now()
+        val engine = Engine(rules)
+        val trigger = Trigger.Changed(fact.name, fact.params, stage)
+        val facts = table(engine.needs(folded, trigger) + hears(engine, trigger), stage, now, mapOf(fact to value))
+        val decision = engine.judge(folded, trigger, facts)
+        val reaction = if (robots) engine.react(folded, trigger, facts) else null
+        if (decision.moves.isEmpty() && decision.effects.isEmpty() && reaction?.fired.isNullOrEmpty() && freed(fact to value, stage, now).isEmpty()) return
+        val party = fact.name.substringBefore('.').takeIf { it in PARTIES }
+        val subject = fact.params.values.joinToString(", ") { (it as? Datum.Text)?.value ?: it.json() }.ifEmpty { stage ?: party ?: office.value }
+        write(line(now, EVENT to text("fact"), FACT to text(fact.name), SUBJECT to text(subject), VALUE to value.element(), EVIDENCE to text(evidence)))
+        val cause = fact.toString()
+        record(decision, cause, now)
+        reaction?.let { carry(it, cause, now) }
+    }
+
+    /** What the robots will read for [trigger], when the host is on. */
+    private fun hears(engine: Engine, trigger: Trigger): List<Need> = if (robots) engine.hears(folded, trigger) else emptyList()
+
+    /** The robots hear [trigger] — in [state], by default the state now — and what they do is carried, caused by [cause]. */
+    private fun hear(trigger: Trigger, cause: String, now: String, stage: String?, state: State = folded) {
+        if (!robots) return
+        val engine = Engine(rules)
+        carry(engine.react(state, trigger, table(engine.hears(state, trigger), stage, now)), cause, now)
+    }
+
+    /**
+     * What a robot does (contracts.md §8): a wake is requested at once — `seat.wake` for its own seat, with its role,
+     * mode and rule — and a send is carried after the lines being written, through the loop, from the robot's role,
+     * `by: robot:<rule>`.
+     */
+    private fun carry(reaction: Reaction, cause: String, now: String) {
+        reaction.wakes.forEach { wake ->
+            request(SEAT_WAKE, cause, Datum.Fields(mapOf(ROLE to Datum.Text(wake.role), MODE to Datum.Text(wake.mode), RULE to Datum.Text(wake.rule))), now)
+        }
+        reaction.sends.forEach { send ->
+            val input = buildJsonObject {
+                put(KIND, JsonPrimitive(send.kind))
+                send.to?.let { put(TO, JsonPrimitive(it)) }
+                send.re?.let { put(RE, JsonPrimitive(it)) }
+                send.stage?.let { put(STAGE, JsonPrimitive(it)) }
+                put(SUBJECT, JsonPrimitive("${send.kind} ($ROBOT${send.rule})"))
+                put(ARGS, fields(send.args))
+            }
+            queue += { arrive(Author(send.role, ROBOT + send.rule, false), input) }
+        }
+    }
+
+    /**
+     * What the robots keep that is let go now (contracts.md §2.2, §8): each robot that holds something is asked, with
+     * the facts about the last request its queue handed over; what it lets go is delivered in order, after what is
+     * already being carried.
+     */
+    private fun letGo() = freed(null, null, now()).forEach { id -> queue += { release(id) } }
+
+    /**
+     * What the robots would let go now, in order — with [known], a fact just reported about [stage], read where the
+     * robot asks about that stage.
+     */
+    private fun freed(known: Pair<FactRef, Datum>?, stage: String?, now: String): List<String> {
+        if (!robots) return emptyList()
+        val engine = Engine(rules)
+        return engine.holders(folded).flatMap { asked ->
+            val about = asked.job?.let(messages::get)?.stage?.value
+            val facts = table(engine.hears(folded, asked), about, now, listOfNotNull(known?.takeIf { about == stage }).toMap())
+            engine.react(folded, asked, facts).released
+        }
     }
 
     /** What the judgement requested, in its order: a declared emit is carried after this judgement's lines. */
@@ -266,6 +418,7 @@ class Mailroom private constructor(
             CLASS to text(report?.messageClass?.name), TICKET to ticket?.let(::JsonPrimitive), DEADLINE to text(decision.deadline), keepNull = setOf(DEADLINE)))
         record(decision, id, now)
         if (ticket != null && report?.messageClass == MessageClass.B) notify(ticket, id, now)
+        hear(trigger, id, now, messages[id]?.stage?.value)
     }
 
     /** What a judgement of a result or an expiry decided: its transitions and its effects, caused by [cause]. */
@@ -340,9 +493,12 @@ class Mailroom private constructor(
             is OperationResult.Failed -> line(now, EVENT to text("op"), OP to text(request.operation), PHASE to text(FAILED), CAUSE to text(request.cause),
                 REASON to text(result.reason))
         })
-        val trigger = Trigger.Result(request.cause, request.operation, result is OperationResult.Ok)
+        val returned = (result as? OperationResult.Ok)?.let { seated(request, it.result) } ?: Datum.Fields(emptyMap())
+        val trigger = Trigger.Result(request.cause, request.operation, result is OperationResult.Ok, request.with, returned)
         val engine = Engine(rules)
-        record(engine.judge(folded, trigger, table(engine, trigger, messages[request.cause]?.stage?.value, now)), request.cause, now)
+        val stage = messages[request.cause]?.stage?.value
+        record(engine.judge(folded, trigger, table(engine, trigger, stage, now)), request.cause, now)
+        hear(trigger, request.cause, now, stage)
     }
 
     /**
@@ -360,12 +516,19 @@ class Mailroom private constructor(
         return if (request.operation !in SEATING || seat == null || SEAT in result.fields) result else Datum.Fields(result.fields + (SEAT to seat))
     }
 
-    /** Carries what the queue holds, in order, until it is empty; what a step adds runs after it. */
+    /**
+     * Carries what the queue holds, in order, until it is empty; what a step adds runs after it. Once it is empty, what
+     * the robots keep that is let go now joins it.
+     */
     private fun drain() {
         if (draining) return
         draining = true
         try {
-            while (queue.isNotEmpty() && !closed) queue.removeFirst()()
+            while (!closed) {
+                if (queue.isEmpty()) letGo()
+                if (queue.isEmpty()) break
+                queue.removeFirst()()
+            }
         } finally {
             draining = false
         }
@@ -405,13 +568,21 @@ class Mailroom private constructor(
     }
 
     /** The facts the engine names for [trigger], collected — `now` from the clock, the others from the world. */
-    private fun table(engine: Engine, trigger: Trigger, stage: String?, now: String): Facts =
-        Facts.collect(engine.needs(folded, trigger)) { fact -> if (fact.name == NOW) Datum.Text(now) else facts.observe(fact, stage) }
+    private fun table(engine: Engine, trigger: Trigger, stage: String?, now: String): Facts = table(engine.needs(folded, trigger), stage, now)
 
-    /** One `transition` record per machine the decision moves, caused by [cause]. */
+    /** [needs] collected: what is [known] already, `now` from the clock, the others from the world about [stage]. */
+    private fun table(needs: List<Need>, stage: String?, now: String, known: Map<FactRef, Datum> = emptyMap()): Facts =
+        Facts.collect(needs) { fact -> known[fact] ?: if (fact.name == NOW) Datum.Text(now) else facts.observe(fact, stage) }
+
+    /**
+     * One `transition` record per machine the decision moves, caused by [cause]. A move of Bora's presence is heard by
+     * the robots as they were before it (contracts.md §8 `{presence: …}`: the Deputy hears Bora's return).
+     */
     private fun transitions(decision: Decision, cause: String, now: String) = decision.moves.forEach { move ->
+        val before = folded
         write(line(now, EVENT to text("transition"), MACHINE to text(move.machine), SUBJECT to text(move.subject), FROM to text(move.from),
             TO to text(move.to), RULE to text(move.rule), CAUSE to text(cause), COUNTED to counted(move.counted)))
+        if (move.machine == PRESENCE) hear(Trigger.Presence(move.to), cause, now, null, before)
     }
 
     // ---- the log
@@ -472,7 +643,7 @@ class Mailroom private constructor(
                 if (inForce == null) throw MailroomRefusal("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
                 // Under the mailroom's lock, as every other step: a performer that answers from its own thread while the
                 // start is carrying its queue waits for it (issue #21).
-                return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce).apply {
+                return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce, robots).apply {
                     synchronized(this) {
                         take(read.lines.map { it.entry })
                         recordRules()
@@ -497,6 +668,19 @@ private fun partyName(element: JsonElement?): String? =
 
 private const val BORA = "bora"
 private const val MAILROOM = "mailroom"
+/** A signed command: the one way Bora acts (contracts.md §6). */
+private const val BORA_ACTED = "bora.acted"
+private const val SIGNED_COMMAND = "signed command"
+private const val REFUSALS_TODAY_FACT = "refusals.today"
+private const val PRESENCE = "presence"
+private const val SEAT_WAKE = "seat.wake"
+private const val ROBOT = "robot:"
+private const val ROLE = "role"
+private const val MODE = "mode"
+private const val UNTIL = "until"
+private const val FACT = "fact"
+private const val VALUE = "value"
+private const val EVIDENCE = "evidence"
 private const val SEAT_NAME = "seat.name"
 private const val NOTIFY_BORA = "notify.bora"
 private const val REQUESTED = "requested"

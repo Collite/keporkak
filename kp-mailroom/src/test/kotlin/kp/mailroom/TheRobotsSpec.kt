@@ -8,6 +8,7 @@ import kp.model.Held
 import kp.model.Op
 import kp.model.Refused
 import kp.model.plain
+import kotlin.time.Duration.Companion.minutes
 
 /** H-2′'s three stages (design/11-c2-converged.md §3): the tail has passed; S2.2 is proposed tonight; S2.3 is in review. */
 private const val TAIL = STAGE
@@ -18,6 +19,9 @@ private const val S23 = "KP/P2/S2.3"
 private const val LIVE_A = "KP/P3/S3.1"
 private const val LIVE_B = "KP/P3/S3.2"
 private const val TAIL_C = "KP/P3/S3.3"
+
+/** The messages delivered to QA, in the order they were handed over. */
+private fun Office.handedToQa(): List<String> = readBack().records<Delivered>().filter { "qa" in it.to }.map { it.id }
 
 /**
  * S1.4 T1 — the robots. The seam: the mailroom of S1.3 with the robots host switched on, a clock the spec sets and
@@ -121,13 +125,15 @@ class TheRobotsSpec : StringSpec({
         val first = office.send("coder-1", """{"kind": "qa-request", "stage": "$LIVE_A", "args": {"task": "T5", "done": "D1", "verify": "the candidate"}}""")
         val second = office.send("coder-2", """{"kind": "qa-request", "stage": "$LIVE_B", "args": {"task": "T5", "done": "D1", "verify": "the candidate"}}""")
         val deploy = office.send("teamlead", """{"kind": "deploy-request", "stage": "$TAIL_C", "args": {"pin": "image-head-1", "smoke": "the stage smoke"}}""")
-        office.send("qa", """{"kind": "qa-report", "re": "${first.id}",
-            "args": {"outcome": "pass", "fixture": "fixtures/a", "command": "fake check", "counts": {"checks": 1}, "sha": "head-1"}}""")
-        val beforeTheNamespaceIsGone = office.readBack().records<Delivered>().filter { "qa" in it.to }.map { it.id }
+        val whileTheFirstRuns = office.handedToQa()
+        office.clock.advance(121.minutes)
+        office.mailroom.tick()
+        val afterItsWaitIsOverButItsNamespaceStays = office.handedToQa()
         office.changed("live.namespace_absent", true, stage = LIVE_A)
 
-        beforeTheNamespaceIsGone shouldBe listOf(first.id)
-        office.readBack().records<Delivered>().filter { "qa" in it.to }.map { it.id } shouldBe listOf(first.id, deploy.id)
+        whileTheFirstRuns shouldBe listOf(first.id)
+        afterItsWaitIsOverButItsNamespaceStays shouldBe listOf(first.id)
+        office.handedToQa() shouldBe listOf(first.id, deploy.id)
         office.mailroom.state.held.keys shouldBe setOf(second.id)
     }
 
