@@ -9,7 +9,8 @@ The repository installs nothing on it. This folder holds the templates Bora inst
 - `to do` — Bora's, with the exact command;
 - `later` — a later stage delivers it, and the line names that stage.
 
-It reads and reports only, and exits 1 while anything is `to do`. P0 exits when nothing is `to do`.
+It reads and reports only, and exits 1 while anything is `to do`. P0 exited when nothing was `to do`; since S1.5, `kp`,
+its `sudo` rule and the service are checked too (§2, §3).
 
 ## 1. Now — for P0's exit
 
@@ -31,7 +32,7 @@ Then `just office-check` ends with `RESULT: READY`.
 The tools come from mise on Panda (`~/.zshrc`: `mise activate`), and git, gh, jq and tmux from apt. If the check
 reports one missing, its line gives the command.
 
-## 2. Before S1.5 — the `sudo` conditions for `kp` (contracts.md §6, D-43)
+## 2. The `sudo` rule for `kp` (contracts.md §6, D-43)
 
 A state-changing `kp` command is signed by running it under `sudo`; the daemon accepts it only from a root peer.
 That means something only if `sudo` asks Bora for his password every time. Install the drop-in:
@@ -42,24 +43,75 @@ sudo install -o root -g root -m 0440 office/sudoers.d/zz-keporkak-kp /etc/sudoer
 sudo -l
 ```
 
-`sudo -l` must show no `NOPASSWD` entry for `bora`. If one is there, remove it from the file that holds it
-(`sudo visudo` or `sudo visudo -f /etc/sudoers.d/<file>`). The drop-in makes `kp` ask anyway: it sorts last, so its
-`PASSWD` rule decides for `kp`, and `timestamp_timeout=0` means a ticket from an earlier `sudo` is not reused.
+`sudo -l` must show no `NOPASSWD` entry for `bora` that is not overridden for `kp`. Panda has one,
+`/etc/sudoers.d/90-bora-nopasswd`: the drop-in sorts after it, so its `PASSWD` rule decides for `kp`, and
+`timestamp_timeout=0` means a ticket from an earlier `sudo` is not reused. The office check reads the drop-in's place,
+owner, mode and size; its content needs `sudo` to read, so `sudo -l` is yours to look at.
 
-S1.5 installs `kp` at `/usr/local/bin/kp`, owned by root and not writable by `bora`. The seats' compiled permissions
-deny `kp` and `sudo` (S2.2: the `side-channels` border; see §5).
+The seats' compiled permissions deny `kp` and `sudo` (S2.2: the `side-channels` border; see §5).
 
-## 3. At S1.5 — the systemd user service
+## 3. The daemon and `kp` — S1.5's steps, in order
 
-`systemd/keporkak.service` is a template: S1.5 fills in the daemon's launcher and working directory. Once it has:
+Run them on Panda, as `bora`, from the checkout the daemon is to run: the office's, `~/Dev/keporkak/keporkak`
+(`pool/offices.yaml`: `repos.keporkak`) — or, to try a stage before it merges, that stage's worktree, then again from
+the office's checkout once it has merged. The daemon reads the rules of the checkout it was installed from.
 
-```sh
-mkdir -p ~/.config/systemd/user
-cp office/systemd/keporkak.service ~/.config/systemd/user/keporkak.service
-systemctl --user daemon-reload
-```
+1. **Install the daemon and its service.** Nothing here runs `sudo`:
 
-S1.5's `just run`, `just stop` and `just logs` drive it from then on.
+   ```sh
+   just install
+   ```
+
+   It builds the daemon, copies it to `~/.local/share/keporkak/daemon/`, writes the systemd user unit
+   (`office/systemd/keporkak.service`, its launcher and working folder filled in) to
+   `~/.config/systemd/user/keporkak.service`, checks that the unit's `PATH` — mise's shims first — finds a JDK 21,
+   runs `systemctl --user daemon-reload`, and prints the one step that is yours, with `sudo`.
+
+2. **Install `kp`, root-owned**, where the `sudo` rule names it — the line step 1 printed:
+
+   ```sh
+   sudo install -o root -g root -m 0755 ~/Dev/keporkak/keporkak/scripts/kp /usr/local/bin/kp
+   ```
+
+   Again after a pull that changes `scripts/kp`; the office check says when the installed one differs.
+
+3. **The `sudo` rule**, if it is not in place yet: §2.
+
+4. **Check:**
+
+   ```sh
+   just office-check
+   ```
+
+   `kp`, the `sudo` rule and the service are `ok`; it names the command for anything still to do.
+
+5. **Rehearse** (architecture.md §7). In one ssh session:
+
+   ```sh
+   just rehearse h1-prime
+   ```
+
+   The daemon starts on a throwaway project under `build/rehearsal/`, plays H-1′ with scripted seats, and stops at
+   the line `waiting for Bora's approval: kp inbox, then sudo kp approve <ticket>`. It listens on the office's
+   socket, so with the service running it refuses to start: `just stop` first. In a second session:
+
+   ```sh
+   kp inbox                     # the proposal, its ticket, class B, and the list's three lines
+   sudo kp approve <ticket>     # asks for your password; delivered — the walk goes on
+   sudo kp approve <ticket>     # asks again; refused: the item has had its approval
+   kp approve <ticket>          # no sudo: refused, unsigned — and in the log
+   ```
+
+   The walk then plays on to its next wait — `sudo kp rule <ticket> stage` answers it — and to `exited`. `kp status`
+   shows where it is; `kp check build/rehearsal/<its folder>/mail` re-judges what it wrote. Ctrl-C ends it.
+
+6. **The service.** `just run` starts the office's daemon, `just logs` follows its journal, `just stop` stops it. It
+   works on the project checkout (`~/Dev/keporkak/project`) and writes its log there, under `mail/`: start it when a
+   stage says to. Until the observers and performers of P2–P3 exist it observes only your signed commands, and every
+   operation but `notify.bora` ends `failed`.
+
+`kp` without `sudo` reads (`kp inbox`, `kp status`, `kp check`); with `sudo` it answers (`approve`, `decline`,
+`rule`, `reverse`, `queue`, `away`) — and any command run with `sudo` counts as you acting. `kp help` lists them.
 
 ## 4. The secrets directory
 
@@ -103,8 +155,8 @@ driver builds it at every start of the seat, from the keporkak checkout:
 ~/.local/share/keporkak/seats/<seat>/     0700
 ├── CLAUDE.md          0600  renders/<role>.md, byte for byte
 ├── skills/<name>/           the skills the persona lists, and no other
-├── settings.json      0600  the persona's deny rules as Claude Code's early no; the three hooks of hooks/
-└── permissions.json   0600  the same rules compiled with each border's name; the hooks and the driver answer from it
+├── settings.json      0600  the three hooks of hooks/, and nothing else — no permission rules
+└── permissions.json   0600  the persona's deny rules, compiled with each border's name; the hooks and the driver answer from it
 ```
 
 Those four are replaced at every start; what Claude Code keeps beside them — its sessions, its own `.claude.json`

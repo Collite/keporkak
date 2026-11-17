@@ -6,8 +6,9 @@ It reads and reports only. It installs and changes nothing on the office, and ne
 runs is a version or a read-only query, `gh` runs with DO_NOT_TRACK so it writes no state file — and, for the seats'
 permissions, kp-driver's builder makes every persona's home in a temporary folder it then removes (Gradle compiles
 into the checkout's build/ first), and hooks/deny reads each home's permissions.json.
-Usage: python3 scripts/office-check.py [--pool DIR] [--adapter DIR] [--office NAME] [--homes DIR]
+Usage: python3 scripts/office-check.py [--pool DIR] [--adapter DIR] [--office NAME] [--homes DIR] [--sudoers DIR]
        --office: default the short host name · --homes: read the homes built in DIR instead of building them
+       --sudoers: the folder of sudo's drop-ins, default /etc/sudoers.d
 """
 import argparse
 import json
@@ -224,20 +225,64 @@ def one_line(folder, names):
     return None
 
 
-def check_sudo(report, office):
+# Where kp is installed, and the sudo rule that names it there (office/sudoers.d/zz-keporkak-kp, contracts.md §6).
+KP_TARGET = "/usr/local/bin/kp"
+DROP_IN = "zz-keporkak-kp"
+
+
+def check_kp(report, office):
+    """kp is the checkout's scripts/kp, at the path the sudo rule names, root-owned and not writable by the office user."""
     user = office["user"]
     item = f"kp root-owned and not writable by {user}"
+    install = f"sudo install -o root -g root -m 0755 {ROOT}/scripts/kp {KP_TARGET}"
     path = shutil.which("kp")
     if path is None:
-        report.later(item, "S1.5", "installs kp")
+        report.todo(item, f"no kp on PATH: just install, then {install} (office/README.md §3)")
+        return
+    real = os.path.realpath(path)
+    writable = os.access(real, os.W_OK) or os.access(os.path.dirname(real), os.W_OK)
+    if real != KP_TARGET:
+        report.todo(item, f"the kp on PATH is {real}, not {KP_TARGET}, where the sudo rule names it: {install}, and keep it the only kp on PATH")
+    elif os.stat(real).st_uid != 0 or writable:
+        report.todo(item, f"{install}, and keep it the only kp on PATH")
+    elif Path(real).read_bytes() != (ROOT / "scripts/kp").read_bytes():
+        report.todo(item, f"{KP_TARGET} is not this checkout's scripts/kp: {install}")
     else:
-        real = os.path.realpath(path)
-        writable = os.access(real, os.W_OK) or os.access(os.path.dirname(real), os.W_OK)
-        if os.stat(real).st_uid == 0 and not writable:
-            report.ok(item, real)
-        else:
-            report.todo(item, f"sudo install -o root -g root -m 0755 {real} /usr/local/bin/kp, and keep it the only kp on PATH")
-    report.later("sudo asks every time for kp", "S1.5", "— Bora installs office/sudoers.d/zz-keporkak-kp before it (office/README.md)")
+        report.ok(item, real)
+
+
+def check_sudo_rule(report, folder):
+    """The drop-in that makes sudo ask for kp every time (contracts.md §6) is installed, root's, sorts last. Its content
+    needs sudo to read, which this check never runs: what it reads is the folder's listing and the file's owner, mode and
+    size, set against the template's."""
+    item = "sudo asks every time for kp"
+    template = ROOT / "office/sudoers.d" / DROP_IN
+    install = f"sudo visudo -cf {template} && sudo install -o root -g root -m 0440 {template} {folder}/{DROP_IN} (office/README.md §2)"
+    path = Path(folder) / DROP_IN
+    try:
+        info = path.stat()
+        names = os.listdir(folder)
+    except FileNotFoundError:
+        report.todo(item, f"{path} is not there: {install}")
+        return
+    except OSError as error:
+        report.todo(item, f"{path} cannot be read ({error.strerror}): {install}")
+        return
+    problems = []
+    if (info.st_uid, info.st_gid) != (0, 0):
+        problems.append("it is not root:root's")
+    if stat.S_IMODE(info.st_mode) != 0o440:
+        problems.append(f"its mode is {stat.S_IMODE(info.st_mode):04o}, not 0440")
+    if info.st_size != template.stat().st_size:
+        problems.append("it is not the size of the template")
+    # sudo reads the folder in order and skips names with a dot or ending in ~; for kp, the last rule that matches wins.
+    later = sorted(name for name in names if name > DROP_IN and "." not in name and not name.endswith("~"))
+    if later:
+        problems.append(f"{', '.join(later)} sort{'s' if len(later) == 1 else ''} after it")
+    if problems:
+        report.todo(item, f"{path}: " + "; ".join(problems) + f" — {install}")
+    else:
+        report.ok(item, f"{path}: root:root, 0440, sorts last, the size of office/sudoers.d/{DROP_IN} (reading its content needs sudo)")
 
 
 # Bora's signed command, as a seat would try it (contracts.md §6).
@@ -322,11 +367,17 @@ def check_live_targets(report, office):
 
 
 def check_service(report, office):
+    """The daemon's systemd user unit is loaded, and the launcher it starts is there (`just install`)."""
     user = office["user"]
-    if run(["systemctl", "--user", "show", "keporkak.service", "--property=LoadState", "--value"]) == "loaded":
-        report.ok("systemd user service keporkak.service")
+    item = "systemd user service keporkak.service"
+    if run(["systemctl", "--user", "show", "keporkak.service", "--property=LoadState", "--value"]) != "loaded":
+        report.todo(item, "just install (office/README.md §3)")
     else:
-        report.later("systemd user service keporkak.service", "S1.5", "delivers it (template office/systemd/keporkak.service)")
+        launcher = re.search(r"path=([^ ;]+)", run(["systemctl", "--user", "show", "keporkak.service", "--property=ExecStart", "--value"]) or "")
+        if launcher and not Path(launcher.group(1)).exists():
+            report.todo(item, f"its launcher {launcher.group(1)} is not there: just install (office/README.md §3)")
+        else:
+            report.ok(item, f"loaded; it starts {launcher.group(1)}" if launcher else "loaded")
     if run(["loginctl", "show-user", user, "--property=Linger", "--value"]) == "yes":
         report.ok(f"lingering for {user}")
     else:
@@ -362,6 +413,7 @@ def main():
     parser.add_argument("--adapter", type=Path, default=ROOT / "office/adapter", help="the adapter's folder: its lockfile and node_modules")
     parser.add_argument("--office", default=socket.gethostname().split(".")[0])
     parser.add_argument("--homes", type=Path, help="read the homes built in this folder instead of building them")
+    parser.add_argument("--sudoers", type=Path, default=Path("/etc/sudoers.d"), help="the folder sudo reads its drop-ins from")
     args = parser.parse_args()
     try:
         roster = yaml.load((args.pool / "roster.yaml").read_text(), Loader=PoolLoader)
@@ -376,7 +428,8 @@ def main():
     check_roots(report, office)
     check_project(report, office)
     check_secrets(report, office)
-    check_sudo(report, office)
+    check_kp(report, office)
+    check_sudo_rule(report, args.sudoers)
     check_seat_permissions(report, args.homes)
     check_live_targets(report, office)
     check_service(report, office)
