@@ -15,6 +15,8 @@ import io.kotest.matchers.shouldBe
  * a daemon killed at any step of H-1′ and started again — is S1.10's (D-75).
  */
 class HeroesSpec : FreeSpec({
+    extension(HeroReport) // what `just hero` prints
+
     "H-1′ runs from the proposal to the exit, with its stop and resume, its fix round, and the coder's seat dying and coming back" - {
         val h1 by lazy { autoClose(Hero("h1-prime")) }
 

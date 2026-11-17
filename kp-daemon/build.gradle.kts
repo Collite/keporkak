@@ -31,11 +31,34 @@ application {
 }
 
 // The specs run `scripts/kp` as a subprocess against a rehearsal of a walk: a change to either runs them again.
-tasks.named<Test>("test") {
-    // DaemonProcessSpec starts the daemon through the launcher `just install` installs.
-    dependsOn("installDist")
+fun Test.readsTheCheckout() {
     inputs.files(rootProject.file("scripts/kp")).withPropertyName("kp_client")
     for (folder in listOf("rules", "robots", "pool", "agents")) {
         inputs.files(rootProject.fileTree(folder)).withPropertyName("checkout_$folder").withPathSensitivity(PathSensitivity.RELATIVE)
     }
+}
+
+// The hero specs (S1.6) are `just hero`'s, which `just check` runs: the `test` task leaves them out, so they run once.
+tasks.named<Test>("test") {
+    exclude("kp/daemon/hero/**")
+}
+
+// `just hero` (architecture.md §7): H-1′, H-2′, H-3 and the refusal sweep through the real mailroom. Their report,
+// kp-daemon/build/hero/report.txt, is written by the specs; a run that executes none leaves none, and the recipe fails.
+tasks.register<Test>("hero") {
+    description = "The acceptance specs of phase 1 (S1.6): the hero scenarios and the refusal sweep."
+    group = "verification"
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    include("kp/daemon/hero/**")
+    readsTheCheckout()
+    val report = layout.buildDirectory.file("hero/report.txt")
+    outputs.file(report).withPropertyName("report")
+    doFirst { delete(report) }
+}
+
+tasks.named<Test>("test") {
+    // DaemonProcessSpec starts the daemon through the launcher `just install` installs.
+    dependsOn("installDist")
+    readsTheCheckout()
 }
