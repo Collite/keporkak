@@ -12,6 +12,7 @@ import kp.rules.Kind
 import kp.rules.Literal
 import kp.rules.MessageClass
 import kp.rules.Requirement
+import kp.rules.Robot
 import kp.rules.RuleSet
 import kp.rules.Transition
 import kp.rules.Value
@@ -40,6 +41,19 @@ class Engine(private val rules: RuleSet) {
         val context = Context.of(trigger, state) ?: return Decision.create(Outcome.NOTHING)
         return Judgement(rules, state, context, facts).run()
     }
+
+    /** The facts [react] will read that the table must supply: as [needs], for the robots' files. */
+    fun hears(state: State, trigger: Trigger): List<Need> = RobotNeeds(rules, state, trigger).collect()
+
+    /**
+     * The robots' half (contracts.md §8, architecture.md §1): what each active robot's rules do with [trigger] — a
+     * fact, a delivery, an arrival, an expiry, presence, an operation's result — and, for an arrival, whether a robot
+     * holds it; for a [Trigger.Release], what is released.
+     */
+    fun react(state: State, trigger: Trigger, facts: Facts): Reaction = Reacting(rules, state, trigger, facts).run()
+
+    /** The robots that keep messages now, each as the [Trigger.Release] that asks what of it is released. */
+    fun holders(state: State): List<Trigger.Release> = holders(rules, state)
 }
 
 /** The caps the engine enforces for every kind, by their names in `engagement.yaml:caps` (contracts.md §2.1, §4.1). */
@@ -190,15 +204,7 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
 
     private fun describe(spec: ArgSpec): String = spec.enum?.joinToString(" | ", "one of ") { render(it) } ?: spec.type?.key ?: "valid"
 
-    /**
-     * A kind's class, in contracts.md §4.2's order: its first case that holds; else the class the profile in force
-     * gives the kind; else its default. A profile's word that is not a class (`queue`) leaves the default.
-     */
-    private fun classify(kind: Kind): MessageClass {
-        kind.classRule.cases.firstOrNull { evaluation.holds(it.condition) }?.let { return it.messageClass }
-        val preset = (rules.engagement.autonomyProfiles[rules.engagement.profile]?.get(kind.name) as? Literal.Text)?.value
-        return MessageClass.entries.firstOrNull { it.name == preset } ?: kind.classRule.default
-    }
+    private fun classify(kind: Kind): MessageClass = classOf(rules, kind, evaluation)
 
     /**
      * `on: op-result`, `on: expiry`, `on: fact` — the same evaluation; an expiry adds its kind's `expiry` effects, and
@@ -294,18 +300,22 @@ private fun before(at: String, since: String): Boolean = utc(at).isBefore(utc(si
 private fun plus(at: String, duration: Duration): String =
     utc(at).plusSeconds(duration.inWholeSeconds).atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME).replace("+00:00", "Z")
 
-/** The facts a judgement may read and the table must supply, found by reading the rules, not by judging. */
-private class Needs(private val rules: RuleSet, state: State, private val context: Context) {
-    private val evaluation = Evaluation(rules, state, context, Facts.NONE)
+/**
+ * The facts a judgement may read and the table must supply, found by reading the rules, not by judging. With a
+ * [robot], `{robot: …}` reads its thresholds (contracts.md §8).
+ */
+internal class Needs(private val rules: RuleSet, private val state: State, private val context: Context, robot: Robot? = null) {
+    private val evaluation = Evaluation(rules, state, context, Facts.NONE, robot)
     private val machines = Machines(rules, state)
-    private val needs = LinkedHashSet<Need>()
+    val needs = LinkedHashSet<Need>()
 
     fun collect(): List<Need> {
         needs += Need(NOW, emptyMap())
         val kind = context.kind?.let(rules.kinds::get)
         if (context.event == Event.MESSAGE && kind != null) {
             kind.require.forEach(::requirement)
-            kind.classRule.cases.forEach { requirement(it.condition) }
+            classCases(kind)
+            heldClass()
         }
         if (context.event == Event.EXPIRY && kind != null) kind.expiry.forEach(::effect)
         rules.lifecycle.machines.values.forEach { machine ->
@@ -318,7 +328,17 @@ private class Needs(private val rules: RuleSet, state: State, private val contex
         return needs.toList()
     }
 
-    private fun effect(effect: Effect) {
+    /** What deciding the kind's class reads. */
+    fun classCases(kind: Kind) = kind.classRule.cases.forEach { requirement(it.condition) }
+
+    /** What a `{re: class}` of a held message reads: its kind's class cases, in its own context. */
+    fun heldClass() {
+        val held = context.replyTo?.takeIf { context.replyHeld } ?: return
+        val kind = rules.kinds[held.kind] ?: return
+        needs += Needs(rules, state, evaluation.heldContext(held)).apply { classCases(kind) }.needs
+    }
+
+    fun effect(effect: Effect) {
         effect.condition?.let(::requirement)
         when (effect) {
             is Effect.Emit -> (effect.args.values + effect.to).forEach(::value)
@@ -327,7 +347,7 @@ private class Needs(private val rules: RuleSet, state: State, private val contex
         }
     }
 
-    private fun requirement(requirement: Requirement) {
+    fun requirement(requirement: Requirement) {
         when (requirement) {
             is Requirement.Fact -> { call(requirement.fact); requirement.comparison?.value?.let(::value) }
             is Requirement.Arg -> requirement.comparison?.value?.let(::value)
@@ -341,7 +361,7 @@ private class Needs(private val rules: RuleSet, state: State, private val contex
         }
     }
 
-    private fun value(value: Value) {
+    fun value(value: Value) {
         when (value) {
             is Value.Fact -> call(value.fact)
             is Value.Items -> value.items.forEach(::value)

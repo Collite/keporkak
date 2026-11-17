@@ -68,7 +68,14 @@ internal class Answers(private val evaluation: Evaluation) {
         val since = when (val after = ref.params["since"]) {
             null -> scoped
             is Datum.Text -> scoped.drop(scoped.indexOfLast { it.kind == after.value }.inc())
-            // `{wake: <mode>}` counts from a wake, an `op` record the state does not keep yet (robots, S1.4).
+            // `{wake: <mode>}` counts from the entity's last wake in that mode (contracts.md §4.4, Amendment 2): in a
+            // robot's rule, the robot's own; elsewhere, any entity's last.
+            is Datum.Fields -> {
+                val mode = (after.fields[WAKE] as? Datum.Text)?.value ?: return null
+                val marks = state.wakes.filterKeys { role -> evaluation.robot?.let { it.role == role } ?: true }.values.mapNotNull { it[mode] }
+                val later = state.delivered.keys.drop(marks.maxOrNull() ?: 0).toSet()
+                scoped.filter { it.id in later }
+            }
             else -> return null
         }
         val window = ref.params["window"]?.let { (it as? Datum.Text)?.value?.let(::duration) ?: return null }
@@ -83,6 +90,19 @@ internal class Answers(private val evaluation: Evaluation) {
 
 internal fun phaseOf(stage: String): String = stage.substringBeforeLast('/')
 
+/**
+ * The machine a fact the engine answers is read from, when it is read from one: what a `held` record names as what ends it
+ * (contracts.md §2.2, `held.until`: `presence`).
+ */
+internal fun machineRead(fact: String): String? = when (fact) {
+    "stage.state" -> STAGE_MACHINE
+    "phase.state" -> PHASE_MACHINE
+    "seat.state", "seat.inbox_replayed" -> SEAT_MACHINE
+    "bora.present", "bora.absent_since" -> PRESENCE_MACHINE
+    "thread.state", "thread.open" -> FLAG_MACHINE
+    else -> null
+}
+
 internal const val NOW = "now"
 internal const val BORA = "bora"
 internal const val BORA_CLI = "bora-cli"
@@ -90,3 +110,4 @@ internal const val PRESENT = "present"
 private const val STAGES = "stages"
 private const val BLOCKERS = "blockers"
 private const val ID = "id"
+private const val WAKE = "wake"

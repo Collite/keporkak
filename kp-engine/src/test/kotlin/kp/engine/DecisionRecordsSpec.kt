@@ -134,7 +134,7 @@ class DecisionRecordsSpec : StringSpec({
             (words intersect kinds).map { "$file: $it" }
         }
 
-        sources.size shouldBe 10
+        sources.size shouldBe 11
         numbers shouldBe emptyList()
         kindNames shouldBe emptyList()
     }

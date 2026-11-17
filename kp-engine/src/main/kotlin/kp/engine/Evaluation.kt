@@ -3,12 +3,15 @@ package kp.engine
 import kp.model.utc
 import kp.rules.Comparison
 import kp.rules.FactCall
+import kp.rules.Kind
 import kp.rules.Literal
+import kp.rules.MessageClass
 import kp.rules.MessageField
 import kp.rules.Operator
 import kp.rules.PoolFile
 import kp.rules.ReplyField
 import kp.rules.Requirement
+import kp.rules.Robot
 import kp.rules.RuleSet
 import kp.rules.Scope
 import kp.rules.Source
@@ -22,7 +25,7 @@ import kotlin.time.DurationUnit
  * and the table of facts. It remembers every fact it read and which the table did not supply, and the counters the
  * judgement has moved so far.
  */
-internal class Evaluation(val rules: RuleSet, val state: State, val context: Context, private val facts: Facts) {
+internal class Evaluation(val rules: RuleSet, val state: State, val context: Context, private val facts: Facts, val robot: Robot? = null) {
     val observed = LinkedHashMap<String, Datum>()
     val unsupplied = LinkedHashSet<FactRef>()
     /** Counter → its new value, for every counter this judgement moved. */
@@ -78,9 +81,10 @@ internal class Evaluation(val rules: RuleSet, val state: State, val context: Con
         is Value.Reply -> reply(value.field)
         is Value.Pool -> pool(value.file, value.path)
         is Value.Engagement -> rules.engagement.values[value.path]?.let(::literal)
-        is Value.Robot -> senderRobot()?.thresholds?.get(value.threshold)?.let(::literal)
-        // A field of what triggered a robot's rule: robots are S1.4's.
-        is Value.Trigger -> null
+        // In a robot's rule, its own thresholds (contracts.md §8); elsewhere, those of the robot file of the kind's sender.
+        is Value.Robot -> (robot ?: senderRobot())?.thresholds?.get(value.threshold)?.let(::literal)
+        // A field of what triggered a robot's rule — its seat, stage, sender, or a path into its `args`.
+        is Value.Trigger -> value.path.split('.').fold(context.trigger as Datum?) { at, key -> (at as? Datum.Fields)?.fields?.get(key) }
     }
 
     private fun arg(path: String): Datum? = path.split('.').fold(context.args as Datum?) { at, key -> (at as? Datum.Fields)?.fields?.get(key) }
@@ -97,11 +101,18 @@ internal class Evaluation(val rules: RuleSet, val state: State, val context: Con
     private fun reply(field: ReplyField): Datum? = context.replyTo?.let {
         Datum.Text(when (field) {
             ReplyField.KIND -> it.kind
-            ReplyField.CLASS -> it.messageClass
+            ReplyField.CLASS -> if (context.replyHeld) heldClass(it)?.name ?: return null else it.messageClass
             ReplyField.FROM -> it.from
             ReplyField.TO -> it.to
         })
     }
+
+    /** A held message has no class on the log yet: the one it would go under now, read in its own context. */
+    private fun heldClass(held: Delivery): MessageClass? = rules.kinds[held.kind]?.let { kind ->
+        classOf(rules, kind, Evaluation(rules, state, heldContext(held), facts, robot).also { observed.putAll(it.observed); unsupplied.addAll(it.unsupplied) })
+    }
+
+    fun heldContext(held: Delivery) = Context(kp.rules.Event.MESSAGE, held.kind, held.view(), held.re?.let(state.delivered::get))
 
     /** `{roster: …}` and `{budget: …}` from their one file; `{office: …}` from this office's entry — the office in the message's id. */
     private fun pool(file: PoolFile, path: String): Datum? {
@@ -143,6 +154,16 @@ internal class Evaluation(val rules: RuleSet, val state: State, val context: Con
     }
 
     fun answeredByEngine(name: String): Boolean = rules.vocabulary.facts[name]?.sources == setOf(Source.L)
+}
+
+/**
+ * A kind's class, in contracts.md §4.2's order: its first case that holds; else the class the profile in force gives
+ * the kind; else its default. A profile's word that is not a class (`queue`) leaves the default.
+ */
+internal fun classOf(rules: RuleSet, kind: Kind, evaluation: Evaluation): MessageClass {
+    kind.classRule.cases.firstOrNull { evaluation.holds(it.condition) }?.let { return it.messageClass }
+    val preset = (rules.engagement.autonomyProfiles[rules.engagement.profile]?.get(kind.name) as? Literal.Text)?.value
+    return MessageClass.entries.firstOrNull { it.name == preset } ?: kind.classRule.default
 }
 
 /** A role owns a sender when the sender is the role, or a seat of it: `<role>-<n or office>` (contracts.md §1). */
