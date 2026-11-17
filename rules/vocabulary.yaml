@@ -218,6 +218,10 @@ facts:
     params: seat
     returns: bool
     source: L
+  seat.stop_blocks:
+    params: seat
+    returns: int — consecutive blocks of the stop gate in the seat's turn; written once, at the cap
+    source: O
   pool.seat_available:
     params: role, level
     returns: bool

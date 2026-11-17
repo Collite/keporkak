@@ -197,10 +197,14 @@ what_no_guard_holds:  # RV-14, stated so nobody assumes otherwise
 - 'read-exfiltration by a seat (06b): reads are unrestricted in every vendor mode'
 - 'only QA touches the live target and opens a browser: a rule, not a fence (D-31)'
 - 'a seat-gone during a long silent command: the watchdog treats an open in_progress tool call as busy'
-stop_gate:
+stop_gate:  # v1 has one requirement (contracts.md §4.3, D-66); {trigger: seat} is the seat whose turn is ending
+  rule: a turn ends only when the seat has no unread mail
   max_consecutive_blocks:
     cap: stop_gate_blocks
-  require: []
+  require:
+  - fact: seat.inbox_replayed
+    seat:
+      trigger: seat
 permissions:  # what a request no deny: word covers gets (contracts.md §4.3, §10); a request that names no path gets no default
   write_inside: allow  # a write inside what the session may write: its working directory, its scratch, its own file
   write_outside: deny

@@ -465,7 +465,8 @@ internal fun readEngagement(doc: Doc, node: Node): Engagement? {
     val stopGate = doc.mapping(fields["stop_gate"], null, "stop_gate")?.let { doc.fields(it, "stop_gate") }?.let { read ->
         val forms = Forms(doc, "stop_gate")
         val blocks = read["max_consecutive_blocks"]?.let { forms.value(it) }
-        StopGate(blocks ?: Value.Constant(Literal.Null).also { doc.problem("stop_gate", "max_consecutive_blocks names its cap") },
+        StopGate(read["rule"]?.let { doc.text(it, "stop_gate", "rule") },
+            blocks ?: Value.Constant(Literal.Null).also { doc.problem("stop_gate", "max_consecutive_blocks names its cap") },
             forms.requirements(read["require"])).also { read.close() }
     }
     val permissions = fields["permissions"]?.let { doc.textMap(it, null, "permissions") } ?: emptyMap()

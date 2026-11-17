@@ -108,7 +108,11 @@ data class Presence(val idleHoursToAbsent: Duration?, val signals: List<String>,
 
 data class SecondKey(val rule: String?, val require: List<Requirement>, val otherwise: MessageClass)
 
-data class StopGate(val maxConsecutiveBlocks: Value, val require: List<Requirement>)
+/**
+ * `engagement.yaml:stop_gate` (contracts.md §4.3, §11): [rule], the prose a block quotes; the cap on consecutive
+ * blocks; the requirements under which a turn may not end yet — `{trigger: seat}` is the seat whose turn is ending.
+ */
+data class StopGate(val rule: String?, val maxConsecutiveBlocks: Value, val require: List<Requirement>)
 
 data class EngagementQa(
     val instancesPerOffice: Int,

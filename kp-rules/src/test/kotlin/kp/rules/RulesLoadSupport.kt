@@ -65,6 +65,7 @@ fun fixtureFiles(given: YamlMap): Map<String, String> {
     fun part(key: String): String = given.get<YamlNode>(key)?.let(::jsonOf) ?: defaults.getValue(key)
     val robots = given.get<YamlList>("robots")?.items.orEmpty()
     val secondKey = given.get<YamlNode>("second_key")?.let { """, "second_key": ${jsonOf(it)}""" }.orEmpty()
+    val stopGate = given.get<YamlNode>("stop_gate")?.let { """, "stop_gate": ${jsonOf(it)}""" }.orEmpty()
     val profile = given.get<YamlNode>("profile")?.let(::jsonOf) ?: "\"supervised\""
     val profiles = given.get<YamlNode>("autonomy_profiles")?.let(::jsonOf) ?: """{"supervised": {}}"""
     val declared = given.get<YamlNode>("mailroom_declared_effects")?.let(::jsonOf) ?: "[]"
@@ -76,7 +77,7 @@ fun fixtureFiles(given: YamlMap): Map<String, String> {
         // The roles master's pool files name besides — the roster reserves a model for the principal — so that the pool,
         // which no fixture is about, raises nothing.
         "rules/engagement.yaml" to """{"version": 1, "roles": {"coder": {}, "teamlead": {}, "principal": {}}, "graduation": {"never": []},
-            "mailroom_declared_effects": $declared, "caps": ${part("caps")}, "profile": $profile, "autonomy_profiles": $profiles$secondKey}""",
+            "mailroom_declared_effects": $declared, "caps": ${part("caps")}, "profile": $profile, "autonomy_profiles": $profiles$secondKey$stopGate}""",
         "rules/vocabulary.yaml" to vocabulary,
     ) + robots.mapIndexed { index, robot -> "robots/fixture-$index.yaml" to jsonOf(robot) }
 }
