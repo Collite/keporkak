@@ -176,6 +176,18 @@ class Mailroom private constructor(
     }
 
     /**
+     * The messages of the thread [id] (contracts.md §5), in the order they were delivered — shown only to a seat that
+     * sent, received or was copied on one of them; null otherwise, as for a thread that is not on the log. Nothing is
+     * marked read: only the inbox does that.
+     */
+    @Synchronized
+    fun thread(seat: String, id: String): List<Message>? {
+        val delivered = folded.delivered.values.filter { it.thread == id }
+        val received = addressed[seat].orEmpty().toSet()
+        return delivered.takeIf { all -> all.any { it.from == seat || it.id in received } }?.map { messages.getValue(it.id) }
+    }
+
+    /**
      * Fires every deadline the clock has passed, earliest first (architecture.md §3: deadlines are timers on the clock).
      * The timers are the state's open waits — what the log says, so they are rebuilt by any start. Each wait is looked
      * at again before it fires: what an earlier expiry carried may have ended it or moved it.

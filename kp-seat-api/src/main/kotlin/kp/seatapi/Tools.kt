@@ -7,10 +7,13 @@ import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 import kp.mailroom.Mailroom
 import kp.mailroom.Offer
@@ -36,6 +39,32 @@ internal class Tools(private val mailroom: Mailroom) {
             schema(REPLIED, required = listOf(RE, KIND))) { request ->
             reply(binding, request.arguments ?: EMPTY)
         }
+        addTool(INBOX, "Your mail, oldest first: unread only unless `unread` is false, at most `limit`. Returning a message marks it read. Call it first.",
+            schema(listOf(UNREAD, LIMIT), required = emptyList())) { request ->
+            inbox(binding, request.arguments ?: EMPTY)
+        }
+        addTool(THREAD, "The messages of a thread, in order — only a thread you sent, received or were copied on a message of.",
+            schema(listOf(ID), required = listOf(ID))) { request ->
+            thread(binding, request.arguments ?: EMPTY)
+        }
+    }
+
+    /** `inbox` (contracts.md §5) as the mailroom gives it: `{messages, more}`; what it returns is read from now on. */
+    private fun inbox(binding: Binding, arguments: JsonObject): CallToolResult {
+        val unread = arguments[UNREAD]?.takeIf { it !is JsonNull }?.let { (it as? JsonPrimitive)?.takeIf { p -> !p.isString }?.booleanOrNull ?: return error(UNREAD, "not true or false") }
+        val limit = arguments[LIMIT]?.takeIf { it !is JsonNull }?.let { value ->
+            (value as? JsonPrimitive)?.takeIf { !it.isString }?.intOrNull?.takeIf { it > 0 } ?: return error(LIMIT, "not a whole number above zero")
+        }
+        val inbox = mailroom.inbox(binding.seat, unread = unread ?: true, limit = limit)
+        return answer(buildJsonObject { put(MESSAGES, JsonArray(inbox.messages.map { it.json })); put(MORE, inbox.more) })
+    }
+
+    /** `thread` (contracts.md §5): its messages, only to a party of it — to any other seat as if it did not exist. */
+    private fun thread(binding: Binding, arguments: JsonObject): CallToolResult {
+        val id = (arguments[ID] as? JsonPrimitive)?.takeIf { it.isString && MESSAGE_ID.matches(it.content) }?.content
+            ?: return error(ID, "not a message id (${MESSAGE_ID.pattern})")
+        val messages = mailroom.thread(binding.seat, id) ?: return error(ID, "no thread $id that ${binding.seat} is a party to")
+        return answer(buildJsonObject { put(MESSAGES, JsonArray(messages.map { it.json })) })
     }
 
     /**
@@ -76,6 +105,13 @@ private val EMPTY = JsonObject(emptyMap())
 
 private const val SEND = "send"
 private const val REPLY = "reply"
+private const val INBOX = "inbox"
+private const val THREAD = "thread"
+private const val UNREAD = "unread"
+private const val LIMIT = "limit"
+private const val ID = "id"
+private const val MESSAGES = "messages"
+private const val MORE = "more"
 private const val KIND = "kind"
 private const val TO = "to"
 private const val STAGE = "stage"
@@ -98,4 +134,10 @@ private val TYPES: Map<String, JsonObject> = mapOf(
     POINTERS to buildJsonObject { put("type", "array"); put("items", buildJsonObject { put("type", "string") }) },
     ARGS to buildJsonObject { put("type", "object"); put("description", "the kind's typed parameters") },
     RE to buildJsonObject { put("type", "string"); put("description", "the id of the message this answers") },
+    UNREAD to buildJsonObject { put("type", "boolean"); put("description", "unread only (the default), or every message delivered to you") },
+    LIMIT to buildJsonObject { put("type", "integer"); put("minimum", 1) },
+    ID to buildJsonObject { put("type", "string"); put("description", "the thread's id: the id of its first message") },
 )
+
+/** A message's id (contracts.md §1). */
+private val MESSAGE_ID = Regex("^m-[a-z0-9]+-[0-9]{6,}$")

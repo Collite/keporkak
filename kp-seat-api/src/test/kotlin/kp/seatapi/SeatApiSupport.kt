@@ -79,6 +79,9 @@ class SpecFacts : FactSource {
     override fun observe(fact: FactRef, stage: String?): Datum? = when (fact.name) {
         "seat.name" -> (fact.params["of"] as? Datum.Text)?.value?.let { seats[it] ?: it }?.let(Datum::Text)
         "git.branch_exists" -> Datum.Bool(true)
+        "list.stop_conditions" -> Datum.of((1..10).map { "SC-$it" })
+        // Above the Pool Manager's `context_health`: what lets its seat send `compact` to another seat.
+        "seat.context_used" -> Datum.of(0.9)
         else -> null
     }
 }
