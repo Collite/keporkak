@@ -167,6 +167,12 @@ class HeroesSpec : FreeSpec({
                 "git.merge ok · tail passed→merged",
             )
             h2.log().messages("digest").size shouldBe 1
+            h2.kp("status", "REHEARSAL").text.lines().filter { it.startsWith("Bora") || it.startsWith("stage") } shouldBe listOf(
+                "Bora: present",
+                "stage REHEARSAL/P0/S0.1: merged · merge_attempts 1",
+                "stage REHEARSAL/P2/S2.2: in_review · proposals 1 · review_requests 1",
+                "stage REHEARSAL/P2/S2.3: fix_round · fix_rounds 2",
+            )
         }
     }
 
@@ -206,9 +212,12 @@ class HeroesSpec : FreeSpec({
                 "register.rebuild ok · S3.2 deployed→deployed · asks project.commit_push",
                 "project.commit_push ok · S3.2 deployed→exited · seat coder-1 busy→idle",
             )
+            h3.kp("status", h3.stage()).text.lines() shouldContain "stage REHEARSAL/P3/S3.2: exited · proposals 1 · review_requests 1 · merge_attempts 1 · release_attempts 1"
+            h3.kp("inbox").text shouldBe "nothing waits for Bora\n"
         }
         "had the smoke failed: QA's word alone is refused; QA rolls back to the previous pin by itself → deploy-failed → tail_failed, Bora's" {
-            autoClose(Hero("h3-rollback")).rest() shouldBe listOf(
+            val rollback = autoClose(Hero("h3-rollback"))
+            rollback.rest() shouldBe listOf(
                 "deploy-request teamlead→qa, bora: held by robot:QA-6",
                 "deploy-request teamlead→qa, bora let go: delivered, class C",
                 "roll qa→daemon, bora: delivered, class C · S3.2-rollback released→released · asks gitops.roll",
@@ -218,6 +227,7 @@ class HeroesSpec : FreeSpec({
                 "gitops.revert ok · S3.2-rollback released→released (rollbacks_completed 1)",
                 "deploy-failed qa→teamlead, bora: delivered, class C · S3.2-rollback released→tail_failed",
             )
+            rollback.kp("status", rollback.stage()).text.lines() shouldContain "stage REHEARSAL/P3/S3.2: tail_failed · rollbacks_completed 1"
         }
         "a stage with a live DONE and nothing to roll: after the merge, a stale candidate head is refused, the verified one exits — no release, no deploy (D-42)" {
             val noRoll = autoClose(Hero("no-roll-live"))
@@ -229,6 +239,7 @@ class HeroesSpec : FreeSpec({
                 "register.rebuild ok · S3.2-no-roll-live merged→merged · asks project.commit_push",
                 "project.commit_push ok · S3.2-no-roll-live merged→exited · seat coder-1 busy→idle",
             )
+            noRoll.kp("status", noRoll.stage()).text.lines() shouldContain "stage REHEARSAL/P3/S3.2: exited · proposals 1 · review_requests 1 · merge_attempts 1"
         }
     }
 
