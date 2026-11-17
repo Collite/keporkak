@@ -47,7 +47,36 @@ internal class Tools(private val mailroom: Mailroom) {
             schema(listOf(ID), required = listOf(ID))) { request ->
             thread(binding, request.arguments ?: EMPTY)
         }
+        addTool(WHOAMI, "Who you are: your seat, role, office, stage, model and effort; each kind you may send — to whom, what answers it, " +
+            "its deadline, its window and how many are left in it; and the threads that wait for you or that you wait on.",
+            schema(emptyList(), required = emptyList())) { _ ->
+            whoami(binding)
+        }
     }
+
+    /**
+     * `whoami` (contracts.md §5): the seat and what was bound with its token; `allowed`, asked of the engine through the
+     * mailroom — no kind's name is in this source; `open`, the threads with a wait for the seat or on it.
+     */
+    private fun whoami(binding: Binding): CallToolResult = answer(buildJsonObject {
+        put(SEAT, binding.seat)
+        put(ROLE, binding.role)
+        put(OFFICE, binding.office)
+        put(STAGE, binding.stage)
+        put(MODEL, binding.model)
+        put(EFFORT, binding.effort)
+        put(ALLOWED, JsonArray(mailroom.allowed(binding.seat, binding.stage).map { kind ->
+            buildJsonObject {
+                put(KIND, kind.kind)
+                put(TO, kind.to)
+                put(REPLY_KINDS, JsonArray(kind.replies.map(::JsonPrimitive)))
+                put(DEADLINE, kind.deadline)
+                put(WINDOW, kind.window)
+                put(LEFT, kind.left)
+            }
+        }))
+        put(OPEN, JsonArray(mailroom.open(binding.seat).map(::JsonPrimitive)))
+    })
 
     /** `inbox` (contracts.md §5) as the mailroom gives it: `{messages, more}`; what it returns is read from now on. */
     private fun inbox(binding: Binding, arguments: JsonObject): CallToolResult {
@@ -112,6 +141,19 @@ private const val LIMIT = "limit"
 private const val ID = "id"
 private const val MESSAGES = "messages"
 private const val MORE = "more"
+private const val WHOAMI = "whoami"
+private const val SEAT = "seat"
+private const val ROLE = "role"
+private const val OFFICE = "office"
+private const val MODEL = "model"
+private const val EFFORT = "effort"
+private const val ALLOWED = "allowed"
+/** `whoami`'s name for what answers a kind (contracts.md §5): the kinds the rules list under `replies`. */
+private const val REPLY_KINDS = "reply"
+private const val DEADLINE = "deadline"
+private const val WINDOW = "window"
+private const val LEFT = "left"
+private const val OPEN = "open"
 private const val KIND = "kind"
 private const val TO = "to"
 private const val STAGE = "stage"

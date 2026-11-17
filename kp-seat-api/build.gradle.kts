@@ -13,6 +13,8 @@ dependencies {
     testImplementation(project(":kp-log"))
     testImplementation(libs.mcp.client)
     testImplementation(libs.ktor.client.cio)
+    // The specs read rules/message-kinds.yaml: no kind's name may be in the API's or the engine's source (S2.3 DONE).
+    testImplementation(libs.kaml)
     testImplementation(libs.kotest)
     testImplementation(libs.kotest.assertions)
     testRuntimeOnly(libs.junit.platform.launcher)

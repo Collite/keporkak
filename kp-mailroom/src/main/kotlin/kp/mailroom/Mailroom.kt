@@ -72,6 +72,12 @@ sealed interface Reload {
 /** What a seat's inbox returns (contracts.md §5): its messages, and whether more are left. */
 data class Inbox(val messages: List<Message>, val more: Boolean)
 
+/**
+ * A kind a seat may send (contracts.md §5, `whoami`'s `allowed`): to whom, the kinds that answer it, its deadline as the
+ * rules write it, its window, and how many firings are left in it — null when nothing counts it.
+ */
+data class Allowed(val kind: String, val to: String, val replies: List<String>, val deadline: String?, val window: String, val left: Long?)
+
 /** The mailroom would not start: the log or the rules are not fit to work from. */
 class MailroomRefusal(message: String) : RuntimeException(message)
 
@@ -185,6 +191,25 @@ class Mailroom private constructor(
         val delivered = folded.delivered.values.filter { it.thread == id }
         val received = addressed[seat].orEmpty().toSet()
         return delivered.takeIf { all -> all.any { it.from == seat || it.id in received } }?.map { messages.getValue(it.id) }
+    }
+
+    /**
+     * Each kind [seat] may send about [stage] (contracts.md §5, `whoami`): to whom, what answers it, its deadline, its
+     * window and how many firings are left in it now — asked of the engine, which reads the rules and the state.
+     */
+    @Synchronized
+    fun allowed(seat: String, stage: String?): List<Allowed> = Engine(rules).allowed(folded, seat, stage, now()).map {
+        Allowed(it.kind, it.to, it.replies, it.deadline, it.window, it.left)
+    }
+
+    /**
+     * The threads with an open wait (contracts.md §2.2) that waits for [seat] — a message delivered to it — or that it
+     * waits on — a message it sent; each once, in the order the waits opened.
+     */
+    @Synchronized
+    fun open(seat: String): List<String> {
+        val received = addressed[seat].orEmpty().toSet()
+        return folded.deadlines.filter { (id, wait) -> wait.from == seat || id in received }.keys.mapNotNull { messages[it]?.thread?.value }.distinct()
     }
 
     /**
