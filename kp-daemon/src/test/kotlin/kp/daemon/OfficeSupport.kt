@@ -14,6 +14,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import kotlin.io.path.copyTo
+import kotlin.io.path.copyToRecursively
 import kotlin.io.path.createDirectories
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
@@ -74,6 +75,28 @@ object NoSeats : Deliveries {
 }
 
 fun json(text: String): JsonObject = Json.parseToJsonElement(text).jsonObject
+
+/**
+ * A project whose daemon was killed after line [cut] (S1.10): an office on a throwaway project carries [what], and every
+ * line after [cut] is taken off its files again — what a kill there leaves on disk. A [TestOffice] started on it voids
+ * the judgement it ends in and carries that judgement's first line again.
+ */
+fun killedAfter(cut: Long, what: (TestOffice) -> Unit): Path {
+    val project = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "killed-")
+    TestOffice(project = project).use(what)
+    return project.also { keepLines(it) { seq -> seq <= cut } }
+}
+
+/** A copy of [project] whose log has no line of [seqs]. */
+@OptIn(kotlin.io.path.ExperimentalPathApi::class)
+fun copyWithout(project: Path, seqs: Set<Long>): Path = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "without-").also { copy ->
+    project.resolve("mail").copyToRecursively(copy.resolve("mail"), followLinks = false, overwrite = false)
+    keepLines(copy) { it !in seqs }
+}
+
+private fun keepLines(project: Path, keep: (Long) -> Boolean) = project.resolve("mail").toFile().walk().filter { it.isFile && it.name.endsWith(".jsonl") }.forEach { file ->
+    file.writeText(file.readLines().filter { keep(Json.parseToJsonElement(it).jsonObject.getValue("seq").toString().toLong()) }.joinToString("") { "$it\n" })
+}
 
 /** The TeamLead's proposal of `h1-prime.yaml`, for [stage]. */
 fun proposal(stage: String = "KP/P2/S2.1") =

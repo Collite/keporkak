@@ -33,6 +33,17 @@ class AnsweringSpec : FreeSpec({
         }
     }
 
+    "kp rule carries each key=value word after the outcome as one more arg, and the words after them as its text" {
+        TestOffice().use { office ->
+            office.send("teamlead", proposal())
+
+            office.kp("rule", "4", "resume", "seat=coder-1", "cause=anomaly", "the anomaly", "is=cleared", peer = ROOT)
+
+            office.messages().single { it.kind == "ruling" }.let { listOf(it.args.toString(), it.body) } shouldBe
+                listOf("""{"outcome":"resume","seat":"coder-1","cause":"anomaly"}""", "the anomaly is=cleared")
+        }
+    }
+
     "an unsigned answer is refused and logged, and kp says how to sign it; a refusal exits 1" {
         TestOffice().use { office ->
             office.send("teamlead", proposal())
@@ -49,7 +60,7 @@ class AnsweringSpec : FreeSpec({
             val before = office.messages().size
 
             office.kp("approve", "42", peer = ROOT) shouldBe Ran(1, "kp: no ticket #42 — kp inbox --all lists them\n")
-            office.kp("rule", "3", peer = ROOT) shouldBe Ran(2, "kp: kp rule <ticket> <outcome> [text]\n")
+            office.kp("rule", "3", peer = ROOT) shouldBe Ran(2, "kp: kp rule <ticket> <outcome> [key=value …] [text]\n")
             office.kp("approve", "three", peer = ROOT) shouldBe Ran(2, "kp: kp approve <ticket>\n")
             office.kp("away", "now", peer = ROOT) shouldBe Ran(2, "kp: kp away\n")
             office.messages().size shouldBe before

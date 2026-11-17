@@ -48,6 +48,19 @@ class CheckSpec : FreeSpec({
         }
     }
 
+    "over a log with a voided judgement, kp check skips the voided lines, says how many, and finds no difference for it" {
+        // The proposal's judgement: its message (3), delivered (4), transition (5), notify.bora requested (6), judged (7).
+        val project = killedAfter(cut = 5) { it.send("teamlead", proposal()) }
+
+        TestOffice(project = project).use { office ->
+            val check = office.kp("check", project.resolve("mail").toString())
+
+            check.code shouldBe 0
+            check.text.lines() shouldContain "2 voided lines skipped: a start voided the judgement they were in, and they count for nothing"
+            check.text.lines() shouldContain "1 message re-judged: every recorded outcome is reproduced"
+        }
+    }
+
     "a log written under another rule set says so before its differences" {
         TestOffice().use { office ->
             office.send("teamlead", proposal())

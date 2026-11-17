@@ -65,6 +65,18 @@ class ReadingSpec : FreeSpec({
         }
     }
 
+    "kp status is unchanged by a voided judgement's lines: it says what the log without them says" {
+        // Killed after the proposal's transition (5): the start voids its delivered record (4) and the transition.
+        val project = killedAfter(cut = 5) { it.send("teamlead", proposal()) }
+        TestOffice(project = project).close()
+        val withoutTheVoided = copyWithout(project, seqs = setOf(4L, 5L))
+
+        val status = TestOffice(project = project).use { it.kp("status").text }
+
+        TestOffice(project = withoutTheVoided).use { it.kp("status").text } shouldBe status
+        status shouldContain "stage KP/P2/S2.1: proposed · proposals 1"
+    }
+
     "with nothing open the inbox says so" {
         TestOffice().use { office -> office.kp("inbox").text shouldBe "nothing waits for Bora\n" }
     }

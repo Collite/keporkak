@@ -28,8 +28,11 @@ class KpCommands(private val office: Office, world: FactSource) : Commands {
             "check" -> if (args.isEmpty()) usage(out, "kp check <log…>") else Check(office.rules).run(args.map { java.nio.file.Path.of(it) }).let { (lines, code) -> code.also { lines.forEach(out::line) } }
             "approve" -> answer(out, peer, args, 1..1, "kp approve <ticket>") { item -> message(APPROVAL, item) }
             "decline" -> answer(out, peer, args, 1..Int.MAX_VALUE, "kp decline <ticket> [reason]") { item -> message(DECLINE, item, body = args.drop(1)) }
-            "rule" -> answer(out, peer, args, 2..Int.MAX_VALUE, "kp rule <ticket> <outcome> [text]") { item ->
-                message(RULING, item, mapOf(OUTCOME to JsonPrimitive(args[1])), body = args.drop(2))
+            "rule" -> answer(out, peer, args, 2..Int.MAX_VALUE, "kp rule <ticket> <outcome> [key=value …] [text]") { item ->
+                // Each key=value word after the outcome is one more arg (contracts.md §6, Amendment 23); the words after them are the text.
+                val pairs = args.drop(2).takeWhile { KEY_VALUE.matches(it) }
+                val extra = pairs.associate { it.substringBefore('=') to JsonPrimitive(it.substringAfter('=')) }
+                message(RULING, item, mapOf(OUTCOME to JsonPrimitive(args[1])) + extra.filterKeys { it != OUTCOME }, body = args.drop(2 + pairs.size))
             }
             "reverse" -> reverse(out, peer, args)
             "queue" -> if (args.isEmpty()) usage(out, "kp queue <stage>…")
@@ -123,6 +126,8 @@ class KpCommands(private val office: Office, world: FactSource) : Commands {
         const val QUEUE_APPROVAL = "queue-approval"
         const val AWAY = "away"
         const val OUTCOME = "outcome"
+        /** A word `kp rule` carries as an arg: a name as the rules write an arg's, `=`, and its value. */
+        val KEY_VALUE = Regex("^[a-z][a-z_]*=.+$")
         const val STAGES = "stages"
         const val DIGEST_ITEM = "digest_item"
         const val SEVERITY = "severity"
@@ -141,7 +146,7 @@ class KpCommands(private val office: Office, world: FactSource) : Commands {
             "kp check <log…>                    re-judges log files and prints every difference",
             "sudo kp approve <ticket>           approval on that item",
             "sudo kp decline <ticket> [reason]  decline",
-            "sudo kp rule <ticket> <outcome> [text]",
+            "sudo kp rule <ticket> <outcome> [key=value …] [text]",
             "sudo kp reverse <digest item> minor|serious",
             "sudo kp queue <stage>…             queue-approval for the current wave",
             "sudo kp away",
