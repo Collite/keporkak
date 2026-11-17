@@ -1,0 +1,27 @@
+# S1.9 T1 — Bora goes away with nothing queued; the TeamLead's proposal arrives and the Deputy holds it (DEP-1). While
+# it is held the stage's list loses its fence, so the proposal is refused when Bora's return lets it go.
+name: held-then-refused
+stage: S2.1
+seats:
+  coder-1: coder
+facts:
+  plan.predecessors_exited: true
+  pool.seat_available: true
+  budget.slot_open: true
+  list.fence_complete: true
+  list.tasks_total: 8
+  list.lines: 90
+steps:
+- who: bora
+  kind: away
+  signed: bora
+  args: {}
+- id: proposal
+  who: teamlead
+  kind: assignment-proposal
+  args:
+    role: coder
+    level: senior
+    seat: coder-1
+- facts:
+    list.fence_complete: false

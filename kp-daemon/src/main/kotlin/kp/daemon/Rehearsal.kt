@@ -29,7 +29,8 @@ import java.util.concurrent.ConcurrentLinkedDeque
  * keeps answering `kp` until the rehearsal is closed.
  */
 class Rehearsal private constructor(private val walk: Walk, private val stage: String, private val daemon: Daemon, private val facts: TableFacts, private val out: (String) -> Unit) : AutoCloseable {
-    private val office: Office get() = daemon.office
+    /** The office the daemon runs: what a spec fires the deadlines of once it has moved the clock. */
+    internal val office: Office get() = daemon.office
     private val ids = ConcurrentHashMap<String, String>()
     private val lock = Object()
     private var pauses = 0
@@ -182,22 +183,24 @@ class Rehearsal private constructor(private val walk: Walk, private val stage: S
         /**
          * Rehearses [walk] on the throwaway project [project] as office [office]: its seats start `ready`, the daemon
          * starts with the walk's facts and listens on [socket], and the walk is played until it needs Bora. [out] hears
-         * what happens.
+         * what happens. [clock] is the wall clock unless a spec moves it.
          */
-        fun start(root: Path, walk: Path, project: Path, office: String, socket: Path, peers: PeerReader, out: (String) -> Unit): Rehearsal {
+        fun start(
+            root: Path, walk: Path, project: Path, office: String, socket: Path, peers: PeerReader,
+            clock: Clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }, out: (String) -> Unit,
+        ): Rehearsal {
             val read = Walk.read(walk)
             val stage = "$EFFORT/P${read.stage.removePrefix("S").substringBefore('.')}/${read.stage}"
-            seatsReady(project, office, read.seats.keys)
+            seatsReady(project, office, read.seats.keys, clock)
             val facts = TableFacts(read.facts)
-            val clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }
             val started = Office.start(office, project, root, facts, ScriptedOperations(read, facts), ScriptedSeats(read.seats.keys), clock)
             val daemon = Daemon.start(started, facts, socket, peers)
             return Rehearsal(read, stage, daemon, facts, out).also { it.player.start() }
         }
 
         /** The walk's seats, `ready` before the walk begins — what an earlier part of the log would have left. */
-        private fun seatsReady(project: Path, office: String, seats: Set<String>) = LogWriter.open(project, OfficeId(office)).use { log ->
-            val at = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()
+        private fun seatsReady(project: Path, office: String, seats: Set<String>, clock: Clock) = LogWriter.open(project, OfficeId(office)).use { log ->
+            val at = clock.now().truncatedTo(ChronoUnit.SECONDS).toString()
             seats.forEach { seat ->
                 log.append(Json.parseToJsonElement("""{"v":1,"at":"$at","event":"transition","machine":"seat","subject":"$seat","from":"provisioned","to":"ready","cause":"rehearsal"}""").jsonObject)
             }
