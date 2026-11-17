@@ -36,6 +36,19 @@ class HoldsSpec : StringSpec({
         office.stage() shouldBe "merged"
     }
 
+    "a deploy the Deputy kept goes to QA's queue when it is let go, and waits there its turn" {
+        val office = Office(walk = "H-3", others = mapOf("KP/P3/S3.1" to "building", "KP/P3/S3.3" to "released"), robots = true, at = "2026-11-13T22:00:00Z")
+        office.facts.set("KP/P3/S3.1", "live.namespace_absent", false)
+        office.send("coder-1", """{"kind": "qa-request", "stage": "KP/P3/S3.1", "args": {"task": "T5", "done": "D1", "verify": "the candidate"}}""")
+        office.bora("""{"kind": "away"}""")
+
+        val deploy = office.send("teamlead", """{"kind": "deploy-request", "stage": "KP/P3/S3.3", "args": {"pin": "image-head-1", "smoke": "the stage smoke"}}""")
+        office.command(signed = true)
+
+        office.readBack().records<Held>().filter { it.id == deploy.id }.map { it.by } shouldBe listOf("robot:DEP-15", "robot:QA-1")
+        office.mailroom.state.held[deploy.id]?.by shouldBe "robot:QA-1"
+    }
+
     "Bora's ruling on a question the Deputy kept answers its ticket once the question is delivered" {
         val office = absent()
         val asked = office.send("reviewer-1", """{"kind": "classify-request", "stage": "$STAGE", "args": {"question": "blocker?", "default": "follow-up"}}""")

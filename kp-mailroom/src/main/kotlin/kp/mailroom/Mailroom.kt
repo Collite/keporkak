@@ -299,15 +299,22 @@ class Mailroom private constructor(
 
     /**
      * A held message is let go (contracts.md §2.2): judged now, under the state now, and delivered — or refused — like
-     * an arrival whose line is already written.
+     * an arrival whose line is already written. Let go by one robot, it may be another's queue's to keep (§8): a deploy
+     * the Deputy kept goes to QA's queue, held again by it, and is handed over in its turn.
      */
     private fun release(id: String) {
-        if (id !in folded.held) return
+        val hold = folded.held[id] ?: return
         val message = messages.getValue(id)
         val now = now()
         val engine = Engine(rules)
         val trigger = Trigger.Arrival(message)
-        settle(message, engine.judge(folded, trigger, table(engine, trigger, message.stage?.value, now)), now)
+        val facts = table(engine.needs(folded, trigger) + hears(engine, trigger), message.stage?.value, now)
+        val queued = if (robots) engine.react(folded, trigger, facts).held?.takeIf { !it.ticket && it.by != hold.by } else null
+        if (queued != null) {
+            write(line(now, EVENT to text("held"), ID to text(id), BY to text(queued.by), UNTIL to text(queued.until), DEADLINE to null, keepNull = setOf(DEADLINE)))
+            return
+        }
+        settle(message, engine.judge(folded, trigger, facts), now)
     }
 
     // ---- the robots (contracts.md §8)
