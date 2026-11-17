@@ -2,6 +2,7 @@ package kp.daemon.hero
 
 import io.kotest.core.spec.style.FreeSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 
 /**
@@ -81,6 +82,9 @@ class HeroesSpec : FreeSpec({
                 "project.commit_push ok · S2.1 merged→exited · asks seat.wake (stage-retro)",
                 "seat.wake ok",
             )
+            h1.kp("status", h1.stage()).text.lines() shouldContain
+                "stage REHEARSAL/P2/S2.1: exited · proposals 1 · stops 1 · resumes 1 · seat_gone_events 1 · review_requests 1 · fix_rounds 1 · merge_attempts 1"
+            h1.kp("inbox").text shouldBe "nothing waits for Bora\n"
         }
     }
 
