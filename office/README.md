@@ -43,10 +43,24 @@ sudo install -o root -g root -m 0440 office/sudoers.d/zz-keporkak-kp /etc/sudoer
 sudo -l
 ```
 
-`sudo -l` must show no `NOPASSWD` entry for `bora` that is not overridden for `kp`. Panda has one,
-`/etc/sudoers.d/90-bora-nopasswd`: the drop-in sorts after it, so its `PASSWD` rule decides for `kp`, and
-`timestamp_timeout=0` means a ticket from an earlier `sudo` is not reused. The office check reads the drop-in's place,
-owner, mode and size; its content needs `sudo` to read, so `sudo -l` is yours to look at.
+`sudo -l` must show no `NOPASSWD` entry for `bora` at all (D-43). Panda has one, `/etc/sudoers.d/90-bora-nopasswd`.
+Look at it, and remove it:
+
+```sh
+sudo cat /etc/sudoers.d/90-bora-nopasswd
+sudo rm /etc/sudoers.d/90-bora-nopasswd
+sudo -l
+```
+
+A `NOPASSWD` entry anywhere else — another file of `/etc/sudoers.d`, or `/etc/sudoers` itself (`sudo visudo`) — goes
+the same way. The drop-in makes `sudo` ask for `/usr/local/bin/kp` and for nothing else: a `NOPASSWD` rule beside it
+would still let anything running as `bora`, a seat among them, run `sudo sh -c 'kp approve …'` without a password,
+and the daemon would take that as your signature. `timestamp_timeout=0` means a ticket from an earlier `sudo` is not
+reused for `kp`.
+
+The office check reads `/etc/sudoers.d`'s listing and the drop-in's owner, mode and size. Their content needs `sudo` to
+read, so every rule there but the drop-in and sudo's own `README` is "to do" until you have looked at it and removed
+it. `/etc/sudoers` it cannot read at all: `sudo -l` is yours to look at.
 
 The seats' compiled permissions deny `kp` and `sudo` (S2.2: the `side-channels` border; see §5).
 

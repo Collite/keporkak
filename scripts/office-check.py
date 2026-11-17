@@ -228,6 +228,8 @@ def one_line(folder, names):
 # Where kp is installed, and the sudo rule that names it there (office/sudoers.d/zz-keporkak-kp, contracts.md §6).
 KP_TARGET = "/usr/local/bin/kp"
 DROP_IN = "zz-keporkak-kp"
+# What the sudo package puts in /etc/sudoers.d: comments only.
+SUDO_README = "README"
 
 
 def check_kp(report, office):
@@ -251,22 +253,38 @@ def check_kp(report, office):
         report.ok(item, real)
 
 
-def check_sudo_rule(report, folder):
-    """The drop-in that makes sudo ask for kp every time (contracts.md §6) is installed, root's, sorts last. Its content
-    needs sudo to read, which this check never runs: what it reads is the folder's listing and the file's owner, mode and
-    size, set against the template's."""
+def check_sudo_rule(report, folder, user):
+    """The sudo conditions of contracts.md §6 (D-43): Bora's sudo asks every time for kp — no NOPASSWD, no cached
+    ticket. The drop-in that makes it ask for kp is installed, root's, sorts last. A NOPASSWD rule anywhere else would
+    let anything running as the office user, a seat among them, run `sudo sh -c 'kp …'` without a password, which the
+    daemon takes as Bora's signature. Every rule's content needs sudo to read, which this check never runs; what it
+    reads is the folder's listing and the drop-in's owner, mode and size, set against the template's. So any other rule
+    sudo reads there — but the sudo package's README — may say NOPASSWD, and is to do. /etc/sudoers itself it cannot
+    read: `sudo -l` is Bora's (office/README.md §2)."""
     item = "sudo asks every time for kp"
     template = ROOT / "office/sudoers.d" / DROP_IN
     install = f"sudo visudo -cf {template} && sudo install -o root -g root -m 0440 {template} {folder}/{DROP_IN} (office/README.md §2)"
     path = Path(folder) / DROP_IN
     try:
-        info = path.stat()
         names = os.listdir(folder)
+    except OSError as error:
+        report.todo(item, f"{folder} cannot be read ({error.strerror}): {install}")
+        return
+    # sudo reads each file of the folder, in order, but those whose name has a dot or ends in ~.
+    read = sorted(name for name in names if "." not in name and not name.endswith("~"))
+    others = [name for name in read if name not in (DROP_IN, SUDO_README)]
+    found = []
+    if others:
+        found.append(f"{', '.join(f'{folder}/{name}' for name in others)} {'is a rule' if len(others) == 1 else 'are rules'} sudo reads that only sudo can read"
+                     f" — {'it' if len(others) == 1 else 'each'} may say NOPASSWD for {user}, which D-43 forbids: "
+                     + "; ".join(f"sudo cat {folder}/{name}" for name in others) + f", and sudo rm {'it' if len(others) == 1 else 'each'} if it does (office/README.md §2)")
+    try:
+        info = path.stat()
     except FileNotFoundError:
-        report.todo(item, f"{path} is not there: {install}")
+        report.todo(item, "; ".join([f"{path} is not there: {install}"] + found))
         return
     except OSError as error:
-        report.todo(item, f"{path} cannot be read ({error.strerror}): {install}")
+        report.todo(item, "; ".join([f"{path} cannot be read ({error.strerror}): {install}"] + found))
         return
     problems = []
     if (info.st_uid, info.st_gid) != (0, 0):
@@ -275,14 +293,17 @@ def check_sudo_rule(report, folder):
         problems.append(f"its mode is {stat.S_IMODE(info.st_mode):04o}, not 0440")
     if info.st_size != template.stat().st_size:
         problems.append("it is not the size of the template")
-    # sudo reads the folder in order and skips names with a dot or ending in ~; for kp, the last rule that matches wins.
-    later = sorted(name for name in names if name > DROP_IN and "." not in name and not name.endswith("~"))
+    # For kp, the last rule that matches wins: nothing may sort after the drop-in.
+    later = [name for name in read if name > DROP_IN]
     if later:
         problems.append(f"{', '.join(later)} sort{'s' if len(later) == 1 else ''} after it")
     if problems:
-        report.todo(item, f"{path}: " + "; ".join(problems) + f" — {install}")
+        found.insert(0, f"{path}: " + "; ".join(problems) + f" — {install}")
+    if found:
+        report.todo(item, "; ".join(found))
     else:
-        report.ok(item, f"{path}: root:root, 0440, sorts last, the size of office/sudoers.d/{DROP_IN} (reading its content needs sudo)")
+        report.ok(item, f"{path}: root:root, 0440, sorts last, the size of office/sudoers.d/{DROP_IN}; no other rule beside sudo's README"
+                        f" (their content, and /etc/sudoers, need sudo to read: sudo -l, office/README.md §2)")
 
 
 # Bora's signed command, as a seat would try it (contracts.md §6).
@@ -429,7 +450,7 @@ def main():
     check_project(report, office)
     check_secrets(report, office)
     check_kp(report, office)
-    check_sudo_rule(report, args.sudoers)
+    check_sudo_rule(report, args.sudoers, office["user"])
     check_seat_permissions(report, args.homes)
     check_live_targets(report, office)
     check_service(report, office)

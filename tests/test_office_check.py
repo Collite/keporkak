@@ -2,15 +2,43 @@
 import importlib.util
 import os
 from pathlib import Path
+import stat as stat_module
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location("office_specs", Path(__file__).with_name("test_s0_3_the_office.py"))
 _specs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_specs)
 FakeMachine, USER, ADAPTER, PIN, SIDE_CHANNELS = _specs.FakeMachine, _specs.USER, _specs.ADAPTER, _specs.PIN, _specs.SIDE_CHANNELS
+
+
+_check = importlib.util.spec_from_file_location("office_check", ROOT / "scripts/office-check.py")
+office_check = importlib.util.module_from_spec(_check)
+_check.loader.exec_module(office_check)
+TEMPLATE = ROOT / "office/sudoers.d/zz-keporkak-kp"
+
+
+def installed(folder):
+    """The drop-in as Bora installs it: the template's bytes; its owner and mode are root's, which only root can make
+    them — the check reads them through os.stat, so they are given there."""
+    (folder / "zz-keporkak-kp").write_bytes(TEMPLATE.read_bytes())
+
+
+def sudo_rule_line(folder):
+    """The office check's line for the sudo rule, with the drop-in in [folder] read as root:root 0440."""
+    real = os.stat
+    def stat(path, *args, **kwargs):
+        info = real(path, *args, **kwargs)
+        if os.fspath(path) == os.fspath(folder / "zz-keporkak-kp"):
+            return os.stat_result((stat_module.S_IFREG | 0o440, info.st_ino, info.st_dev, info.st_nlink, 0, 0, info.st_size, info.st_atime, info.st_mtime, info.st_ctime))
+        return info
+    report = office_check.Report()
+    with mock.patch("os.stat", stat):
+        office_check.check_sudo_rule(report, folder, USER)
+    return report.lines[0]
 
 
 class OfficeCheckTests(unittest.TestCase):
@@ -133,7 +161,26 @@ class OfficeCheckTests(unittest.TestCase):
         line = next(line for line in self.lines() if line.startswith("to do  sudo asks"))
         self.assertEqual(line, f"to do  sudo asks every time for kp: {drop_in}: it is not root:root's; its mode is 0644, not 0440; it is not the size of the template;"
                                f" zzz-later sorts after it — sudo visudo -cf {ROOT}/office/sudoers.d/zz-keporkak-kp && sudo install -o root -g root -m 0440"
-                               f" {ROOT}/office/sudoers.d/zz-keporkak-kp {drop_in} (office/README.md §2)")
+                               f" {ROOT}/office/sudoers.d/zz-keporkak-kp {drop_in} (office/README.md §2);"
+                               f" {self.machine.sudoers}/zzz-later is a rule sudo reads that only sudo can read — it may say NOPASSWD for {USER}, which D-43 forbids:"
+                               f" sudo cat {self.machine.sudoers}/zzz-later, and sudo rm it if it does (office/README.md §2)")
+
+    def test_a_drop_in_in_place_beside_another_rule_sudo_reads_is_not_ok_and_alone_it_is(self):
+        """review-014 B1: with the drop-in installed as it must be — root's, 0440, the template's size, sorting last — a
+        NOPASSWD rule beside it (Panda's 90-bora-nopasswd) still lets anything running as the office user, a seat
+        among them, run `sudo sh -c 'kp …'` without a password. Its content needs sudo to read, so the check cannot
+        tell it from a harmless rule: any rule sudo reads but the drop-in and sudo's own README is to do (D-43)."""
+        folder = self.machine.sudoers
+        installed(folder)
+        (folder / "90-bora-nopasswd").write_text("bora ALL=(ALL) NOPASSWD: ALL\n")
+        beside = sudo_rule_line(folder)
+        (folder / "90-bora-nopasswd").unlink()
+        alone = sudo_rule_line(folder)
+
+        self.assertEqual(beside, f"to do  sudo asks every time for kp: {folder}/90-bora-nopasswd is a rule sudo reads that only sudo can read — it may say NOPASSWD"
+                                 f" for {USER}, which D-43 forbids: sudo cat {folder}/90-bora-nopasswd, and sudo rm it if it does (office/README.md §2)")
+        self.assertEqual(alone, f"ok     sudo asks every time for kp: {folder}/zz-keporkak-kp: root:root, 0440, sorts last, the size of office/sudoers.d/zz-keporkak-kp;"
+                                f" no other rule beside sudo's README (their content, and /etc/sudoers, need sudo to read: sudo -l, office/README.md §2)")
 
     def test_a_loaded_service_whose_launcher_is_gone_is_to_do_and_one_whose_launcher_is_there_is_ok(self):
         self.machine.stub("systemctl", 'case "$*" in *ExecStart*) echo "{ path=/nowhere/kp-daemon ; argv[]=/nowhere/kp-daemon run ; ignore_errors=no }";; *) echo loaded;; esac')
