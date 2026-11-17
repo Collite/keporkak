@@ -20,6 +20,8 @@ dependencies {
     implementation(libs.kaml)
     testImplementation(libs.kotest)
     testImplementation(libs.kotest.assertions)
+    // The logging spec asks SLF4J — the ACP SDK's logging — what it would write.
+    testImplementation(libs.slf4j.api)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
@@ -30,6 +32,8 @@ application {
 
 // The specs run `scripts/kp` as a subprocess against a rehearsal of a walk: a change to either runs them again.
 tasks.named<Test>("test") {
+    // DaemonProcessSpec starts the daemon through the launcher `just install` installs.
+    dependsOn("installDist")
     inputs.files(rootProject.file("scripts/kp")).withPropertyName("kp_client")
     for (folder in listOf("rules", "robots", "pool", "agents")) {
         inputs.files(rootProject.fileTree(folder)).withPropertyName("checkout_$folder").withPathSensitivity(PathSensitivity.RELATIVE)

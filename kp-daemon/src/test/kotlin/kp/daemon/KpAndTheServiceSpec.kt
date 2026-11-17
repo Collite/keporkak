@@ -29,14 +29,15 @@ class KpAndTheServiceSpec : FreeSpec({
         Rehearsed("h1-prime").use { office ->
             val unsigned = office.kp("approve", "5")
             val signed = office.kp("approve", "5", root = true)
-            val twice = office.kp("approve", "5", root = true)
+            val approvedAgain = office.kp("approve", "5", root = true)
+            val declinedAfter = office.kp("decline", "5", root = true)
 
-            listOf(unsigned.code, signed.code, twice.code) shouldBe listOf(1, 0, 1)
-            twice.text shouldContain "ticket #5: answered once"
-            office.log().messages("approval").map { it.signed to office.log().outcome(it) } shouldBe listOf(
-                false to "refused: signed by Bora's CLI",
-                true to "delivered: T-02 proposed→assigned",
-                true to "refused: ticket #5: answered once",
+            listOf(unsigned.code, signed.code, approvedAgain.code, declinedAfter.code) shouldBe listOf(1, 0, 1, 1)
+            office.log().messages("approval", "decline").map { "${it.kind} signed=${it.signed} ${office.log().outcome(it)}" } shouldBe listOf(
+                "approval signed=false refused: signed by Bora's CLI",
+                "approval signed=true delivered: T-02 proposed→assigned, T-03 assigned→assigned",
+                "approval signed=true refused: max_fires: 1, window: stage",
+                "decline signed=true refused: ticket #5: answered once",
             )
         }
     }
@@ -69,7 +70,7 @@ class KpAndTheServiceSpec : FreeSpec({
             check.text shouldContain "$hand:2 m-hand-000002 started: refused — args: 'sc' is not declared"
             check.text shouldContain "$hand:3 m-hand-000002: the id is used again — first on line 2"
             check.text shouldContain "KP/P9/S9.1 is left in planned"
-            check.text shouldContain "not checked, a hand log records no observed fact: plan.predecessors_exited"
+            check.text shouldContain "not checked, a hand log records no observed fact: list.stop_conditions, plan.predecessors_exited"
         }
     }
 

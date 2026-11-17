@@ -1,6 +1,7 @@
 # Keporkak — the office daemon as a systemd user service of the office user (architecture.md §4).
-# TEMPLATE. S1.5 delivers the daemon's launcher and replaces @DAEMON_LAUNCHER@ and @DAEMON_WORKING_DIRECTORY@;
-# install it only then (office/README.md). Lingering must be on, so the service survives a logout.
+# TEMPLATE: `just install` (scripts/install.py) replaces @DAEMON_LAUNCHER@ with the launcher it installs and
+# @DAEMON_WORKING_DIRECTORY@ with the checkout it runs in, and writes the unit to ~/.config/systemd/user/
+# (office/README.md). Lingering must be on, so the service survives a logout.
 
 [Unit]
 Description=Keporkak office daemon

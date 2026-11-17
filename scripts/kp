@@ -67,4 +67,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         sys.exit(130)
     except BrokenPipeError:
+        # The reader went away (`kp inbox | head`): say nothing more, not even at exit.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
         sys.exit(0)

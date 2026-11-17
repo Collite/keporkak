@@ -91,7 +91,7 @@ class Log(folder: Path) {
     val lines: List<Envelope> = folder.walk().filter { it.isRegularFile() && it.name.endsWith(".jsonl") && "_hand" !in it.toString() }
         .flatMap { file -> file.readLines().map(::parseLine) }.sortedBy { it.seq }.toList()
 
-    fun messages(kind: String): List<Message> = lines.filterIsInstance<Message>().filter { it.kind == kind }
+    fun messages(vararg kinds: String): List<Message> = lines.filterIsInstance<Message>().filter { it.kind in kinds }
 
     /** What happened to [message], as its record and the transitions it caused say. */
     fun outcome(message: Message): String {
