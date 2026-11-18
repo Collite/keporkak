@@ -29,8 +29,19 @@ schema-check contracts="": _python-env
         build/python/bin/python build-support/check_schemas.py
     fi
 
+# The acceptance specs of phase 1 (S1.6; architecture.md §7, §8): H-1′, H-2′ and H-3 through the real mailroom with seats
+# scripted from rules/walks/, and the refusal sweep generated from the rules. Its report ends with the counts; a run that
+# leaves no report fails.
+hero:
+    #!/usr/bin/env sh
+    set -u
+    ./gradlew --console=plain :kp-daemon:hero
+    status=$?
+    cat kp-daemon/build/hero/report.txt || status=1
+    exit $status
+
 # The front door used by CI. Engine fences are part of Gradle's check/build.
-check: rules build test schema-check
+check: rules build test schema-check hero
 
 # Record one carried message (contracts.md §12): a kind and its flags, or one complete message on stdin.
 # Only the project's mail/<effort>/_hand/ is written.
