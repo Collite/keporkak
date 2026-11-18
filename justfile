@@ -41,8 +41,9 @@ hero:
     cat kp-daemon/build/hero/report.txt || status=1
     exit $status
 
-# The front door used by CI. Engine fences are part of Gradle's check/build. Each step ends with the time it took, and
-# the last line with the whole (S2.8): a slowdown shows in the hand-off.
+# Engine fences are part of Gradle's check/build. Each step ends with the time it took, and the last line with the
+# whole (S2.8): a slowdown shows in the hand-off.
+# The front door used by CI.
 check:
     #!/usr/bin/env sh
     set -u
@@ -58,6 +59,13 @@ check:
         echo "== just $step: $(( $(date +%s) - start )) s"
     done
     echo "== just check: $(( $(date +%s) - began )) s"
+
+# Applies <patch> to a throwaway copy of the working tree, runs the specs <filter> names there with a forced rerun, and
+# prints `red` and the specs that failed, or `green`; the working tree stays as it was (S2.8; architecture.md §7).
+# Exit 0 red · 1 green · 2 the patch does not apply · 3 the filter runs no spec · 4 the patched copy does not build.
+# Can a spec fail? `just mutant <patch> <spec filter>` — red or green, on a throwaway copy.
+mutant patch filter: _python-env
+    build/python/bin/python build-support/mutant.py --from "{{invocation_directory()}}" "$1" "$2"
 
 # Record one carried message (contracts.md §12): a kind and its flags, or one complete message on stdin.
 # Only the project's mail/<effort>/_hand/ is written.
