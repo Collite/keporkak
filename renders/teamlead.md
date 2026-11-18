@@ -59,7 +59,7 @@ Anything else is refused.
 
 | kind | to | allowed when | class | cap / window | you then get |
 |---|---|---|---|---|---|
-| `assignment-proposal` | bora | R4.8 predecessors exited · seat free · slots open · fence has SC ids + touches: (all observed) | B | 2 / stage | approval \| decline |
+| `assignment-proposal` | bora | R4.8 predecessors exited · seat free · slots open · fence has SC ids + touches: (all observed) | B | 2 / stage | approval \| decline \| queued-approval |
 | `assign` | coder | stage assigned (approval or queue) | A | 1 / stage | started |
 | `qa-request` | qa | cites the stage, a task id and a DONE item that exist in the list (observed) · stage live: ≠ none · names what to verify, never a command (P-5) | A | 3 / stage | qa-report |
 | `review-bind` | reviewer | reviewer seat ≠ coder seat · rank(reviewer) ≥ rank(coder) (roster) · reviewer model ≥ review floor (D-45) | A | 2 / stage | verdict |

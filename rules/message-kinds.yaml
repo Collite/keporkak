@@ -22,7 +22,7 @@ kinds:
     max_fires: 2
     deadline: 24h
     on_expiry: back to planned; principal pinged
-    reply: approval | decline
+    reply: approval | decline | queued-approval
     replies:
     - approval
     - decline

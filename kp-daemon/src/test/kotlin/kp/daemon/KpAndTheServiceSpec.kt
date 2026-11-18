@@ -29,6 +29,7 @@ class KpAndTheServiceSpec : FreeSpec({
         Rehearsed("h1-prime").use { office ->
             val unsigned = office.kp("approve", "7")
             val signed = office.kp("approve", "7", root = true)
+            office.rehearsal.awaitBora() // the walk goes on: `worktree.create` ends `ok` at its step (S1.6's harness), and the walk next waits for Bora's ruling
             val approvedAgain = office.kp("approve", "7", root = true)
             val declinedAfter = office.kp("decline", "7", root = true)
 
