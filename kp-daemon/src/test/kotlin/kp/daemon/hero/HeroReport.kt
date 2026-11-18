@@ -11,7 +11,8 @@ import kotlin.io.path.writeText
 
 /**
  * What `just hero` prints (S1.6 T7): each hero scenario and how many of its steps passed, the sweep's exceptions with
- * their reasons, and last the counts — scenarios, requirements on master, swept, exceptions. Written to
+ * their reasons, the restart's cuts (S1.10 T7), and last the counts — scenarios, requirements on master, swept,
+ * exceptions, restart cuts. Written to
  * `kp-daemon/build/hero/report.txt` once the hero specs have run; registered on the spec that runs them.
  */
 object HeroReport : AfterEachListener, AfterSpecListener {
@@ -19,9 +20,15 @@ object HeroReport : AfterEachListener, AfterSpecListener {
     /** Each top-level spec of the file, by its sentence: its steps — or itself, when it has none — and whether each passed. */
     private val specs = LinkedHashMap<String, MutableList<Pair<String, Boolean>>>()
     private var sweep: Sweep? = null
+    private var restarts: Restarts? = null
 
     fun sweep(sweep: Sweep) {
         this.sweep = sweep
+    }
+
+    /** The restart of H-1′ (S1.10 T7): each cut and how it ended, printed after the sweep. */
+    fun restarts(restarts: Restarts) {
+        this.restarts = restarts
     }
 
     override suspend fun afterEach(testCase: TestCase, result: TestResult) {
@@ -44,9 +51,11 @@ object HeroReport : AfterEachListener, AfterSpecListener {
                 else "${steps.size - failed.size} of ${steps.size} steps passed") + failed.joinToString("; ", " — failed: ").takeIf { failed.isNotEmpty() }.orEmpty()
         }
         val swept = sweep?.let { it.report() } ?: listOf("the sweep did not finish")
+        val restarted = restarts?.report() ?: listOf("the restart did not finish")
         val counts = "$passed of ${scenarios.size} scenarios passed" + (if (noRoll) " and the no-roll exit" else ", the no-roll exit did not") +
-            (sweep?.let { " · requirements on master: ${it.onMaster} · swept: ${it.swept} · exceptions: ${it.exceptions.size} (swept + exceptions = ${it.swept + it.exceptions.size})" } ?: "")
-        return told + swept.dropLast(1) + counts
+            (sweep?.let { " · requirements on master: ${it.onMaster} · swept: ${it.swept} · exceptions: ${it.exceptions.size} (swept + exceptions = ${it.swept + it.exceptions.size})" } ?: "") +
+            (restarts?.let { " · restart cuts: ${it.cuts.size}, otherwise: ${it.otherwise.size}" } ?: "")
+        return told + swept.dropLast(1) + restarted + counts
     }
 
     /** The step of H-3 that is the stage with a live DONE and nothing to roll (D-42). */

@@ -2,6 +2,7 @@ package kp.daemon.hero
 
 import io.kotest.core.spec.style.FreeSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 
@@ -12,7 +13,7 @@ import io.kotest.matchers.shouldBe
  * simulated), and the clock is injected. Each step below plays the walk's steps it names and reads what the log then
  * tells: one line per message — sender→addressees, what became of it — with the moves and operations it caused.
  * Where a walk and its scenario differ, the walk is played and the step says so (Found lines of S1.6). The restart —
- * a daemon killed at any step of H-1′ and started again — is S1.10's (D-75).
+ * a daemon stopped after any line of H-1′ and started again — is S1.10's (D-75).
  */
 class HeroesSpec : FreeSpec({
     extension(HeroReport) // what `just hero` prints
@@ -284,5 +285,12 @@ class HeroesSpec : FreeSpec({
         // but for retire's moves of a seat that is not idle: the kind requires `seat.state eq idle` of the very seat they move.
         sweep.uncontrolled shouldBe listOf("SEAT-08", "SEAT-09", "SEAT-10", "SEAT-12", "SEAT-13")
         sweep.removalSurvivors.shouldBeEmpty()
+    }
+
+    "a daemon stopped after any line of H-1′ and started again ends where the uninterrupted run does — or, an operation in flight, where the rules put its failure" {
+        val restarts = Restarts.afterEveryLineOf("h1-prime").also(HeroReport::restarts)
+
+        restarts.cuts.map { it.ending }.filter { it != Restarts.SAME && !it.startsWith(Restarts.IN_FLIGHT) }.shouldBeEmpty()
+        restarts.cuts.filter { it.ending.startsWith(Restarts.IN_FLIGHT) }.shouldNotBeEmpty()
     }
 })

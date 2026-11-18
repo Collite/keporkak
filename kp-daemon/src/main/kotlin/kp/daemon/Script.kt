@@ -8,6 +8,7 @@ import kp.engine.Datum
 import kp.engine.FactRef
 import kp.engine.settled
 import kp.log.LogWriter
+import kp.log.counted
 import kp.mailroom.Clock
 import kp.mailroom.Deliveries
 import kp.mailroom.OperationRequest
@@ -70,19 +71,41 @@ class Script(val walk: Walk, val effort: String = EFFORT) {
         if (moved) judgement.close(at)
     }
 
+    /**
+     * The world as it stands once the walk's steps up to [index] (from 0, inclusive) have begun: each step's facts set in
+     * order, the walk at that step's stage — what a daemon started again in the middle of the walk observes.
+     */
+    fun worldThrough(index: Int) {
+        var stage = walk.stage
+        walk.steps.take(index + 1).forEach { step ->
+            stage = step.text(STAGE) ?: stage
+            facts.table(stage).set(step.facts)
+        }
+        facts.current = stage
+    }
+
     /** A player of this walk on [office]; Bora's steps go to [bora], and [out] hears each step as it is played. */
-    fun player(office: Office, bora: Bora, out: (String) -> Unit = {}): Player = Player(this, office, bora, out).also { operations.player = it }
+    fun player(office: Office, bora: Bora, out: (String) -> Unit = {}): Player = Player(this, office, bora, out).also { operations.attach(it) }
 
     /**
      * The walk's operations: a request the walk names in a step still to come — the operation, and a request step whose
-     * kind and sender are the requesting message's — waits for that step; any other ends `ok` at once.
+     * kind and sender are the requesting message's — waits for that step; any other ends `ok` at once. A request made
+     * before a player is attached — by the judgement a start carries again — waits until the player says which.
      */
     inner class Performer : Operations {
         @Volatile var player: Player? = null
+            private set
         private val waiting = ArrayList<Pair<OperationRequest, (OperationResult) -> Unit>>()
 
         override fun perform(request: OperationRequest, done: (OperationResult) -> Unit) {
-            if (player?.awaits(request) == true) synchronized(waiting) { waiting += request to done } else done(OperationResult.Ok())
+            if (player?.awaits(request) != false) synchronized(waiting) { waiting += request to done } else done(OperationResult.Ok())
+        }
+
+        /** [player] plays the walk from now on: what waits and no step of it still to come names ends `ok`. */
+        fun attach(player: Player) {
+            this.player = player
+            val free = synchronized(waiting) { waiting.filterNot { player.awaits(it.first) }.also { waiting.removeAll(it) } }
+            free.forEach { (_, done) -> done(OperationResult.Ok()) }
         }
 
         /** The request of [operation] for the message [cause] that waits for its step, taken. */
@@ -171,6 +194,22 @@ class Player internal constructor(private val script: Script, val office: Office
 
     val done: Boolean get() = next >= walk.steps.size
 
+    /** The steps whose own line was on the log a daemon started again on: by index, the message each is about and its outcome. */
+    private val kept = HashMap<Int, Pair<String?, String?>>()
+    /** Steps before this index are caught up — on the log already — and not checked again. */
+    private var caughtUp = 0
+
+    /**
+     * Takes up a walk on a daemon started again on a log a player of it wrote: each step in [kept] (by index) already
+     * has its own line there — a message, an operation's result, a fact — and the start carried what that line began.
+     * Those steps are played again without being sent; a robot's or the mailroom's message is looked for as always.
+     */
+    fun resume(kept: Map<Int, Pair<String?, String?>>) {
+        require(next == 0) { "a player resumes only before it has played" }
+        this.kept += kept
+        caughtUp = (kept.keys.maxOrNull() ?: -1) + 1
+    }
+
     /** Plays the next step and checks what it expects. */
     fun step(): Played {
         val index = next++
@@ -180,6 +219,7 @@ class Player internal constructor(private val script: Script, val office: Office
         script.facts.table(stage).set(step.facts)
         val first = last() + 1
         val (message, outcome) = when {
+            index in kept -> kept.getValue(index)
             step.operation != null -> operation(index + 1, step)
             step.fields.containsKey(EVENT) -> fact(index + 1, step)
             step.who == MAILROOM || step.text(BY)?.startsWith(ROBOT) == true -> find(index + 1, step)
@@ -192,7 +232,7 @@ class Player internal constructor(private val script: Script, val office: Office
         return Played(index + 1, step, script.stageId(stage), message, outcome, first, last()).also { played ->
             this.played += played
             out(describe(played))
-            check(played)
+            if (index >= caughtUp) check(played)
         }
     }
 
@@ -426,7 +466,8 @@ class Player internal constructor(private val script: Script, val office: Office
 
     // ---- the log
 
-    private fun lines(): List<Envelope> = office.lines().map { it.entry }
+    /** The log as it counts: a voided judgement's lines but its first are left out (Amendment 23). */
+    private fun lines(): List<Envelope> = office.lines().counted().map { it.entry }
 
     private fun last(): Long = lines().lastOrNull()?.seq?.toLong() ?: 0L
 

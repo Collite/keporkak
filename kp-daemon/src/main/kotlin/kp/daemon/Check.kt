@@ -17,6 +17,7 @@ import kp.engine.UNKNOWN_FACT
 import kp.engine.fold
 import kp.engine.settled
 import kp.log.LogLine
+import kp.log.counted
 import kp.model.Delivered
 import kp.model.Envelope
 import kp.model.Held
@@ -25,7 +26,6 @@ import kp.model.Record
 import kp.model.Refused
 import kp.model.Rules
 import kp.model.Transition
-import kp.model.Voided
 import kp.model.parseLine
 import kp.model.plain
 import kp.model.readEnvelope
@@ -116,8 +116,7 @@ internal class Check(private val rules: InForceRules) {
         }
         // A voided judgement's lines but its first count for nothing (contracts.md §2.2, §3): they are not re-judged, and no
         // record among them is taken for what happened to a message — the judgement that carried its first line again says that.
-        val voided = all.mapNotNull { it.entry as? Voided }.map { (it.first + 1)..it.last }
-        val lines = all.filterNot { line -> voided.any { line.entry.seq.toLong() in it } }
+        val lines = all.counted()
         (all.size - lines.size).takeIf { it > 0 }?.let { skipped ->
             out += "$skipped voided line${if (skipped == 1) "" else "s"} skipped: a start voided the judgement they were in, and they count for nothing"
         }
