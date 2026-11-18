@@ -125,15 +125,23 @@ class Restarts private constructor(val cuts: List<Cut>, private val seeds: Long)
                         val failed = hero.script.walk.steps[hero.player.next - 1]
                         return@use when {
                             flights.any { it.op == failed.operation } -> inFlight
-                            wake != null -> "$wake; the walk went otherwise: ${failure.message}"
+                            wake != null -> "${wake.told}; the walk went otherwise: ${failure.message}"
                             else -> "otherwise — the walk went otherwise: ${failure.message}"
                         }
                     }
-                    val differences = Ending.of(hero.office.state, hero.office.lines().map { it.entry }).differences(run.end)
+                    val ending = Ending.of(hero.office.state, hero.office.lines().map { it.entry })
+                    val differences = ending.differences(run.end)
                     when {
                         flights.isNotEmpty() -> inFlight + (if (differences.isEmpty()) ", and the walk ends as uninterrupted" else ", and the walk ends otherwise — $differences")
+                        // A wake in flight whether or not the walk then ends as uninterrupted: only what it was for may differ — that message, unread.
+                        wake != null -> ending.copy(unread = ending.unread.toMutableList().apply { wake.unread.forEach { remove(it) } }).differences(run.end).let { beyond ->
+                            when {
+                                beyond.isNotEmpty() -> "otherwise — ${wake.told}, and it ends otherwise: $beyond"
+                                differences.isEmpty() -> "${wake.told}, and the walk ends as uninterrupted"
+                                else -> "${wake.told}, to the walk's end"
+                            }
+                        }
                         differences.isEmpty() -> SAME
-                        wake != null -> "$wake; it ends otherwise: $differences"
                         else -> "otherwise — it ends otherwise: $differences"
                     }
                 }
@@ -142,15 +150,19 @@ class Restarts private constructor(val cuts: List<Cut>, private val seeds: Long)
             }
         }
 
+        /** A wake in flight: the messages it was for, as [Ending.unread] names them, and how the report tells it. */
+        private class Wake(val unread: List<String>, val told: String)
+
         /**
          * A wake in flight at [cut] (D-76): the uninterrupted run's next line is a seat's `read` — what it wrote once the
          * judgement before it, which woke that seat, was on disk — and the start left those messages unread. Null when not.
          */
-        private fun wakeInFlight(run: Uninterrupted, cut: Long, started: State): String? {
+        private fun wakeInFlight(run: Uninterrupted, cut: Long, started: State): Wake? {
             val read = run.lines.firstOrNull { it.seq.toLong() == cut + 1 } as? Read ?: return null
             if (!started.unread[read.seat].orEmpty().containsAll(read.ids)) return null
             val kinds = run.lines.filterIsInstance<Message>().associate { it.id.value to it.kind }
-            return "$WAKE_IN_FLIGHT: the message stays unread — ${read.ids.joinToString { kinds[it] ?: it }} to ${read.seat}"
+            val unread = read.ids.map { "${kinds[it] ?: it} to ${read.seat}" }
+            return Wake(unread, "$WAKE_IN_FLIGHT: the message stays unread — ${unread.joinToString()}")
         }
 
         /** Where the start left the stage the message [cause] is about: its name in the walk and its state. */
@@ -170,14 +182,19 @@ class Restarts private constructor(val cuts: List<Cut>, private val seeds: Long)
 
     /**
      * Where a walk ends, as a reader compares two ends: each machine's subjects and their states, the counters, the waits
-     * still open, the messages held and the tickets open — a message named by its kind, a thread by its first message's kind.
+     * still open, the messages held, the tickets open and each party's unread mail — what a re-seat replays (contracts.md
+     * §2.2, `read`) — a message named by its kind, a thread by its first message's kind.
      */
-    data class Ending(val machines: Map<String, String>, val counters: Map<String, Long>, val waiting: List<String>, val held: List<String>, val tickets: List<String>) {
+    data class Ending(
+        val machines: Map<String, String>, val counters: Map<String, Long>, val waiting: List<String>, val held: List<String>, val tickets: List<String>,
+        val unread: List<String>,
+    ) {
         fun differences(other: Ending): String = listOfNotNull(
             diff("states", machines, other.machines), diff("counters", counters, other.counters),
             "waiting $waiting, not ${other.waiting}".takeIf { waiting != other.waiting },
             "held $held, not ${other.held}".takeIf { held != other.held },
             "open tickets $tickets, not ${other.tickets}".takeIf { tickets != other.tickets },
+            "unread $unread, not ${other.unread}".takeIf { unread != other.unread },
         ).joinToString("; ")
 
         private fun <T> diff(what: String, mine: Map<String, T>, theirs: Map<String, T>): String? =
@@ -193,6 +210,7 @@ class Restarts private constructor(val cuts: List<Cut>, private val seeds: Long)
                     state.deadlines.values.map { "${it.kind} ${it.from}→${it.to}" }.sorted(),
                     state.held.keys.map { kinds[it] ?: it }.sorted(),
                     state.openTickets().values.map { kinds[it.item] ?: it.item }.sorted(),
+                    state.unread.flatMap { (party, ids) -> ids.map { "${kinds[it] ?: it} to $party" } }.sorted(),
                 )
             }
         }

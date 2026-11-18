@@ -290,9 +290,17 @@ class HeroesSpec : FreeSpec({
 
         restarts.otherwise.map { "after line ${it.seq} (${it.told}): ${it.ending}" }.shouldBeEmpty()
         restarts.cuts.filter { it.ending.startsWith(Restarts.IN_FLIGHT) }.shouldNotBeEmpty()
-        // A wake has no record before S2.4 (D-76, Amendment 22): the two judgements that wake coder-1 — `assign`'s and
-        // the resume `triage`'s — each leave one such cut, and S2.4 ends them as the uninterrupted run.
-        restarts.wakesInFlight.map { it.told + " — " + it.ending.substringAfter(" — ").substringBefore(";") } shouldBe
-            listOf("judged — assign to coder-1", "judged — triage to coder-1")
+        // A wake has no record before S2.4 (D-76, Amendment 22): each judgement that wakes a seat leaves one such cut, right
+        // after its `judged` line and before the seat's `read`, whether the walk then fails or not — its message stays
+        // unread, and "same end" counts unread mail. S2.4 ends them as the uninterrupted run.
+        restarts.wakesInFlight.map { it.told + " — " + it.ending.substringAfter(" — ").substringBefore(";").substringBefore(",") } shouldBe listOf(
+            "judged — assign to coder-1", // the walk then stops at step 10: POOL-14 sends no re-seated
+            "judged — triage to coder-1", // the resume: likewise
+            "judged — triage to coder-1", // the found-batch's triage
+            "judged — review-bind to reviewer-1",
+            "judged — verdict to coder-1",
+            "judged — repair-done to reviewer-1",
+            "judged — re-verdict to coder-1",
+        )
     }
 })
