@@ -14,8 +14,8 @@ dependencies {
 tasks.named<Test>("test") {
     inputs.dir(rootProject.file("kp-engine/src/main")).withPropertyName("engineSources").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.file(rootProject.file("kp-engine/build.gradle.kts")).withPropertyName("engineBuild").withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.files(rootProject.fileTree("build-support")).withPropertyName("buildSupport").withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.files(rootProject.fileTree("gradle")).withPropertyName("gradleFolder").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(rootProject.fileTree("build-support") { exclude("**/__pycache__/**") }).withPropertyName("buildSupport").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(rootProject.fileTree("gradle") { exclude("**/__pycache__/**") }).withPropertyName("gradleFolder").withPathSensitivity(PathSensitivity.RELATIVE)
     for (file in listOf("settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew")) {
         inputs.files(rootProject.file(file)).withPropertyName("build_" + file.replace(".", "_")).withPathSensitivity(PathSensitivity.RELATIVE)
     }

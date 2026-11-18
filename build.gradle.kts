@@ -22,13 +22,14 @@ subprojects {
         val module = name
         val script = rootProject.file("build-support/check_decision_construction.py")
         val classesDirectory = layout.buildDirectory.dir("classes")
-        // Kotlin internal is JVM-public; inspect bytecode, including method-handle targets.
+        // Kotlin internal is JVM-public; inspect bytecode, including method-handle targets. The script is an input by its
+        // path in the checkout, so a compile's cached result serves every worktree of the machine (S2.8 T2).
         tasks.withType<KotlinCompile>().configureEach {
-            inputs.file(script)
+            inputs.file(script).withPropertyName("constructionCheck").withPathSensitivity(PathSensitivity.RELATIVE)
             doLast { verifyDecisionConstruction(module, script, listOf(destinationDirectory.get().asFile)) }
         }
         tasks.withType<JavaCompile>().configureEach {
-            inputs.file(script)
+            inputs.file(script).withPropertyName("constructionCheck").withPathSensitivity(PathSensitivity.RELATIVE)
             doLast { verifyDecisionConstruction(module, script, listOf(destinationDirectory.get().asFile)) }
         }
         val constructionFence = tasks.register("checkDecisionConstruction") {
@@ -46,7 +47,7 @@ subprojects {
         // Every test task reads the checkout's rules, robots, pool and personas (retro of P1, candidate 5): a change to a
         // file there runs it again. A module declares beside these what else its specs read (S2.8 T2).
         for (folder in listOf("rules", "robots", "pool", "agents")) {
-            inputs.files(rootProject.fileTree(folder)).withPropertyName("checkout_$folder").withPathSensitivity(PathSensitivity.RELATIVE)
+            inputs.files(rootProject.fileTree(folder) { exclude("**/__pycache__/**") }).withPropertyName("checkout_$folder").withPathSensitivity(PathSensitivity.RELATIVE)
         }
         // A run its filter leaves with no test fails — Gradle's `--tests` and Kotest's own filter alike. Kotest reads its
         // filter from the environment, which is no input of a task: it is made one, so a new filter runs the task again.
