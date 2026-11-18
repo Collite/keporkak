@@ -40,8 +40,23 @@ hero:
     cat kp-daemon/build/hero/report.txt || status=1
     exit $status
 
-# The front door used by CI. Engine fences are part of Gradle's check/build.
-check: rules build test schema-check hero
+# The front door used by CI. Engine fences are part of Gradle's check/build. Each step ends with the time it took, and
+# the last line with the whole (S2.8): a slowdown shows in the hand-off.
+check:
+    #!/usr/bin/env sh
+    set -u
+    began=$(date +%s)
+    for step in rules build test schema-check hero; do
+        start=$(date +%s)
+        "{{just_executable()}}" --justfile "{{justfile()}}" "$step"
+        status=$?
+        if [ "$status" -ne 0 ]; then
+            echo "== just $step failed after $(( $(date +%s) - start )) s"
+            exit "$status"
+        fi
+        echo "== just $step: $(( $(date +%s) - start )) s"
+    done
+    echo "== just check: $(( $(date +%s) - began )) s"
 
 # Record one carried message (contracts.md §12): a kind and its flags, or one complete message on stdin.
 # Only the project's mail/<effort>/_hand/ is written.
