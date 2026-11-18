@@ -25,7 +25,7 @@ class OperationsSpec : StringSpec({
 
         // Bora's own approval waits for no one: no notify.bora (S1.8, contracts.md §2.2). The judgement is closed — and
         // only then are its operation performed and its addressee woken, in the order it asked for them (S1.10).
-        onDisk.first() shouldBe listOf("Message", "Delivered", "Transition", "worktree.create requested", "Judged")
+        onDisk.first() shouldBe listOf("Message", "Delivered", "Transition", "worktree.create requested", "seat.wake requested", "Judged")
     }
 
     "a failed result is recorded with its reason and judged: nothing fires for worktree.create failed, and the stage stays assigned" {
@@ -34,7 +34,7 @@ class OperationsSpec : StringSpec({
 
         val approval = office.bora(APPROVAL)
 
-        office.readBack().ops(approval.id) shouldBe listOf("worktree.create requested", "worktree.create failed the branch exists")
+        office.readBack().ops(approval.id).withoutWakes() shouldBe listOf("worktree.create requested", "worktree.create failed the branch exists")
         office.readBack().transitions(approval.id) shouldBe listOf("T-02 proposed→assigned")
         office.stage() shouldBe "assigned"
     }
@@ -62,7 +62,7 @@ class OperationsSpec : StringSpec({
 
         val approval = office.bora(APPROVAL)
 
-        office.readBack().ops(approval.id) shouldBe listOf("worktree.create requested", "worktree.create ok")
+        office.readBack().ops(approval.id).withoutWakes() shouldBe listOf("worktree.create requested", "worktree.create ok")
     }
 
     "a retry is another firing of the kind, and the kind's cap counts it: a second approval is refused, nothing is requested again" {
@@ -99,7 +99,7 @@ class OperationsSpec : StringSpec({
 
         val gone = office.send("pool-1", """{"kind": "seat-gone", "stage": "$STAGE", "subject": "coder-1 is gone", "args": {"seat": "coder-1"}}""")
 
-        office.readBack().records<Op>().single { it.cause == gone.id && it.phase == "ok" }.result.toString() shouldBe """{"seat":"coder-1","session":"s-2"}"""
-        office.readBack().records<Op>().single { it.cause == gone.id && it.phase == "requested" }.with.toString() shouldBe """{"seat":"coder-1"}"""
+        office.readBack().records<Op>().single { it.op == "seat.reseat" && it.cause == gone.id && it.phase == "ok" }.result.toString() shouldBe """{"seat":"coder-1","session":"s-2"}"""
+        office.readBack().records<Op>().single { it.op == "seat.reseat" && it.cause == gone.id && it.phase == "requested" }.with.toString() shouldBe """{"seat":"coder-1"}"""
     }
 })
