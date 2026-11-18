@@ -69,10 +69,20 @@ logs:
 
 # The daemon on a throwaway project under build/rehearsal/: the seats scripted and the facts tabled from
 # rules/walks/<walk>.yaml, pausing where the walk needs Bora — who answers with the real `kp` (`sudo kp approve <ticket>`).
-# It listens on the office's socket: stop the service first (`just stop`). Ctrl-C ends it.
-rehearse walk:
+# It listens on the office's socket: stop the service first (`just stop`). Ctrl-C ends it. `just rehearse <walk> --seats
+# fake` plays the walk's seats with S2.1's fake agent: processes the daemon starts, wakes, re-seats and watches through
+# the driver and the seat API, each with a pane in the tmux session `kp` (`tmux attach -t kp`). S2.5 runs real ones.
+rehearse walk *args:
+    #!/usr/bin/env sh
+    set -eu
+    walk="$1"
+    shift
     ./gradlew --console=plain -q :kp-daemon:installDist
-    kp-daemon/build/install/kp-daemon/bin/kp-daemon rehearse "rules/walks/$1.yaml" --root "$PWD"
+    if [ "${1:-}" = "--seats" ] && [ "${2:-}" = "fake" ]; then
+        ./gradlew --console=plain -q :kp-driver:fakeClasspath
+        set -- "$@" --fake-classpath "$(cat kp-driver/build/fake.classpath)"
+    fi
+    exec kp-daemon/build/install/kp-daemon/bin/kp-daemon rehearse "rules/walks/$walk.yaml" --root "$PWD" "$@"
 
 # Install the Claude adapter the roster pins, from office/adapter/package-lock.json and nothing else (contracts.md §9).
 adapter:

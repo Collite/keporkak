@@ -119,10 +119,26 @@ the office's checkout once it has merged. The daemon reads the rules of the chec
    The walk then plays on to its next wait — `sudo kp rule <ticket> stage` answers it — and to `exited`. `kp status`
    shows where it is; `kp check build/rehearsal/<its folder>/mail` re-judges what it wrote. Ctrl-C ends it.
 
+   `just rehearse h1-prime --seats fake` plays the same walk with the walk's seats as processes — S2.1's fake agent —
+   that the daemon starts, wakes with their mail, re-seats when one dies, and watches, as it will real seats (S2.5).
+   Their homes, transcripts and worktrees are under the throwaway project's `office/`.
+
 6. **The service.** `just run` starts the office's daemon, `just logs` follows its journal, `just stop` stops it. It
    works on the project checkout (`~/Dev/keporkak/project`) and writes its log there, under `mail/`: start it when a
-   stage says to. Until the observers and performers of P2–P3 exist it observes only your signed commands, and every
-   operation but `notify.bora` ends `failed`.
+   stage says to. It drives the seats (S2.4): it starts and re-seats them through the adapter `just adapter` installed,
+   wakes an idle one with its mail, serves their five tools and the stop hook on `listen.mcp` of `pool/offices.yaml`,
+   and reports their facts every `watch.every`. Until the observers and performers of P3 exist it observes nothing of
+   the world but your signed commands, and every operation that is not a seat's but `notify.bora` ends `failed`.
+
+7. **Watching the seats.** Each live seat has a window in the tmux session `kp`, named after it, tailing its transcript
+   (`<roots.seats>/_transcripts/<seat>.log`); the window opens when the seat starts and closes when it is retired or
+   gone. From an ssh session:
+
+   ```sh
+   tmux attach -t kp            # Ctrl-b w lists the seats' windows; Ctrl-b d leaves them running
+   ```
+
+   An office without tmux says so once in the journal; the seats run all the same.
 
 `kp` without `sudo` reads (`kp inbox`, `kp status`, `kp check`); with `sudo` it answers (`approve`, `decline`,
 `rule`, `reverse`, `queue`, `away`) — and any command run with `sudo` counts as you acting. `kp help` lists them.

@@ -1,13 +1,18 @@
 package kp.daemon
 
+import kp.daemon.seats.ClaudeAgent
+import kp.daemon.seats.Panes
+import kp.daemon.seats.Roots
+import kp.daemon.seats.Seated
+import kp.daemon.seats.Seats
+import kp.driver.claude.ClaudeAdapter
+import kp.driver.home.CompiledAnswerer
 import kp.mailroom.Clock
-import kp.mailroom.Deliveries
 import kp.mailroom.FactSource
 import kp.log.LogRefusal
 import kp.mailroom.MailroomRefusal
 import kp.mailroom.OperationResult
 import kp.mailroom.Operations
-import kp.model.Message
 import java.net.InetAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -17,10 +22,12 @@ import java.util.concurrent.CountDownLatch
 import kotlin.io.path.createDirectories
 import kotlin.system.exitProcess
 
-private const val USAGE = """kp-daemon run [--root DIR] [--office NAME] [--project DIR] [--socket PATH]
-kp-daemon rehearse <walk.yaml> [--root DIR] [--office NAME] [--socket PATH]
+private const val USAGE = """kp-daemon run [--root DIR] [--office NAME] [--project DIR] [--socket PATH] [--listen HOST:PORT]
+kp-daemon rehearse <walk.yaml> [--root DIR] [--office NAME] [--socket PATH] [--seats scripted|fake --fake-classpath CP]
   --root: the keporkak checkout whose rules are in force (default: the working folder)
+  --seats: the walk's seats scripted (default), or S2.1's fake agent run from --fake-classpath (`just rehearse <walk> --seats fake`)
   --office: the office (default: the short host name) · --project: its project checkout (default: pool/offices.yaml's)
+  --listen: where the seat API listens (default: the office's listen.mcp in pool/offices.yaml)
   --socket: the control socket (default: <runtime folder>/keporkak/kp.sock; the runtime folder is ${'$'}XDG_RUNTIME_DIR, or /run/user/<uid>)"""
 
 /**
@@ -35,16 +42,24 @@ fun main(args: Array<String>) {
     val office = option("--office") ?: hostName().substringBefore('.')
     val project = option("--project")?.let(Path::of)
     val socket = option("--socket")?.let(Path::of) ?: defaultSocket()
+    val seats = option("--seats") ?: "scripted"
+    val fakeClasspath = option("--fake-classpath")
+    val listen = option("--listen")
     try {
         val running: AutoCloseable = when (command) {
             "run" -> {
                 if (words.isNotEmpty()) fail("unknown words: $words")
-                service(root, office, project ?: projectOf(root, office), socket)
+                service(root, office, project ?: projectOf(root, office), socket, listen)
             }
             "rehearse" -> {
                 val walk = words.singleOrNull()?.let(Path::of) ?: fail("rehearse names one walk")
                 val throwaway = Files.createTempDirectory(root.resolve("build/rehearsal").createDirectories(), "${walk.fileName.toString().removeSuffix(".yaml")}-")
-                Rehearsal.start(root, walk, throwaway, office, socket, SoPeerCred) { println(it) }
+                val fake = when (seats) {
+                    "scripted" -> null
+                    "fake" -> FakeSeating(fakeClasspath ?: fail("--seats fake needs --fake-classpath"))
+                    else -> fail("--seats is scripted or fake")
+                }
+                Rehearsal.start(root, walk, throwaway, office, socket, SoPeerCred, fake = fake) { println(it) }
             }
             else -> fail(if (command == null) "a command" else "no command '$command'")
         }
@@ -88,19 +103,35 @@ internal fun projectOf(root: Path, office: String): Path {
 }
 
 /**
- * The office's daemon. Until its observers and performers exist (S2–S3), it observes nothing but Bora's presence, ends
- * `notify.bora` at once — the inbox is the notification, and `kp inbox --follow` raises it — and ends every other
- * operation `failed`, saying no performer exists yet; and no seat is idle, so a message waits in its seat's inbox.
+ * The office's daemon (S2.4 T8): the mailroom on the project's log, the seats in front of the driver — the Claude
+ * adapter `just adapter` installed under the checkout's `office/adapter` — the seat API on `listen.mcp`, the watch every
+ * `watch.every`, and the panes. Until the world's observers and performers exist (P3), it observes nothing of the world
+ * but Bora's presence, ends `notify.bora` at once — the inbox is the notification, and `kp inbox --follow` raises it — and
+ * ends every other operation that is not a seat's `failed`, saying no performer exists yet.
  */
-private fun service(root: Path, office: String, project: Path, socket: Path): Daemon {
+private fun service(root: Path, office: String, project: Path, socket: Path, listening: String?): Daemon {
     val nothing = FactSource { _, _ -> null }
     val operations = Operations { request, done ->
         done(if (request.operation == "notify.bora") OperationResult.Ok() else OperationResult.Failed("no performer for ${request.operation} on this office yet"))
     }
-    val seats = object : Deliveries {
-        override fun idle(seat: String) = false
-        override fun wake(seat: String, message: Message) = false
+    val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
+    val entry = rules?.ruleSet?.pool?.offices?.get(office)
+        ?: fail(if (rules == null) "the rules are not valid:\n" + loaded.problems.joinToString("\n") else "pool/offices.yaml names no office '$office'")
+    val roots = Roots.of(entry.roots)
+    val listen = listening ?: entry.listen["mcp"] ?: fail("pool/offices.yaml gives office '$office' no listen.mcp")
+    val clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }
+    val seated = Seated.start(office, project, root, nothing, operations, clock, listen) { starting ->
+        Seats(root, office, project, roots, ClaudeAgent(root.resolve("office/adapter")), clock, Panes(say = Journal::say), Journal::say, starting) { listener, time ->
+            ClaudeAdapter.driver(roots.secrets.resolve("claude-token"), roots.seats, time, CompiledAnswerer(roots.seats), listener)
+        }
     }
-    val started = Office.start(office, project, root, nothing, operations, seats, Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) })
-    return Daemon.start(started, nothing, socket, SoPeerCred)
+    try {
+        seated.start()
+    } catch (error: Exception) {
+        seated.close()
+        seated.office.close()
+        throw error
+    }
+    Journal.say("seats: the seat API listens on ${seated.listen}; seats' homes under ${roots.seats}")
+    return Daemon.start(seated.office, nothing, socket, SoPeerCred, beside = listOf(seated))
 }
