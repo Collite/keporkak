@@ -157,11 +157,17 @@ class Seats(
 
     /**
      * One turn of [seat] on [text], `ok` once the prompt is sent. When the turn ends the seat is idle again: a compaction
-     * asked for meanwhile is done first, then the mailroom is told. [then] hears how the turn ended.
+     * asked for meanwhile is done first, then the mailroom is told. [then] hears how the turn ended; [onSent] is queued
+     * for the mailroom when the prompt is sent — before anything its end queues.
      */
-    private fun turn(seat: String, session: Held, text: String, then: Ended = Ended {}): OperationResult {
+    private fun turn(seat: String, session: Held, text: String, then: Ended = Ended {}, onSent: (() -> Unit)? = null): OperationResult {
         val sent = CompletableFuture<String?>()
-        later { driver.prompt(SeatId(seat), text) { sent.complete(null) } }.whenComplete { end, error ->
+        later {
+            driver.prompt(SeatId(seat), text) {
+                onSent?.let { task -> reporter.execute { task() } }
+                sent.complete(null)
+            }
+        }.whenComplete { end, error ->
             val outcome: Outcome<*> = end ?: Outcome.Failed("the turn failed: ${error?.message ?: "?"}")
             sent.complete((outcome as? Outcome.Failed)?.reason ?: "the turn ended before the prompt was sent")
             reporter.execute {
@@ -254,9 +260,11 @@ class Seats(
         if (opened !is OperationResult.Ok) return opened
         val session = held.getValue(seat).also { it.busy = true }
         val unread = office?.unread(seat).orEmpty()
-        val replayed = turn(seat, session, replay(binding, unread))
+        // The replayed mail is marked read once the prompt is sent, before its turn's end can wake the seat with any of it.
+        val read = CompletableFuture<Unit>()
+        val replayed = turn(seat, session, replay(binding, unread), onSent = { runCatching { office?.read(seat, unread.map { it.id.value }) }; read.complete(Unit) })
         if (replayed is OperationResult.Failed) return replayed
-        office?.read(seat, unread.map { it.id.value })
+        read.get(SEND_WAIT_SECONDS, TimeUnit.SECONDS)
         return opened
     }
 
@@ -351,14 +359,14 @@ class Seats(
 
     private fun compact(seat: String, session: Held, done: (OperationResult) -> Unit) {
         session.busy = true
-        val sent = turn(seat, session, COMPACT) { end: Outcome<*> ->
+        val sent = turn(seat, session, COMPACT, then = Ended { end ->
             done(when (end) {
                 is Outcome.Ok<*> -> (end.value as? kp.driver.TurnEnd)?.stopReason.let { reason ->
                     if (reason == END_TURN) OperationResult.Ok() else OperationResult.Failed("the compaction's turn ended $reason")
                 }
                 is Outcome.Failed -> OperationResult.Failed(end.reason)
             })
-        }
+        })
         if (sent is OperationResult.Failed) done(sent)
     }
 
@@ -496,7 +504,7 @@ class Seats(
             SeatFacts.PROCESS_GONE -> {
                 session.gone = true
                 session.busy = false
-                panes.close(seat)
+                reporter.execute { panes.close(seat) }
                 if (!session.ending && !closing) report(seat, session, fact)
             }
             SeatFacts.PROTOCOL_CLOSED -> later.schedule({ if (!session.gone && !session.ending && !closing) report(seat, session, fact) }, CLOSE_GRACE.toMillis(), TimeUnit.MILLISECONDS)
