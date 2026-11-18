@@ -29,7 +29,7 @@ class TheChecksP1sRetroAskedFor(unittest.TestCase):
         copy = copy_of_the_checkout(self)
 
         by_gradle = gradle(copy, ":kp-model:test", "--tests", "NoSuchSpec*")
-        by_kotest = gradle(copy, ":kp-model:test", environment={"kotest_filter_specs": "NoSuchSpec*"})
+        by_kotest = gradle(copy, ":kp-model:test", environment={"kotest_filter_tests": "no such test"})
 
         self.assertNotEqual(by_gradle.returncode, 0)
         self.assertIn("No tests found for given includes: [NoSuchSpec*]", by_gradle.stdout)

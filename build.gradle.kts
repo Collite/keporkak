@@ -43,6 +43,25 @@ subprojects {
         systemProperty("kp.root", rootDir.absolutePath)
         maxHeapSize = "768m"
         testLogging { events("failed", "skipped"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
+        // Every test task reads the checkout's rules, robots, pool and personas (retro of P1, candidate 5): a change to a
+        // file there runs it again. A module declares beside these what else its specs read (S2.8 T2).
+        for (folder in listOf("rules", "robots", "pool", "agents")) {
+            inputs.files(rootProject.fileTree(folder)).withPropertyName("checkout_$folder").withPathSensitivity(PathSensitivity.RELATIVE)
+        }
+        // A run its filter leaves with no test fails — Gradle's `--tests` and Kotest's own filter alike. Kotest reads its
+        // filter from the environment, which is no input of a task: it is made one, so a new filter runs the task again.
+        val kotestFilters = listOf("kotest_filter_specs", "kotest_filter_tests")
+        kotestFilters.forEach { name -> inputs.property(name, providers.environmentVariable(name).orElse("")) }
+        val executed = java.util.concurrent.atomic.AtomicLong()
+        afterSuite(KotlinClosure2<TestDescriptor, TestResult, Unit>({ suite, result ->
+            if (suite.parent == null) executed.set(result.testCount - result.skippedTestCount)
+        }))
+        doLast {
+            if (executed.get() == 0L) {
+                val filters = kotestFilters.mapNotNull { name -> System.getenv(name)?.let { "$name=$it" } }
+                throw GradleException("$path executed no test" + filters.joinToString(", ", " (", ")").takeIf { filters.isNotEmpty() }.orEmpty())
+            }
+        }
     }
     // A module whose test task executes no spec fails `check` (retro of P0, candidate 3), and the log says how many
     // each module ran (issue #2). Counted from the test task's own reports, so an up-to-date test task counts too; an

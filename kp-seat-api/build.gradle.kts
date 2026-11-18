@@ -20,11 +20,10 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
-// The specs judge under master's rules, robots, pool files and personas: a change there runs them again.
+// The specs judge under master's rules, robots, pool files and personas — every test task's inputs (the root
+// convention, S2.8) — and run the stop-gate hook against the API: a change to it runs them again.
 tasks.named<Test>("test") {
-    for (folder in listOf("rules", "robots", "pool", "agents")) {
-        inputs.files(rootProject.fileTree(folder)).withPropertyName("checkout_$folder").withPathSensitivity(PathSensitivity.RELATIVE)
-    }
+    inputs.files(rootProject.file("hooks/stop-gate")).withPropertyName("stopGateHook").withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 // `just handshake tools` (S2.3 T8): a seat built by S2.2's builder, on the pinned adapter, in front of this server and a
