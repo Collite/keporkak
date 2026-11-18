@@ -34,8 +34,10 @@ import kotlin.io.path.readText
  * The refusal sweep (S1.6 T5), generated from the loaded rule set: one case per requirement of every transition and every
  * kind. For each message transition the generator finds a world in which its message is delivered and fires it — the
  * case's control, run through an office — then breaks only the one requirement and runs it again: the office must refuse
- * it, its `refused` record's `failed` naming that requirement in the rules' own form. A requirement that cannot be broken
- * alone is an exception, with its reason; a case that goes otherwise is a failure.
+ * it, its `refused` record naming that requirement — its `rule` the requirement's owner (the kind for a kind's, the
+ * transition for a transition's) and its `failed` the requirement in the rules' own form. A requirement that cannot be
+ * broken alone — one written the same way as another rule's, judged first, among them — is an exception, with its
+ * reason; a case that goes otherwise is a failure.
  */
 class Sweep internal constructor(
     val onMaster: Int, val swept: Int, val exceptions: List<Exception>, val failures: List<String>,
@@ -229,10 +231,10 @@ private class Sweeper(private val root: Path) {
         if (broken == null) return except(owned, "the kind's args declaration accepts no value that breaks it: what would is refused as args first",
             (owned.requirement as? Requirement.Arg)?.name)
         val decision = broken.judge(rules)
-        if (decision.outcome == Outcome.REFUSE && decision.failed == owned.form) {
+        if (names(decision, owned)) {
             val outcome = broken.inOffice(root)
             when {
-                outcome.refused?.failed?.let { it.toString() == World.json(owned.form).toString() } == true -> swept++
+                outcome.refused?.let { it.rule == owned.owner && it.failed?.toString() == World.json(owned.form).toString() } == true -> swept++
                 outcome.held != null -> except(owned, "breaking it means Bora is absent, and the Deputy holds the message until he is back: held, not refused", outcome.held!!.by.removePrefix("robot:"))
                 else -> failures += "${owned.name} ${owned.form.json()}: the engine refuses it, the office: $outcome"
             }
@@ -241,9 +243,17 @@ private class Sweeper(private val root: Path) {
         explain(owned, broken, decision).let { (reason, detail) -> except(owned, reason, detail) }
     }
 
+    /** Whether [decision] refuses naming [owned]: its owner the rule that refused, its file form the failure. */
+    private fun names(decision: Decision, owned: Owned): Boolean =
+        decision.outcome == Outcome.REFUSE && decision.rule == owned.owner && decision.failed == owned.form
+
     /** Why a world that breaks only [owned] is not refused naming it. */
     private fun explain(owned: Owned, broken: World, decision: Decision): Pair<String, String?> {
         val transition = owned.transition
+        // The kind's `require` holds for every transition of the kind (contracts.md §4.2), and the engine judges it before the
+        // candidates: a transition's copy of one of its requirements breaks with it, and the refusal names the kind.
+        if (decision.outcome == Outcome.REFUSE && transition != null && decision.rule == transition.kind && decision.failed == owned.form)
+            return "written the same way as a requirement of its kind, which is judged first: breaking it breaks the kind's, and the refusal names the kind" to transition.kind
         if (decision.outcome == Outcome.REFUSE && transition != null) {
             val first = candidates(broken, owned.machine!!, transition.kind!!).firstOrNull()
             if (first != null && first.id != transition.id && decision.rule == first.id)
@@ -403,14 +413,16 @@ private class Sweeper(private val root: Path) {
     }
 
     /**
-     * The control with only [owned] broken: each way of breaking it, until the engine refuses naming it; else the first.
+     * The control with only [owned] broken: each way of breaking it, until the engine refuses naming it — else one refused
+     * with its form under another rule's name, one refused at all, the first.
      * When another machine still moves on the message — a seat, a phase, a thread the requirement is not about — its
      * subject is first put where nothing of the kind leaves it, so that the message is judged on [owned]'s machine alone.
      */
     private fun breakOnly(owned: Owned, control: World): World? {
         val ways = make(owned.requirement, holds = false, control).flatMap { listOfNotNull(it, parked(owned, it)) }
         val judged = ways.map { it to it.judge(rules) }
-        return (judged.firstOrNull { (_, decision) -> decision.outcome == Outcome.REFUSE && decision.failed == owned.form }
+        return (judged.firstOrNull { (_, decision) -> names(decision, owned) }
+            ?: judged.firstOrNull { (_, decision) -> decision.outcome == Outcome.REFUSE && decision.failed == owned.form }
             ?: judged.firstOrNull { (_, decision) -> decision.outcome == Outcome.REFUSE } ?: judged.firstOrNull())?.first
     }
 
