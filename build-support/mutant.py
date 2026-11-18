@@ -27,8 +27,9 @@ import xml.etree.ElementTree as ElementTree
 ROOT = Path(__file__).resolve().parents[1]
 RED, GREEN, DOES_NOT_APPLY, RUNS_NOTHING, DOES_NOT_BUILD = 0, 1, 2, 3, 4
 HERO = "kp/daemon/hero/"
-# Gradle's `--tests` does not keep Kotest from running a task's other specs — it only checks afterwards that a test
-# matched — so the copy's test tasks are narrowed to the named spec classes, as `test` and `hero` split theirs.
+# Gradle's `--tests` with a leading wildcard (`*ProjectionsSpec`) does not keep Kotest from running a task's other specs —
+# Gradle only checks afterwards that a test matched — so the copy's test tasks are narrowed to the named spec classes,
+# as `test` and `hero` split theirs.
 NARROWED = """gradle.projectsEvaluated {
     allprojects { tasks.withType(Test).configureEach { setIncludes([%s]) } }
 }
