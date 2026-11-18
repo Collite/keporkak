@@ -53,9 +53,14 @@ subprojects {
         val kotestFilters = listOf("kotest_filter_specs", "kotest_filter_tests")
         kotestFilters.forEach { name -> inputs.property(name, providers.environmentVariable(name).orElse("")) }
         val executed = java.util.concurrent.atomic.AtomicLong()
-        afterSuite(KotlinClosure2<TestDescriptor, TestResult, Unit>({ suite, result ->
-            if (suite.parent == null) executed.set(result.testCount - result.skippedTestCount)
-        }))
+        addTestListener(object : TestListener {
+            override fun beforeSuite(suite: TestDescriptor) {}
+            override fun afterSuite(suite: TestDescriptor, result: TestResult) {
+                if (suite.parent == null) executed.set(result.testCount - result.skippedTestCount)
+            }
+            override fun beforeTest(test: TestDescriptor) {}
+            override fun afterTest(test: TestDescriptor, result: TestResult) {}
+        })
         doLast {
             if (executed.get() == 0L) {
                 val filters = kotestFilters.mapNotNull { name -> System.getenv(name)?.let { "$name=$it" } }
