@@ -48,7 +48,7 @@ check:
     #!/usr/bin/env sh
     set -u
     began=$(date +%s)
-    for step in rules build test schema-check hero; do
+    for step in rules changelog build test schema-check hero; do
         start=$(date +%s)
         "{{just_executable()}}" --justfile "{{justfile()}}" "$step"
         status=$?
@@ -59,6 +59,11 @@ check:
         echo "== just $step: $(( $(date +%s) - start )) s"
     done
     echo "== just check: $(( $(date +%s) - began )) s"
+
+# S2.8, the retro of P1's candidate 8: rules/walks/ and fixtures are exempt; CI's checkout reaches the merge base.
+# A change to rules/*.yaml, robots/, pool/ or docs/wow/ since the merge base with master names its decision in docs/wow/CHANGELOG.md.
+changelog: _python-env
+    build/python/bin/python build-support/check_changelog.py
 
 # Applies <patch> to a throwaway copy of the working tree, runs the specs <filter> names there with a forced rerun, and
 # prints `red` and the specs that failed, or `green`; the working tree stays as it was (S2.8; architecture.md §7).
