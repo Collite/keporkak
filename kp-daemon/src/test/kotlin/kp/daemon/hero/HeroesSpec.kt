@@ -86,14 +86,15 @@ class HeroesSpec : FreeSpec({
                 "project.commit_push ok · S2.1 merged→exited · asks seat.wake (stage-retro)",
                 "seat.wake ok",
             )
-            h1.kp("status", h1.stage()).text.lines() shouldContain
-                "stage REHEARSAL/P2/S2.1: exited · proposals 1 · stops 1 · resumes 1 · seat_gone_events 1 · review_requests 1 · fix_rounds 1 · merge_attempts 1"
+            val status = h1.kp("status", h1.stage()).text.lines()
+            status shouldContain "stage REHEARSAL/P2/S2.1: exited · proposals 1 · stops 1 · resumes 1 · seat_gone_events 1 · review_requests 1 · fix_rounds 1 · merge_attempts 1"
+            status shouldContain "waiting: none" // each reply of the walk answers what waited for it (`re`)
             h1.kp("inbox").text shouldBe "nothing waits for Bora\n"
         }
     }
 
     "H-2′ runs through one night on an injected clock, and Bora's return brings one digest" - {
-        val h2 by lazy { autoClose(Hero("h2-prime", startsAt = "2026-11-13T22:00:00Z") { Hero.theHeldMergeResumesTheTail(Hero.shadowRulingsAnswerTheirHold(it)) }) }
+        val h2 by lazy { autoClose(Hero("h2-prime", startsAt = "2026-11-13T22:00:00Z")) }
 
         "22:30 · kp queue S2.2 S2.3, then kp away → presence absent" {
             h2.at("22:30").shouldBeEmpty()
@@ -114,7 +115,7 @@ class HeroesSpec : FreeSpec({
             )
         }
         "03:50 · review-request → bind" {
-            h2.at("03:50") shouldBe listOf("assign's deadline passed") // the walk's `started` names no `re`: it answers no assign
+            h2.at("03:50").shouldBeEmpty() // the walk's `started` answers the assign (`re`): its wait is closed
             h2.through(9) shouldBe listOf(
                 "review-request coder-1→teamlead, principal: delivered · S2.2 building→ready_for_review (review_requests 1)",
                 "review-bind teamlead→reviewer-1, coder-1: delivered, woke reviewer-1 · S2.2 ready_for_review→in_review",
@@ -123,7 +124,7 @@ class HeroesSpec : FreeSpec({
         "04:40 · classify-request → held by the Deputy, its shadow ruling logged; S2.2 waits in in_review" {
             h2.at("04:40").shouldBeEmpty()
             h2.through(12) shouldBe listOf(
-                "classify-request reviewer-1→bora: held by robot:DEP-9, ticket #54 · asks notify.bora · asks seat.wake (shadow)",
+                "classify-request reviewer-1→bora: held by robot:DEP-9, ticket #52 · asks notify.bora · asks seat.wake (shadow)",
                 "hold deputy→reviewer-1 (robot:DEP-9): delivered, woke reviewer-1 · the classify-request's thread asked→held",
                 "notify.bora ok",
                 "seat.wake ok",
@@ -131,12 +132,9 @@ class HeroesSpec : FreeSpec({
             )
         }
         "05:20 · the tail reaches passed → merge with Bora absent: the Deputy holds it, the tail waits (deadman)" {
-            h2.at("05:20") shouldBe listOf( // the walk's review-bind names no `re`: it answers no review-request
-                "review-request's deadline passed",
-                "nudge mailroom→teamlead, board (expiry:review-request): delivered",
-            )
+            h2.at("05:20").shouldBeEmpty() // the walk's review-bind answers the review-request (`re`): no nudge
             h2.through(15) shouldBe listOf(
-                "merge teamlead→daemon: held by robot:DEP-3, ticket #75 · asks seat.wake (shadow)",
+                "merge teamlead→daemon: held by robot:DEP-3, ticket #69 · asks seat.wake (shadow)",
                 "hold deputy→teamlead (robot:DEP-3): delivered · the merge's thread asked→held",
                 "seat.wake ok",
                 "shadow-ruling deputy→ledger: delivered",
@@ -158,14 +156,14 @@ class HeroesSpec : FreeSpec({
             h2.through(23) shouldBe listOf(
                 "fact bora.acted (bora) · presence absent→present",
                 "digest deputy→bora (robot:DEP-8): delivered, class C",
-                "classify-request reviewer-1→bora let go: delivered, class B, ticket #54",
-                "merge teamlead→daemon, bora let go: delivered, class C, ticket #75 · tail passed→passed (merge_attempts 1) · asks git.merge",
+                "classify-request reviewer-1→bora let go: delivered, class B, ticket #52",
+                "merge teamlead→daemon, bora let go: delivered, class C, ticket #69 · tail passed→passed (merge_attempts 1) · asks git.merge",
             )
         }
         "Bora rules the classification as the shadow did, clears the anomaly — coder-2 resumes — and the tail merges" {
             h2.rest() shouldBe listOf(
                 "ruling bora→reviewer-1 signed: delivered, class B, woke reviewer-1 · the classify-request's thread held→ruled",
-                "ruling bora→deputy signed: delivered, class B · the re-verdict's thread asked→ruled",
+                "ruling bora→deputy signed: delivered, class B · the repair-done's thread asked→ruled", // the re-verdict answers the repair-done (`re`)
                 "resume pool→coder-2, teamlead (robot:POOL-6): delivered, class C, woke coder-2 · seat coder-2 busy→busy · asks seat.wake",
                 "seat.wake ok",
                 "git.merge ok · tail passed→merged",

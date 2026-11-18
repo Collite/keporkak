@@ -78,6 +78,7 @@ steps:
       seat: busy
 - who: coder-1
   kind: started
+  re: assign
   args: {}
   expect:
     state: building
@@ -181,8 +182,10 @@ steps:
   re: ruling-request
   args:
     outcome: stage
-- who: teamlead
+- id: bind
+  who: teamlead
   kind: review-bind
+  re: review-request
   args:
     reviewer: reviewer-1
   expect:
@@ -190,6 +193,7 @@ steps:
 - id: verdict
   who: reviewer-1
   kind: verdict
+  re: bind
   args:
     verdict: FIX FIRST
     sha: head-1
@@ -216,6 +220,7 @@ steps:
     state: re_review
 - who: reviewer-1
   kind: re-verdict
+  re: repair
   args:
     verdict: PASS
     sha: head-2

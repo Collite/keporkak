@@ -973,7 +973,8 @@ class Walk:
             arrivals=self.robot_rules("arrives",kind_name)
             intercepted=any(K[message["kind"]] and message["kind"]=="hold" for message in self.emissions if message.get("by") in {"robot:"+name for name in arrivals["rules"]})
             if intercepted:
-                self.ctx.update(id=request_id,status="held",tick=self.index)
+                holders=[message["by"] for message in self.emissions if message["kind"]=="hold" and message.get("by") in {"robot:"+name for name in arrivals["rules"]}]
+                self.ctx.update(id=request_id,status="held",tick=self.index,held_by=holders)
                 self.messages[request_id]=copy.deepcopy(self.ctx)
                 self.history.append(copy.deepcopy(self.ctx))
                 self.check_expectation(step,{**arrivals,"held":True,"class":self.ctx["class"]})
@@ -1001,6 +1002,34 @@ class Walk:
         if not operation:
             observed={key:arrivals[key]+observed[key] for key in ("rules","sends","wakes")}
         self.check_expectation(step,{**observed,"transitions":fired,"held":False,"class":self.ctx.get("class")})
+    def let_go(self):
+        # A message a robot holds is let go, in the order held, once that robot is no longer active, and judged then as on
+        # arrival — its requirement, its cap, its arrows and what they request (contracts.md §8; the engine's release).
+        here=self.stage
+        def robot_of(by):return next(robot for _,robot in ROBOTS if any("robot:"+rule["id"]==by for rule in robot["rules"]))
+        def active(by):
+            self.robot=robot_of(by)
+            try:return self.holds(self.robot["active_when"])
+            finally:self.robot=None
+        for request_id,held in sorted(((key,message) for key,message in self.messages.items() if message.get("status")=="held"),key=lambda item:item[1]["tick"]):
+            if any(active(by) for by in held.get("held_by",[])):continue
+            self.set_stage(held["stage"])
+            self.ctx=copy.deepcopy(held);kind_name=held["kind"];kind=K[kind_name]
+            window=kind.get("window","stage")
+            key=(kind_name,self.stage if window=="stage" else (held["from"],"default") if window=="session" else (held["from"],window))
+            maximum=kind.get("max_fires")
+            if maximum is None:maximum=E.get("caps",{}).get("max_fires_default")
+            if self.require(kind["require"]) is not None or (isinstance(maximum,int) and self.kind_fires.get(key,0)>=maximum):
+                self.ctx.update(status="refused",tick=self.index)
+                self.messages[request_id]=copy.deepcopy(self.ctx)
+                continue
+            self.kind_fires[key]=self.kind_fires.get(key,0)+1
+            self.ctx.update(status="delivered",tick=self.index)
+            self.messages[request_id]=copy.deepcopy(self.ctx)
+            self.fired=self.fired+self.transitions("message",kind_name,request_id)
+            self.history.append(copy.deepcopy(self.ctx))
+            self.robot_rules("delivered",kind_name)
+        self.set_stage(here)
     def step(self,step):
         expected=step.get("expect",{})
         if not expected.get("refused"):
@@ -1025,7 +1054,9 @@ class Walk:
         if TRACE:print("WALK "+json.dumps(self.definition,sort_keys=True))
         for self.index,step in enumerate(self.definition["steps"],1):
             self.fired=[]
-            try:self.step(step)
+            try:
+                self.step(step)
+                self.let_go()
             except WalkError as error:
                 fail(f"walk {self.name} step {self.index}: {error}")
                 return

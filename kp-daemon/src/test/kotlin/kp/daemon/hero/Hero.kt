@@ -113,8 +113,10 @@ class Hero(
 
     /**
      * Bora at the socket: each of his steps is the `kp` command that sends it — `sudo` when the step is signed — and his
-     * acting is `sudo kp status`. A ruling that carries more than its outcome (the `seat` and `cause` POOL-6 reads) is
-     * more than `kp rule` can say: it goes in by the door `kp` uses, his signed command (a Found line of S1.6).
+     * acting is `sudo kp status`. A ruling that carries more than its outcome says it as `kp rule`'s `key=value` words
+     * (contracts.md §6, Amendment 23). A ruling about a message that raised no ticket — H-2′'s about the anomaly-stop,
+     * class C — is more than `kp rule <ticket>` can address: it goes in by the door `kp` uses, his signed command (a
+     * Found line of S1.10).
      */
     private inner class AtTheSocket : Bora {
         override fun send(ask: Bora.Ask) {
@@ -123,7 +125,8 @@ class Hero(
             val ran = when (ask.kind) {
                 "approval" -> kp("approve", ticket(), root = ask.signed)
                 "decline" -> kp("decline", ticket(), root = ask.signed)
-                "ruling" -> if (args.keys == setOf("outcome")) kp("rule", ticket(), (args.getValue("outcome") as Datum.Text).value, root = ask.signed) else signed(ask)
+                "ruling" -> if (ask.ticket == null && ask.re != null) signed(ask) else kp(*(listOf("rule", ticket(), (args.getValue("outcome") as Datum.Text).value) +
+                    args.filterKeys { it != "outcome" }.map { (key, value) -> "$key=${(value as Datum.Text).value}" }).toTypedArray(), root = ask.signed)
                 "queue-approval" -> kp(*(listOf("queue") + (args["stages"] as Datum.Items).items.map { (it as Datum.Text).value }).toTypedArray(), root = ask.signed)
                 "away" -> kp("away", root = ask.signed)
                 else -> throw WalkFailure("step ${ask.number}: Bora has no command for ${ask.kind}")
@@ -146,30 +149,6 @@ class Hero(
 
     companion object {
         const val OFFICE = "panda"
-
-        /**
-         * `h2-prime`'s shadow rulings name no `re`: as written, each opens a thread of its own, where `thread.state eq held`
-         * cannot hold. The Deputy's half writes it about the held item that woke it — the one the `hold` before it answers.
-         */
-        val shadowRulingsAnswerTheirHold: (Walk) -> Walk = { walk ->
-            walk.withSteps(walk.steps.mapIndexed { index, step ->
-                if (step.kind != "shadow-ruling" || step.text("re") != null) step
-                else walk.steps.take(index).lastOrNull { it.kind == "hold" }?.text("re")?.let { step.with("re", Datum.Text(it)) } ?: step
-            })
-        }
-
-        /**
-         * `h2-prime` has the TeamLead send the tail's `merge` again once Bora is back; the daemon lets the merge the Deputy
-         * held go at his return (DEP-3 holds it `until: presence`), and that one asks for `git.merge`. The second merge
-         * is left out and the walk's `git.merge` ends the first: the tail resumes, as design/11 §3 says.
-         */
-        val theHeldMergeResumesTheTail: (Walk) -> Walk = { walk ->
-            val again = walk.steps.single { it.id == "tail-merge" }
-            walk.withSteps(walk.steps.filter { it !== again }.map { step ->
-                if (step.operation != "git.merge" || step.text("request") != "tail-merge") step
-                else step.with("request", Datum.Text("tail-held")).let { merge -> again.fields["stage"]?.let { merge.with("stage", it) } ?: merge }
-            })
-        }
 
         private const val DAY = 86_400L
 

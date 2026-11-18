@@ -332,15 +332,16 @@ class Office(
 
     /**
      * Plays the walk's next step of each kind, in order, from its sender with its args and facts — and the facts of the
-     * operations that follow it, which the fake performer finishes at once. Returns the stage's state after each.
+     * operations that follow it, which the fake performer finishes at once. Returns the stage's state after each. A step
+     * is `re` the step it answers when that one was played here — unless [answering] is false: then it answers nothing.
      */
-    fun play(kinds: List<String>): List<String?> = kinds.map { kind ->
+    fun play(kinds: List<String>, answering: Boolean = true): List<String?> = kinds.map { kind ->
         val index = walk.steps.withIndex().first { (i, step) -> i >= next && step["kind"].text() == kind && step["who"].text() != "mailroom" }.index
         val step = walk.steps[index]
         next = index + 1
         walk.steps.drop(index).takeWhile { it == step || it["operation"] != null }.forEach { facts.set(it["facts"].fields()) }
         clock.advance(1.minutes)
-        val re = step["re"].text()?.let { ids.getValue(it) }
+        val re = step["re"].text()?.takeIf { answering }?.let { ids[it] }
         val input = """{"kind":"$kind","stage":"$STAGE","subject":"$kind","args":${(step["args"] ?: Datum.Fields(emptyMap())).json()}""" +
             (re?.let { ""","re":"$it"""" } ?: "") + "}"
         val who = step["who"].text()!!
