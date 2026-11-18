@@ -3,6 +3,7 @@ package kp.mailroom
 import io.kotest.core.spec.style.FreeSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldNotContain
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.engine.Datum
 import kp.model.Delivered
@@ -81,7 +82,7 @@ class TheMailroomsLooseEndsSpec : FreeSpec({
         val report = office.send("qa-panda", """{"kind": "qa-report", "stage": "$STAGE", "subject": "a report that answers nothing",
             "args": {"outcome": "pass", "fixture": "fixture:qa/s2.1", "command": "just qa", "counts": {}, "sha": "head-1"}}""")
 
-        listOf(report.status, report.requirement) shouldBe listOf(Status.REFUSED, "to: {re: from}")
+        report should refusedBy("qa-report", "to: {re: from}")
         office.readBack().message(report.id).to.value shouldBe "mailroom"
         office.readBack().records<Refused>().single().id shouldBe report.id
     }
@@ -93,7 +94,7 @@ class TheMailroomsLooseEndsSpec : FreeSpec({
             office.send("coder-1", """{"kind": "started", "stage": "$STAGE", "to": $to, "subject": "started on the branch"}""")
         }
 
-        answers.map { "${it.status} ${it.requirement}" } shouldBe List(4) { "REFUSED to: teamlead" }
+        answers.forEach { it should refusedBy("started", "to: teamlead") }
         answers.map { office.readBack().message(it.id).to.value } shouldBe List(4) { "mailroom" }
         office.readBack().records<Refused>().map { it.id } shouldBe answers.map { it.id }
         office.readBack().records<Delivered>() shouldBe emptyList()
@@ -106,8 +107,8 @@ class TheMailroomsLooseEndsSpec : FreeSpec({
             office.send("pool-1", """{"kind": "pause", "stage": "$STAGE", "subject": "pause the seat", "args": {"seat": $seat, "cause": "anomaly-stop"}}""")
         }
 
-        answers.map { "${it.status} ${it.requirement}" } shouldBe
-            listOf("REFUSED to: a seat", "REFUSED args: 'seat' is not string", "REFUSED args: 'seat' is not string")
+        answers[0] should refusedBy("pause", "to: a seat")
+        answers.drop(1).forEach { it should refusedBy("pause", "args: 'seat' is not string") }
         answers.map { office.readBack().message(it.id).to.value } shouldBe List(3) { "mailroom" }
         office.readBack().records<Refused>().map { it.id } shouldBe answers.map { it.id }
         office.readBack().records<Delivered>() shouldBe emptyList()

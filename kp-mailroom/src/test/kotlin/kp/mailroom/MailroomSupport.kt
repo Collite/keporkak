@@ -1,5 +1,7 @@
 package kp.mailroom
 
+import io.kotest.matchers.Matcher
+import io.kotest.matchers.MatcherResult
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -16,6 +18,7 @@ import kp.model.Message
 import kp.model.OfficeId
 import kp.model.Op
 import kp.model.Record
+import kp.model.Refused
 import kp.model.Rules
 import kp.model.Transition
 import kp.model.parseLine
@@ -123,6 +126,36 @@ class FakeSeats : Deliveries {
 class FakeClock(var now: Instant = Instant.parse(START)) : Clock {
     fun advance(by: Duration) { now = now.plus(by.toJavaDuration()) }
     override fun now(): Instant = now
+}
+
+/**
+ * A refusal, asserted by the rule that refused and by what failed — never by its status or its words alone (the retro of
+ * P1, candidate 1; contracts.md §2.2, §5): the sender's [Answer] or the `refused` record. [failed] is the first requirement
+ * that failed, in its file form as the rules write it in flow style (`{fact: git.branch_exists}`); where what failed is
+ * held for every kind with no requirement written there is none, and [failed] is the rules' field its `requirement`
+ * names (`to: teamlead`). Another rule refusing a requirement written the same way does not pass (review-018 B1).
+ */
+fun refusedBy(rule: String, failed: String): Matcher<Any?> = Matcher { refusal ->
+    val (refused, by, what) = when (refusal) {
+        is Answer -> Triple(refusal.status == Status.REFUSED, refusal.rule, refusal.failed?.flow() ?: refusal.requirement)
+        is Refused -> Triple(true, refusal.rule, refusal.failed?.let { Datum.of(plain(it.toString())).flow() } ?: refusal.requirement)
+        else -> Triple(false, null, "$refusal")
+    }
+    MatcherResult(
+        refused && by == rule && what == failed,
+        { "expected a refusal by $rule, failed $failed — was ${if (refused) "refused" else "not refused"} by $by, failed $what" },
+        { "expected no refusal by $rule, failed $failed" },
+    )
+}
+
+/** A datum as the rules write a value in flow style: `{counter: resumes, lt: {cap: resumes_per_stage}}`. */
+private fun Datum.flow(): String = when (this) {
+    is Datum.Fields -> fields.entries.joinToString(", ", "{", "}") { (key, value) -> "$key: ${value.flow()}" }
+    is Datum.Items -> items.joinToString(", ", "[", "]") { it.flow() }
+    is Datum.Text -> value
+    is Datum.Number -> value.toPlainString()
+    is Datum.Bool -> value.toString()
+    Datum.Null -> "null"
 }
 
 /** A walk of `rules/walks/`, as the Python walker reads it (`check-rules.py --trace`), and the walker's own trace of it. */

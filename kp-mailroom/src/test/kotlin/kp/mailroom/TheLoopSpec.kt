@@ -1,6 +1,7 @@
 package kp.mailroom
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.engine.FactRef
 import kp.model.Delivered
@@ -36,7 +37,8 @@ class TheLoopSpec : StringSpec({
 
         office.readBack().message(unsigned.id).let { listOf(it.from.value, it.by, it.signed) } shouldBe listOf("bora", "bora-cli", false)
         office.readBack().message(signed.id).let { listOf(it.from.value, it.by, it.signed) } shouldBe listOf("bora", "bora-cli", true)
-        listOf(unsigned.status, signed.status) shouldBe listOf(Status.REFUSED, Status.DELIVERED)
+        unsigned should refusedBy("decline", "{signed: bora}")
+        signed.status shouldBe Status.DELIVERED
     }
 
     "a delivered message is written, then its record, then the transitions it fired — all on disk when the sender is answered" {
@@ -60,7 +62,7 @@ class TheLoopSpec : StringSpec({
         written.map { it::class.simpleName } shouldBe listOf("Message", "Refused", "Judged")
         (written[1] as Refused).let { listOf(it.id, it.rule, it.requirement, it.refusalsToday?.toLong()) } shouldBe
             listOf(answer.id, answer.rule, answer.requirement, 1L)
-        answer.status shouldBe Status.REFUSED
+        answer should refusedBy("review-request", "{fact: pr.ready}")
         (written[0] as Message).deadline shouldBe null
     }
 

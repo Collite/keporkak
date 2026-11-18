@@ -13,10 +13,11 @@ test: _python-env
     build/python/bin/python scripts/run-python-tests.py
     ./gradlew --console=plain test
 
-# S0.1 owns these scripts and generated personas.
+# S0.1 owns these scripts and generated personas. A spec asserts a refusal by its rule, or the list says why not (S2.8).
 rules: _python-env
     build/python/bin/python scripts/check-rules.py --self-test
     build/python/bin/python scripts/check-rules.py
+    build/python/bin/python build-support/check_refusal_assertions.py
     build/python/bin/python scripts/render-agents.py
 
 # CI checks the stored schemas; pass contracts.md for the verbatim source comparison.

@@ -118,10 +118,21 @@ private class WalkThrough(private val walk: Datum.Fields) {
             current = step["stage"].text() ?: current
             val stageId = stage(current)
             facts.getValue(current).putAll(step["facts"].fields())
-            val decision = if (step["operation"] != null) result(step) else arrival(step, index + 1, stageId)
+            val decision = if (step["operation"] != null) result(step) else arrival(step, index + 1, stageId).also { byItsRule(step, index + 1, it) }
             TraceStep(index + 1, decision.outcome == Outcome.REFUSE, decision.moves.map { it.rule },
                 stageIds.mapValues { (_, id) -> state.stage(id) ?: "planned" })
         }
+    }
+
+    /**
+     * A refused step is refused by the rule it names, `expect.refused_by` — the walker holds it to the same (S2.8, the
+     * retro of P1): another rule refusing it, a refusal where the walk names none, or a delivery where it names one fails.
+     */
+    private fun byItsRule(step: Map<String, Datum>, number: Int, decision: Decision) {
+        val named = step["expect"].fields()["refused_by"].text()
+        val walk = "walk ${definition["name"].text()} step $number"
+        if (decision.outcome == Outcome.REFUSE && decision.rule != named) throw AssertionError("$walk: refused by ${decision.rule}, the walk names ${named ?: "no rule"}")
+        if (decision.outcome != Outcome.REFUSE && named != null) throw AssertionError("$walk: ${decision.outcome}, the walk expects a refusal by $named")
     }
 
     private fun result(step: Map<String, Datum>): Decision {

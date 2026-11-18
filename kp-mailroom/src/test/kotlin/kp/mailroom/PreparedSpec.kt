@@ -1,6 +1,7 @@
 package kp.mailroom
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.model.Delivered
 import kp.model.Refused
@@ -14,6 +15,7 @@ class PreparedSpec : StringSpec({
 
         val answer = office.send("coder-1", """{"kind": "stop", "stage": "$STAGE", "subject": "stop", "args": {"sc": "SC-9"}}""")
 
+        answer should refusedBy("stop", "{arg: sc, in: {fact: list.stop_conditions}}")
         office.readBack().records<Refused>().single { it.id == answer.id }.json["failed"].toString() shouldBe
             """{"arg":"sc","in":{"fact":"list.stop_conditions"}}"""
     }

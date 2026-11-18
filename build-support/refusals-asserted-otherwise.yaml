@@ -1,0 +1,9 @@
+# Spec files that assert a refusal without refusedBy(rule, failed) — each with its reason (S2.8 T3). Read by
+# build-support/check_refusal_assertions.py, which `just rules` runs: a spec file not here must assert its refusals by
+# their rule, and an entry the check no longer needs fails it.
+kp-model/src/test/kotlin/kp/model/ModelCodecSpec.kt: >-
+  the `refused` record's codec: a line read and written back with its rule and failed among its fields — nothing is
+  judged, so no rule refuses anything
+kp-seat-api/src/test/kotlin/kp/seatapi/TheSeatsToolsSpec.kt: >-
+  compares the tool's whole result, its rule and requirement included (contracts.md §5); refusedBy is the spec support
+  of kp-engine and kp-mailroom, which kp-seat-api's specs do not share

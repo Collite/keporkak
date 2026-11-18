@@ -76,6 +76,7 @@ steps:
       failed: 1
   expect:
     refused: true
+    refused_by: deploy-failed
 - id: revert
   who: qa
   kind: roll

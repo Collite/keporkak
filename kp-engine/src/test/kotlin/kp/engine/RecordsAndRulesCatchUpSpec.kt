@@ -1,6 +1,7 @@
 package kp.engine
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.engine.Trigger.Arrival
 import kp.model.Message
@@ -55,7 +56,7 @@ class RecordsAndRulesCatchUpSpec : StringSpec({
         val unsigned = parseLine("""{"v":1,"seq":9,"at":"$NOW","id":"m-panda-000011","thread":"m-panda-000011","from":"bora","to":"teamlead","kind":"decline","stage":"$STAGE","subject":"no","created":"$NOW","by":"bora-cli"}""") as Message
 
         supervised().judge(proposed, Arrival(signed), table("now" to NOW)).rule shouldBe "T-06"
-        supervised().judge(proposed, Arrival(unsigned), table("now" to NOW)).refusal() shouldBe ("decline" to "signed by Bora's CLI")
+        supervised().judge(proposed, Arrival(unsigned), table("now" to NOW)) should refusedBy("decline", "{signed: bora}")
     }
 
     "an expiry that says the wait goes on gives it a new deadline; at the cap the wait is over" {
@@ -78,7 +79,7 @@ class RecordsAndRulesCatchUpSpec : StringSpec({
         val assigned = folded(log(move("stage", STAGE, "planned", "assigned")))
         val branch = table("now" to NOW, "git.branch_exists" to true)
 
-        supervised().judge(assigned, Arrival(message("started", from = "coder-1", to = "principal")), branch).refusal() shouldBe ("started" to "to: teamlead")
+        supervised().judge(assigned, Arrival(message("started", from = "coder-1", to = "principal")), branch) should refusedBy("started", "to: teamlead")
         supervised().judge(assigned, Arrival(message("started", from = "coder-1", to = "teamlead")), branch).outcome shouldBe Outcome.DELIVER
     }
 })

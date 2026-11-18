@@ -1,6 +1,7 @@
 package kp.mailroom
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.model.Held
 
@@ -15,8 +16,7 @@ class HoldsSpec : StringSpec({
 
         val asked = office.send("reviewer-1", """{"kind": "classify-request", "stage": "$STAGE", "args": {"question": "blocker?"}}""")
 
-        asked.status shouldBe Status.REFUSED
-        asked.requirement shouldBe "args: 'default' is required"
+        asked should refusedBy("classify-request", "args: 'default' is required")
         office.readBack().records<Held>() shouldBe emptyList()
     }
 

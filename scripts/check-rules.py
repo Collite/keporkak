@@ -716,6 +716,13 @@ def compare(actual, operator, expected):
 class WalkError(Exception):
     pass
 
+class Refusal(WalkError):
+    """A step the rules refuse, and the rule that refuses it — the id the engine gives (contracts.md §2.2): the kind for
+    what every kind is held to and for its own requirements, the stage's first candidate transition when no arrow fires."""
+    def __init__(self, rule, text):
+        super().__init__(text)
+        self.rule=rule
+
 class Walk:
     def __init__(self, definition):
         self.definition=definition
@@ -956,10 +963,10 @@ class Walk:
             kind_name=step["kind"]
             if kind_name not in K:raise WalkError(f"unknown kind '{kind_name}'")
             kind=K[kind_name];who=step.get("who",kind["from"].split("|")[0].strip());role=self.definition.get("seats",{}).get(who,who)
-            if role not in {part.strip() for part in kind["from"].split("|")}:raise WalkError(f"role '{role}' may not send '{kind_name}'")
+            if role not in {part.strip() for part in kind["from"].split("|")}:raise Refusal(kind_name,f"role '{role}' may not send '{kind_name}'")
             args=step.get("args",{})
             error=self.arguments(kind,args)
-            if error:raise WalkError(error)
+            if error:raise Refusal(kind_name,error)
             reply_id=step.get("re")
             reply=self.messages.get(reply_id,{}) if isinstance(reply_id,str) else (reply_id or {})
             self.ctx={"kind":kind_name,"from":who,"role":role,"by":step.get("by",who),"args":args,"signed":step.get("signed"),"stage":self.stage,"re":reply,"reply_id":reply_id,"trigger":{"args":args,"from":who,"stage":self.stage}}
@@ -982,21 +989,23 @@ class Walk:
                 if not step.get("expect",{}).get("held"):raise WalkError("message was held")
                 return
             failure=self.require(kind["require"])
-            if failure is not None:raise WalkError(f"kind {kind_name} requirement failed: {failure}")
+            if failure is not None:raise Refusal(kind_name,f"kind {kind_name} requirement failed: {failure}")
             window=kind.get("window","stage")
             key=(kind_name,self.stage if window=="stage" else (who,step.get("session","default")) if window=="session" else (who,window))
             maximum=kind.get("max_fires")
             # `max_fires: null` is caps.max_fires_default: no kind is without a cap (contracts.md §4.2).
             if maximum is None:maximum=E.get("caps",{}).get("max_fires_default")
-            if isinstance(maximum,int) and self.kind_fires.get(key,0)>=maximum:raise WalkError(f"kind {kind_name} cap exhausted")
+            if isinstance(maximum,int) and self.kind_fires.get(key,0)>=maximum:raise Refusal(kind_name,f"kind {kind_name} cap exhausted")
             self.kind_fires[key]=self.kind_fires.get(key,0)+1
-            if len(step.get("body","").splitlines())>E.get("caps",{}).get("body_lines",float("inf")):raise WalkError("body line cap exhausted")
+            if len(step.get("body","").splitlines())>E.get("caps",{}).get("body_lines",float("inf")):raise Refusal(kind_name,"body line cap exhausted")
             self.ctx.update(id=request_id,status="delivered",tick=self.index)
             self.messages[request_id]=copy.deepcopy(self.ctx)
         fired=self.transitions(event,kind_name,request_id)
         self.fired=fired
         if not fired and not operation and any(t.get("kind")==kind_name and t.get("on","message")==event for _,t in all_transitions):
-            raise WalkError(f"no arrow from {self.state('stage')} for {kind_name}")
+            # The rule that refuses: the first candidate of the machines in their order, as the engine names it; the kind when none leaves the state.
+            first=next((t["id"] for machine,definition in machines.items() for t in definition["transitions"] if self.matches(t,machine,event,kind_name)),kind_name)
+            raise Refusal(first,f"no arrow from {self.state('stage')} for {kind_name}")
         if not operation:self.history.append(copy.deepcopy(self.ctx))
         else:self.history.append({"operation":operation,"result":self.ctx["result"],"stage":self.stage,"tick":self.index})
         observed=self.robot_rules("op" if operation else "delivered",operation or kind_name)
@@ -1037,16 +1046,16 @@ class Walk:
             return self.execute_step(step)
         snapshot=copy.deepcopy(self.__dict__)
         attempt=copy.deepcopy(step)
-        attempt["expect"]={key:value for key,value in expected.items() if key not in ("refused","refusal_contains")}
+        attempt["expect"]={key:value for key,value in expected.items() if key not in ("refused","refusal_contains","refused_by")}
         try:
             self.execute_step(attempt)
-        except WalkError as error:
-            text=str(error)
-            # A body over caps.body_lines is a refusal too (contracts.md §2.1).
-            if not (text.startswith("kind ") or text.startswith("no arrow ") or text.startswith("role ") or text.startswith(("unknown argument", "missing argument", "invalid argument", "body line cap exhausted"))):
-                raise
+        except Refusal as refusal:
+            text=str(refusal)
             if expected.get("refusal_contains","") not in text:
                 raise WalkError(f"wrong refusal: {text}")
+            # A refused step names the rule that refuses it, and another rule refusing it is a failure (S2.8; the retro of P1).
+            if expected.get("refused_by")!=refusal.rule:
+                raise WalkError(f"refused by {refusal.rule}, the walk names {expected.get('refused_by') or 'no rule'}")
             self.__dict__.clear();self.__dict__.update(snapshot)
             self.current["facts"].update(step.get("facts",{}))
             return

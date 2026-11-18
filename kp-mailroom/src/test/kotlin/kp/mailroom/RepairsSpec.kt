@@ -2,6 +2,7 @@ package kp.mailroom
 
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.model.Delivered
 import kp.model.Fact
@@ -72,7 +73,11 @@ class RepairsSpec : StringSpec({
         }
         repeat(3) { office.send("coder-1", """{"kind": "started", "stage": "$STAGE", "args": {"colour": "blue"}}""") }
 
-        office.readBack().records<Refused>().map { it.refusalsToday?.toInt() } shouldBe listOf(null, null, null, null, null, null, 1, 2, 3)
+        val refused = office.readBack().records<Refused>()
+        refused.map { it.refusalsToday?.toInt() } shouldBe listOf(null, null, null, null, null, null, 1, 2, 3)
+        refused.take(3).forEach { it should refusedBy("decline", "{signed: bora}") }
+        refused.slice(3..5).forEach { it should refusedBy("digest", "max_fires: 1, window: return") }
+        refused.drop(6).forEach { it should refusedBy("started", "args: 'colour' is not declared") }
         office.readBack().records<Fact>().filter { it.fact == "refusals.today" }.map { it.subject } shouldBe listOf("coder-1")
         office.readBack().sent("pause").map { it.to.value } shouldBe listOf("coder-1")
     }
