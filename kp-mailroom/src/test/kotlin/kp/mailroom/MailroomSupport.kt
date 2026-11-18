@@ -258,6 +258,29 @@ private fun Datum?.text(): String? = (this as? Datum.Text)?.value
 private fun Datum?.fields(): Map<String, Datum> = (this as? Datum.Fields)?.fields.orEmpty()
 
 /**
+ * What [Office.end] compares of the state — where a restart must end again — and what it leaves out, each with its reason
+ * (the retro of P1, candidate 2; S2.8 T4).
+ */
+val WHERE_THE_LOG_ENDS = Projection(
+    "where the office's log ends (Office.end)",
+    compares = setOf("machines", "counters", "delivered", "deadlines", "tickets", "operations", "unread"),
+    leavesOut = mapOf(
+        "seq" to "a start writes lines of its own (`voided`, `rules`): the numbers after it differ, as ids do",
+        "at" to "the time of the last line, which a start's own lines move",
+        "unjudged" to "a judgement left open: where a run ends, every judgement is closed",
+        "opened" to "a judgement left open: where a run ends, every judgement is closed",
+        "pending" to "a message not yet judged: where a run ends, every message is",
+        "hops" to "counts keyed by thread ids, which a restart numbers differently; the deliveries are compared in order",
+        "answered" to "message ids, which a restart numbers differently; a wait answered is no longer in `deadlines`",
+        "rules" to "not compared: the start reloads the same files, and nothing here asks that it did — a Found line of S2.8",
+        "held" to "not compared: a message held at the end is not asked for — a Found line of S2.8",
+        "refusals" to "not compared: a seat's refusals of the day are not asked for — a Found line of S2.8",
+        "sessions" to "not compared: where a seat's session window begins is not asked for — a Found line of S2.8",
+        "wakes" to "not compared: where a robot's own seat was last woken is not asked for — a Found line of S2.8",
+    ),
+)
+
+/**
  * One office on a throwaway project: master's rules, facts from a walk, faked operations and seats, a clock that moves
  * a minute per step. [seed] puts the stage in a state, with [counters], before the mailroom starts — what an earlier
  * part of the log would have left — [others] puts other stages in theirs, and each of the walk's seats is in `ready`.

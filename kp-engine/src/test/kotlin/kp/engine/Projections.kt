@@ -9,8 +9,16 @@ import kotlin.reflect.KClass
  * field the state gains later is in neither until someone decides: [unaccounted] names it.
  */
 class Projection(val name: String, val compares: Set<String>, val leavesOut: Map<String, String>) {
-    /** What the projection does not account for among [fields]. Empty when it names each field once. */
-    fun unaccounted(fields: List<String>): List<String> = emptyList()
+    /**
+     * What the projection does not account for among [fields]: a field it neither compares nor lists, by its name; a
+     * name it gives that is no field, one it both compares and lists, a field it lists with no reason — each said so.
+     * Empty when it names each field once.
+     */
+    fun unaccounted(fields: List<String>): List<String> =
+        fields.filter { it !in compares && it !in leavesOut } +
+            (compares + leavesOut.keys).filter { it !in fields }.map { "$it: no such field" } +
+            compares.filter { it in leavesOut }.map { "$it: compared and left out" } +
+            leavesOut.filterValues { it.isBlank() }.keys.map { "$it: left out with no reason" }
 }
 
 /** The fields a class's instances hold, in declaration order: for a data class, its constructor's. */
