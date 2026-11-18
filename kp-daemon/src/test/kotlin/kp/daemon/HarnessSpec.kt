@@ -25,7 +25,7 @@ class HarnessSpec : FreeSpec({
             val failure = shouldThrow<WalkFailure> { hero.through(6) }
 
             failure.message shouldBe "walk H-1-prime step 6 (stop · coder-1 · stop): expected outcome delivered, found refused" +
-                " — refused m-panda-000031 by stop: names a stop-condition id (SC-n) from the fence (failed: {\"arg\":\"sc\",\"in\":{\"fact\":\"list.stop_conditions\"}})"
+                " — refused m-panda-000033 by stop: names a stop-condition id (SC-n) from the fence (failed: {\"arg\":\"sc\",\"in\":{\"fact\":\"list.stop_conditions\"}})"
         }
     }
 

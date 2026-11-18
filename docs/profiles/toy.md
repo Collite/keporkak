@@ -1,6 +1,8 @@
 ---
 # The profile's machine part (contracts.md §10): what agents/packaging/claude.yaml's placeholders need. The prose below
 # says where each value comes from; where they disagree, fix this frontmatter.
+# The effort whose seats are built with this profile (contracts.md §10, Amendment 22).
+effort: TOY
 default_branch: master
 # Relative to a repo's root; globs as the packaging data reads them.
 pin_files: [gradle/libs.versions.toml, gradle/wrapper/gradle-wrapper.properties]

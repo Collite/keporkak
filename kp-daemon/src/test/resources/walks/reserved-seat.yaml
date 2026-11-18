@@ -1,0 +1,15 @@
+# S2.4 DONE: a coder on a model the roster reserves for another role is refused its start with `roster.model_allowed`,
+# answered by the daemon from the roster and the seat's binding — here the model the world names for the seat.
+name: reserved-seat
+stage: S2.4
+initial: building
+seats: {}
+facts:
+  budget.slot_open: true
+  seat.model:
+    coder-3: claude-opus-5-5
+  seat.name:
+    coder: coder-3
+    teamlead: teamlead
+    pool: pool
+steps: []

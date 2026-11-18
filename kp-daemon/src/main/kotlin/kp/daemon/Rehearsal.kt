@@ -1,7 +1,20 @@
 package kp.daemon
 
+import kp.daemon.seats.FakeAgents
+import kp.daemon.seats.Panes
+import kp.daemon.seats.Roots
+import kp.daemon.seats.Seated
+import kp.daemon.seats.Seats
+import kp.driver.claude.ClaudeAdapter
+import kp.driver.home.CompiledAnswerer
 import kp.mailroom.Clock
 import java.nio.file.Path
+import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
+import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.writeText
+import kp.engine.Datum
+import kp.engine.FactRef
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -10,9 +23,12 @@ import java.time.temporal.ChronoUnit
  * harness ([Script]) — its seats scripted, its facts tabled, its operations ended as the walk says — pausing where the
  * walk needs Bora, who answers with the real `kp` on the daemon's socket. The robots are the daemon's. A step that does
  * not do what the walk expects ends the playing, and says why; the daemon keeps answering `kp` until the rehearsal is
- * closed.
+ * closed. With fake seats (`--seats fake`, S2.4) the walk's seats are processes — S2.1's fake agent — driven by the
+ * daemon's own seats behind the seat API: woken, re-seated and watched as real seats will be (S2.5).
  */
-class Rehearsal private constructor(private val script: Script, private val daemon: Daemon, private val out: (String) -> Unit) : AutoCloseable {
+class Rehearsal private constructor(
+    private val script: Script, private val daemon: Daemon, private val out: (String) -> Unit, val seated: Seated? = null, val fake: FakeAgents? = null,
+) : AutoCloseable {
     /** The office the daemon runs: what a spec fires the deadlines of once it has moved the clock. */
     internal val office: Office get() = daemon.office
     private val lock = Object()
@@ -126,17 +142,81 @@ class Rehearsal private constructor(private val script: Script, private val daem
         /**
          * Rehearses [walk] on the throwaway project [project] as office [office]: what the walk starts from is written
          * first, the daemon starts with the walk's facts and listens on [socket], and the walk is played until it needs
-         * Bora. [out] hears what happens. [clock] is the wall clock unless a spec moves it.
+         * Bora. [out] hears what happens. [clock] is the wall clock unless a spec moves it. With [fake], the walk's seats
+         * are fake agents ([FakeSeating]).
          */
         fun start(
             root: Path, walk: Path, project: Path, office: String, socket: Path, peers: PeerReader,
-            clock: Clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }, out: (String) -> Unit,
+            clock: Clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }, fake: FakeSeating? = null, out: (String) -> Unit,
         ): Rehearsal {
             val script = Script(Walk.read(walk))
             script.seed(project, office, clock)
-            val started = Office.start(office, project, root, script.facts, script.operations, script.seats, clock)
-            val daemon = Daemon.start(started, script.facts, socket, peers)
-            return Rehearsal(script, daemon, out).also { it.player.start() }
+            if (fake == null) {
+                val started = Office.start(office, project, root, script.facts, script.operations, script.seats, clock)
+                val daemon = Daemon.start(started, script.facts, socket, peers)
+                return Rehearsal(script, daemon, out).also { it.player.start() }
+            }
+            val (seated, agents) = fake.seat(root, script, project, office, clock, out)
+            val daemon = Daemon.start(seated.office, script.facts, socket, peers, beside = listOf(seated))
+            return Rehearsal(script, daemon, out, seated, agents).also { it.player.start() }
         }
+    }
+}
+
+/**
+ * The walk's seats as S2.1's fake agent (S2.4, `just rehearse <walk> --seats fake`): run from [classpath] — the driver's
+ * test fixtures — with the daemon's own seats in front of them: the seat API on a free loopback port, the roots under
+ * the throwaway project's `office/`, a worktree, a list and STATUS for each of the walk's stages — a coder's home lets it
+ * write its list, so a stage without one seats no coder — panes in the tmux session [panes] by
+ * [tmux]. The walk's seats start as the walk starts them — ready, seeded — at the level the walk's first request for
+ * their role names; a step that reports a seat's death ends its process, and a step that ends a seat operation waits for
+ * the seats' result. A rehearsal's stages belong to no effort of the plan: their seats' homes are built with [profile].
+ */
+class FakeSeating(val classpath: String, val tmux: String = "tmux", val panes: String = Panes.SESSION, val profile: String = "keporkak", val watchEvery: java.time.Duration? = null) {
+    /** The seats of [script]'s walk on [project]; with [seeding], its seats are started as it starts them — not when a daemon starts again. */
+    internal fun seat(root: Path, script: Script, project: Path, office: String, clock: Clock, out: (String) -> Unit, seeding: Boolean = true): Pair<Seated, FakeAgents> {
+        val home = project.resolve("office")
+        val roots = Roots(home.resolve("worktrees"), home.resolve("scratch"), home.resolve("seats"), FakeAgents.secrets(home.resolve("secrets")))
+        script.stages.values.forEach { stage ->
+            Seats.worktree(stage)?.let { roots.worktrees.resolve(it).createDirectories() }
+            LIST.matchEntire(stage)?.destructured?.let { (phase, number) ->
+                val list = project.resolve("tasks-p$phase-s$number-${script.walk.name.lowercase()}.md")
+                if (project.listDirectoryEntries("tasks-p$phase-s$number-*.md").isEmpty()) list.writeText("# ${script.walk.name}: the list of $stage, as a rehearsal has it\n")
+            }
+        }
+        project.resolve("STATUS.md").takeIf { !it.exists() }?.writeText("# STATUS, as a rehearsal has it\n")
+        val agents = FakeAgents(classpath, home.resolve("fake"))
+        // A seat's stage: the one whose table names it for its role — as the walk's seed places a stage's seat — else the walk's.
+        val placed = script.walk.stageNames.flatMap { name ->
+            script.walk.seats.values.distinct().mapNotNull { role ->
+                (script.facts.table(name).observe(FactRef(SEAT_NAME, mapOf(OF to Datum.Text(role))), script.stageId(name)) as? Datum.Text)?.value?.let { it to script.stageId(name) }
+            }
+        }.reversed().toMap()
+        val seeds = script.walk.seats.mapValues { (seat, role) ->
+            val level = script.walk.steps.firstNotNullOfOrNull { step -> step.fields(ARGS).takeIf { (it[ROLE] as? Datum.Text)?.value == role }?.get(LEVEL) as? Datum.Text }
+            Seats.Seed(role, placed[seat] ?: script.stageId(script.walk.stage), level?.value)
+        }
+        val seated = Seated.start(office, project, root, script.facts, script.operations, clock, LOOPBACK) { rules ->
+            Seats(root, office, project, roots, agents, clock, Panes(tmux, panes, out), out, rules, seeds, profileOf = { profile }, moreEfforts = mapOf(script.effort to ".")) { listener, time ->
+                ClaudeAdapter.driver(roots.secrets.resolve("claude-token"), roots.seats, time, CompiledAnswerer(roots.seats), listener)
+            }
+        }
+        script.live = object : LiveSeats {
+            override fun performs(operation: String) = operation in Seats.OPERATIONS
+            override fun die(seat: String) = agents.die(seat)
+        }
+        if (seeding) seeds.keys.sorted().forEach { seat -> seated.seats.seed(seat)?.let { out("seat $seat did not start: $it") } }
+        seated.start(watchEvery ?: seated.watchEvery())
+        return seated to agents
+    }
+
+    companion object {
+        const val LOOPBACK = "127.0.0.1:0"
+        private const val ARGS = "args"
+        private const val ROLE = "role"
+        private const val LEVEL = "level"
+        private const val SEAT_NAME = "seat.name"
+        private val LIST = Regex("^[A-Z][A-Z0-9-]*/P([0-9]+)/S([0-9]+\\.[0-9]+)$")
+        private const val OF = "of"
     }
 }
