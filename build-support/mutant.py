@@ -75,15 +75,16 @@ def copy_of_the_working_tree(into):
 
 
 def reports(copy, tasks):
-    """Every spec case the tasks ran, from their JUnit reports: (spec, case, failed)."""
+    """Every spec case the tasks ran, from their JUnit reports: (spec, case, the first line of its failure or None)."""
     cases = []
     for task in tasks:
         _, module, name = task.split(":")
         for report in sorted((copy / module / "build/test-results" / name).glob("TEST-*.xml")):
             for case in ElementTree.parse(report).getroot().iter("testcase"):
                 if case.find("skipped") is None:
-                    failed = case.find("failure") is not None or case.find("error") is not None
-                    cases.append((case.get("classname"), case.get("name"), failed))
+                    broke = case.find("failure") if case.find("failure") is not None else case.find("error")
+                    why = None if broke is None else ((broke.get("message") or broke.text or "").strip().splitlines() or ["(no message)"])[0][:240]
+                    cases.append((case.get("classname"), case.get("name"), why))
     return cases
 
 
@@ -129,7 +130,7 @@ def main(arguments):
                 return RUNS_NOTHING
             say(f"error: the patched copy does not build, or stopped before its specs reported — neither red nor green (exit {DOES_NOT_BUILD})")
             return DOES_NOT_BUILD
-        failed = sorted({f"{spec} — {case}" for spec, case, broke in cases if broke})
+        failed = sorted({f"{spec} — {case}\n      {why}" for spec, case, why in cases if why is not None})
         others = [task for task in re.findall(r"> Task (\S+) FAILED", run.stdout) if task not in tasks]
         if failed:
             say("red — the specs that failed:")
