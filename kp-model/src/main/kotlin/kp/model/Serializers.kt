@@ -28,3 +28,5 @@ object FactSerializer : EnvelopeSerializer<Fact>("Fact", { Record.read(it) as? F
 object OpSerializer : EnvelopeSerializer<Op>("Op", { Record.read(it) as? Op ?: throw IllegalArgumentException("expected Op record") })
 object RulesSerializer : EnvelopeSerializer<Rules>("Rules", { Record.read(it) as? Rules ?: throw IllegalArgumentException("expected Rules record") })
 object ReadSerializer : EnvelopeSerializer<Read>("Read", { Record.read(it) as? Read ?: throw IllegalArgumentException("expected Read record") })
+object JudgedSerializer : EnvelopeSerializer<Judged>("Judged", { Record.read(it) as? Judged ?: throw IllegalArgumentException("expected Judged record") })
+object VoidedSerializer : EnvelopeSerializer<Voided>("Voided", { Record.read(it) as? Voided ?: throw IllegalArgumentException("expected Voided record") })

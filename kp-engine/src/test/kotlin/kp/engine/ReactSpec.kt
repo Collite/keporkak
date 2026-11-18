@@ -6,7 +6,7 @@ import io.kotest.matchers.shouldBe
 /** S1.4 T2 — `react`: a robot's rules on each trigger of contracts.md §8, read by the guard's evaluator. */
 class ReactSpec : StringSpec({
     val engine = supervised()
-    val away = fold(after(State(), """{"event":"transition","machine":"presence","subject":"bora","from":"present","to":"absent","rule":"PRESENCE-01","cause":"m-panda-000001"}"""))
+    val away = folded(after(State(), """{"event":"transition","machine":"presence","subject":"bora","from":"present","to":"absent","rule":"PRESENCE-01","cause":"m-panda-000001"}"""))
 
     fun Reaction.said(): List<String> = sends.map { "${it.rule}: ${it.kind} to ${it.to} ${Datum.of(it.args).json()}" } + wakes.map { "${it.rule}: wake ${it.mode}" }
 
@@ -19,9 +19,9 @@ class ReactSpec : StringSpec({
     }
 
     "a delivery, an expiry and an operation's result each fire the rules that name them, with what triggered them as `{trigger: …}`" {
-        val delivered = fold(after(State(), *sent("m-panda-000010", "anomaly-stop", "deputy", "teamlead", """{"rule":"DEP-4","target":"stage","seat":"coder-2"}""")))
-        val assigned = fold(after(State(), *sent("m-panda-000010", "assign", "teamlead", "coder-1", """{"seat":"coder-1"}""")))
-        val gone = fold(after(State(), *sent("m-panda-000010", "seat-gone", "pool", "teamlead", """{"seat":"coder-1"}""")))
+        val delivered = folded(after(State(), *sent("m-panda-000010", "anomaly-stop", "deputy", "teamlead", """{"rule":"DEP-4","target":"stage","seat":"coder-2"}""")))
+        val assigned = folded(after(State(), *sent("m-panda-000010", "assign", "teamlead", "coder-1", """{"seat":"coder-1"}""")))
+        val gone = folded(after(State(), *sent("m-panda-000010", "seat-gone", "pool", "teamlead", """{"seat":"coder-1"}""")))
 
         engine.react(delivered, Trigger.Delivered("m-panda-000010"), table("now" to NOW)).said() shouldBe
             listOf("""POOL-5: pause to coder-2 {"seat":"coder-2","cause":"anomaly-stop"}""")
@@ -48,7 +48,7 @@ class ReactSpec : StringSpec({
     }
 
     "a proposal for a stage in Bora's signed queue is answered with a queued approval, and goes on to its addressee" {
-        val queued = fold(after(away,
+        val queued = folded(after(away,
             """{"id":"m-panda-000005","thread":"m-panda-000005","from":"bora","to":"teamlead","kind":"queue-approval","subject":"q","created":"$NOW","by":"bora-cli","signed":true,"args":{"stages":["$STAGE"]}}""",
             """{"event":"delivered","id":"m-panda-000005","to":["teamlead"],"class":"B"}"""), away)
         val proposal = message("assignment-proposal", "teamlead", """{"role":"coder","level":"senior","seat":"coder-1"}""", to = "bora")

@@ -6,7 +6,7 @@ import kp.engine.Need.Param.Known
 import kp.engine.Need.Param.Of
 import kp.engine.Trigger.Arrival
 
-private val building = fold(log(move("stage", STAGE, "assigned", "building")))
+private val building = folded(log(move("stage", STAGE, "assigned", "building")))
 private val review = message("review-request", from = "coder-1", args = """{"attest": ["done_lines_hold"]}""")
 
 /** T3: who answers a fact (contracts.md §4.4). */
@@ -38,7 +38,7 @@ class FactsSpec : StringSpec({
         supervised().judge(building, Arrival(review), facts).outcome shouldBe Outcome.DELIVER
     }
     "a fact whose source is exactly L is answered from the state, never from the table" {
-        val assigned = fold(log(move("stage", STAGE, "planned", "assigned"), move("seat", "coder-1", "provisioned", "ready")))
+        val assigned = folded(log(move("stage", STAGE, "planned", "assigned"), move("seat", "coder-1", "provisioned", "ready")))
         val assign = message("assign", from = "teamlead", to = "coder", args = """{"seat": "coder-1"}""")
 
         val decision = supervised().judge(assigned, Arrival(assign), table("now" to NOW, "stage.state" to "planned"))
@@ -56,7 +56,7 @@ class FactsSpec : StringSpec({
         decision.observed["ci.state(of=abc)"] shouldBe UNKNOWN_FACT
     }
     "log.count counts a kind's deliveries in a scope, matching where, after the last since, within a window" {
-        val stops = fold(log(
+        val stops = folded(log(
             *sent("m-panda-000001", "stop", from = "coder-1", to = "principal", args = """{"sc": "SC-3"}"""),
             *sent("m-panda-000002", "triage", from = "principal", to = "coder-1", args = """{"outcome": "resume"}"""),
             *sent("m-panda-000003", "stop", from = "coder-1", to = "principal", args = """{"sc": "SC-3"}"""),
@@ -68,8 +68,8 @@ class FactsSpec : StringSpec({
         requiring("{fact: log.count, kind: stop, scope: stage, window: 1m, eq: 0}").failure(table("now" to "2026-11-15T10:03:00Z"), state = stops) shouldBe null
     }
     "request.open: a delivered request of that kind in the stage that no delivery answers" {
-        val asked = fold(log(*sent("m-panda-000001", "deploy-request", from = "teamlead", to = "qa")))
-        val answered = fold(log(*sent("m-panda-000001", "deploy-request", from = "teamlead", to = "qa"),
+        val asked = folded(log(*sent("m-panda-000001", "deploy-request", from = "teamlead", to = "qa")))
+        val answered = folded(log(*sent("m-panda-000001", "deploy-request", from = "teamlead", to = "qa"),
             *sent("m-panda-000002", "deploy-done", from = "qa", re = "m-panda-000001").let { arrayOf(it[0], it[1].replace("}", ""","answers":"m-panda-000001"}""")) }))
         val engine = requiring("{fact: request.open, kind: deploy-request}")
 
@@ -77,7 +77,7 @@ class FactsSpec : StringSpec({
         engine.failure(state = answered) shouldBe "{fact: request.open, kind: deploy-request}"
     }
     "review.open_blockers: the blocker ids of the stage's last delivered verdict" {
-        val verdicts = fold(log(
+        val verdicts = folded(log(
             *sent("m-panda-000001", "verdict", from = "reviewer-1", to = "coder-1", args = """{"verdict": "FIX FIRST", "sha": "a", "blockers": [{"id": "B1"}, {"id": "B2"}]}"""),
             *sent("m-panda-000002", "re-verdict", from = "reviewer-1", to = "coder-1", args = """{"verdict": "FIX FIRST", "sha": "b", "blockers": [{"id": "B2"}], "reviewed": ["B1", "B2"]}"""),
         ))
@@ -85,14 +85,14 @@ class FactsSpec : StringSpec({
         requiring("{fact: review.open_blockers, eq: {arg: items}}").failure(state = verdicts, args = """{"items": ["B1", "B2"]}""") shouldBe "{fact: review.open_blockers, eq: {arg: items}}"
     }
     "the machines' states: stage.state, phase.state, seat.state; bora.present and bora.absent_since from the presence machine" {
-        val state = fold(log(move("stage", "KP/P1/S1.3", "planned", "assigned"), move("phase", "KP/P1", "open", "exit_pending"), move("seat", "coder-1", "ready", "busy"),
+        val state = folded(log(move("stage", "KP/P1/S1.3", "planned", "assigned"), move("phase", "KP/P1", "open", "exit_pending"), move("seat", "coder-1", "ready", "busy"),
             move("presence", "bora", "present", "absent")))
         requiring("{fact: stage.state, stage: KP/P1/S1.3, eq: assigned}", "{fact: phase.state, eq: exit_pending}", "{fact: seat.state, seat: coder-1, eq: busy}", "{fact: bora.present, eq: false}",
             "{fact: bora.absent_since, eq: '2026-11-14T09:03:00Z'}").failure(state = state) shouldBe null
         requiring("{fact: bora.present}").failure(state = State()) shouldBe null
     }
     "a thread's hops, its flag's state and whether it is open; a seat's refusals today; whether a seat's inbox was replayed" {
-        val thread = fold(log(*sent("m-panda-000001", "classify-request", from = "reviewer-1", to = "bora"), move("flag", "m-panda-000001", "asked", "held"),
+        val thread = folded(log(*sent("m-panda-000001", "classify-request", from = "reviewer-1", to = "bora"), move("flag", "m-panda-000001", "asked", "held"),
             """{"id":"m-panda-000002","thread":"m-panda-000002","from":"coder-1","to":"teamlead","kind":"started","stage":"$STAGE","subject":"s","created":"$NOW","by":"seat:coder-1"}""",
             """{"event":"refused","id":"m-panda-000002","rule":"started","requirement":"r","at":"2026-11-15T09:00:00Z"}"""))
         requiring("{fact: thread.hops, thread: m-panda-000001, eq: {cap: tail_retries}}", "{fact: thread.state, thread: m-panda-000001, eq: held}", "{fact: thread.open, thread: m-panda-000001}",
@@ -100,7 +100,7 @@ class FactsSpec : StringSpec({
         requiring("{fact: seat.inbox_replayed, seat: bora}").failure(state = thread) shouldBe "{fact: seat.inbox_replayed, seat: bora}"
     }
     "queue.names: the last delivered queue Bora signed names the stage; an unsigned one names none, and the wave is not read again" {
-        fun queue(signed: Boolean) = fold(log(*sent("m-panda-000001", "queue-approval", from = "bora", to = "teamlead", args = """{"stages": ["$STAGE"]}""")
+        fun queue(signed: Boolean) = folded(log(*sent("m-panda-000001", "queue-approval", from = "bora", to = "teamlead", args = """{"stages": ["$STAGE"]}""")
             .let { arrayOf(it[0].replace("\"by\":\"seat:bora\"", "\"by\":\"bora-cli\"" + if (signed) ",\"signed\":true" else ""), it[1]) }))
         requiring("{fact: queue.names}").failure(state = queue(signed = true)) shouldBe null
         requiring("{fact: queue.names}").failure(state = queue(signed = false)) shouldBe "{fact: queue.names}"

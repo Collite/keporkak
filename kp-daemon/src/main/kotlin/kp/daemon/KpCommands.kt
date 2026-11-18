@@ -28,8 +28,11 @@ class KpCommands(private val office: Office, world: FactSource) : Commands {
             "check" -> if (args.isEmpty()) usage(out, "kp check <log…>") else Check(office.rules).run(args.map { java.nio.file.Path.of(it) }).let { (lines, code) -> code.also { lines.forEach(out::line) } }
             "approve" -> answer(out, peer, args, 1..1, "kp approve <ticket>") { item -> message(APPROVAL, item) }
             "decline" -> answer(out, peer, args, 1..Int.MAX_VALUE, "kp decline <ticket> [reason]") { item -> message(DECLINE, item, body = args.drop(1)) }
-            "rule" -> answer(out, peer, args, 2..Int.MAX_VALUE, "kp rule <ticket> <outcome> [text]") { item ->
-                message(RULING, item, mapOf(OUTCOME to JsonPrimitive(args[1])), body = args.drop(2))
+            "rule" -> answer(out, peer, args, 2..Int.MAX_VALUE, "kp rule <ticket | message id> <outcome> [key=value …] [text]", byId = true) { item ->
+                // Each key=value word after the outcome is one more arg (contracts.md §6, Amendment 23); the words after them are the text.
+                val pairs = args.drop(2).takeWhile { KEY_VALUE.matches(it) }
+                val extra = pairs.associate { it.substringBefore('=') to JsonPrimitive(it.substringAfter('=')) }
+                message(RULING, item, mapOf(OUTCOME to JsonPrimitive(args[1])) + extra.filterKeys { it != OUTCOME }, body = args.drop(2 + pairs.size))
             }
             "reverse" -> reverse(out, peer, args)
             "queue" -> if (args.isEmpty()) usage(out, "kp queue <stage>…")
@@ -58,15 +61,26 @@ class KpCommands(private val office: Office, world: FactSource) : Commands {
     }
 
     /**
-     * A command that answers an item by its ticket ([args]' first word, `5` or `#5`): the message [compose] makes for the
-     * item, submitted in Bora's name — signed when the peer is root. An unknown ticket is not a message: nothing is sent.
+     * A command that answers an item by its ticket ([args]' first word, `5` or `#5`) — or, [byId], by the id of a message
+     * on the log, as `kp reverse` names its item (contracts.md §6, Amendment 24): the message [compose] makes for the
+     * item, submitted in Bora's name — signed when the peer is root. An unknown ticket or message is not an item: nothing
+     * is sent.
      */
-    private fun answer(out: Out, peer: Peer, args: List<String>, count: IntRange, form: String, compose: (Item) -> JsonObject): Int {
+    private fun answer(out: Out, peer: Peer, args: List<String>, count: IntRange, form: String, byId: Boolean = false, compose: (Item) -> JsonObject): Int {
         if (args.size !in count) return usage(out, form)
-        val number = args.first().removePrefix("#").toLongOrNull() ?: return usage(out, form)
-        val ticket = office.state.tickets[number] ?: return NOT_FOUND.also { out.line("kp: no ticket #$number — kp inbox --all lists them") }
-        return submit(out, peer, compose(Item(ticket.item, stageOf(ticket.item))))
+        val named = args.first()
+        val number = named.removePrefix("#").toLongOrNull()
+        val item = when {
+            number != null -> office.state.tickets[number]?.item ?: return NOT_FOUND.also { out.line("kp: no ticket #$number — kp inbox --all lists them") }
+            !byId -> return usage(out, form)
+            known(named) -> named
+            else -> return NOT_FOUND.also { out.line("kp: no message $named — kp inbox --all lists the tickets") }
+        }
+        return submit(out, peer, compose(Item(item, stageOf(item))))
     }
+
+    /** A message the log holds: delivered, held, or not yet judged. */
+    private fun known(id: String): Boolean = office.state.let { id in it.delivered || id in it.held || id in it.pending }
 
     /**
      * `kp reverse <digest item> minor|serious` (contracts.md §6): `reverse`, in reply to the item — a message id, or a
@@ -123,6 +137,8 @@ class KpCommands(private val office: Office, world: FactSource) : Commands {
         const val QUEUE_APPROVAL = "queue-approval"
         const val AWAY = "away"
         const val OUTCOME = "outcome"
+        /** A word `kp rule` carries as an arg: a name as the rules write an arg's, `=`, and its value. */
+        val KEY_VALUE = Regex("^[a-z][a-z_]*=.+$")
         const val STAGES = "stages"
         const val DIGEST_ITEM = "digest_item"
         const val SEVERITY = "severity"
@@ -141,7 +157,7 @@ class KpCommands(private val office: Office, world: FactSource) : Commands {
             "kp check <log…>                    re-judges log files and prints every difference",
             "sudo kp approve <ticket>           approval on that item",
             "sudo kp decline <ticket> [reason]  decline",
-            "sudo kp rule <ticket> <outcome> [text]",
+            "sudo kp rule <ticket | message id> <outcome> [key=value …] [text]",
             "sudo kp reverse <digest item> minor|serious",
             "sudo kp queue <stage>…             queue-approval for the current wave",
             "sudo kp away",

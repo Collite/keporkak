@@ -5,7 +5,7 @@
   "required": ["v", "seq", "at", "event"],
   "properties": {
     "v": {"const": 1}, "seq": {"type": "integer", "minimum": 1}, "at": {"type": "string", "format": "date-time"},
-    "event": {"enum": ["delivered", "refused", "held", "expired", "transition", "fact", "op", "rules", "read"]}
+    "event": {"enum": ["delivered", "refused", "held", "expired", "transition", "fact", "op", "rules", "read", "judged", "voided"]}
   },
   "oneOf": [
     {"properties": {"event": {"const": "delivered"},
@@ -37,7 +37,8 @@
        "counted": {"type": "object", "additionalProperties": {"type": "integer"}}},
      "required": ["machine", "subject", "from", "to", "cause"]},
     {"properties": {"event": {"const": "fact"},
-       "fact": {"type": "string"}, "subject": {"type": "string"}, "value": {}, "evidence": {"type": "string"}},
+       "fact": {"type": "string"}, "subject": {"type": "string"}, "value": {}, "evidence": {"type": "string"},
+       "params": {"type": "object"}, "stage": {"type": ["string", "null"]}},
      "required": ["fact", "subject", "value"]},
     {"properties": {"event": {"const": "op"},
        "op": {"type": "string"}, "phase": {"enum": ["requested", "ok", "failed"]},
@@ -49,6 +50,11 @@
      "required": ["hash", "files"]},
     {"properties": {"event": {"const": "read"},
        "seat": {"type": "string"}, "ids": {"type": "array", "items": {"type": "string"}, "minItems": 1}},
-     "required": ["seat", "ids"]}
+     "required": ["seat", "ids"]},
+    {"properties": {"event": {"const": "judged"}, "first": {"type": "integer", "minimum": 1}},
+     "required": ["first"]},
+    {"properties": {"event": {"const": "voided"},
+       "first": {"type": "integer", "minimum": 1}, "last": {"type": "integer", "minimum": 1}},
+     "required": ["first", "last"]}
   ]
 }

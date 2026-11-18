@@ -11,7 +11,8 @@ facts:
   list.tasks_total: 8
   list.lines: 90
 steps:
-- who: teamlead
+- id: proposal
+  who: teamlead
   kind: assignment-proposal
   args:
     role: coder
@@ -23,6 +24,7 @@ steps:
   who: bora
   kind: approval
   signed: bora
+  re: proposal
   args: {}
   expect:
     state: assigned

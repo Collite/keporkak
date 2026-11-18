@@ -141,6 +141,66 @@ class LogWriterSpec : StringSpec({
             )
         }
     }
+    "a judgement's lines take their seq as they are added and reach the disk together when it is closed, the judged line last" {
+        val project = throwawayProject()
+        LogWriter.open(project, panda).use { log ->
+            val judgement = log.judgement()
+            judgement.add(message("m-panda-000001")).seq.toInt() shouldBe 1
+            judgement.add(record()).seq.toInt() shouldBe 2
+            log.last shouldBe 2L
+            project.resolve("mail/KP/p1-s1.1.jsonl").exists() shouldBe false
+
+            judgement.close("2026-11-14T09:00:01Z").json.toString() shouldBe """{"v":1,"seq":3,"at":"2026-11-14T09:00:01Z","event":"judged","first":1}"""
+        }
+        project.resolve("mail/KP/p1-s1.1.jsonl").seqs() shouldBe listOf(1, 3)
+        project.resolve("mail/_office/panda-2026-11.jsonl").seqs() shouldBe listOf(2)
+    }
+    "closing a judgement writes its lines in seq order and syncs each file once, the judged line's file last" {
+        val project = throwawayProject()
+        val events = mutableListOf<String>()
+        watchedWriter(project, events).use { log ->
+            log.append(message("m-panda-000001"))
+            log.append(record())
+            events.clear()
+            val judgement = log.judgement()
+            judgement.add(message("m-panda-000002"))
+            judgement.add(record())
+            judgement.add(message("m-panda-000003"))
+            events shouldBe emptyList()
+
+            judgement.close("2026-11-14T09:00:01Z")
+
+            events shouldBe listOf(
+                "write mail/KP/p1-s1.1.jsonl", "write mail/_office/panda-2026-11.jsonl", "write mail/KP/p1-s1.1.jsonl", "write mail/KP/p1-s1.1.jsonl",
+                "force(true) mail/_office/panda-2026-11.jsonl", "force(true) mail/KP/p1-s1.1.jsonl",
+            )
+        }
+    }
+    "the judged line goes to its first line's file — the office's when that stage's file closed inside the judgement" {
+        val project = throwawayProject()
+        LogWriter.open(project, panda).use { log ->
+            log.judgement().run {
+                add(record(), stage)
+                add(stageMove("exited"), stage)
+                close("2026-11-14T10:00:01Z")
+            }
+        }
+        project.resolve("mail/KP/p1-s1.1.jsonl").seqs() shouldBe listOf(1, 2)
+        project.resolve("mail/_office/panda-2026-11.jsonl").seqs() shouldBe listOf(3)
+    }
+    "while a judgement is open no line is appended alone, and a line it refuses changes nothing" {
+        val project = throwawayProject()
+        LogWriter.open(project, panda).use { log ->
+            val judgement = log.judgement()
+            judgement.add(record())
+            shouldThrow<LogRefusal> { log.append(record()) }.message shouldContain "judgement"
+            shouldThrow<LogRefusal> { log.judgement() }.message shouldContain "judgement"
+            shouldThrow<LogRefusal> { judgement.add(JsonObject(record() + ("unknown" to JsonPrimitive(true))).let { JsonObject(it - "event") }) }
+            log.last shouldBe 1L
+            judgement.close("2026-11-14T09:00:01Z")
+            log.append(record()).seq.toInt() shouldBe 3
+        }
+    }
     "the log assigns seq; a draft that brings one is refused" {
         val project = throwawayProject()
         LogWriter.open(project, panda).use { log ->

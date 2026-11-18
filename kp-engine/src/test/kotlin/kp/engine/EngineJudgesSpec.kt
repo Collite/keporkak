@@ -10,7 +10,7 @@ import kp.engine.Trigger.Arrival
  */
 class EngineJudgesSpec : StringSpec({
     "a message whose requirements hold is delivered, and names the transition it fires and the counters it moves" {
-        val state = fold(log(move("stage", STAGE, "assigned", "building")))
+        val state = folded(log(move("stage", STAGE, "assigned", "building")))
         val review = message("review-request", from = "coder-1", args = """{"attest": ["done_lines_hold"]}""")
         val facts = table("now" to NOW, "pr.ready" to true, "pr.head" to "abc", "ci.state(of=abc)" to "green",
             "list.tasks_open" to 0, "list.found_untriaged" to 0)
@@ -24,7 +24,7 @@ class EngineJudgesSpec : StringSpec({
     }
 
     "a message whose requirement fails is refused, naming the rule's id and the first failed requirement in the rules' own words" {
-        val state = fold(log(move("stage", STAGE, "building", "stopped", extra = ""","counted":{"resumes":2}""")))
+        val state = folded(log(move("stage", STAGE, "building", "stopped", extra = ""","counted":{"resumes":2}""")))
         val resume = message("triage", from = "principal", to = "coder", args = """{"outcome": "resume", "since": "2026-11-15T09:00:00Z"}""")
         val facts = table("now" to NOW, "list.sections_changed(since=2026-11-15T09:00:00Z)" to listOf("Found while doing"), "list.tasks_total" to 8)
 
@@ -37,9 +37,9 @@ class EngineJudgesSpec : StringSpec({
     }
 
     "a kind its sender's role does not own, a kind past its max_fires in its window, a thread past its hop cap and a body past its line cap are refused though no requirement says so" {
-        val assigned = fold(log(move("stage", STAGE, "planned", "assigned")))
-        val startedOnce = fold(log(move("stage", STAGE, "planned", "assigned"), *sent("m-panda-000050", "started", from = "coder-1")))
-        val eightHops = fold(log(move("stage", STAGE, "planned", "assigned"),
+        val assigned = folded(log(move("stage", STAGE, "planned", "assigned")))
+        val startedOnce = folded(log(move("stage", STAGE, "planned", "assigned"), *sent("m-panda-000050", "started", from = "coder-1")))
+        val eightHops = folded(log(move("stage", STAGE, "planned", "assigned"),
             *sent("m-panda-000051", "stop", from = "coder-1", thread = "m-panda-000051"), *sent("m-panda-000052", "stop", from = "coder-1", thread = "m-panda-000051"),
             *sent("m-panda-000053", "stop", from = "coder-1", thread = "m-panda-000051"), *sent("m-panda-000054", "stop", from = "coder-1", thread = "m-panda-000051"),
             *sent("m-panda-000055", "stop", from = "coder-1", thread = "m-panda-000051"), *sent("m-panda-000056", "stop", from = "coder-1", thread = "m-panda-000051"),
@@ -55,7 +55,7 @@ class EngineJudgesSpec : StringSpec({
     }
 
     "of two candidate transitions, the first in file order whose requirements hold is the one that fires" {
-        val passed = fold(log(move("stage", STAGE, "in_review", "passed")))
+        val passed = folded(log(move("stage", STAGE, "in_review", "passed")))
         val merge = message("merge", from = "teamlead", to = "daemon")
         val audit = arrayOf("now" to NOW, "pr.evidence_present" to true, "list.tasks_open" to 0, "project.proof_files" to 0, "list.found_untriaged" to 0)
         val strayChange = table(*audit, "git.stray_changes" to 1)

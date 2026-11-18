@@ -2,8 +2,6 @@
 
 package kp.daemon.hero
 
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kp.daemon.Bora
 import kp.daemon.Daemon
 import kp.daemon.Log
@@ -18,7 +16,6 @@ import kp.daemon.WalkFailure
 import kp.daemon.checkout
 import kp.engine.Datum
 import kp.mailroom.Clock
-import kp.mailroom.Sender
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -38,8 +35,14 @@ class SetClock(@Volatile var now: Instant) : Clock {
  * spec's own thread. Bora's steps are the real `scripts/kp` over the socket, `sudo` simulated ([AtTheSocket]); the clock
  * is injected and moves only when the spec sets it ([at]). The rules are the checkout's, or those under [root].
  */
-class Hero(walk: String, startsAt: String = "2026-11-17T09:00:00Z", root: Path = checkout, amend: (Walk) -> Walk = { it }) : AutoCloseable {
-    val project: Path = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "hero-")
+class Hero(
+    walk: String, startsAt: String = "2026-11-17T09:00:00Z", root: Path = checkout, prepared: Path? = null, world: (Script) -> Unit = {}, amend: (Walk) -> Walk = { it },
+) : AutoCloseable {
+    /**
+     * The throwaway project — or [prepared], a project whose log is already written: the daemon starts on it again,
+     * nothing seeded, in the world [world] sets up.
+     */
+    val project: Path = prepared ?: Files.createTempDirectory(checkout.resolve("build").createDirectories(), "hero-")
     private val sockets: Path = Files.createTempDirectory("kp-")
     private val socket: Path = sockets.resolve("kp.sock")
     private val peers = SimulatedPeers()
@@ -51,7 +54,8 @@ class Hero(walk: String, startsAt: String = "2026-11-17T09:00:00Z", root: Path =
     val player: Player
 
     init {
-        script.seed(project, OFFICE, clock)
+        if (prepared == null) script.seed(project, OFFICE, clock)
+        world(script)
         daemon = Daemon.start(Office.start(OFFICE, project, root, script.facts, script.operations, script.seats, clock), script.facts, socket, peers)
         player = script.player(office, AtTheSocket()) { said += it }
     }
@@ -106,17 +110,20 @@ class Hero(walk: String, startsAt: String = "2026-11-17T09:00:00Z", root: Path =
 
     /**
      * Bora at the socket: each of his steps is the `kp` command that sends it — `sudo` when the step is signed — and his
-     * acting is `sudo kp status`. A ruling that carries more than its outcome (the `seat` and `cause` POOL-6 reads) is
-     * more than `kp rule` can say: it goes in by the door `kp` uses, his signed command (a Found line of S1.6).
+     * acting is `sudo kp status`. A ruling that carries more than its outcome says it as `kp rule`'s `key=value` words
+     * (contracts.md §6, Amendment 23); one about a message that raised no ticket — H-2′'s about the anomaly-stop, class
+     * C — names that message by its id (Amendment 24).
      */
     private inner class AtTheSocket : Bora {
         override fun send(ask: Bora.Ask) {
             fun ticket(): String = ask.ticket?.toString() ?: throw WalkFailure("step ${ask.number}: no open ticket for Bora's ${ask.kind}")
+            fun item(): String = ask.ticket?.toString() ?: ask.re ?: throw WalkFailure("step ${ask.number}: no open ticket or message for Bora's ${ask.kind}")
             val args = ask.args.fields
             val ran = when (ask.kind) {
                 "approval" -> kp("approve", ticket(), root = ask.signed)
                 "decline" -> kp("decline", ticket(), root = ask.signed)
-                "ruling" -> if (args.keys == setOf("outcome")) kp("rule", ticket(), (args.getValue("outcome") as Datum.Text).value, root = ask.signed) else signed(ask)
+                "ruling" -> kp(*(listOf("rule", item(), (args.getValue("outcome") as Datum.Text).value) +
+                    args.filterKeys { it != "outcome" }.map { (key, value) -> "$key=${(value as Datum.Text).value}" }).toTypedArray(), root = ask.signed)
                 "queue-approval" -> kp(*(listOf("queue") + (args["stages"] as Datum.Items).items.map { (it as Datum.Text).value }).toTypedArray(), root = ask.signed)
                 "away" -> kp("away", root = ask.signed)
                 else -> throw WalkFailure("step ${ask.number}: Bora has no command for ${ask.kind}")
@@ -128,41 +135,10 @@ class Hero(walk: String, startsAt: String = "2026-11-17T09:00:00Z", root: Path =
             said += "sudo kp status: " + kp("status", root = true).text.lines().first()
         }
 
-        private fun signed(ask: Bora.Ask): Ran {
-            if (ask.signed) office.acted()
-            val input = JsonObject(listOfNotNull("kind" to JsonPrimitive(ask.kind), "stage" to JsonPrimitive(ask.stage), "subject" to JsonPrimitive("${ask.kind} (step ${ask.number})"),
-                ask.re?.let { "re" to JsonPrimitive(it) }, "args" to kotlinx.serialization.json.Json.parseToJsonElement(ask.args.json())).toMap())
-            val answer = office.submit(Sender.Bora(signed = ask.signed), input)
-            return Ran(0, "${answer.status} ${answer.id}")
-        }
     }
 
     companion object {
         const val OFFICE = "panda"
-
-        /**
-         * `h2-prime`'s shadow rulings name no `re`: as written, each opens a thread of its own, where `thread.state eq held`
-         * cannot hold. The Deputy's half writes it about the held item that woke it — the one the `hold` before it answers.
-         */
-        val shadowRulingsAnswerTheirHold: (Walk) -> Walk = { walk ->
-            walk.withSteps(walk.steps.mapIndexed { index, step ->
-                if (step.kind != "shadow-ruling" || step.text("re") != null) step
-                else walk.steps.take(index).lastOrNull { it.kind == "hold" }?.text("re")?.let { step.with("re", Datum.Text(it)) } ?: step
-            })
-        }
-
-        /**
-         * `h2-prime` has the TeamLead send the tail's `merge` again once Bora is back; the daemon lets the merge the Deputy
-         * held go at his return (DEP-3 holds it `until: presence`), and that one asks for `git.merge`. The second merge
-         * is left out and the walk's `git.merge` ends the first: the tail resumes, as design/11 §3 says.
-         */
-        val theHeldMergeResumesTheTail: (Walk) -> Walk = { walk ->
-            val again = walk.steps.single { it.id == "tail-merge" }
-            walk.withSteps(walk.steps.filter { it !== again }.map { step ->
-                if (step.operation != "git.merge" || step.text("request") != "tail-merge") step
-                else step.with("request", Datum.Text("tail-held")).let { merge -> again.fields["stage"]?.let { merge.with("stage", it) } ?: merge }
-            })
-        }
 
         private const val DAY = 86_400L
 

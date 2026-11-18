@@ -4,12 +4,14 @@ import kp.model.Delivered
 import kp.model.Envelope
 import kp.model.Expired
 import kp.model.Held
+import kp.model.Judged
 import kp.model.Message
 import kp.model.Op
 import kp.model.Read
 import kp.model.Refused
 import kp.model.Rules
 import kp.model.Transition
+import kp.model.Voided
 import kp.model.plain
 import kp.model.utc
 
@@ -88,6 +90,14 @@ data class State(
      * wake is an `op` `seat.wake` with its `role` and `mode`, counted when it is `ok` (`log.count … since: {wake: …}`).
      */
     val wakes: Map<String, Map<String, Int>> = emptyMap(),
+    /**
+     * The lines read of the judgement no `judged` line has closed yet (contracts.md §3, Amendment 23), in order: none is
+     * applied until it is. The first stands for the judgement's first line — when a `voided` record opened it, the line
+     * that record carries again.
+     */
+    val unjudged: List<Envelope> = emptyList(),
+    /** The `seq` of the first line on disk of the judgement [unjudged] holds; null when none is open. */
+    val opened: Long? = null,
 ) {
     fun stage(id: String): String? = machine("stage", id)?.state
     fun machine(machine: String, subject: String): MachineState? = machines[machine]?.get(subject)
@@ -103,10 +113,28 @@ data class State(
 /**
  * Folds [lines], in `seq` order, onto [from]. A line whose `seq` is not above the state's has been folded already
  * and is skipped, so folding the same lines twice changes nothing.
+ *
+ * A judgement is applied when its `judged` line is read (contracts.md §2.2, §3): until then its lines wait in
+ * [State.unjudged]. A `voided` record keeps the judgement's first line, which it carries again in the judgement it
+ * opens, and lets the others go — they count for nothing; a judgement whose first line is not among them leaves
+ * nothing. A hand log has neither record: each of its lines is a judgement of its own, applied as it is read.
  */
 fun fold(lines: Iterable<Envelope>, from: State = State()): State = lines.fold(from) { state, line ->
     val seq = line.seq.longValueExact()
-    if (seq <= state.seq) state else Folding(state).apply(line).done(seq, line.at.value)
+    if (seq <= state.seq) state else state.read(line, seq).copy(seq = seq, at = line.at.value)
+}
+
+/**
+ * The state with the open judgement's lines applied as they were written — what the writer of that judgement reads
+ * while it writes it, and what a re-judging reads before each line (`kp check`). A whole log needs none of it.
+ */
+fun State.settled(): State = unjudged.fold(copy(unjudged = emptyList(), opened = null)) { state, line -> Folding(state).apply(line).state }
+
+private fun State.read(line: Envelope, seq: Long): State = when {
+    line is Judged -> settled()
+    line is Voided -> copy(unjudged = listOfNotNull(unjudged.firstOrNull()?.takeIf { opened == line.first }), opened = seq)
+    line is Message && line.by.startsWith(HAND) -> Folding(this).apply(line).state
+    else -> copy(unjudged = unjudged + line, opened = opened ?: seq)
 }
 
 /**
@@ -228,9 +256,10 @@ private class Folding(state: State) {
         s = s.copy(counters = s.counters + (subject to (s.counters[subject].orEmpty() + values)))
     }
 
-    fun done(seq: Long, at: String): State = s.copy(seq = seq, at = at)
+    val state: State get() = s
 }
 
+private const val HAND = "hand:"
 private const val SEAT_START = "seat.start"
 private const val SEAT_WAKE = "seat.wake"
 private const val ROLE = "role"

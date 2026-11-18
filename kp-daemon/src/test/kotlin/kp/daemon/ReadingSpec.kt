@@ -18,10 +18,10 @@ class ReadingSpec : FreeSpec({
             office.restart()
             office.send("teamlead", proposal("KP/P2/S2.2"))
 
-            first.lines().first() shouldStartWith "#3 · B · assignment-proposal · KP/P2/S2.1"
+            first.lines().first() shouldStartWith "#4 · B · assignment-proposal · KP/P2/S2.1"
             office.kp("inbox").text.lines().filter { it.startsWith("#") } shouldBe listOf(
-                "#3 · B · assignment-proposal · KP/P2/S2.1 · from teamlead",
-                "#9 · B · assignment-proposal · KP/P2/S2.2 · from teamlead",
+                "#4 · B · assignment-proposal · KP/P2/S2.1 · from teamlead",
+                "#13 · B · assignment-proposal · KP/P2/S2.2 · from teamlead",
             )
         }
     }
@@ -30,15 +30,15 @@ class ReadingSpec : FreeSpec({
         TestOffice().use { office ->
             office.send("teamlead", proposal())
             office.send("principal", """{"kind": "ruling-request", "stage": "KP/P2/S2.1", "subject": "which stage owns it", "args": {"default": "cut the owning stage", "citation": "contracts.md §4.5"}}""")
-            office.office.submit(kp.mailroom.Sender.Bora(signed = true), json("""{"kind": "approval", "re": "m-panda-000002", "stage": "KP/P2/S2.1"}"""))
+            office.office.submit(kp.mailroom.Sender.Bora(signed = true), json("""{"kind": "approval", "re": "m-panda-000003", "stage": "KP/P2/S2.1"}"""))
 
             office.kp("inbox").text shouldBe """
-                #8 · B · ruling-request · KP/P2/S2.1 · from principal
+                #11 · B · ruling-request · KP/P2/S2.1 · from principal
                    rolls: none · live: none · touches: unknown
                    default: cut the owning stage
 
             """.trimIndent()
-            office.kp("inbox", "--all").text.lines() shouldContain "#3 · B · assignment-proposal · KP/P2/S2.1 · from teamlead — answered by m-panda-000011"
+            office.kp("inbox", "--all").text.lines() shouldContain "#4 · B · assignment-proposal · KP/P2/S2.1 · from teamlead — answered by m-panda-000016"
         }
     }
 
@@ -59,10 +59,22 @@ class ReadingSpec : FreeSpec({
             office.close()
             follower.join(5_000)
 
-            first shouldBe "#3 · B · assignment-proposal · KP/P2/S2.1 · from teamlead"
-            next shouldBe "#8 · B · assignment-proposal · KP/P2/S2.2 · from teamlead"
+            first shouldBe "#4 · B · assignment-proposal · KP/P2/S2.1 · from teamlead"
+            next shouldBe "#11 · B · assignment-proposal · KP/P2/S2.2 · from teamlead"
             follower.isAlive shouldBe false
         }
+    }
+
+    "kp status is unchanged by a voided judgement's lines: it says what the log without them says" {
+        // Killed after the proposal's transition (5): the start voids its delivered record (4) and the transition.
+        val project = killedAfter(cut = 5) { it.send("teamlead", proposal()) }
+        TestOffice(project = project).close()
+        val withoutTheVoided = copyWithout(project, seqs = setOf(4L, 5L))
+
+        val status = TestOffice(project = project).use { it.kp("status").text }
+
+        TestOffice(project = withoutTheVoided).use { it.kp("status").text } shouldBe status
+        status shouldContain "stage KP/P2/S2.1: proposed · proposals 1"
     }
 
     "with nothing open the inbox says so" {
@@ -77,7 +89,7 @@ class ReadingSpec : FreeSpec({
             val all = office.kp("status").text.lines()
             val one = office.kp("status", "KP/P2/S2.2").text.lines()
 
-            all shouldContainAll listOf("Bora: present", "stage KP/P2/S2.1: proposed · proposals 1", "stage KP/P2/S2.2: proposed · proposals 1", "open tickets: #3, #8")
+            all shouldContainAll listOf("Bora: present", "stage KP/P2/S2.1: proposed · proposals 1", "stage KP/P2/S2.2: proposed · proposals 1", "open tickets: #4, #11")
             all.first() shouldStartWith "office panda · rules "
             all.single { it.startsWith("budgets: ") } shouldBe "budgets: 4 slots · per subscription claude 4 · per office panda 4 · 2 stages in flight per effort"
             one.filter { it.startsWith("stage ") } shouldBe listOf("stage KP/P2/S2.2: proposed · proposals 1")

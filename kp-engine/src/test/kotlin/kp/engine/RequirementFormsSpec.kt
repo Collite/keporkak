@@ -72,14 +72,14 @@ class RequirementFormsSpec : StringSpec({
     }
     "{re: …} compares a field of the message this one replies to: kind, class, from, to" {
         val engine = requiring("{re: kind, eq: stop}", "{re: class, eq: C}", "{re: from, eq: coder-1}", "{re: to, eq: principal}")
-        val stopped = fold(log(*sent("m-panda-000090", "stop", from = "coder-1", to = "principal").let { arrayOf(it[0], it[1].replace("\"A\"", "\"C\"")) }))
+        val stopped = folded(log(*sent("m-panda-000090", "stop", from = "coder-1", to = "principal").let { arrayOf(it[0], it[1].replace("\"A\"", "\"C\"")) }))
         engine.failure(state = stopped, re = "m-panda-000090") shouldBe null
         engine.failure(state = stopped) shouldBe "{re: kind, eq: stop}"
     }
     "{counter: …} compares the stage's counter" {
         val engine = requiring("{counter: resumes, lt: {cap: resumes_per_stage}}")
-        engine.failure(state = fold(log(move("stage", STAGE, "planned", "planned", extra = ""","counted":{"resumes":1}""")))) shouldBe null
-        engine.failure(state = fold(log(move("stage", STAGE, "planned", "planned", extra = ""","counted":{"resumes":2}""")))) shouldBe "{counter: resumes, lt: {cap: resumes_per_stage}}"
+        engine.failure(state = folded(log(move("stage", STAGE, "planned", "planned", extra = ""","counted":{"resumes":1}""")))) shouldBe null
+        engine.failure(state = folded(log(move("stage", STAGE, "planned", "planned", extra = ""","counted":{"resumes":2}""")))) shouldBe "{counter: resumes, lt: {cap: resumes_per_stage}}"
     }
     "{attest: …} holds when the sender listed it in args.attest, and the decision says it was attested" {
         val engine = requiring("{attest: done_lines_hold}")
@@ -94,7 +94,7 @@ class RequirementFormsSpec : StringSpec({
         engine.failure(from = "coder-1", signed = true) shouldBe "{signed: bora}"
     }
     "{op: …, eq: ok | failed} reads the result of the operation the request started" {
-        val assigned = fold(log(move("stage", STAGE, "proposed", "assigned"), *sent("m-panda-000091", "approval", from = "bora")))
+        val assigned = folded(log(move("stage", STAGE, "proposed", "assigned"), *sent("m-panda-000091", "approval", from = "bora")))
         val engine = supervised()
         engine.judge(assigned, Trigger.Result("m-panda-000091", "worktree.create", ok = true), table("now" to NOW)).moves.map { it.rule } shouldBe listOf("T-03")
         engine.judge(assigned, Trigger.Result("m-panda-000091", "worktree.create", ok = false), table("now" to NOW)).outcome shouldBe Outcome.NOTHING
@@ -168,7 +168,7 @@ class ValueFormsSpec : StringSpec({
     }
     "{re: …} as a value is a field of the message this one replies to" {
         val engine = requiring("{arg: seat, eq: {re: from}}")
-        val asked = fold(log(*sent("m-panda-000092", "stop", from = "coder-1", to = "principal")))
+        val asked = folded(log(*sent("m-panda-000092", "stop", from = "coder-1", to = "principal")))
         engine.failure(args = """{"seat": "coder-1"}""", state = asked, re = "m-panda-000092") shouldBe null
         engine.failure(args = """{"seat": "coder-2"}""", state = asked, re = "m-panda-000092") shouldBe "{arg: seat, eq: {re: from}}"
     }

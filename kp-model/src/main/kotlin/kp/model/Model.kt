@@ -63,6 +63,8 @@ sealed class Record protected constructor(value: JsonObject) : Envelope {
             "op" -> Op(value)
             "rules" -> Rules(value)
             "read" -> Read(value)
+            "judged" -> Judged(value)
+            "voided" -> Voided(value)
             else -> throw IllegalArgumentException("unknown record event")
         }
     }
@@ -133,6 +135,10 @@ class Fact internal constructor(value: JsonObject) : Record(value) {
     val subject get() = json.string("subject")
     val value get() = json.getValue("value")
     val evidence get() = json.optionalString("evidence")
+    /** The fact's parameters by name, whose values its subject joins (Amendment 24); null on a record written before it. */
+    val params get() = json["params"]?.jsonObject
+    /** The stage the fact was reported about (Amendment 24); null when none, or on a record written before it. */
+    val stage get() = json.optionalString("stage")
 }
 @Serializable(with = OpSerializer::class)
 class Op internal constructor(value: JsonObject) : Record(value) {
@@ -154,4 +160,21 @@ class Rules internal constructor(value: JsonObject) : Record(value) {
 class Read internal constructor(value: JsonObject) : Record(value) {
     val seat get() = json.string("seat")
     val ids get() = json.strings("ids")!!
+}
+/**
+ * Closes a judgement (contracts.md §2.2, §3, Amendment 23): everything one arrival produced, from the line [first] to
+ * this one. A fold applies a judgement when it reads this line.
+ */
+@Serializable(with = JudgedSerializer::class)
+class Judged internal constructor(value: JsonObject) : Record(value) {
+    val first get() = json.number("first")!!.longValueExact()
+}
+/**
+ * Written at a start-up (contracts.md §2.2, §3, Amendment 23): the judgement from [first] to [last] was not finished.
+ * Its first line stands and is carried again in the judgement this record opens; its other lines count for nothing.
+ */
+@Serializable(with = VoidedSerializer::class)
+class Voided internal constructor(value: JsonObject) : Record(value) {
+    val first get() = json.number("first")!!.longValueExact()
+    val last get() = json.number("last")!!.longValueExact()
 }

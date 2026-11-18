@@ -89,7 +89,8 @@ steps:
   expect:
     states:
       presence: absent
-- who: teamlead
+- id: proposal
+  who: teamlead
   kind: assignment-proposal
   args:
     role: coder
@@ -103,6 +104,7 @@ steps:
   who: deputy
   by: robot:DEP-2
   kind: queued-approval
+  re: proposal
   args: {}
   expect:
     state: assigned
@@ -111,22 +113,27 @@ steps:
   result: ok
   expect:
     state: assigned
-- who: teamlead
+- id: assign
+  who: teamlead
   kind: assign
   args:
     seat: coder-1
 - who: coder-1
   kind: started
+  re: assign
   args: {}
-- who: coder-1
+- id: review-request
+  who: coder-1
   kind: review-request
   args:
     attest:
     - done_lines_hold
   expect:
     state: ready_for_review
-- who: teamlead
+- id: bind
+  who: teamlead
   kind: review-bind
+  re: review-request
   args:
     reviewer: reviewer-1
   expect:
@@ -153,6 +160,7 @@ steps:
       flag_thread: held
 - who: deputy
   kind: shadow-ruling
+  re: classification
   args:
     would_rule: follow-up
     reason: the DONE line holds
@@ -176,6 +184,7 @@ steps:
   args: {}
 - who: deputy
   kind: shadow-ruling
+  re: tail-held
   args:
     would_rule: hold
     reason: the tail waits for Bora
@@ -184,6 +193,7 @@ steps:
   id: first-fix
   who: reviewer-1
   kind: verdict
+  re: bind
   args:
     verdict: FIX FIRST
     sha: head-1
@@ -192,7 +202,8 @@ steps:
     follow_ups: []
   expect:
     state: fix_round
-- who: coder-2
+- id: repair
+  who: coder-2
   kind: repair-done
   args:
     verdict: first-fix
@@ -205,6 +216,7 @@ steps:
     state: re_review
 - who: reviewer-1
   kind: re-verdict
+  re: repair
   args:
     verdict: FIX FIRST
     sha: head-2
@@ -289,12 +301,8 @@ steps:
   request: resume
   result: ok
 - stage: tail
-  id: tail-merge
-  who: teamlead
-  kind: merge
-  args: {}
-- operation: git.merge
-  request: tail-merge
+  operation: git.merge
+  request: tail-held
   result: ok
   expect:
     state: merged

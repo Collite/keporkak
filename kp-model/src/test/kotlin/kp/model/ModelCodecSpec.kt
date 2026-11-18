@@ -48,6 +48,14 @@ class ModelCodecSpec : StringSpec({
         refused.failed.toString() shouldBe """{"counter":"resumes","lt":{"cap":"resumes_per_stage"}}"""
         shouldThrowAny { Message.read(JsonObject(validMessage() + ("signed" to JsonPrimitive("bora")))) }
     }
+    "the records of Amendment 23 give their fields: judged's first line, voided's first and last" {
+        val judged = parseLine("""{"v":1,"seq":9,"at":"2026-11-17T12:00:00Z","event":"judged","first":5}""") as Judged
+        val voided = parseLine("""{"v":1,"seq":10,"at":"2026-11-17T12:00:00Z","event":"voided","first":5,"last":9}""") as Voided
+
+        judged.first shouldBe 5L
+        listOf(voided.first, voided.last) shouldBe listOf(5L, 9L)
+        judged.toLine() shouldBe """{"v":1,"seq":9,"at":"2026-11-17T12:00:00Z","event":"judged","first":5}"""
+    }
     "a line's plain view is standard-library values: numbers exact, null kept apart from absent" {
         val line = parseLine("""{"v":1,"seq":1,"at":"2026-11-15T12:00:00Z","id":"m-panda-000001","thread":"m-panda-000001","re":null,"from":"teamlead","to":"coder-1","kind":"assign","subject":"go","created":"2026-11-15T12:00:00Z","by":"seat:teamlead","args":{"seat":"coder-1","tries":[1,2.50],"open":true,"none":null,"of":{"x":"y"}}}""") as Message
 

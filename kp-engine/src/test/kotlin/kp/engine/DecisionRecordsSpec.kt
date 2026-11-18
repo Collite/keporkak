@@ -11,7 +11,7 @@ import kp.model.plain
 import kp.rules.RuleSet
 import java.io.File
 
-private val building = fold(log(move("stage", STAGE, "assigned", "building")))
+private val building = folded(log(move("stage", STAGE, "assigned", "building")))
 private fun review(id: String = "m-panda-000100") = Arrival(message("review-request", from = "coder-1", id = id, args = """{"attest": ["done_lines_hold"]}"""))
 private fun ready(found: Int = 0) = table("now" to NOW, "pr.ready" to true, "pr.head" to "abc", "ci.state(of=abc)" to "green", "list.tasks_open" to 0, "list.found_untriaged" to found)
 
@@ -36,7 +36,7 @@ private fun deliveriesBeforeRefusal(rules: RuleSet): Pair<Int, String?> {
         if (decision.outcome == Outcome.REFUSE) return delivered to decision.rule
         delivered++
         val message = """{"id":"$id","thread":"$id","from":"coder-1","to":"teamlead","kind":"review-request","stage":"$STAGE","subject":"r","created":"$NOW","by":"seat:coder-1","args":{}}"""
-        state = fold(after(state, message, deliveredRecord(decision, id, "teamlead"), *transitionRecords(decision, id).toTypedArray(),
+        state = folded(after(state, message, deliveredRecord(decision, id, "teamlead"), *transitionRecords(decision, id).toTypedArray(),
             """{"event":"transition","machine":"stage","subject":"$STAGE","from":"ready_for_review","to":"building","cause":"$id"}"""), state)
     }
 }

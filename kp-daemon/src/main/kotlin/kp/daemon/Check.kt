@@ -15,7 +15,9 @@ import kp.engine.State
 import kp.engine.Trigger
 import kp.engine.UNKNOWN_FACT
 import kp.engine.fold
+import kp.engine.settled
 import kp.log.LogLine
+import kp.log.counted
 import kp.model.Delivered
 import kp.model.Envelope
 import kp.model.Held
@@ -108,9 +110,15 @@ internal class Check(private val rules: InForceRules) {
 
     // ---- a daemon's log
 
-    private fun daemonLog(lines: List<LogLine>) {
-        lines.mapNotNull { it.entry as? Rules }.map { it.hash }.distinct().filter { it != rules.hash }.forEach { hash ->
+    private fun daemonLog(all: List<LogLine>) {
+        all.mapNotNull { it.entry as? Rules }.map { it.hash }.distinct().filter { it != rules.hash }.forEach { hash ->
             out += "the log was written under rules ${hash.take(HASH)}, not those in force: a difference may come from that"
+        }
+        // A voided judgement's lines but its first count for nothing (contracts.md §2.2, §3): they are not re-judged, and no
+        // record among them is taken for what happened to a message — the judgement that carried its first line again says that.
+        val lines = all.counted()
+        (all.size - lines.size).takeIf { it > 0 }?.let { skipped ->
+            out += "$skipped voided line${if (skipped == 1) "" else "s"} skipped: a start voided the judgement they were in, and they count for nothing"
         }
         var state = State()
         var judged = 0
@@ -136,7 +144,8 @@ internal class Check(private val rules: InForceRules) {
             } else if (message != null) {
                 finding("${line.file}:${line.number} ${message.id.value}: a hand-recorded line among the daemon's")
             }
-            state = fold(listOf(line.entry), state)
+            // Each line as written: a message inside a judgement is judged on what the lines before it in that judgement did.
+            state = fold(listOf(line.entry), state).settled()
         }
         out += "$judged message${if (judged == 1) "" else "s"} re-judged: " + if (differ == 0) "every recorded outcome is reproduced" else "$differ differ${if (differ == 1) "s" else ""}"
         notJudged.forEach { out += "not re-judged: $it" }
@@ -214,7 +223,7 @@ internal class Check(private val rules: InForceRules) {
         val moved = HashSet<String>()
         val middle = LinkedHashSet<String>()
         fun take(entry: JsonObject) {
-            state = fold(listOf(readEnvelope(JsonObject(entry + (SEQ to JsonPrimitive(++seq))))), state)
+            state = fold(listOf(readEnvelope(JsonObject(entry + (SEQ to JsonPrimitive(++seq))))), state).settled()
         }
         fun position(stage: String) = if (stage in middle && stage !in moved) "the state of $stage is not known" else "$stage is ${stageOf(state, stage)}"
         lines.forEach { line ->

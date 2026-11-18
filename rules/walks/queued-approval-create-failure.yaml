@@ -24,7 +24,8 @@ steps:
   kind: away
   signed: bora
   args: {}
-- who: teamlead
+- id: proposal
+  who: teamlead
   kind: assignment-proposal
   args:
     role: coder
@@ -38,6 +39,7 @@ steps:
   who: deputy
   by: robot:DEP-2
   kind: queued-approval
+  re: proposal
   args: {}
   expect:
     state: assigned

@@ -105,7 +105,7 @@ class Rehearsal private constructor(private val script: Script, private val daem
             return sudo + when (ask.kind) {
                 "approval" -> "kp approve $ticket"
                 "decline" -> "kp decline $ticket"
-                "ruling" -> "kp rule $ticket $outcome"
+                "ruling" -> "kp rule ${ask.ticket ?: ask.re ?: "<ticket>"} $outcome"
                 "away" -> "kp away"
                 "queue-approval" -> "kp queue ${(ask.args.fields["stages"] as? kp.engine.Datum.Items)?.items?.joinToString(" ") { (it as kp.engine.Datum.Text).value } ?: ask.stage}"
                 else -> "kp … (${ask.kind})"

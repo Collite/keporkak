@@ -60,10 +60,12 @@ private val recordShapes = mapOf(
     "held" to shape("id by until", "id" to text, "by" to text, "until" to text, "ticket" to nullable(integer()), "deadline" to nullable(timestamp)),
     "expired" to shape("id", "id" to text, "rule" to text, "report" to choice("bora"), "class" to choice("B", "C"), "ticket" to nullable(integer()), "deadline" to nullable(timestamp)),
     "transition" to shape("machine subject from to cause", "machine" to choice("stage", "found", "flag", "seat", "phase", "presence"), "subject" to text, "from" to text, "to" to text, "rule" to text, "cause" to text, "counted" to dictionary(integer())),
-    "fact" to shape("fact subject value", "fact" to text, "subject" to text, "value" to { true }, "evidence" to text),
+    "fact" to shape("fact subject value", "fact" to text, "subject" to text, "value" to { true }, "evidence" to text, "params" to objectValue, "stage" to nullable(text)),
     "op" to shape("op phase cause", "op" to text, "phase" to choice("requested", "ok", "failed"), "cause" to text, "with" to objectValue, "result" to objectValue, "reason" to text, "attempt" to integer(1)),
     "rules" to shape("hash files", "hash" to text, "files" to dictionary(text)),
-    "read" to shape("seat ids", "seat" to text, "ids" to array(text, minItems = 1))
+    "read" to shape("seat ids", "seat" to text, "ids" to array(text, minItems = 1)),
+    "judged" to shape("first", "first" to integer(1)),
+    "voided" to shape("first last", "first" to integer(1), "last" to integer(1))
 )
 internal fun validateRecord(value: JsonObject) {
     val event = value["event"]

@@ -19,7 +19,8 @@ import kotlin.random.Random
 /**
  * Valid logs, generated from a seed: messages between seats of two stages, each followed (or not yet) by its delivery,
  * refusal or hold; transitions with counters; expiries that re-arm or end a wait, some reported to Bora with a ticket;
- * reads; operations; rule sets; facts. `seq` runs from 1; `at` moves forward and crosses UTC days.
+ * reads; operations; rule sets; facts — in judgements, closed by `judged` lines, some voided, the last perhaps
+ * unfinished. `seq` runs from 1; `at` moves forward and crosses UTC days.
  */
 private class LogGenerator(seed: Int) {
     private val random = Random(seed)
@@ -31,19 +32,22 @@ private class LogGenerator(seed: Int) {
     private val waiting = mutableListOf<String>()
     private var clock = LocalDateTime.of(2026, 11, 14, 20, 0)
     private var ticket = 0
+    /** The first line of the judgement no `judged` line has closed yet. */
+    private var first: Int? = null
 
     private fun time(minutes: Long = 0) = clock.plusMinutes(minutes).format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'"))
     private fun pick(list: List<String>) = list[random.nextInt(list.size)]
     private fun line(body: String) {
         clock = clock.plusMinutes(random.nextLong(1, 90))
         lines += """{"v":1,"seq":${lines.size + 1},"at":"${time()}",$body}"""
+        if (first == null) first = lines.size
     }
     private fun maybe(chance: Int) = random.nextInt(100) < chance
     private fun counted() = """"counted":{"${pick(listOf("stops", "fix_rounds", "review_requests"))}":${random.nextInt(1, 5)}}"""
     private fun ticketField() = if (maybe(40)) ""","ticket":${++ticket}""" else ""
 
     fun generate(size: Int): List<Envelope> {
-        while (lines.size < size) when (random.nextInt(9)) {
+        while (lines.size < size) when (random.nextInt(12)) {
             0, 1, 2 -> message()
             3 -> line(""""event":"transition","machine":"${pick(listOf("stage", "found", "flag", "seat", "phase", "presence"))}","subject":"${pick(stages + seats)}","from":"${pick(listOf("a", "b", "c"))}","to":"${pick(listOf("a", "b", "c"))}","cause":"${messages.lastOrNull() ?: "fact"}"${if (maybe(50)) "," + counted() else ""}""")
             4 -> waiting.randomOrNull(random)?.let { id ->
@@ -58,6 +62,8 @@ private class LogGenerator(seed: Int) {
                 line(""""event":"op","op":"$op","phase":"${pick(listOf("requested", "ok", "failed"))}","cause":"$id","with":{"seat":"${pick(seats)}"}$result""")
             }
             7 -> line(""""event":"rules","hash":"${random.nextInt().toString(16)}","files":{"rules/engagement.yaml":"x"}""")
+            9, 10 -> first?.let { opened -> line(""""event":"judged","first":$opened""").also { first = null } }
+            11 -> first?.let { opened -> lines.size.let { last -> first = null; line(""""event":"voided","first":$opened,"last":$last""") } }
             else -> line(""""event":"fact","fact":"bora.present","subject":"bora","value":${random.nextBoolean()}""")
         }
         return lines.take(size).map(::parseLine)
@@ -109,7 +115,7 @@ class FoldDeterminismSpec : StringSpec({
     "every time in the state is a time of the log: taken from the records, never from a clock" {
         (1..150).forEach { seed ->
             val lines = LogGenerator(seed).generate(size = 10 + seed % 50)
-            val state = fold(lines)
+            val state = folded(lines)
             val logged = lines.flatMap {
                 listOfNotNull(it.at.value, (it as? Message)?.deadline?.value, (it as? Expired)?.deadline?.value, (it as? Delivered)?.deadline?.value, (it as? Held)?.deadline?.value)
             }
@@ -122,8 +128,8 @@ class FoldDeterminismSpec : StringSpec({
     "the generated logs exercise every record and every question the state answers" {
         val states = (1..150).map { seed -> LogGenerator(seed).generate(size = 10 + seed % 50) }
         states.flatten().map { (it as? Record)?.event ?: "message" }.toSet() shouldBe
-            setOf("message", "delivered", "refused", "held", "expired", "transition", "fact", "op", "rules", "read")
-        val folded = states.map { fold(it) }
+            setOf("message", "delivered", "refused", "held", "expired", "transition", "fact", "op", "rules", "read", "judged", "voided")
+        val folded = states.map { folded(it) }
         listOf(
             folded.any { it.deadlines.values.any { wait -> wait.expiries > 0 } },
             folded.any { it.held.isNotEmpty() },

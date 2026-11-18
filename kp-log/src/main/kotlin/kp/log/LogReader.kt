@@ -1,7 +1,9 @@
 package kp.log
 
 import kp.model.EffortId
+import kp.model.Judged
 import kp.model.OfficeId
+import kp.model.Voided
 import java.nio.file.Path
 
 /**
@@ -17,7 +19,18 @@ class LogReader(private val project: Path, private val office: OfficeId) {
     fun read(): LogRead {
         val files = (Layout.stageFiles(project) + Layout.officeFiles(project, office)).map(ParsedFile::of)
         val lines = files.flatMap { it.lines }.sortedBy { it.seq }
-        return LogRead(lines, files.flatMap { it.problems } + sequence(lines))
+        return LogRead(lines, files.flatMap { it.problems } + sequence(lines).filterNot { it is Gap && unfinished(it, lines) })
+    }
+
+    /**
+     * Whether [gap]'s missing lines are all inside a judgement that was not finished (contracts.md §2.2, §3): the one at
+     * the end of the log, after its last `judged` line, or one a `voided` record names — a judgement that was unfinished
+     * at the end of the log when a start-up voided it. Lines written there and not synced may be lost; nowhere else.
+     */
+    private fun unfinished(gap: Gap, lines: List<LogLine>): Boolean {
+        val lastJudged = lines.lastOrNull { it.entry is Judged }?.seq ?: 0L
+        val missing = (gap.after + 1)..(gap.next - 1)
+        return missing.first > lastJudged || lines.any { (it.entry as? Voided)?.let { voided -> missing.first >= voided.first && missing.last <= voided.last } == true }
     }
 
     /** The hand logs of [effort] (`mail/<effort>/_hand/`), only when asked: file by file, each `seq` running from 1. */

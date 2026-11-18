@@ -123,11 +123,14 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
             steps += Triple("install", false, "installed ${installed ?: "nothing"}, lockfile $lockfile, node ${node ?: "not on PATH"}: run `just adapter`")
             return report(header)
         }
+        // What an earlier part of the log left: one judgement, closed (contracts.md §3).
         LogWriter.open(mail, OfficeId(office)).use { log ->
             val at = now()
-            fun line(text: String) = log.append(json("""{"v":1,"at":"$at",""" + text.removePrefix("{")))
+            val judgement = log.judgement()
+            fun line(text: String) = judgement.add(json("""{"v":1,"at":"$at",""" + text.removePrefix("{")))
             line("""{"event":"transition","machine":"stage","subject":"$STAGE","from":"planned","to":"assigned","cause":"$SEEDED"}""")
             listOf(CODER, TEAMLEAD, POOL).forEach { line("""{"event":"transition","machine":"seat","subject":"$it","from":"provisioned","to":"ready","cause":"$SEEDED"}""") }
+            judgement.close(at)
         }
         val mailroom = Mailroom.start(mail, OfficeId(office), CheckoutRules(root), HandshakeFacts, Done, Asleep, Clock { Instant.now() })
         val api = SeatApi.start(mailroom, tokens, "127.0.0.1:0")

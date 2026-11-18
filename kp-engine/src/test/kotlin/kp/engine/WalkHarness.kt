@@ -66,7 +66,7 @@ private class WalkThrough(private val walk: Datum.Fields) {
         seq++
         val line = parseLine("""{"v":1,"seq":$seq,"at":"${now()}",""" + json.removePrefix("{"))
         lines += line
-        state = fold(listOf(line), state)
+        state = folded(listOf(line), state)
         return line
     }
 

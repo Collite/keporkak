@@ -2,7 +2,6 @@ package kp.mailroom
 
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
-import kp.model.Rules
 import kp.model.Delivered
 import kp.model.Message
 import kp.model.Op
@@ -64,14 +63,14 @@ class RoutingSpec : StringSpec({
         office.mailroom = Mailroom.start(office.project, panda, office.texts, office.facts, office.operations, object : Deliveries {
             override fun idle(seat: String) = true
             override fun wake(seat: String, message: Message): Boolean {
-                onDisk += office.readBack().lines.filter { it.seq.toLong() > 3 && it !is Rules }.map { it::class.simpleName!! }
+                onDisk += office.readBack().lines.dropWhile { it !is Message }.map { it::class.simpleName!! }
                 return true
             }
         }, office.clock)
 
         office.send("teamlead", BIND)
 
-        onDisk shouldBe listOf(listOf("Message", "Delivered", "Transition"))
+        onDisk shouldBe listOf(listOf("Message", "Delivered", "Transition", "Judged"))
     }
 
     "a class-B delivery raises a ticket — the seq of the record that carries it — and requests notify.bora for it; a party is never woken" {

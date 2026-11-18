@@ -55,6 +55,10 @@ internal object Layout {
     fun closes(entry: Envelope, stage: String): Boolean =
         entry is Transition && entry.machine == "stage" && entry.subject == stage && entry.to in setOf("exited", "closed")
 
+    /** The stage whose file [file] is, when it is a stage's file; null otherwise. */
+    fun stageOfOrNull(file: Path): String? =
+        if (stageFileName.matches(file.name) && file.parent?.name?.let(effortId::matches) == true) stageOf(file) else null
+
     /** The stage whose file [file] is: `mail/<effort>/p<n>-s<n.m>.jsonl` is `<effort>/P<n>/S<n.m>`. */
     fun stageOf(file: Path): String {
         val (phase, number) = stageFileParts.matchEntire(file.name)!!.destructured

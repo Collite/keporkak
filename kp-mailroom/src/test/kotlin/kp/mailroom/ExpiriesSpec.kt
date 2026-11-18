@@ -81,7 +81,7 @@ class ExpiriesSpec : StringSpec({
 
     "a stage's fourth nudge is delivered: a kind only the mailroom sends has no count of its own (S1.8, Amendment 16)" {
         val office = Office(seed = "building")
-        office.play("review-request", "review-bind", "verdict", "repair-done")
+        office.play(listOf("review-request", "review-bind", "verdict", "repair-done"), answering = false) // four waits stay open
 
         office.clock.advance(8.hours)
         office.mailroom.tick()

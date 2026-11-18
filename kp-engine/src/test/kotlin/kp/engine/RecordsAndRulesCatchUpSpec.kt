@@ -18,7 +18,7 @@ private const val REVIEW = "m-panda-000020"
  */
 class RecordsAndRulesCatchUpSpec : StringSpec({
     "a reply of a kind the waiting kind names closes the wait and its ticket; a reply of another kind leaves both open" {
-        val proposed = fold(log(move("stage", STAGE, "planned", "proposed"),
+        val proposed = folded(log(move("stage", STAGE, "planned", "proposed"),
             """{"id":"$PROPOSAL","thread":"$PROPOSAL","from":"teamlead","to":"bora","kind":"assignment-proposal","stage":"$STAGE","subject":"p","deadline":"2026-11-16T09:00:00Z","created":"$NOW","by":"seat:teamlead"}""",
             """{"event":"delivered","id":"$PROPOSAL","to":["bora"],"class":"B","ticket":3}"""))
         val decline = message("decline", from = "bora", re = PROPOSAL, id = "m-panda-000011", thread = PROPOSAL, signed = true)
@@ -38,7 +38,7 @@ class RecordsAndRulesCatchUpSpec : StringSpec({
     }
 
     "a refusal carries the rule's guard in the rules' words and, beside it, the one requirement that failed" {
-        val stopped = fold(log(move("stage", STAGE, "building", "stopped", extra = ""","counted":{"resumes":2}""")))
+        val stopped = folded(log(move("stage", STAGE, "building", "stopped", extra = ""","counted":{"resumes":2}""")))
         val resume = message("triage", from = "principal", to = "coder", args = """{"outcome": "resume", "since": "2026-11-15T09:00:00Z"}""")
         val facts = table("now" to NOW, "list.sections_changed(since=2026-11-15T09:00:00Z)" to listOf("Found while doing"), "list.tasks_total" to 8)
 
@@ -50,7 +50,7 @@ class RecordsAndRulesCatchUpSpec : StringSpec({
     }
 
     "a signed message read back from the log is judged as it was; the same message unsigned is refused" {
-        val proposed = fold(log(move("stage", STAGE, "planned", "proposed")))
+        val proposed = folded(log(move("stage", STAGE, "planned", "proposed")))
         val signed = parseLine("""{"v":1,"seq":9,"at":"$NOW","id":"m-panda-000011","thread":"m-panda-000011","from":"bora","to":"teamlead","kind":"decline","stage":"$STAGE","subject":"no","created":"$NOW","signed":true,"by":"bora-cli"}""") as Message
         val unsigned = parseLine("""{"v":1,"seq":9,"at":"$NOW","id":"m-panda-000011","thread":"m-panda-000011","from":"bora","to":"teamlead","kind":"decline","stage":"$STAGE","subject":"no","created":"$NOW","by":"bora-cli"}""") as Message
 
@@ -59,7 +59,7 @@ class RecordsAndRulesCatchUpSpec : StringSpec({
     }
 
     "an expiry that says the wait goes on gives it a new deadline; at the cap the wait is over" {
-        val waiting = fold(log(move("stage", STAGE, "building", "ready_for_review"),
+        val waiting = folded(log(move("stage", STAGE, "building", "ready_for_review"),
             """{"id":"$REVIEW","thread":"$REVIEW","from":"coder-1","to":"teamlead","kind":"review-request","stage":"$STAGE","subject":"r","deadline":"2026-11-15T10:00:00Z","created":"$NOW","by":"seat:coder-1"}""",
             """{"event":"delivered","id":"$REVIEW","to":["teamlead"],"class":"A"}"""))
 
@@ -75,7 +75,7 @@ class RecordsAndRulesCatchUpSpec : StringSpec({
     }
 
     "a message addressed to a party its kind does not name is refused" {
-        val assigned = fold(log(move("stage", STAGE, "planned", "assigned")))
+        val assigned = folded(log(move("stage", STAGE, "planned", "assigned")))
         val branch = table("now" to NOW, "git.branch_exists" to true)
 
         supervised().judge(assigned, Arrival(message("started", from = "coder-1", to = "principal")), branch).refusal() shouldBe ("started" to "to: teamlead")
