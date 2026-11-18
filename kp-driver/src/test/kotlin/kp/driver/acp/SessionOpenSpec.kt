@@ -86,7 +86,7 @@ class SessionOpenSpec : StringSpec({
             asDefault.reason shouldBe "the agent reads model claude-sonnet-5-5 back as default (offered: default, sonnet, fable, opus, haiku)"
             asAnother.reason shouldBe "the agent reads model opus back as haiku (offered: default, sonnet, fable, opus, haiku)"
             agent.pids().filter(::pidAlive) shouldBe emptyList()
-            office.deadTokens shouldBe emptyList()
+            eventually(10.seconds) { office.deadTokens.toSet() shouldBe office.mintedTokens.toSet() }
         }
     }
 
@@ -98,7 +98,7 @@ class SessionOpenSpec : StringSpec({
 
             failed.reason shouldBe "the agent does not accept model claude-nosuchmodel-5-5: Invalid value for config option model: claude-nosuchmodel-5-5 (offered: default, sonnet, fable, opus, haiku)"
             agent.pids().filter(::pidAlive) shouldBe emptyList()
-            office.deadTokens shouldBe emptyList()
+            eventually(10.seconds) { office.deadTokens.toSet() shouldBe office.mintedTokens.toSet() }
         }
     }
 
