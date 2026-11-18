@@ -101,6 +101,13 @@ private fun State.times(): List<String> = listOfNotNull(at) +
     machines.values.flatMap { subjects -> subjects.values.map { it.since } } +
     deadlines.values.mapNotNull { it.deadline } + held.values.map { it.since } + tickets.values.map { it.at } + sessions.values + operations.map { it.since }
 
+/** What "every time in the state is a time of the log" reads of the state — [times], and the refusals' days (S2.8 T4). */
+val TIMES_IN_THE_STATE = Projection(
+    "every time in the state (FoldDeterminismSpec)",
+    compares = setOf("at", "machines", "deadlines", "held", "tickets", "sessions", "operations", "refusals"),
+    leavesOut = emptyMap(),
+)
+
 class FoldDeterminismSpec : StringSpec({
     "a valid log cut at every line, folded in two parts, gives the state of folding it whole — and folding it twice changes nothing" {
         (1..150).forEach { seed ->

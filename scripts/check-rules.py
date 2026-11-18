@@ -13,7 +13,8 @@ Checks (each a line of output; exit 1 if any FAIL):
     it; office and subscription names; every {roster: …}, {office: …} and {budget: …} value the rules use resolves
 Usage: python3 scripts/check-rules.py [--pool DIR] [--render out.md] [--self-test] [--trace WALK]
   --trace WALK  also prints the named walk as a `WALK <json>` line and, after each step, a `TRACE <json>` line: whether
-                it was refused, the transitions it fired and every stage's state — the engine's second opinion (S1.2)
+                it was refused, the transitions it fired and every stage's state — the engine's second opinion (S1.2).
+                WALK is a walk's name in rules/walks/, or the path of a walk file: then that walk alone is run (S2.8)
 """
 import sys, re, yaml, pathlib, itertools, subprocess, json, copy
 
@@ -1125,6 +1126,10 @@ if not fails:
 
 if not FIXTURE:
     W=[load_yaml(path.read_text()) for path in sorted((ROOT / "rules/walks").glob("*.yaml"))]
+    # A walk file named by its path — a spec's fixture (S2.8) — is the one walk run.
+    if TRACE is not None and TRACE.endswith(".yaml") and pathlib.Path(TRACE).is_file():
+        W=[load_yaml(pathlib.Path(TRACE).read_text())]
+        TRACE=W[0]["name"]
 for walk in W:
     if TRACE is None or walk["name"]==TRACE:Walk(walk).run()
 if W and not fails:ok(f"the walks pass ({len(W)} walks)")
