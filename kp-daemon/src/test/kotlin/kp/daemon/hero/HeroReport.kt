@@ -54,7 +54,7 @@ object HeroReport : AfterEachListener, AfterSpecListener {
         val restarted = restarts?.report() ?: listOf("the restart did not finish")
         val counts = "$passed of ${scenarios.size} scenarios passed" + (if (noRoll) " and the no-roll exit" else ", the no-roll exit did not") +
             (sweep?.let { " · requirements on master: ${it.onMaster} · swept: ${it.swept} · exceptions: ${it.exceptions.size} (swept + exceptions = ${it.swept + it.exceptions.size})" } ?: "") +
-            (restarts?.let { " · restart cuts: ${it.cuts.size}, otherwise: ${it.otherwise.size}" } ?: "")
+            (restarts?.let { " · restart cuts: ${it.cuts.size}, a wake in flight: ${it.wakesInFlight.size}, otherwise: ${it.otherwise.size}" } ?: "")
         return told + swept.dropLast(1) + restarted + counts
     }
 

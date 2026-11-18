@@ -11,6 +11,7 @@ import kp.model.Envelope
 import kp.model.Fact
 import kp.model.Message
 import kp.model.Op
+import kp.model.Read
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -26,7 +27,9 @@ import kotlin.io.path.writeText
  * The restart (S1.10 T7, from S1.6's `fdec0a4`): a walk's daemon stopped after each line it writes and started again
  * on what was written, the walk then taken up and played to its end. Each [Cut] says how that run ended: [SAME] — where
  * the uninterrupted run ends — or [IN_FLIGHT] — an operation was in flight, the start recorded it `failed`,
- * `interrupted` (contracts.md §7), and the run ends where the rules put that failure — or, a third kind, otherwise.
+ * `interrupted` (contracts.md §7), and the run ends where the rules put that failure — or [WAKE_IN_FLIGHT] — the cut
+ * fell after a judgement that woke a seat and before its `read`: a start wakes no one again, and the message stays
+ * unread until S2.4 gives a wake its record (D-76, Amendment 22) — or, a kind of its own, otherwise.
  *
  * What a participant does once the daemon is back: a step whose own line is on the log — a seat's or Bora's message,
  * an operation's result, a reported fact — is not done again, since the start carries that line again as if it had just
@@ -37,21 +40,25 @@ class Restarts private constructor(val cuts: List<Cut>, private val seeds: Long)
     /** The daemon stopped after line [seq] ([told]); how the run started again there ended. */
     data class Cut(val seq: Long, val told: String, val ending: String)
 
-    /** The cuts of the third kind: neither the same end nor an operation in flight. */
-    val otherwise: List<Cut> get() = cuts.filter { it.ending != SAME && !it.ending.startsWith(IN_FLIGHT) }
+    /** The cuts after a wake, before its `read`: the message stays unread (D-76). */
+    val wakesInFlight: List<Cut> get() = cuts.filter { it.ending.startsWith(WAKE_IN_FLIGHT) }
+
+    /** The cuts of no named kind: neither the same end, nor an operation in flight, nor a wake in flight. */
+    val otherwise: List<Cut> get() = cuts.filter { it.ending != SAME && !it.ending.startsWith(IN_FLIGHT) && !it.ending.startsWith(WAKE_IN_FLIGHT) }
 
     /** What `just hero` prints of the restart: the counts, then each cut. */
     fun report(): List<String> {
         val same = cuts.count { it.ending == SAME }
         val inFlight = cuts.count { it.ending.startsWith(IN_FLIGHT) }
         return listOf("the restart: H-1′ stopped after each of the ${cuts.size} lines its daemon writes (the $seeds seeded before it kept) — " +
-            "$same same end, $inFlight an operation in flight, ${otherwise.size} otherwise") +
+            "$same same end, $inFlight an operation in flight, ${wakesInFlight.size} a wake in flight, ${otherwise.size} otherwise") +
             cuts.map { "  after line ${it.seq} (${it.told}): ${it.ending}" }
     }
 
     companion object {
         const val SAME = "same end"
         const val IN_FLIGHT = "an operation in flight"
+        const val WAKE_IN_FLIGHT = "a wake in flight"
         private const val INTERRUPTED = "interrupted"
         private const val REQUESTED = "requested"
 
@@ -110,23 +117,40 @@ class Restarts private constructor(val cuts: List<Cut>, private val seeds: Long)
                     val started = hero.office.state
                     val flights = hero.office.lines().counted().map { it.entry }.filterIsInstance<Op>().filter { it.seq.toLong() > cut && it.reason == INTERRUPTED }
                     val inFlight = flights.joinToString { op -> "${op.op} → ${where(hero, started, op.cause)}" }.let { "$IN_FLIGHT: $it" }
+                    val wake = wakeInFlight(run, cut, started)
                     try {
                         hero.player.rest()
                     } catch (failure: WalkFailure) {
                         // An operation in flight ends where the rules put its failure: the walk cannot give it the result it scripts.
                         val failed = hero.script.walk.steps[hero.player.next - 1]
-                        return@use if (flights.any { it.op == failed.operation }) inFlight else "otherwise — the walk went otherwise: ${failure.message}"
+                        return@use when {
+                            flights.any { it.op == failed.operation } -> inFlight
+                            wake != null -> "$wake; the walk went otherwise: ${failure.message}"
+                            else -> "otherwise — the walk went otherwise: ${failure.message}"
+                        }
                     }
                     val differences = Ending.of(hero.office.state, hero.office.lines().map { it.entry }).differences(run.end)
                     when {
                         flights.isNotEmpty() -> inFlight + (if (differences.isEmpty()) ", and the walk ends as uninterrupted" else ", and the walk ends otherwise — $differences")
                         differences.isEmpty() -> SAME
+                        wake != null -> "$wake; it ends otherwise: $differences"
                         else -> "otherwise — it ends otherwise: $differences"
                     }
                 }
             } finally {
                 project.deleteRecursively()
             }
+        }
+
+        /**
+         * A wake in flight at [cut] (D-76): the uninterrupted run's next line is a seat's `read` — what it wrote once the
+         * judgement before it, which woke that seat, was on disk — and the start left those messages unread. Null when not.
+         */
+        private fun wakeInFlight(run: Uninterrupted, cut: Long, started: State): String? {
+            val read = run.lines.firstOrNull { it.seq.toLong() == cut + 1 } as? Read ?: return null
+            if (!started.unread[read.seat].orEmpty().containsAll(read.ids)) return null
+            val kinds = run.lines.filterIsInstance<Message>().associate { it.id.value to it.kind }
+            return "$WAKE_IN_FLIGHT: the message stays unread — ${read.ids.joinToString { kinds[it] ?: it }} to ${read.seat}"
         }
 
         /** Where the start left the stage the message [cause] is about: its name in the walk and its state. */

@@ -285,10 +285,14 @@ class HeroesSpec : FreeSpec({
         sweep.removalSurvivors.shouldBeEmpty()
     }
 
-    "a daemon stopped after any line of H-1′ and started again ends where the uninterrupted run does — or, an operation in flight, where the rules put its failure" {
+    "a daemon stopped after any line of H-1′ and started again ends where the uninterrupted run does — or, an operation in flight, where the rules put its failure — or, right after a wake, with its message unread" {
         val restarts = Restarts.afterEveryLineOf("h1-prime").also(HeroReport::restarts)
 
-        restarts.cuts.map { it.ending }.filter { it != Restarts.SAME && !it.startsWith(Restarts.IN_FLIGHT) }.shouldBeEmpty()
+        restarts.otherwise.map { "after line ${it.seq} (${it.told}): ${it.ending}" }.shouldBeEmpty()
         restarts.cuts.filter { it.ending.startsWith(Restarts.IN_FLIGHT) }.shouldNotBeEmpty()
+        // A wake has no record before S2.4 (D-76, Amendment 22): the two judgements that wake coder-1 — `assign`'s and
+        // the resume `triage`'s — each leave one such cut, and S2.4 ends them as the uninterrupted run.
+        restarts.wakesInFlight.map { it.told + " — " + it.ending.substringAfter(" — ").substringBefore(";") } shouldBe
+            listOf("judged — assign to coder-1", "judged — triage to coder-1")
     }
 })
