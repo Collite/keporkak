@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kp.engine.Datum
 import kp.engine.FactRef
+import kp.engine.settled
 import kp.log.LogWriter
 import kp.mailroom.Clock
 import kp.mailroom.Deliveries
@@ -46,13 +47,15 @@ class Script(val walk: Walk, val effort: String = EFFORT) {
     /**
      * What the walk starts from, written before the daemon starts — what an earlier part of the log would have left:
      * its seats `ready`; each stage that starts elsewhere than `planned` in its state; a stage's seat in the state its
-     * `machines:` gives.
+     * `machines:` gives. One judgement, closed (contracts.md §3, Amendment 23), so a start has nothing to void.
      */
     fun seed(project: Path, office: String, clock: Clock) = LogWriter.open(project, OfficeId(office)).use { log ->
         val at = clock.now().truncatedTo(ChronoUnit.SECONDS).toString()
+        val judgement = log.judgement()
+        var moved = false
         fun move(machine: String, subject: String, from: String, to: String) =
-            log.append(Json.parseToJsonElement("""{"v":1,"at":"$at","event":"transition","machine":"$machine","subject":"$subject","from":"$from","to":"$to","cause":"rehearsal"}""").jsonObject,
-                if (machine == STAGE) kp.model.StageId(subject) else null)
+            judgement.add(Json.parseToJsonElement("""{"v":1,"at":"$at","event":"transition","machine":"$machine","subject":"$subject","from":"$from","to":"$to","cause":"rehearsal"}""").jsonObject,
+                if (machine == STAGE) kp.model.StageId(subject) else null).also { moved = true }
         walk.seats.keys.forEach { seat -> move(SEAT, seat, PROVISIONED, READY) }
         walk.stageNames.forEach { name ->
             val initial = walk.initialOf(name)
@@ -64,6 +67,7 @@ class Script(val walk: Walk, val effort: String = EFFORT) {
                 if (state != READY) move(SEAT, seat, READY, state)
             }
         }
+        if (moved) judgement.close(at)
     }
 
     /** A player of this walk on [office]; Bora's steps go to [bora], and [out] hears each step as it is played. */
@@ -367,7 +371,8 @@ class Player internal constructor(private val script: Script, val office: Office
     /**
      * The state the step's own judgement left: the log folded through the record of its message — or its operation's
      * result, or its fact — and the moves and requests written with it, before anything that judgement made the
-     * mailroom or a robot send. What a robot sends in answer is a step of its own in a walk (`by: robot:…`).
+     * mailroom or a robot send. What a robot sends in answer is a step of its own in a walk (`by: robot:…`). That cut
+     * falls inside the judgement, so its lines are applied as written (`settled`, Amendment 23).
      */
     private fun ownState(played: Played): kp.engine.State {
         val lines = lines()
@@ -377,11 +382,11 @@ class Player internal constructor(private val script: Script, val office: Office
             played.message != null -> lines.lastOrNull { (it is Delivered && it.id == played.message) || (it is Held && it.id == played.message) || (it is Refused && it.id == played.message) }
                 ?: lines.firstOrNull { it is Message && it.id.value == played.message }
             else -> window.firstOrNull { it is kp.model.Fact } ?: window.firstOrNull()
-        } ?: return kp.engine.fold(lines.filter { it.seq.toLong() < played.first })
+        } ?: return kp.engine.fold(lines.filter { it.seq.toLong() < played.first }).settled()
         val after = lines.dropWhile { it.seq < anchor.seq }.drop(1)
         val own = after.takeWhile { it is kp.model.Transition || (it is Op && it.phase == REQUESTED) || it is kp.model.Read || it is kp.model.Rules }
         val end = (own.lastOrNull() ?: anchor).seq
-        return kp.engine.fold(lines.filter { it.seq <= end })
+        return kp.engine.fold(lines.filter { it.seq <= end }).settled()
     }
 
     /** The state of [machine] the step speaks of: a seat — the one its args or trigger name, else its stage's coder; Bora's presence; its message's thread. */

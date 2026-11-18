@@ -17,6 +17,7 @@ import kp.engine.Decision
 import kp.engine.Engine
 import kp.engine.Facts
 import kp.engine.fold
+import kp.engine.settled
 import kp.log.LogWriter
 import kp.mailroom.Clock
 import kp.mailroom.OperationResult
@@ -152,7 +153,7 @@ data class World(
     /** The engine's judgement of the message in this world, in memory: the search's oracle. */
     fun judge(rules: RuleSet): Decision {
         val (lines, ids) = render()
-        val state = fold(lines.map { parseLine(it.toString()) })
+        val state = fold(lines.map { parseLine(it.toString()) }).settled()
         val trigger = kp.engine.Trigger.Arrival(message(rules, lines.size + 1L, ids))
         val engine = Engine(rules)
         return engine.judge(state, trigger, Facts.collect(engine.needs(state, trigger), ::observe))
@@ -170,6 +171,7 @@ data class World(
         try {
             val (lines, ids) = render()
             LogWriter.open(project, OfficeId(OFFICE)).use { log ->
+                val judgement = log.judgement() // the world as one judgement, closed: a start has nothing to void (Amendment 23)
                 lines.forEach { line ->
                     val draft = JsonObject(line - "seq")
                     val stage = when {
@@ -178,8 +180,9 @@ data class World(
                         line["event"] == t("delivered") || line["event"] == t("refused") -> (lines.firstOrNull { it["id"] == line["id"] && "kind" in it }?.get("stage") as? JsonPrimitive)?.content?.let(::StageId)
                         else -> null
                     }
-                    log.append(draft, stage)
+                    judgement.add(draft, stage)
                 }
+                if (lines.isNotEmpty()) judgement.close(NOW)
             }
             val operations = Operations { request, done -> done(if (results[request.operation] == false) OperationResult.Failed("failed in the sweep") else OperationResult.Ok()) }
             val office = Office.start(OFFICE, project, root, TableFacts(facts), operations, NoSeats, Clock { Instant.parse(NOW) })
