@@ -65,6 +65,7 @@ steps:
   who: bora
   kind: approval
   signed: bora
+  re: proposal
   args: {}
   expect:
     state: assigned

@@ -44,6 +44,21 @@ class AnsweringSpec : FreeSpec({
         }
     }
 
+    "kp rule names its item by a ticket or by a message's id, as kp reverse does: a message that raised no ticket can be ruled on" {
+        TestOffice().use { office ->
+            office.send("teamlead", proposal())
+            val item = office.messages().single { it.kind == "assignment-proposal" }.id.value
+
+            office.kp("rule", item, "resume", "seat=coder-1", peer = ROOT)
+            office.kp("rule", "#4", "stage", peer = ROOT)
+
+            office.messages().filter { it.kind == "ruling" }.map { listOf(it.re?.value, it.stage?.value, it.signed, it.args.toString()) } shouldBe listOf(
+                listOf(item, "KP/P2/S2.1", true, """{"outcome":"resume","seat":"coder-1"}"""),
+                listOf(item, "KP/P2/S2.1", true, """{"outcome":"stage"}"""),
+            )
+        }
+    }
+
     "an unsigned answer is refused and logged, and kp says how to sign it; a refusal exits 1" {
         TestOffice().use { office ->
             office.send("teamlead", proposal())
@@ -60,7 +75,8 @@ class AnsweringSpec : FreeSpec({
             val before = office.messages().size
 
             office.kp("approve", "42", peer = ROOT) shouldBe Ran(1, "kp: no ticket #42 — kp inbox --all lists them\n")
-            office.kp("rule", "3", peer = ROOT) shouldBe Ran(2, "kp: kp rule <ticket> <outcome> [key=value …] [text]\n")
+            office.kp("rule", "3", peer = ROOT) shouldBe Ran(2, "kp: kp rule <ticket | message id> <outcome> [key=value …] [text]\n")
+            office.kp("rule", "m-panda-000099", "resume", peer = ROOT) shouldBe Ran(1, "kp: no message m-panda-000099 — kp inbox --all lists the tickets\n")
             office.kp("approve", "three", peer = ROOT) shouldBe Ran(2, "kp: kp approve <ticket>\n")
             office.kp("away", "now", peer = ROOT) shouldBe Ran(2, "kp: kp away\n")
             office.messages().size shouldBe before

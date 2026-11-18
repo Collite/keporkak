@@ -60,6 +60,7 @@ steps:
   who: bora
   kind: approval
   signed: bora
+  re: proposal
   args: {}
   expect:
     state: assigned
@@ -151,12 +152,14 @@ steps:
     list.tasks_open: 0
   expect:
     state: ready_for_review
-- who: mailroom
+- id: found-batch
+  who: mailroom
   kind: found-batch
   args: {}
   re: review-request
 - who: principal
   kind: triage
+  re: found-batch
   args:
     outcome: stage
     found: T3-follow-up

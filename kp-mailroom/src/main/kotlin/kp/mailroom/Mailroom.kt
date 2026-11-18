@@ -467,8 +467,9 @@ class Mailroom private constructor(
         if (!always && !carried && decision.moves.isEmpty() && decision.effects.isEmpty() && reaction?.fired.isNullOrEmpty() && freed(fact to value, stage, now).isEmpty()) return
         val party = fact.name.substringBefore('.').takeIf { it in PARTIES }
         val subject = fact.params.values.joinToString(", ") { (it as? Datum.Text)?.value ?: it.json() }.ifEmpty { stage ?: party ?: office.value }
-        // A fact about a stage goes to that stage's file (contracts.md §3): a start that carries it again reads its stage there.
-        val line = line(now, EVENT to text("fact"), FACT to text(fact.name), SUBJECT to text(subject), VALUE to value.element(), EVIDENCE to text(evidence))
+        // The record carries its parameters and its stage (contracts.md §2.2, Amendment 24): a start carries it again exactly.
+        val line = line(now, EVENT to text("fact"), FACT to text(fact.name), SUBJECT to text(subject), VALUE to value.element(), EVIDENCE to text(evidence),
+            PARAMS to JsonObject(fact.params.mapValues { it.value.element() }), STAGE to text(stage), keepNull = setOf(STAGE))
         if (first != null) first(line) else write(line, stage)
         val cause = fact.toString()
         record(decision, cause, now)
@@ -654,19 +655,21 @@ class Mailroom private constructor(
         judged { complete(OperationRequest(flight.op, flight.cause, flight.with), OperationResult.Failed(INTERRUPTED)) }
     }
 
-    // ---- a start (contracts.md §3, Amendment 23)
+    // ---- a start (contracts.md §3, Amendments 23 and 24)
 
     /**
-     * The judgement the log ends in that no `judged` line closes — what a stop in the middle of writing it left — gets
-     * a `voided` record, from its first line to the last on disk: its other lines count for nothing. Its first line
-     * stands and is carried again as if it had just arrived — a message, an operation's result, an expiry, a fact — in
-     * the judgement the `voided` record opens. A first line that was lost, or one that is no arrival (a `rules` or
-     * `read` record, a request), has nothing more to carry. Returns the operations in flight once the `voided` record
-     * is written — a standing request among them, a request a standing result ended not — before the judgement it
-     * opens requests any: those the start records `failed`, `interrupted` (contracts.md §7).
+     * The start's `rules` record, and the judgement the log ends in that no `judged` line closes — what a stop in the
+     * middle of writing it left. With none, the `rules` record is a judgement of its own. Otherwise that judgement gets
+     * a `voided` record, from its first line to the last on disk: its other lines count for nothing. The `rules` record
+     * follows it, in the judgement it opens, and its first line stands and is carried again there, as if it had just
+     * arrived — a message, an operation's result, an expiry, a fact — judged under the rules that record names. A first
+     * line that was lost, or one that is no arrival (a `rules` or `read` record, a request), has nothing more to carry.
+     * Returns the operations in flight once the `voided` record is written — a standing request among them, a request
+     * a standing result ended not — before the judgement it opens requests any: those the start records `failed`,
+     * `interrupted` (contracts.md §7).
      */
     private fun unfinished(lines: List<LogLine>, first: Long): List<InFlight> {
-        if (folded.opened == null) return folded.operations
+        if (folded.opened == null) return folded.operations.also { judged { recordRules() } }
         val standing = folded.unjudged.firstOrNull()?.takeIf { folded.opened == first }
         val voided = line(now(), EVENT to text("voided"), FIRST to JsonPrimitive(first), LAST to JsonPrimitive(writer.last))
         // The `voided` record goes to its first line's file, and so does the `judged` that closes the judgement it opens.
@@ -674,6 +677,8 @@ class Mailroom private constructor(
         var flights = emptyList<InFlight>()
         val stand: (JsonObject) -> Unit = {
             write(voided, stage)
+            // Nothing may come before the `voided` record in the judgement it opens; the `rules` record comes before what it carries again.
+            recordRules()
             flights = folded.operations
         }
         judged {
@@ -698,16 +703,12 @@ class Mailroom private constructor(
     }
 
     /**
-     * A `fact` record read back as the fact that changed: its parameters are the names the vocabulary declares for it,
-     * in order, with the values its subject joins; its stage is the stage whose file it is in, else its subject when
-     * that is a stage.
+     * A `fact` record read back as the fact that changed: the parameters and the stage it carries (contracts.md §2.2,
+     * Amendment 24) — a record written before them names neither, and is about the stage whose file it is in.
      */
     private fun carriedFact(record: Fact, file: String?): Pair<FactRef, String?> {
-        val declared = rules.vocabulary.facts[record.fact]?.params.orEmpty().split(", ").filter { PARAM.matches(it) }
-        val values = record.subject.split(", ")
-        val params = if (declared.isNotEmpty() && declared.size == values.size) declared.zip(values).associate { (name, value) -> name to Datum.Text(value) } else emptyMap()
-        val stage = file ?: record.subject.takeIf { params.isEmpty() && runCatching { StageId(it) }.isSuccess }
-        return FactRef(record.fact, params) to stage
+        val params = (record.plain()[PARAMS] as? Map<*, *>).orEmpty().entries.associate { (name, value) -> name as String to Datum.of(value) }
+        return FactRef(record.fact, params) to (record.stage ?: file)
     }
 
     /** `seat.start` and `seat.reseat` are `ok(seat)` (contracts.md §4.4, Amendment 13): the result names the seat, the one it was asked for when the performer did not. */
@@ -892,7 +893,6 @@ class Mailroom private constructor(
                         val voided = entries.filterIsInstance<Voided>().map { (it.first + 1)..it.last } + listOf((first + 1)..writer.last)
                         take(entries, asWritten = false) { line -> voided.none { line.seq.longValueExact() in it } }
                         val flights = unfinished(read.lines, first)
-                        judged { recordRules() }
                         interrupted(flights.filter { flight -> folded.operations.any { it === flight } })
                         drain()
                     }
@@ -944,8 +944,8 @@ private const val ITEM = "item"
 private const val INTERRUPTED = "interrupted"
 private const val FIRST = "first"
 private const val LAST = "last"
-/** A parameter's name as the vocabulary declares it (`params: seat`, `params: stage, id`). */
-private val PARAM = Regex("^[a-z][a-z_]*$")
+/** A `fact` record's parameters (contracts.md §2.2, Amendment 24). */
+private const val PARAMS = "params"
 /** The cause of the `notify.bora` an invalid reload requests, and where its problems go (contracts.md §2.2). */
 private const val RULES = "rules"
 private const val PROBLEMS = "problems"

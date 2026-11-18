@@ -135,6 +135,10 @@ class Fact internal constructor(value: JsonObject) : Record(value) {
     val subject get() = json.string("subject")
     val value get() = json.getValue("value")
     val evidence get() = json.optionalString("evidence")
+    /** The fact's parameters by name, whose values its subject joins (Amendment 24); null on a record written before it. */
+    val params get() = json["params"]?.jsonObject
+    /** The stage the fact was reported about (Amendment 24); null when none, or on a record written before it. */
+    val stage get() = json.optionalString("stage")
 }
 @Serializable(with = OpSerializer::class)
 class Op internal constructor(value: JsonObject) : Record(value) {

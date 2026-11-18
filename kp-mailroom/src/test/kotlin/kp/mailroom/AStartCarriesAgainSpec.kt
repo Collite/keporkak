@@ -103,12 +103,43 @@ class AStartCarriesAgainSpec : StringSpec({
         office.operations.requested shouldBe emptyList()
     }
 
-    "a fact about a stage is written to that stage's file: a start that carries it again reads its stage there" {
+    "a fact record carries its params and its stage, and goes to that stage's file (contracts.md §2.2, Amendment 24)" {
         val office = Office(seed = "building", robots = true)
 
         office.changed("seat.process_gone", true, stage = STAGE, params = mapOf("seat" to "coder-1"))
 
+        office.readBack().lines.filterIsInstance<Fact>().map { "${it.fact} ${it.subject} ${it.params} ${it.stage}" } shouldBe
+            listOf("""seat.process_gone coder-1 {"seat":"coder-1"} $STAGE""")
         office.project.resolve("mail/KP/p2-s2.1.jsonl").readLines().map(::parseLine).filterIsInstance<Fact>().map { "${it.fact} ${it.subject}" } shouldBe
             listOf("seat.process_gone coder-1")
+    }
+
+    "a start carries a fact again with the params and the stage its record names, whatever the vocabulary's params: say" {
+        fun gone(office: Office) = office.changed("seat.process_gone", true, stage = STAGE, params = mapOf("seat" to "coder-1"))
+        val uninterrupted = Office(seed = "building", robots = true).apply { gone(this) }.end()
+        val office = Office(seed = "building", robots = true)
+        office.stopWriterAfter { it is Fact }
+        shouldThrow<WriterStopped> { gone(office) }
+        office.stop()
+
+        office.texts.edit("rules/vocabulary.yaml", "  seat.process_gone:\n    params: seat\n", "  seat.process_gone:\n    params: the seat whose process is gone\n")
+        office.start()
+
+        office.readBack().voidedJudgements().map { it.first() } shouldBe listOf("fact seat.process_gone")
+        office.end() shouldBe uninterrupted
+    }
+
+    "at a start the rules record comes first: alone, or right after the voided record, before what that carries again" {
+        val office = Office(seed = "building", robots = true)
+        office.stopWriterAfter { it is Delivered }
+        shouldThrow<WriterStopped> { office.play("review-request") }
+
+        office.restart()
+        office.restart()
+
+        office.readBack().judgements().filter { it.first() == "voided" || it.first() == "rules" }.takeLast(2).map { it.take(3) } shouldBe listOf(
+            listOf("voided", "rules", "delivered"),
+            listOf("rules", "judged"),
+        )
     }
 })

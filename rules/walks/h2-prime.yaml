@@ -89,7 +89,8 @@ steps:
   expect:
     states:
       presence: absent
-- who: teamlead
+- id: proposal
+  who: teamlead
   kind: assignment-proposal
   args:
     role: coder
@@ -103,6 +104,7 @@ steps:
   who: deputy
   by: robot:DEP-2
   kind: queued-approval
+  re: proposal
   args: {}
   expect:
     state: assigned
@@ -128,7 +130,8 @@ steps:
     - done_lines_hold
   expect:
     state: ready_for_review
-- who: teamlead
+- id: bind
+  who: teamlead
   kind: review-bind
   re: review-request
   args:
@@ -190,6 +193,7 @@ steps:
   id: first-fix
   who: reviewer-1
   kind: verdict
+  re: bind
   args:
     verdict: FIX FIRST
     sha: head-1

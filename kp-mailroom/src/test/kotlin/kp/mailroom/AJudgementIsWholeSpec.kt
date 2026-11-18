@@ -46,7 +46,7 @@ class AJudgementIsWholeSpec : FreeSpec({
         stopped.restart()
 
         stopped.readBack().voidedJudgements() shouldBe listOf(listOf("review-request by seat:coder-1", "delivered"))
-        stopped.readBack().judgements() shouldContain listOf("voided", "delivered", "transition building→ready_for_review",
+        stopped.readBack().judgements() shouldContain listOf("voided", "rules", "delivered", "transition building→ready_for_review",
             "found-batch by effect:T-17", "delivered", "judged")
         stopped.end() shouldBe uninterrupted.end()
     }

@@ -66,6 +66,7 @@ steps:
   who: bora
   kind: approval
   signed: bora
+  re: proposal
   args: {}
   expect:
     state: assigned
@@ -84,6 +85,7 @@ steps:
       seat: busy
 - who: coder-1
   kind: started
+  re: assign
   args: {}
   expect:
     state: building
@@ -108,7 +110,8 @@ steps:
     pr.head: head-1
   expect:
     state: candidate_deployed
-- who: coder-1
+- id: review-request
+  who: coder-1
   kind: review-request
   args:
     attest:
@@ -119,8 +122,10 @@ steps:
     list.tasks_open: 0
   expect:
     state: ready_for_review
-- who: teamlead
+- id: bind
+  who: teamlead
   kind: review-bind
+  re: review-request
   args:
     reviewer: reviewer-1
   expect:
@@ -128,6 +133,7 @@ steps:
 - id: pass
   who: reviewer-1
   kind: verdict
+  re: bind
   args:
     verdict: PASS-FU
     sha: head-1

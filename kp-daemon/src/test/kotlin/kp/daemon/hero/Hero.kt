@@ -2,8 +2,6 @@
 
 package kp.daemon.hero
 
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kp.daemon.Bora
 import kp.daemon.Daemon
 import kp.daemon.Log
@@ -18,7 +16,6 @@ import kp.daemon.WalkFailure
 import kp.daemon.checkout
 import kp.engine.Datum
 import kp.mailroom.Clock
-import kp.mailroom.Sender
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -114,18 +111,18 @@ class Hero(
     /**
      * Bora at the socket: each of his steps is the `kp` command that sends it — `sudo` when the step is signed — and his
      * acting is `sudo kp status`. A ruling that carries more than its outcome says it as `kp rule`'s `key=value` words
-     * (contracts.md §6, Amendment 23). A ruling about a message that raised no ticket — H-2′'s about the anomaly-stop,
-     * class C — is more than `kp rule <ticket>` can address: it goes in by the door `kp` uses, his signed command (a
-     * Found line of S1.10).
+     * (contracts.md §6, Amendment 23); one about a message that raised no ticket — H-2′'s about the anomaly-stop, class
+     * C — names that message by its id (Amendment 24).
      */
     private inner class AtTheSocket : Bora {
         override fun send(ask: Bora.Ask) {
             fun ticket(): String = ask.ticket?.toString() ?: throw WalkFailure("step ${ask.number}: no open ticket for Bora's ${ask.kind}")
+            fun item(): String = ask.ticket?.toString() ?: ask.re ?: throw WalkFailure("step ${ask.number}: no open ticket or message for Bora's ${ask.kind}")
             val args = ask.args.fields
             val ran = when (ask.kind) {
                 "approval" -> kp("approve", ticket(), root = ask.signed)
                 "decline" -> kp("decline", ticket(), root = ask.signed)
-                "ruling" -> if (ask.ticket == null && ask.re != null) signed(ask) else kp(*(listOf("rule", ticket(), (args.getValue("outcome") as Datum.Text).value) +
+                "ruling" -> kp(*(listOf("rule", item(), (args.getValue("outcome") as Datum.Text).value) +
                     args.filterKeys { it != "outcome" }.map { (key, value) -> "$key=${(value as Datum.Text).value}" }).toTypedArray(), root = ask.signed)
                 "queue-approval" -> kp(*(listOf("queue") + (args["stages"] as Datum.Items).items.map { (it as Datum.Text).value }).toTypedArray(), root = ask.signed)
                 "away" -> kp("away", root = ask.signed)
@@ -138,13 +135,6 @@ class Hero(
             said += "sudo kp status: " + kp("status", root = true).text.lines().first()
         }
 
-        private fun signed(ask: Bora.Ask): Ran {
-            if (ask.signed) office.acted()
-            val input = JsonObject(listOfNotNull("kind" to JsonPrimitive(ask.kind), "stage" to JsonPrimitive(ask.stage), "subject" to JsonPrimitive("${ask.kind} (step ${ask.number})"),
-                ask.re?.let { "re" to JsonPrimitive(it) }, "args" to kotlinx.serialization.json.Json.parseToJsonElement(ask.args.json())).toMap())
-            val answer = office.submit(Sender.Bora(signed = ask.signed), input)
-            return Ran(0, "${answer.status} ${answer.id}")
-        }
     }
 
     companion object {
