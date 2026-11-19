@@ -8,6 +8,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import io.kotest.matchers.string.shouldStartWith
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -88,6 +89,16 @@ class TheThinThreadSpec : StringSpec({
             failure.shouldBeInstanceOf<WalkFailure>().message shouldContain Regex("""^walk thin-thread step [0-9]+ \(""")
             failure?.message shouldContain "the seats have used 1500001 tokens, more than the walk's 1500000 (coder-1 1500001); the last turn was coder-1's — its transcript: " +
                 thread.hero.project.resolve("office/seats/_transcripts/coder-1.log")
+        }
+        // The walk's last turn — the reviewer's, woken by `review-bind` — is held to the walk's tokens too (review-024, B1).
+        ThinThread(reviewer = """{"turns": [[{"do": "end", "usage": {"input": 1500000, "output": 0, "total": 1500000}}]]}""").use { thread ->
+            var failure: Throwable? = null
+            thread(isDaemon = true) { failure = runCatching { thread.hero.rest() }.exceptionOrNull() }.join(60_000)
+
+            failure.shouldBeInstanceOf<WalkFailure>().message shouldContain "walk thin-thread step 12 (bind · teamlead · review-bind), at the walk's end: the seats have used "
+            failure?.message shouldContain "more than the walk's 1500000 (coder-1 "
+            failure?.message shouldContain "the last turn was reviewer-1's — its transcript: " + thread.hero.project.resolve("office/seats/_transcripts/reviewer-1.log")
+            thread.evidence.listDirectoryEntries("thin-thread-*.md").single().readText() shouldStartWith "# Rehearsal thin-thread with its seats playing their own steps — failed"
         }
     }
 

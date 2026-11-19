@@ -91,12 +91,13 @@ class SeatsAtPlay(
     override fun ended(seat: String, cause: String?, usage: Long?) {
         sessionOf(seat)
         synchronized(turns) { turns.getOrPut(seat) { ArrayList() } += usage }
-        cause?.let { woken += seat to it }
         val total = used().values.sum()
         if (total > claude.tokens && over == null) {
             over = "the seats have used $total tokens, more than the walk's ${claude.tokens} (" +
                 used().entries.joinToString(", ") { (each, tokens) -> "$each $tokens" } + "); the last turn was $seat's — its transcript: ${transcript(seat)}"
         }
+        // The turn is said to have ended only once what it used is counted: whoever waits for it then reads [failure] whole (review-024, B1).
+        cause?.let { woken += seat to it }
         office?.changes?.signal()
     }
 

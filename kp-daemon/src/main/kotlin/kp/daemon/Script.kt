@@ -289,6 +289,8 @@ class Player internal constructor(private val script: Script, val office: Office
         try {
             val played = buildList { while (!done) add(step()) }
             turnsOfTheEnd(own)
+            // The turns of the walk's end are held to the walk's tokens as every other (review-024, B1).
+            own.failure()?.let { failure -> this.played.last().let { last -> throw WalkFailure(at(last.number, last.step) + ", at the walk's end: " + failure) } }
             finish()
             evidence = own.ended(this, null)
             return played
