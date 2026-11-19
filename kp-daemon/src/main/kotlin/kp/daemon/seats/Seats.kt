@@ -57,9 +57,10 @@ import kotlin.io.path.name
  *
  * A seat is idle when it has a live session and no turn in flight; its wake is `ok` once the prompt is on its way. A
  * turn that ends leaves the seat idle, and the mailroom wakes it with its oldest unread message. Gone and closed are
- * reported when they happen — a close only when the seat's process outlives it, since a process that ends closes its
- * protocol too; the silence, an open tool call, the context used and the usage of every seat with a turn in flight are
- * reported every [watchEvery]. At a start, a seat the state holds live and the driver does not is reported gone.
+ * each reported when they happen, a retired seat's too: the daemon holds no report back and joins none — that one death
+ * is one event is the rules' to say (contracts.md §4.4, Amendment 28). The silence, an open tool call, the context used
+ * and the usage of every seat with a turn in flight are reported every [watchEvery]. At a start, a seat the state holds
+ * live and the driver does not is reported gone.
  */
 class Seats(
     /** The keporkak checkout: the renders, personas, skills, packaging data, profiles and hooks a home is built from. */
@@ -329,7 +330,7 @@ class Seats(
         is Outcome.Failed -> OperationResult.Failed(killed.reason)
     }
 
-    /** `seat.retire` (contracts.md §4.4): the session ended, the pane closed, the home kept; a retired seat's end is not reported as gone. */
+    /** `seat.retire` (contracts.md §4.4): the session ended, the pane closed, the home kept; its end is reported like any other. */
     private fun retire(seat: String): OperationResult {
         val session = held[seat]
         session?.ending = true
@@ -496,19 +497,16 @@ class Seats(
 
     // ---- reporting (contracts.md §4.4, Amendment 22)
 
-    /** What the driver observed without being asked: gone at once; closed only when the process outlives it a moment. */
+    /** What the driver observed without being asked — the process gone, the protocol closed: each reported when it happens. */
     private fun observed(fact: ObservedFact) {
         val seat = fact.subject.value
         val session = held[seat] ?: return
-        when (fact.fact) {
-            SeatFacts.PROCESS_GONE -> {
-                session.gone = true
-                session.busy = false
-                reporter.execute { panes.close(seat) }
-                if (!session.ending && !closing) report(seat, session, fact)
-            }
-            SeatFacts.PROTOCOL_CLOSED -> later.schedule({ if (!session.gone && !session.ending && !closing) report(seat, session, fact) }, CLOSE_GRACE.toMillis(), TimeUnit.MILLISECONDS)
+        if (fact.fact == SeatFacts.PROCESS_GONE) {
+            session.gone = true
+            session.busy = false
+            reporter.execute { panes.close(seat) }
         }
+        if (fact.fact in ENDS && !closing) report(seat, session, fact)
     }
 
     private fun report(seat: String, session: Held, fact: ObservedFact) = reporter.execute {
@@ -601,8 +599,8 @@ class Seats(
         private val STAGE_FORM = Regex("^([A-Z][A-Z0-9-]*)/P([0-9]+)/S([0-9]+\\.[0-9]+)$")
         /** How long the agent is given to end by itself when it is killed or retired, before its process tree is ended by force. */
         private val KILL_GRACE: Duration = Duration.ofSeconds(5)
-        /** A closed protocol whose process is gone this soon after is the process's end, reported once as gone. */
-        private val CLOSE_GRACE: Duration = Duration.ofSeconds(2)
+        /** A seat's two ends the driver reports (contracts.md §4.4): each is reported as it happens. */
+        private val ENDS = setOf(SeatFacts.PROCESS_GONE, SeatFacts.PROTOCOL_CLOSED)
         private const val SEND_WAIT_SECONDS = 60L
         private const val REPORTER_WAIT = 10L
 

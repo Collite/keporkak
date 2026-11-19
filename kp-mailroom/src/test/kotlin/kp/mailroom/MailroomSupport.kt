@@ -104,17 +104,27 @@ class FakeFacts : FactSource {
     }
 }
 
-/** A performer that answers `ok` at once — or, while [holding], keeps the request and never answers. */
+/**
+ * A performer that answers `ok` at once — or, while [holding], keeps the request and never answers; while [keeping],
+ * keeps it until the spec gives its answer ([answer]).
+ */
 class FakeOperations : Operations {
     val requested = ArrayList<OperationRequest>()
     var holding = false
+    var keeping = false
     val failing = HashMap<String, String>()
+    private val kept = ArrayList<Pair<OperationRequest, (OperationResult) -> Unit>>()
 
     override fun perform(request: OperationRequest, done: (OperationResult) -> Unit) {
         requested += request
         if (holding) return
+        if (keeping) return run { kept += request to done }
         done(failing[request.operation]?.let { OperationResult.Failed(it) } ?: OperationResult.Ok())
     }
+
+    /** The first kept request of [operation] ends with [result], now. */
+    fun answer(operation: String, result: OperationResult = OperationResult.Ok()) =
+        kept.removeAt(kept.indexOfFirst { it.first.operation == operation }.also { check(it >= 0) { "no $operation is kept" } }).second(result)
 }
 
 /** Seats that are idle unless [busy]; every wake is noted. */
