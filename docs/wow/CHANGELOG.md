@@ -2,6 +2,7 @@
 
 One line per change: date · rule ids · what · the decision. Newest first.
 
+- 2026-11-19 · SEAT-11, SEAT-14, SEAT-34 · A seat an operation ends: SEAT-11 moves a seat from `idle` to `retired` at the `retire` message, its effect unchanged, so every report of its end finds it retired; SEAT-14 and SEAT-34 are removed — a seat is `gone` by `seat-gone` alone, which the first report of a killed seat's end sends, before the kill's result or after it. · KP D-85
 - 2026-11-19 · POOL-1, POOL-11, POOL-12, POOL-13, T-80 · A seat's death is one event: the Pool Manager's four rules on a seat's end act only for a seat that is neither `gone` nor `retired`, so the second report of a death finds nothing to do; T-80, a twin of T-59 from `paused` to `paused`, counts and re-seats a seat that dies while its stage is paused. · KP D-81
 - 2026-11-19 · PL-18 · The walk reaches amendments: before Bora rules on one that changes how a message is judged, the planner walks it against every rule on master it reaches and the proposal carries `check-rules.py`'s output on a copy of the rules with the edit applied. · KP D-78
 - 2026-11-19 · — · The `planning` skill: PL-18 reaches amendments; a DONE item states the property and lets the report give the number; the Pre-flight's paths are the files its tasks name; a list built from triaged Found lines names their `_closed/` file. · KP D-78

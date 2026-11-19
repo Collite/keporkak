@@ -251,7 +251,7 @@ class HeroesSpec : FreeSpec({
         val sweep = Sweep.ofTheRulesOnMaster().also(HeroReport::sweep)
 
         sweep.failures.shouldBeEmpty()
-        sweep.onMaster shouldBe 282 // D-81: T-80, the twin of T-59, brings its three
+        sweep.onMaster shouldBe 280 // D-81: T-80, the twin of T-59, brings its three; D-85: SEAT-14 and SEAT-34 take their one each
         sweep.swept shouldBe 133
         sweep.reasons() shouldBe listOf(
             "70 · written the same way as a requirement of its kind, which is judged first: breaking it breaks the kind's, and the refusal names the kind: " +
@@ -261,9 +261,9 @@ class HeroesSpec : FreeSpec({
                 "T-50#3 (deploy-failed), T-51#1,3 (stage-exit), T-53#1 (ruling), T-54#1 (ruling), T-55#1 (ruling), T-56#1 (ruling), T-59#1-2 (seat-gone), " +
                 "T-60#1-2 (re-seated), T-80#1-2 (seat-gone), FLAG_THREAD-01#1 (ruling), FLAG_THREAD-02#1 (hold), FLAG_THREAD-03#1 (ruling), SEAT-03#1 (assign), SEAT-06#1-2 (seat-gone), " +
                 "SEAT-07#1-2 (re-seated), PHASE-01#1-5 (phase-exit-request), PHASE-02#1 (approval)",
-            "38 · judged on an operation's result, which no message carries: nothing is refused — a result that breaks it fires nothing: T-03#1, T-05#1, T-36#1, " +
+            "36 · judged on an operation's result, which no message carries: nothing is refused — a result that breaks it fires nothing: T-03#1, T-05#1, T-36#1, " +
                 "T-37#1-2, T-39#1-2, T-41#1, T-42#1, T-43#1-2, T-45#1, T-46#1-2, T-49#1, T-52#1, T-58#1, T-61#1, T-62#1, T-63#1, T-64#1, T-65#1, T-66#1, T-67#1, T-68#1, " +
-                "T-69#1, T-71#1, T-73#1, SEAT-02#1, SEAT-04#1, SEAT-05#1, SEAT-41#1, SEAT-42#1, SEAT-14#1, SEAT-15#1, SEAT-34#1, PHASE-03#1, PHASE-04#1",
+                "T-69#1, T-71#1, T-73#1, SEAT-02#1, SEAT-04#1, SEAT-05#1, SEAT-41#1, SEAT-42#1, SEAT-15#1, PHASE-03#1, PHASE-04#1",
             "15 · a later candidate from the same state: when none fires, the refusal names the first candidate's first failure (contracts.md §4.1): " +
                 "T-14#1 (T-13), T-20#1-3 (T-19), T-23#1-2 (T-21), T-24#1-2 (T-21), T-29#1-2 (T-21), T-31#2 (T-30), T-34#1-2 (T-21), T-54#2 (T-53), T-56#2 (T-55)",
             "10 · it tells two candidates from the same state apart: breaking it fires the other: T-21#3 (T-24), T-24#3 (T-29), T-25#1 (T-26), T-26#1 (T-25), " +
