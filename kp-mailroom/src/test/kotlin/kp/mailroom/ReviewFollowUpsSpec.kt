@@ -29,7 +29,7 @@ class ReviewFollowUpsSpec : StringSpec({
         answering!!.join()
 
         answeredDuringStart shouldBe false
-        office.readBack().ops(approval.id) shouldBe
+        office.readBack().ops(approval.id).withoutWakes() shouldBe
             listOf("worktree.create requested", "worktree.create failed interrupted", "register.rebuild requested", "register.rebuild ok")
     }
 

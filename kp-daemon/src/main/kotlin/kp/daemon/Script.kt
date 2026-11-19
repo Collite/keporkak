@@ -43,6 +43,11 @@ class Script(val walk: Walk, val effort: String = EFFORT) {
     val facts = WalkFacts(walk, stages)
     val operations = Performer()
     val seats: Deliveries = ScriptedSeats(walk.seats.keys)
+    /**
+     * The walk's seats as processes, when they are (S2.4: `--seats fake`): the seat operations are theirs to perform —
+     * a step that names one waits for its result — and a step that reports a seat's death ends its process.
+     */
+    @Volatile var live: LiveSeats? = null
 
     fun stageId(name: String): String = stages.getValue(name)
 
@@ -119,10 +124,11 @@ class Script(val walk: Walk, val effort: String = EFFORT) {
         fun waiting(): List<Pair<String, String>> = synchronized(waiting) { waiting.map { it.first.operation to it.first.cause } }
     }
 
-    /** The walk's seats: scripted, so each is idle and takes what wakes it. */
+    /** The walk's seats: scripted, so each is idle — its turn ends at once — and takes what wakes it; each is live at a start. */
     private class ScriptedSeats(private val seats: Set<String>) : Deliveries {
         override fun idle(seat: String) = seat in seats
         override fun wake(seat: String, message: Message) = seat in seats
+        override fun live(): Set<String> = seats
     }
 
     companion object {
@@ -167,6 +173,15 @@ interface Bora {
      * it answers, when there is one.
      */
     class Ask(val number: Int, val step: Walk.Step, val kind: String, val stage: String, val re: String?, val args: Datum.Fields, val signed: Boolean, val ticket: Long?)
+}
+
+/** A walk's seats as processes (S2.4): what they perform, and a death as a walk plays one. */
+interface LiveSeats {
+    /** Whether [operation] is the seats' to perform: the walk waits for its result rather than giving it. */
+    fun performs(operation: String): Boolean
+
+    /** [seat]'s process ends from outside; false when it has none. */
+    fun die(seat: String): Boolean
 }
 
 /** A step that did not do what the walk expected of it. */
@@ -356,11 +371,22 @@ class Player internal constructor(private val script: Script, val office: Office
         return message.id.value to outcome(lines, message.id.value)
     }
 
-    /** An operation the walk ends: the request the step names, given the step's result. */
+    /**
+     * An operation the walk ends: the request the step names, given the step's result — or, when the walk's seats are
+     * processes and the operation is theirs, its result as they gave it, waited for.
+     */
     private fun operation(number: Int, step: Walk.Step): Pair<String?, String?> {
         val operation = step.operation!!
         val asked = step.text(REQUEST) ?: throw WalkFailure(at(number, step) + ": names no request")
         val cause = ids[asked] ?: throw WalkFailure(at(number, step) + ": its request $asked has not been played")
+        // A seat woken with a message is woken by the seats, scripted or live (S2.4): the walk waits for that result too.
+        val seatsWake = operation == SEAT_WAKE && lines().filterIsInstance<Op>().any { it.op == SEAT_WAKE && it.cause == cause && it.with?.containsKey(SEAT) == true }
+        if (script.live?.performs(operation) == true || seatsWake) {
+            val result = waitFor(number, step, "$operation's result for $cause") {
+                lines().filterIsInstance<Op>().lastOrNull { it.op == operation && it.cause == cause && it.phase != REQUESTED }
+            }
+            return cause to result.phase
+        }
         val done = script.operations.take(operation, cause)
             ?: throw WalkFailure(at(number, step) + ": no $operation request of $cause waits for its result — requested: " +
                 lines().filterIsInstance<Op>().filter { it.cause == cause }.joinToString { "${it.op} ${it.phase}" })
@@ -377,9 +403,32 @@ class Player internal constructor(private val script: Script, val office: Office
             return null to null
         }
         val ref = FactRef(name, step.fields(TRIGGER))
+        val seat = (ref.params[SEAT] as? Datum.Text)?.value
+        val live = script.live
+        if (live != null && name in DEATHS && seat != null) {
+            // The seat's process ends; the driver reports it, and the walk waits until the mailroom has judged it.
+            val before = last()
+            if (!live.die(seat)) throw WalkFailure(at(number, step) + ": $seat has no process to end")
+            waitFor(number, step, "the report that $seat is gone") {
+                lines().filterIsInstance<kp.model.Fact>().firstOrNull { it.seq.toLong() > before && it.fact in DEATHS && it.subject == seat }
+            }
+            return null to null
+        }
         val value = TableFacts.lookup(script.facts.table(stage)[name], ref) ?: throw WalkFailure(at(number, step) + ": its table has no value for $ref")
         office.changed(ref, value, script.stageId(stage))
         return null to null
+    }
+
+    /** Waits until [found] finds something on the log, at most [WAIT_MILLIS]: what the step waits for, as [what] says. */
+    private fun <T : Any> waitFor(number: Int, step: Walk.Step, what: String, found: () -> T?): T {
+        val end = System.nanoTime() + WAIT_MILLIS * 1_000_000
+        var version = office.changes.version()
+        while (true) {
+            found()?.let { return it }
+            val left = (end - System.nanoTime()) / 1_000_000
+            if (left <= 0 || office.closed) throw WalkFailure(at(number, step) + ": waited ${WAIT_MILLIS / 1000}s for $what")
+            version = office.changes.await(version, minOf(left, POLL_MILLIS))
+        }
     }
 
     // ---- what a step expects
@@ -465,9 +514,12 @@ class Player internal constructor(private val script: Script, val office: Office
         }
     }
 
-    /** The robots' own seats woken on this step: (rule, mode) of each `seat.wake` requested for it. */
+    /**
+     * The robots' own seats woken on this step: (rule, mode) of each `seat.wake` requested for it in a mode — not a seat
+     * woken with a message it was sent (S2.4).
+     */
     private fun wakes(played: Played): List<Pair<String, String>> = lines().filterIsInstance<Op>().filter { op ->
-        op.op == SEAT_WAKE && op.phase == REQUESTED && when {
+        op.op == SEAT_WAKE && op.phase == REQUESTED && op.with?.containsKey(MODE) == true && when {
             played.step.operation != null || played.message == null -> op.seq.toLong() in played.first..played.last && (played.message == null || op.cause == played.message)
             else -> op.cause == played.message
         }
@@ -558,5 +610,9 @@ class Player internal constructor(private val script: Script, val office: Office
         const val REFUSED_KEY = "refused"
         const val REFUSAL_CONTAINS = "refusal_contains"
         const val REFUSED_BY = "refused_by"
+        /** A seat's death, as a walk reports it. */
+        val DEATHS = setOf("seat.process_gone", "seat.protocol_closed")
+        const val WAIT_MILLIS = 120_000L
+        const val POLL_MILLIS = 1_000L
     }
 }

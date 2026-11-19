@@ -21,3 +21,5 @@ offices:
     computer_use: "off"
     qa: {vendor: claude}
     listen: {mcp: "127.0.0.1:7711", board: "127.0.0.1:7712"}
+    # How often the daemon reports the facts of its seats with a turn in flight (contracts.md §9, Amendment 22).
+    watch: {every: 30s}

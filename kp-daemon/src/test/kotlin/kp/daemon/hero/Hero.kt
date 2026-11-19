@@ -4,6 +4,7 @@ package kp.daemon.hero
 
 import kp.daemon.Bora
 import kp.daemon.Daemon
+import kp.daemon.FakeSeating
 import kp.daemon.Log
 import kp.daemon.Office
 import kp.daemon.Played
@@ -37,6 +38,8 @@ class SetClock(@Volatile var now: Instant) : Clock {
  */
 class Hero(
     walk: String, startsAt: String = "2026-11-17T09:00:00Z", root: Path = checkout, prepared: Path? = null, world: (Script) -> Unit = {}, amend: (Walk) -> Walk = { it },
+    /** The walk's seats as S2.1's fake agent, driven by the daemon's own seats (S2.4, `--seats fake`), panes in a tmux of [tmux]. */
+    fake: FakeSeating? = null,
 ) : AutoCloseable {
     /**
      * The throwaway project — or [prepared], a project whose log is already written: the daemon starts on it again,
@@ -56,7 +59,10 @@ class Hero(
     init {
         if (prepared == null) script.seed(project, OFFICE, clock)
         world(script)
-        daemon = Daemon.start(Office.start(OFFICE, project, root, script.facts, script.operations, script.seats, clock), script.facts, socket, peers)
+        daemon = if (fake == null) Daemon.start(Office.start(OFFICE, project, root, script.facts, script.operations, script.seats, clock), script.facts, socket, peers)
+        else fake.seat(root, script, project, OFFICE, clock, { said += it }, seeding = prepared == null).let { (seated, _) ->
+            Daemon.start(seated.office, script.facts, socket, peers, beside = listOf(seated))
+        }
         player = script.player(office, AtTheSocket()) { said += it }
     }
 

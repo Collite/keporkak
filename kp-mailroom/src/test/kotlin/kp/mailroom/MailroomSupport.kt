@@ -617,10 +617,12 @@ class ReadBack(project: Path) {
 
     /**
      * Every `(op, cause)` that is `requested` more than once (contracts.md §7: at most once per request). A robot's
-     * wakes are one per rule: two rules may wake their seat for one cause, each in its own mode.
+     * wakes are one per rule: two rules may wake their seat for one cause, each in its own mode; and one message wakes each seat it is
+     * delivered to — its addressee, and later a seat it copies (S2.4).
      */
     fun requestedTwice(): List<String> = counted.filterIsInstance<Op>().filter { it.phase == "requested" }
-        .groupBy { "${it.op} ${it.cause}" + ((it.plain()["with"] as? Map<*, *>)?.get("rule")?.let { rule -> " $rule" } ?: "") }.filterValues { it.size > 1 }.keys.toList()
+        .groupBy { "${it.op} ${it.cause}" + ((it.plain()["with"] as? Map<*, *>)?.let { with -> listOfNotNull(with["rule"], with["seat"]) }?.joinToString("") { " $it" } ?: "") }
+        .filterValues { it.size > 1 }.keys.toList()
 
     /** Every record about a message — by its `id`, or a transition or operation it caused — that comes before the message's line. */
     fun recordsBeforeTheirMessage(): List<String> {

@@ -30,10 +30,11 @@ class AJudgementIsWholeSpec : FreeSpec({
         office.changed("seat.process_gone", true, stage = STAGE, params = mapOf("seat" to "coder-1"))
 
         val judgements = office.readBack().judgements()
-        judgements shouldContain listOf("review-request by seat:coder-1", "delivered", "transition building→ready_for_review",
-            "found-batch by effect:T-17", "delivered", "judged")
+        // Each idle addressee's wake is requested in the judgement that delivers to it (S2.4, Amendment 22).
+        judgements shouldContain listOf("review-request by seat:coder-1", "delivered", "transition building→ready_for_review", "op seat.wake requested",
+            "op seat.wake requested", "found-batch by effect:T-17", "delivered", "judged")
         judgements shouldContain listOf("fact seat.process_gone", "seat-gone by robot:POOL-1", "delivered", "transition ready_for_review→paused",
-            "transition ready→gone", "op seat.reseat requested", "judged")
+            "transition ready→gone", "op seat.reseat requested", "op seat.wake requested", "judged")
     }
 
     "a mailroom stopped between any two lines of a judgement starts with that judgement voided and its first line carried again, and ends where the uninterrupted one does" {
@@ -46,8 +47,8 @@ class AJudgementIsWholeSpec : FreeSpec({
         stopped.restart()
 
         stopped.readBack().voidedJudgements() shouldBe listOf(listOf("review-request by seat:coder-1", "delivered"))
-        stopped.readBack().judgements() shouldContain listOf("voided", "rules", "delivered", "transition building→ready_for_review",
-            "found-batch by effect:T-17", "delivered", "judged")
+        stopped.readBack().judgements() shouldContain listOf("voided", "rules", "delivered", "transition building→ready_for_review", "op seat.wake requested",
+            "op seat.wake requested", "found-batch by effect:T-17", "delivered", "judged")
         stopped.end() shouldBe uninterrupted.end()
     }
 
@@ -84,7 +85,7 @@ class AJudgementIsWholeSpec : FreeSpec({
         office.restart()
 
         val approval = office.readBack().sent("approval").single().id.value
-        office.readBack().ops(approval) shouldBe listOf("worktree.create requested", "worktree.create failed interrupted")
+        office.readBack().ops(approval).withoutWakes() shouldBe listOf("worktree.create requested", "worktree.create failed interrupted")
         office.operations.requested.map { it.operation } shouldBe listOf("worktree.create")
     }
 })

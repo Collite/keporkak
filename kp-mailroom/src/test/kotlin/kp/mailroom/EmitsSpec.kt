@@ -19,7 +19,8 @@ class EmitsSpec : StringSpec({
             listOf("found-batch", "mailroom", "principal", "effect:T-17", request.id.value, request.thread.value, STAGE)
         office.readBack().records<Delivered>().map { it.id } shouldBe listOf(request.id.value, batch.id.value)
         office.readBack().records<Delivered>().last().observed!!.keys shouldBe setOf("list.found_untriaged")
-        office.seats.woken.map { it.first } shouldBe listOf("teamlead", "principal")
+        // The teamlead and the principal it copies are woken with the review-request; the principal then with the found-batch (S2.4).
+        office.seats.woken shouldBe listOf("teamlead" to request.id.value, "principal" to request.id.value, "principal" to batch.id.value)
     }
 
     "with no Found line untriaged, no found-batch is sent" {

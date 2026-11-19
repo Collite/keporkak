@@ -38,6 +38,8 @@ class Office : AutoCloseable {
     val clock = MutableClock(Instant.parse("2026-11-15T10:00:00Z"))
     val facts: MutableList<ObservedFact> = Collections.synchronizedList(mutableListOf())
     val deadTokens: MutableList<SessionToken> = Collections.synchronizedList(mutableListOf())
+    /** Every token the driver announced when it minted it (S2.4), in order. */
+    val mintedTokens: MutableList<SessionToken> = Collections.synchronizedList(mutableListOf())
     /** The records of this office's fake agents; they live in FakeAgents' folder, not under [root]. */
     val records: MutableList<Path> = Collections.synchronizedList(mutableListOf())
     private val drivers = mutableListOf<Driver>()
@@ -50,6 +52,7 @@ class Office : AutoCloseable {
     }
 
     val listener = object : Listener {
+        override fun tokenMinted(seat: SeatId, token: SessionToken) { mintedTokens += token }
         override fun observed(fact: ObservedFact) { facts += fact }
         override fun tokenDead(seat: SeatId, token: SessionToken) { deadTokens += token }
     }

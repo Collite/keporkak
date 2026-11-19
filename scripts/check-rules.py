@@ -1274,7 +1274,12 @@ def check_offices(offices, vendors):
             if not match or int(match.group(1)) > 65535: fail(f"{label}: {name}: listen.{listener} must be 127.0.0.1:<port>")
             else: ports.append(match.group(1))
         if len(ports) == 2 and ports[0] == ports[1]: fail(f"{label}: {name}: mcp and board listen on one port")
-    ok(f"{label}: {len(entries)} office(s) ({', '.join(entries)}) with roots, computer use and listeners checked")
+        # How often the daemon reports its seats' facts (contracts.md §9, Amendment 22): a positive duration.
+        watch = office.get("watch") if isinstance(office.get("watch"), dict) else {}
+        every = comparable(watch.get("every")) if isinstance(watch.get("every"), str) else None
+        if not isinstance(every, float) or every <= 0: fail(f"{label}: {name}: watch.every must be a duration such as 30s")
+        for key in sorted(set(watch) - {"every"}): fail(f"{label}: {name}: unknown field 'watch.{key}'")
+    ok(f"{label}: {len(entries)} office(s) ({', '.join(entries)}) with roots, computer use, listeners and the watch period checked")
     return entries
 
 def check_budgets(budgets, vendors, entries):

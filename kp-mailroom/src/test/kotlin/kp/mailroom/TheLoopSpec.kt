@@ -47,7 +47,8 @@ class TheLoopSpec : StringSpec({
         val answer = office.send("coder-1", """{"kind": "started", "stage": "$STAGE", "subject": "started"}""")
 
         val file = office.project.resolve("mail/KP/p2-s2.1.jsonl").readLines().map(::parseLine).dropWhile { it !is Message }
-        file.map { it::class.simpleName } shouldBe listOf("Message", "Delivered", "Transition", "Judged")
+        // Then the teamlead's wake, its `ok` judged on its own; its `read` is in the office's file, as it is about no stage (S2.4).
+        file.map { it::class.simpleName } shouldBe listOf("Message", "Delivered", "Transition", "Op", "Judged", "Op", "Judged")
         (file[1] as Delivered).rule shouldBe "T-08"
         (file[2] as Transition).let { "${it.cause} ${it.from}→${it.to}" } shouldBe "${answer.id} assigned→building"
         answer shouldBe Answer(Status.DELIVERED, answer.id, transition = "T-08")

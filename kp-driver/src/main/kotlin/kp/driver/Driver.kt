@@ -18,8 +18,11 @@ interface Driver : AutoCloseable {
     /** Starts a fresh agent process and a session in it (T2, T3). */
     suspend fun start(spec: SessionSpec): Outcome<Started>
 
-    /** One turn: returns when the agent ends it, with the agent's stop reason (T4). A second prompt while a turn is in flight fails. */
-    suspend fun prompt(seat: SeatId, text: String): Outcome<TurnEnd>
+    /**
+     * One turn: returns when the agent ends it, with the agent's stop reason (T4). A second prompt while a turn is in
+     * flight fails. [sent] is called once the prompt is on its way to the agent — not when it could not be sent (S2.4).
+     */
+    suspend fun prompt(seat: SeatId, text: String, sent: () -> Unit = {}): Outcome<TurnEnd>
 
     /** Asks the agent to end the turn in flight, which then ends `cancelled` (T4); with none in flight, sends nothing (§4.4). */
     suspend fun cancel(seat: SeatId): Outcome<Cancel>
@@ -176,8 +179,13 @@ class ObservedFact internal constructor(val fact: String, val subject: SeatId, v
     override fun toString() = "ObservedFact(${content()})"
 }
 
-/** Where the driver reports what happens without being asked: a fact when it happens, and a token that died. */
+/**
+ * Where the driver reports what happens without being asked: a token when it is minted — before the process it is
+ * for starts (contracts.md §5, Amendment 22) — a fact when it happens, and a token that died. Every minted token is
+ * reported dead once, when its session ends or could not be opened.
+ */
 interface Listener {
+    fun tokenMinted(seat: SeatId, token: SessionToken) {}
     fun observed(fact: ObservedFact) {}
     fun tokenDead(seat: SeatId, token: SessionToken) {}
 }

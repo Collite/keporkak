@@ -50,7 +50,7 @@ class HandshakeEvidenceSpec : StringSpec({
 
 private fun java(): String = Path.of(System.getProperty("java.home"), "bin", "java").absolutePathString()
 
-/** The driver's scripted fake agent (kp-driver's specs), as a command: its classpath is the one the build hands this task. */
+/** The driver's scripted fake agent (kp-driver's test fixtures), as a command: its classpath is the one the build hands this task. */
 private fun fakeAgent(script: Path): List<String> = listOf(java(), "-Xshare:auto", "-XX:TieredStopAtLevel=1",
     "-cp", System.getProperty("kp.driver.fake.classpath") ?: error("kp.driver.fake.classpath is not set (kp-seat-api/build.gradle.kts)"),
     "kp.driver.fake.FakeAgentKt", script.absolutePathString())

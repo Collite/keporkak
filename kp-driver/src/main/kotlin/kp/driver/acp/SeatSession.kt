@@ -62,8 +62,9 @@ import kotlin.coroutines.cancellation.CancellationException
  * seat's one collector. During a turn the SDK delivers updates only on the prompt's stream, and between turns only
  * through [operations] (spike `06`, SDK note), so the order between the two is lost there. The collector therefore
  * takes the session's updates and the prompt's answer from the [wire], in the order they arrived, together with the
- * driver's own lines, through one channel; one coroutine writes them. The SDK's stream only drives the turn. When the
- * session ends — its process gone or its protocol closed — its token is reported dead, once.
+ * driver's own lines, through one channel; one coroutine writes them. The SDK's stream only drives the turn. Its token
+ * was announced when it was minted; when the session ends — its process gone, its protocol closed, or it could not be
+ * opened — the token is reported dead, once. What it observes is reported only of a session that was opened.
  */
 internal class SeatSession(
     val seat: SeatId,
@@ -177,7 +178,10 @@ internal class SeatSession(
             runCatching {
                 val message = ACPJson.parseToJsonElement(line).jsonObject
                 when ((message["method"] as? JsonPrimitive)?.contentOrNull) {
-                    "session/prompt" -> turn?.requestId = message["id"]
+                    "session/prompt" -> turn?.let { current ->
+                        current.requestId = message["id"]
+                        current.sent()
+                    }
                     "session/load" -> {
                         loading = message["id"]
                         replaying = true
@@ -192,11 +196,14 @@ internal class SeatSession(
         (toolCall["name"] as? JsonPrimitive)?.contentOrNull
             ?: (((toolCall["_meta"] as? JsonObject)?.get("claudeCode") as? JsonObject)?.get("toolName") as? JsonPrimitive)?.contentOrNull
 
-    /** One turn (T4). A prompt while a turn is in flight fails; it is never queued. */
-    suspend fun prompt(text: String): Outcome<TurnEnd> {
+    /**
+     * One turn (T4). A prompt while a turn is in flight fails; it is never queued. [sent] is called once the prompt's
+     * request is on the wire (S2.4: a wake is `ok` once its prompt is sent).
+     */
+    suspend fun prompt(text: String, sent: () -> Unit = {}): Outcome<TurnEnd> {
         if (!live) return Outcome.Failed("the session of seat ${seat.value} has ended")
         if (!turnInFlight.compareAndSet(false, true)) return Outcome.Failed("a turn is in flight for seat ${seat.value}; the prompt is not queued")
-        val current = Turn().also { turn = it }
+        val current = Turn(sent).also { turn = it }
         try {
             note("prompt: $text")
             observations.turnStarted(clock.instant())
@@ -303,13 +310,16 @@ internal class SeatSession(
     }
 
     private fun report(fact: ObservedFact) {
-        listener.observed(fact)
+        if (handedOut) listener.observed(fact)
         events.trySend(Item.Line("observed ${fact.fact} ${fact.value}: ${fact.evidence}", clock.instant()))
     }
 
+    /** The agent's process could not be started: the session ends before it began. */
+    fun neverStarted() = end("the agent could not be started")
+
     private fun end(why: String) {
-        if (!ended.compareAndSet(false, true) || !handedOut) return
-        events.trySend(Item.Line("session ended: $why; its token is dead", clock.instant()))
+        if (!ended.compareAndSet(false, true)) return
+        if (handedOut) events.trySend(Item.Line("session ended: $why; its token is dead", clock.instant()))
         listener.tokenDead(seat, token)
     }
 
@@ -398,8 +408,12 @@ internal class SeatSession(
         class Line(val text: String, override val at: Instant, override val written: CompletableDeferred<Unit>? = null) : Item
     }
 
-    /** The turn in flight: its request id on the wire, whether the agent answered it, and its end as written. */
-    private class Turn {
+    /** The turn in flight: its request id on the wire, whether the agent answered it, and its end as written; [sent] is called once. */
+    private class Turn(private val onSent: () -> Unit) {
+        private val wasSent = AtomicBoolean(false)
+        fun sent() {
+            if (wasSent.compareAndSet(false, true)) onSent()
+        }
         @Volatile var requestId: JsonElement? = null
         val answered = AtomicBoolean(false)
         val ended = CompletableDeferred<Outcome<TurnEnd>>()

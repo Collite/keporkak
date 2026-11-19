@@ -204,6 +204,33 @@ class Mailroom private constructor(
     }
 
     /**
+     * [seat]'s unread messages, oldest first, without marking them read (contracts.md §2.2): what a re-seat replays.
+     */
+    @Synchronized
+    fun unread(seat: String): List<Message> = folded.unread(seat).map(messages::getValue)
+
+    /**
+     * [seat] has seen [ids] — a re-seat's prompt replayed them (contracts.md §4.4, Amendment 22): a `read` record names
+     * those still unread, a judgement of its own.
+     */
+    @Synchronized
+    fun read(seat: String, ids: List<String>) {
+        val seen = ids.filter { it in folded.unread(seat) }
+        if (seen.isNotEmpty()) judged { write(line(now(), EVENT to text("read"), SEAT to text(seat), IDS to texts(seen))) }
+        drain()
+    }
+
+    /**
+     * [seat]'s turn ended, or it has just come up (contracts.md §4.4, Amendment 22): when it is idle and has unread mail,
+     * it is woken with the oldest.
+     */
+    @Synchronized
+    fun idle(seat: String) {
+        judged { wakeOldest(seat) }
+        drain()
+    }
+
+    /**
      * The messages of the thread [id] (contracts.md §5), in the order they were delivered — shown only to a seat that
      * sent, received or was copied on one of them; null otherwise, as for a thread that is not on the log. Nothing is
      * marked read: only the inbox does that.
@@ -380,9 +407,9 @@ class Mailroom private constructor(
             return Answer(Status.REFUSED, id, rule = decision.rule, requirement = decision.requirement, failed = decision.failed, refusalsToday = refusals)
         }
         val deadline = decision.deadline.takeIf { decision.outcome == Outcome.DELIVER }
-        val written = messages.getValue(id)
         val addressees = addressees(message)
-        val woke = listOf(addressees.first()).filter { it !in PARTIES && deliveries.idle(it) }
+        // A delivery to an idle seat wakes it (contracts.md §4.4, Amendment 22): the addressee's, and each seat it copies.
+        val woke = addressees.filter(::awake)
         val raised = folded.tickets.entries.firstOrNull { it.value.item == id }?.key
         val ticket = raised ?: (writer.last + 1).takeIf { decision.waitsForBora }
         write(line(now, EVENT to text("delivered"), ID to text(id), TO to texts(addressees), WOKE to woke.takeIf { it.isNotEmpty() }?.let(::texts),
@@ -392,7 +419,9 @@ class Mailroom private constructor(
         transitions(decision, id, now)
         effects(decision, id, now)
         if (raised == null && ticket != null && decision.messageClass == MessageClass.B) notify(ticket, id, now)
-        woke.forEach { seat -> world += { wake(seat, written) } }
+        // A wake is an operation of its own (contracts.md §4.4, Amendment 22) — unless the rules' effects already ask it.
+        woke.filterNot { seat -> decision.effects.any { it is Requested.Do && it.operation == SEAT_WAKE && (it.with[SEAT] as? Datum.Text)?.value == seat } }
+            .forEach { seat -> request(SEAT_WAKE, id, Datum.Fields(mapOf(SEAT to Datum.Text(seat))), now) }
         arrival?.let { carry(it, id, now) }
         hear(Trigger.Delivered(id), id, now, message.stage?.value)
         return Answer(Status.DELIVERED, id, transition = decision.rule)
@@ -423,9 +452,17 @@ class Mailroom private constructor(
         if (answer.status == Status.REFUSED) tell(message, answer)
     }
 
-    /** A seat woken with [message] once its judgement is on disk (contracts.md §2.2, `read`): it has seen it — a judgement of its own. */
-    private fun wake(seat: String, message: Message) {
-        if (deliveries.wake(seat, message)) judged { write(line(now(), EVENT to text("read"), SEAT to text(seat), IDS to texts(listOf(message.id.value)))) }
+    /**
+     * Whether [seat] is to be woken now (contracts.md §4.4, Amendment 22): a seat, idle — a live session and no turn in
+     * flight, as the seats say — and no wake of it in flight.
+     */
+    private fun awake(seat: String): Boolean =
+        seat !in PARTIES && folded.operations.none { it.op == SEAT_WAKE && (it.with.fields[SEAT] as? Datum.Text)?.value == seat } && deliveries.idle(seat)
+
+    /** [seat], idle with unread mail, is woken with the oldest (contracts.md §4.4, Amendment 22): `seat.wake` requested. */
+    private fun wakeOldest(seat: String) {
+        val oldest = folded.unread(seat).firstOrNull() ?: return
+        if (awake(seat)) request(SEAT_WAKE, oldest, Datum.Fields(mapOf(SEAT to Datum.Text(seat))), now())
     }
 
     /**
@@ -612,9 +649,16 @@ class Mailroom private constructor(
         world += { perform(OperationRequest(operation, cause, with)) }
     }
 
-    /** Hands the request to the performer once; a result it gives twice is taken once. */
+    /**
+     * Hands the request to the performer once; a result it gives twice is taken once. A wake of a seat — `seat.wake`
+     * with a `seat` — is the seats' to perform: the seat is prompted with the message that is its cause. A robot's own
+     * seat woken in a mode is the performer's (S4.6).
+     */
     private fun perform(request: OperationRequest) {
         val answered = AtomicBoolean(false)
+        val seat = (request.with.fields[SEAT] as? Datum.Text)?.value?.takeIf { request.operation == SEAT_WAKE }
+        val message = request.cause.let(messages::get)
+        if (seat != null && message != null) return finished(request, deliveries.prompt(seat, message))
         operations.perform(request) { result -> if (answered.compareAndSet(false, true)) finished(request, result) }
     }
 
@@ -639,11 +683,16 @@ class Mailroom private constructor(
                 REASON to text(result.reason))
         })
         val returned = (result as? OperationResult.Ok)?.let { seated(request, it.result) } ?: Datum.Fields(emptyMap())
+        // A seat woken with a message has seen it (contracts.md §2.2, `read`): its `read` record follows the wake's `ok`.
+        val woken = (request.with.fields[SEAT] as? Datum.Text)?.value?.takeIf { request.operation == SEAT_WAKE && result is OperationResult.Ok }
+        if (woken != null && request.cause in folded.unread(woken)) write(line(now, EVENT to text("read"), SEAT to text(woken), IDS to texts(listOf(request.cause))))
         val trigger = Trigger.Result(request.cause, request.operation, result is OperationResult.Ok, request.with, returned)
         val engine = Engine(rules)
         val stage = messages[request.cause]?.stage?.value
         record(engine.judge(folded, trigger, table(engine, trigger, stage, now)), request.cause, now)
         hear(trigger, request.cause, now, stage)
+        // A seat still idle after it was prompted — one whose turn ends at once — is woken with its next unread message.
+        woken?.let(::wakeOldest)
     }
 
     /**
@@ -914,6 +963,8 @@ class Mailroom private constructor(
                         val flights = unfinished(read.lines, first)
                         interrupted(flights.filter { flight -> folded.operations.any { it === flight } })
                         drain()
+                        // A start wakes no one again (contracts.md §4.4); a live seat idle with unread mail is woken with the oldest.
+                        deliveries.live().sorted().forEach { seat -> idle(seat) }
                     }
                 }
             } catch (error: Throwable) {

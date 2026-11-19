@@ -18,7 +18,8 @@ class WakesSpec : StringSpec({
         val exits = stages.map { stage -> office.send("teamlead", """{"kind": "stage-exit", "stage": "$stage"}""").id }
 
         stages.map { office.stage(it) } shouldBe List(6) { "exited" }
-        val wakes = office.readBack().records<Op>().filter { it.op == "seat.wake" && it.phase == "requested" }
+        // A robot's own seat is woken in a mode; a seat woken with a message it was sent is woken in none (S2.4).
+        val wakes = office.readBack().records<Op>().filter { it.op == "seat.wake" && it.phase == "requested" && (it.plain()["with"] as Map<*, *>).containsKey("mode") }
         wakes.map { listOf(it.cause, it.plain()["with"]) } shouldBe listOf(listOf(exits[4], mapOf("role" to "retro", "mode" to "stage-retro", "rule" to "RET-2")))
         office.mailroom.state.wakes shouldBe mapOf("retro" to mapOf("stage-retro" to 5))
     }
@@ -30,8 +31,10 @@ class WakesSpec : StringSpec({
 
         val exit = office.send("teamlead", """{"kind": "stage-exit", "stage": "$STAGE"}""")
 
-        office.readBack().ops(exit.id).filter { it.startsWith("seat.wake") } shouldBe listOf("seat.wake requested", "seat.wake ok")
-        office.readBack().records<Op>().single { it.op == "seat.wake" && it.phase == "requested" }.plain()["with"] shouldBe
-            mapOf("role" to "retro", "mode" to "stage-retro", "rule" to "RET-1")
+        // The exit wakes each idle seat it is delivered to, with it (S2.4) — and, once the stage has exited, the Retro's own seat in a mode.
+        val wakes = office.readBack().records<Op>().filter { it.op == "seat.wake" && it.cause == exit.id }
+        wakes.last { it.phase == "requested" }.plain()["with"] shouldBe mapOf("role" to "retro", "mode" to "stage-retro", "rule" to "RET-1")
+        wakes.count { it.phase == "ok" } shouldBe wakes.count { it.phase == "requested" }
+        wakes.last().phase shouldBe "ok"
     }
 })

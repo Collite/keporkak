@@ -42,7 +42,7 @@ class HeroesSpec : FreeSpec({
                 "fact seat.process_gone (coder-1)",
                 "seat-gone pool→teamlead, board (robot:POOL-1): delivered · S2.1 building→paused (seat_gone_events 1) · seat coder-1 busy→gone · asks seat.reseat",
                 "seat.reseat ok",
-                "re-seated pool→teamlead, coder-1 (robot:POOL-14): delivered · S2.1 paused→building · seat coder-1 gone→ready",
+                "re-seated pool→teamlead, coder-1 (robot:POOL-14): delivered, woke coder-1 · S2.1 paused→building · seat coder-1 gone→ready",
             )
         }
         "3 · review-request → TeamLead; the mailroom fans out found-batch to the Principal" {
@@ -55,14 +55,14 @@ class HeroesSpec : FreeSpec({
             h1.through(17) shouldBe listOf(
                 "triage principal→coder-1, teamlead: delivered, class C, woke coder-1 · found S2.1#T3-follow-up found→triaged",
                 "pin-stage principal→teamlead, bora: delivered, class C",
-                "ruling-request principal→bora: delivered, class B, ticket #71 · asks notify.bora",
+                "ruling-request principal→bora: delivered, class B, ticket #81 · asks notify.bora",
                 "notify.bora ok",
                 "ruling bora→principal signed: delivered, class B · the ruling-request's thread asked→ruled",
             )
         }
         "4 · review-bind by the TeamLead → FIX FIRST with B1, B2" {
             h1.through(19) shouldBe listOf(
-                "review-bind teamlead→reviewer-1, coder-1: delivered, woke reviewer-1 · S2.1 ready_for_review→in_review",
+                "review-bind teamlead→reviewer-1, coder-1: delivered, woke reviewer-1, coder-1 · S2.1 ready_for_review→in_review",
                 "verdict reviewer-1→coder-1, teamlead: delivered, woke coder-1 · S2.1 in_review→fix_round (fix_rounds 1)",
             )
         }
@@ -80,7 +80,7 @@ class HeroesSpec : FreeSpec({
         }
         "7 · rolls: none, live: none → stage-exit: REGISTER rebuilt, project committed and pushed by the daemon → exited" {
             h1.rest() shouldBe listOf(
-                "stage-exit teamlead→principal, coder-1, reviewer-1, retro, board: delivered · S2.1 merged→merged · asks worktree.remove",
+                "stage-exit teamlead→principal, coder-1, reviewer-1, retro, board: delivered, woke coder-1, reviewer-1 · S2.1 merged→merged · asks worktree.remove",
                 "worktree.remove ok · S2.1 merged→merged · asks register.rebuild",
                 "register.rebuild ok · S2.1 merged→merged · asks project.commit_push",
                 "project.commit_push ok · S2.1 merged→exited · seat coder-1 ready→idle · asks seat.wake (stage-retro)", // the re-seated coder goes idle at the exit (D-80)
@@ -118,13 +118,13 @@ class HeroesSpec : FreeSpec({
             h2.at("03:50").shouldBeEmpty() // the walk's `started` answers the assign (`re`): its wait is closed
             h2.through(9) shouldBe listOf(
                 "review-request coder-1→teamlead, principal: delivered · S2.2 building→ready_for_review (review_requests 1)",
-                "review-bind teamlead→reviewer-1, coder-1: delivered, woke reviewer-1 · S2.2 ready_for_review→in_review",
+                "review-bind teamlead→reviewer-1, coder-1: delivered, woke reviewer-1, coder-1 · S2.2 ready_for_review→in_review",
             )
         }
         "04:40 · classify-request → held by the Deputy, its shadow ruling logged; S2.2 waits in in_review" {
             h2.at("04:40").shouldBeEmpty()
             h2.through(12) shouldBe listOf(
-                "classify-request reviewer-1→bora: held by robot:DEP-9, ticket #52 · asks notify.bora · asks seat.wake (shadow)",
+                "classify-request reviewer-1→bora: held by robot:DEP-9, ticket #60 · asks notify.bora · asks seat.wake (shadow)",
                 "hold deputy→reviewer-1 (robot:DEP-9): delivered, woke reviewer-1 · the classify-request's thread asked→held",
                 "notify.bora ok",
                 "seat.wake ok",
@@ -134,7 +134,7 @@ class HeroesSpec : FreeSpec({
         "05:20 · the tail reaches passed → merge with Bora absent: the Deputy holds it, the tail waits (deadman)" {
             h2.at("05:20").shouldBeEmpty() // the walk's review-bind answers the review-request (`re`): no nudge
             h2.through(15) shouldBe listOf(
-                "merge teamlead→daemon: held by robot:DEP-3, ticket #69 · asks seat.wake (shadow)",
+                "merge teamlead→daemon: held by robot:DEP-3, ticket #79 · asks seat.wake (shadow)",
                 "hold deputy→teamlead (robot:DEP-3): delivered · the merge's thread asked→held",
                 "seat.wake ok",
                 "shadow-ruling deputy→ledger: delivered",
@@ -147,7 +147,8 @@ class HeroesSpec : FreeSpec({
                 "repair-done coder-2→reviewer-1: delivered, woke reviewer-1 · S2.3 fix_round→re_review",
                 "re-verdict reviewer-1→coder-2, teamlead, principal: delivered, class C, woke coder-2 · S2.3 re_review→fix_round (fix_rounds 2)",
                 "anomaly-stop deputy→teamlead, bora (robot:DEP-4): delivered, class C",
-                "pause pool→coder-2, teamlead (robot:POOL-5): delivered, class C, woke coder-2 · seat coder-2 busy→busy · asks seat.cancel",
+                // coder-2's wake with the re-verdict is still in flight: the pause waits in its inbox, and wakes it next (S2.4).
+                "pause pool→coder-2, teamlead (robot:POOL-5): delivered, class C · seat coder-2 busy→busy · asks seat.cancel",
                 "seat.cancel ok",
             )
         }
@@ -156,16 +157,16 @@ class HeroesSpec : FreeSpec({
             h2.through(23) shouldBe listOf(
                 "fact bora.acted (bora) · presence absent→present",
                 "digest deputy→bora (robot:DEP-8): delivered, class C",
-                "classify-request reviewer-1→bora let go: delivered, class B, ticket #52",
-                "merge teamlead→daemon, bora let go: delivered, class C, ticket #69 · tail passed→passed (merge_attempts 1) · asks git.merge",
+                "classify-request reviewer-1→bora let go: delivered, class B, ticket #60",
+                "merge teamlead→daemon, bora let go: delivered, class C, ticket #79 · tail passed→passed (merge_attempts 1) · asks git.merge",
             )
         }
         "Bora rules the classification as the shadow did, clears the anomaly — coder-2 resumes — and the tail merges" {
             h2.rest() shouldBe listOf(
                 "ruling bora→reviewer-1 signed: delivered, class B, woke reviewer-1 · the classify-request's thread held→ruled",
                 "ruling bora→deputy signed: delivered, class B · the repair-done's thread asked→ruled", // the re-verdict answers the repair-done (`re`)
-                "resume pool→coder-2, teamlead (robot:POOL-6): delivered, class C, woke coder-2 · seat coder-2 busy→busy · asks seat.wake",
-                "seat.wake ok",
+                // The resume's own wake of coder-2 (SEAT-37) is the seat woken with it: told by "woke" (S2.4).
+                "resume pool→coder-2, teamlead (robot:POOL-6): delivered, class C, woke coder-2 · seat coder-2 busy→busy",
                 "git.merge ok · tail passed→merged",
             )
             h2.log().messages("digest").size shouldBe 1
@@ -193,7 +194,7 @@ class HeroesSpec : FreeSpec({
         "review, PASS with a follow-up issue filed, merge, release" {
             h3.through(16) shouldBe listOf(
                 "review-request coder-1→teamlead, principal: delivered · S3.2 candidate_deployed→ready_for_review (review_requests 1)",
-                "review-bind teamlead→reviewer-1, coder-1: delivered, woke reviewer-1 · S3.2 ready_for_review→in_review",
+                "review-bind teamlead→reviewer-1, coder-1: delivered, woke reviewer-1, coder-1 · S3.2 ready_for_review→in_review",
                 "verdict reviewer-1→coder-1, teamlead: delivered, woke coder-1 · S3.2 in_review→passed · asks issue.file",
                 "issue.file ok",
                 "merge teamlead→daemon, bora: delivered, class C · S3.2 passed→passed (merge_attempts 1) · asks git.merge",
@@ -210,7 +211,7 @@ class HeroesSpec : FreeSpec({
                 "roll qa→daemon, bora: delivered, class C · S3.2 released→released · asks gitops.roll",
                 "gitops.roll ok · S3.2 released→released",
                 "deploy-done qa→teamlead, bora: delivered, class C · S3.2 released→deployed",
-                "stage-exit teamlead→principal, coder-1, reviewer-1, retro, board: delivered · S3.2 deployed→deployed · asks worktree.remove",
+                "stage-exit teamlead→principal, coder-1, reviewer-1, retro, board: delivered, woke coder-1, reviewer-1 · S3.2 deployed→deployed · asks worktree.remove",
                 "worktree.remove ok · S3.2 deployed→deployed · asks register.rebuild",
                 "register.rebuild ok · S3.2 deployed→deployed · asks project.commit_push",
                 "project.commit_push ok · S3.2 deployed→exited · seat coder-1 busy→idle",
@@ -237,7 +238,7 @@ class HeroesSpec : FreeSpec({
             noRoll.through(13)
             noRoll.rest() shouldBe listOf(
                 """stage-exit teamlead→principal: refused by T-44: {"any":[{"fact":"stage.live","eq":"none"},{"fact":"log.count","kind":"qa-report","scope":"stage","where":{"outcome":"pass","sha":{"fact":"pr.head"}},"gt":0}]}""",
-                "stage-exit teamlead→principal, coder-1, reviewer-1, retro, board: delivered · S3.2-no-roll-live merged→merged · asks worktree.remove",
+                "stage-exit teamlead→principal, coder-1, reviewer-1, retro, board: delivered, woke coder-1, reviewer-1 · S3.2-no-roll-live merged→merged · asks worktree.remove",
                 "worktree.remove ok · S3.2-no-roll-live merged→merged · asks register.rebuild",
                 "register.rebuild ok · S3.2-no-roll-live merged→merged · asks project.commit_push",
                 "project.commit_push ok · S3.2-no-roll-live merged→exited · seat coder-1 busy→idle",
@@ -308,22 +309,30 @@ class HeroesSpec : FreeSpec({
         }
     }
 
-    "a daemon stopped after any line of H-1′ and started again ends where the uninterrupted run does — or, an operation in flight, where the rules put its failure — or, right after a wake, with its message unread" {
+    "a daemon stopped after any line of H-1′ and started again ends where the uninterrupted run does — or, an operation in flight, where the rules put its failure" {
         val restarts = Restarts.afterEveryLineOf("h1-prime").also(HeroReport::restarts)
 
         restarts.otherwise.map { "after line ${it.seq} (${it.told}): ${it.ending}" }.shouldBeEmpty()
         restarts.cuts.filter { it.ending.startsWith(Restarts.IN_FLIGHT) }.shouldNotBeEmpty()
-        // A wake has no record before S2.4 (D-76, Amendment 22): each judgement that wakes a seat leaves one such cut, right
-        // after its `judged` line and before the seat's `read`, whether the walk then fails or not — its message stays
-        // unread, and "same end" counts unread mail. S2.4 ends them as the uninterrupted run.
-        restarts.wakesInFlight.map { it.told + " — " + it.ending.substringAfter(" — ").substringBefore(";").substringBefore(",") } shouldBe listOf(
-            "judged — assign to coder-1", // the walk then stops at step 10: POOL-14 sends no re-seated
-            "judged — triage to coder-1", // the resume: likewise
-            "judged — triage to coder-1", // the found-batch's triage
-            "judged — review-bind to reviewer-1",
-            "judged — verdict to coder-1",
-            "judged — repair-done to reviewer-1",
-            "judged — re-verdict to coder-1",
+        // A wake is an operation of its own (S2.4, D-76, Amendment 22): each judgement that wakes seats leaves a cut with a
+        // wake in flight for each seat it woke, and the start wakes each, idle with its mail, again. Every cut with only wakes
+        // in flight, however many, ends as the uninterrupted run, its "same end" comparing the kinds delivered and the
+        // operations in flight as well. None is left with its message unread.
+        restarts.wakesInFlight.filterNot { it.endsAsUninterrupted }.map { "after line ${it.seq} (${it.told}): ${it.ending}" }.shouldBeEmpty()
+        // The cuts right after such a judgement, by what the start found in flight: the seven S1.10 counted among them —
+        // review-bind's with both the reviewer's wake and the coder's it copies — each held to the end above.
+        restarts.wakesInFlight.filter { it.told == "judged" }.map { it.flights.joinToString() } shouldBe listOf(
+            "seat.wake of coder-1 for assign", // S1.10's
+            "seat.wake of coder-1 for triage", // S1.10's: the resume
+            "seat.wake of coder-1 for re-seated",
+            "seat.wake of coder-1 for triage", // S1.10's: the found-batch's triage
+            "seat.wake of reviewer-1 for review-bind, seat.wake of coder-1 for review-bind", // S1.10's: two wakes in flight
+            "seat.wake of coder-1 for review-bind", // the reviewer's wake judged, the coder's still in flight
+            "seat.wake of coder-1 for verdict", // S1.10's
+            "seat.wake of reviewer-1 for repair-done", // S1.10's
+            "seat.wake of coder-1 for re-verdict", // S1.10's
+            "seat.wake of the retro's own seat (stage-retro) for stage-exit", // a robot's own seat, woken in a mode
         )
+        restarts.report().none { "a wake in flight" in it || "stays unread" in it } shouldBe true
     }
 })

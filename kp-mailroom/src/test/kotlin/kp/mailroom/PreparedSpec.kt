@@ -41,7 +41,7 @@ class PreparedSpec : StringSpec({
         office.restart()
         office.restart()
 
-        office.readBack().ops(approval.id) shouldBe listOf("worktree.create requested", "worktree.create failed interrupted")
+        office.readBack().ops(approval.id).withoutWakes() shouldBe listOf("worktree.create requested", "worktree.create failed interrupted")
         office.mailroom.state.operations shouldBe emptyList()
     }
 

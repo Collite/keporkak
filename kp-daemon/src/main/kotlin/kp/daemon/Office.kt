@@ -6,6 +6,7 @@ import kp.engine.FactRef
 import kp.engine.State
 import kp.log.LogLine
 import kp.log.LogReader
+import kp.log.counted
 import kp.mailroom.Clock
 import kp.mailroom.Deliveries
 import kp.mailroom.FactSource
@@ -75,6 +76,27 @@ class Office private constructor(
         changes.signal()
     }
 
+    /** [seat]'s turn ended, or it came up: idle with unread mail, it is woken with the oldest (contracts.md §4.4, Amendment 22). */
+    fun idle(seat: String) {
+        mailroom.idle(seat)
+        changes.signal()
+    }
+
+    /** [seat]'s unread messages, oldest first, not marked read: what a re-seat replays. */
+    fun unread(seat: String): List<kp.model.Message> = mailroom.unread(seat)
+
+    /** [seat] has seen [ids]: a re-seat's prompt replayed them (contracts.md §4.4, Amendment 22). */
+    fun read(seat: String, ids: List<String>) {
+        mailroom.read(seat, ids)
+        changes.signal()
+    }
+
+    /**
+     * The seat API on [listen] (`host:port`; contracts.md §5, §11), in front of this office's mailroom, with [tokens] as
+     * its registry.
+     */
+    fun seatApi(tokens: kp.seatapi.Tokens, listen: String): kp.seatapi.SeatApi = kp.seatapi.SeatApi.start(mailroom, tokens, listen)
+
     /** Fires the deadlines that have passed. */
     fun tick() {
         mailroom.tick()
@@ -104,6 +126,9 @@ class Office private constructor(
 
     /** The log read back — every file the mailroom folds, in `seq` order — for what the state does not keep. */
     fun lines(): List<LogLine> = LogReader(project, OfficeId(name)).read().lines
+
+    /** The log's lines as they count: a voided judgement's left out but its first (contracts.md §3, Amendment 23). */
+    fun counted(): List<kp.model.Envelope> = lines().counted().map { it.entry }
 
     override fun close() {
         closed = true

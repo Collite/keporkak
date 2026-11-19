@@ -32,9 +32,12 @@ import kotlin.system.exitProcess
  * The script (JSON): `record` · `turns` — one list of steps per prompt · optional `mode`, `model`, `effort` (what a
  * session starts on), `modes`, `models`, `efforts` (what it offers), `w1` (send `auth.status` as `{}`, default true),
  * `onEof` (`exit`, `linger` or `orphan`), `loadable` (default true), `resolve` (a model value → the offered value it
- * is read back as, before the adapter's own rule — see [resolveModel]). Steps: `say`, `tool`, `tool_update`, `ask` (each tool step with an
- * optional `name`, sent as the adapter sends the tool's name), `usage`, `run`,
- * `hangup`, `leak`, `recall`, `end` — see [perform]. Steps after `end` are sent after the turn's answer.
+ * is read back as, before the adapter's own rule — see [resolveModel]), `probe` (S2.4: before anything else, call the
+ * daemon's stop hook with the session token the process was given, and record the answer's status). Steps: `say`,
+ * `tool`, `tool_update`, `ask` (each tool step with an optional `name`, sent as the adapter sends the tool's name),
+ * `usage`, `run`, `hold`, `hangup`, `leak`, `recall`, `end` — see [perform]. Steps after `end` are sent after the
+ * turn's answer. The prompt `/compact` is answered as the pinned adapter answers it (S2.4's probe): the context it
+ * reports drops to a fifth.
  */
 fun main(args: Array<String>) {
     FakeAgent(Json.parseToJsonElement(File(args[0]).readText()).jsonObject).run()
@@ -50,6 +53,8 @@ private class FakeAgent(private val script: JsonObject) {
     private var model = script.string("model") ?: "default"
     private var effort = script.string("effort") ?: "default"
     private var prompts = 0
+    @Volatile private var used: Long? = null
+    @Volatile private var size: Long? = null
     @Volatile private var cancelled = false
     @Volatile private var child: Process? = null
     @Volatile private var headers: List<String> = emptyList()
@@ -70,6 +75,7 @@ private class FakeAgent(private val script: JsonObject) {
             "KP_HOOK_URL" to (System.getenv("KP_HOOK_URL")?.let(::JsonPrimitive) ?: JsonNull),
             "KP_SESSION_TOKEN_sha256" to (System.getenv("KP_SESSION_TOKEN")?.let { JsonPrimitive(sha256(it)) } ?: JsonNull),
         )
+        if (script.boolean("probe") == true) probe()
         val input = System.`in`.bufferedReader()
         while (true) {
             val line = input.readLine() ?: break
@@ -186,6 +192,7 @@ private class FakeAgent(private val script: JsonObject) {
         val text = params.getValue("prompt").jsonArray.joinToString("") { it.jsonObject.string("text") ?: "" }
         note("session/prompt", "text" to JsonPrimitive(text))
         remember(buildJsonObject { put("sessionUpdate", "user_message_chunk"); put("content", text(text)) })
+        if (text == "/compact") return compact(id)
         val steps = script["turns"]?.jsonArray?.getOrNull(prompts++)?.jsonArray ?: JsonArray(emptyList())
         cancelled = false
         // Steps after `end` are sent after the turn's answer: updates between turns.
@@ -221,8 +228,15 @@ private class FakeAgent(private val script: JsonObject) {
                 put("sessionUpdate", "tool_call_update"); put("toolCallId", step.string("id")); put("status", step.string("status"))
             })
             "usage" -> emit(buildJsonObject {
+                used = step.long("used"); size = step.long("size")
                 put("sessionUpdate", "usage_update"); put("used", step.long("used")); put("size", step.long("size"))
             })
+            // Holds the turn in flight until the file `until` exists, or the turn is cancelled (S2.4: a busy seat).
+            "hold" -> {
+                val until = File(step.string("until")!!)
+                note("hold", "until" to JsonPrimitive(until.path))
+                while (!until.exists() && !cancelled) Thread.sleep(25)
+            }
             "ask" -> ask(step)
             // An agent that repeats its secrets: the token in its environment and the headers it was given.
             "leak" -> emit(buildJsonObject {
@@ -245,6 +259,32 @@ private class FakeAgent(private val script: JsonObject) {
             else -> error("unknown step $step")
         }
         return null
+    }
+
+    /**
+     * The stop hook's call as a seat's hook makes it (contracts.md §11), before the agent answers anything: the status of
+     * `POST $KP_HOOK_URL/hook/stop` with the process's session token — 200 when the token was live before the process.
+     */
+    private fun probe() {
+        val url = System.getenv("KP_HOOK_URL")
+        val token = System.getenv("KP_SESSION_TOKEN")
+        val status = if (url == null || token == null) -1 else runCatching {
+            val request = java.net.http.HttpRequest.newBuilder(java.net.URI.create("$url/hook/stop"))
+                .header("Authorization", "Bearer $token").header("Content-Type", "application/json")
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofString("""{"stop_hook_active": false}""")).build()
+            java.net.http.HttpClient.newHttpClient().send(request, java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode()
+        }.getOrDefault(-2)
+        note("probe", "status" to JsonPrimitive(status))
+    }
+
+    /** `/compact`, as the pinned adapter does it: a turn with the compact tool call, the context reported smaller, `end_turn`. */
+    private fun compact(id: JsonElement) {
+        turns.submit {
+            emit(buildJsonObject { put("sessionUpdate", "tool_call"); put("toolCallId", "compact-$prompts"); put("title", "Compact conversation"); put("kind", "think"); put("status", "in_progress") })
+            emit(buildJsonObject { put("sessionUpdate", "tool_call_update"); put("toolCallId", "compact-$prompts"); put("status", "completed") })
+            emit(buildJsonObject { put("sessionUpdate", "usage_update"); put("used", (used ?: 0L) / 5); put("size", size ?: 1_000_000L) })
+            answer(id, stop("end_turn"))
+        }
     }
 
     /** A permission request with the options the step names, by kind; the answer is recorded as it came. */

@@ -52,13 +52,13 @@ tasks.register("handshakeClasspath") {
 }
 
 // A spec runs the tools handshake with the driver's fake agent in place of the pinned adapter (S2.7 T6, issue #35): it
-// reads the evidence the run writes. The handshake's run-time classpath and the fake agent's — kp-driver's test classes,
-// as kp-driver's own specs start it — are handed to the specs, and are their inputs.
+// reads the evidence the run writes. The handshake's run-time classpath and the fake agent's — kp-driver's test
+// fixtures, as kp-driver's own specs and `just rehearse --seats fake` start it — are handed to the specs, and are their inputs.
 evaluationDependsOn(":kp-driver")
 tasks.named<Test>("test") {
     val handshakeClasspath = handshake.runtimeClasspath
-    val fakeAgentClasspath = project(":kp-driver").the<SourceSetContainer>()["test"].runtimeClasspath
-    dependsOn(handshake.classesTaskName, ":kp-driver:testClasses")
+    val fakeAgentClasspath = project(":kp-driver").the<SourceSetContainer>()["testFixtures"].runtimeClasspath
+    dependsOn(handshake.classesTaskName, ":kp-driver:testFixturesClasses")
     inputs.files(handshakeClasspath).withPropertyName("handshakeClasspath")
     inputs.files(fakeAgentClasspath).withPropertyName("fakeAgentClasspath")
     jvmArgumentProviders.add(CommandLineArgumentProvider {

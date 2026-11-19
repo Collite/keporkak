@@ -248,6 +248,8 @@ data class Office(
     val computerUse: String,
     val qaVendor: String,
     val listen: Map<String, String>,
+    /** `watch.every`: how often the daemon reports its seats' facts (contracts.md §9, Amendment 22), as the file writes it. */
+    val watchEvery: String,
 )
 
 /** The office's one project checkout, and each effort's folder relative to it; `mail/` is at its root (Amendment 4). */
