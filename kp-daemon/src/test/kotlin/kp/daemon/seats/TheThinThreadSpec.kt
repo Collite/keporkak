@@ -65,7 +65,7 @@ class TheThinThreadSpec : StringSpec({
         ThinThread(coder = """{"turns": [[{"do": "end"}]]}""").use { thread ->
             thread.hero.through(4)
             var failure: Throwable? = null
-            val waiting = thread { failure = runCatching { thread.hero.player.step() }.exceptionOrNull() }
+            val waiting = thread(isDaemon = true) { failure = runCatching { thread.hero.player.step() }.exceptionOrNull() }
             thread.until("the player waits for coder-1's step") { thread.hero.player.awaiting == "coder-1" }
             thread.hero.clock.now = thread.hero.clock.now.plus(Duration.ofMinutes(10)).plusSeconds(1)
             thread.hero.office.changes.signal()

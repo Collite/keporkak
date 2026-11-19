@@ -389,8 +389,8 @@ class Player internal constructor(private val script: Script, val office: Office
 
     /**
      * Waits on the office's changes until [done] answers, at most the walk's `wait` on the office's clock (S2.5): [failed]
-     * ends the play when the seats have used more tokens than the walk allows, or with [late] when the time is up.
-     * [waiting] hears that the wait has begun, its time taken.
+     * ends the play when the seats have used more tokens than the walk allows, with [late] when the time is up, and when
+     * the rehearsal is closed. [waiting] hears that the wait has begun, its time taken.
      */
     private fun <T : Any> withinTheWalksWait(own: OwnSteps, failed: (String) -> Nothing, late: () -> String, waiting: () -> Unit = {}, done: () -> T?): T {
         val since = office.clock.now()
@@ -398,6 +398,7 @@ class Player internal constructor(private val script: Script, val office: Office
         waiting()
         while (true) {
             done()?.let { return it }
+            if (office.closed) failed("the rehearsal was closed")
             own.failure()?.let(failed)
             if (!office.clock.now().isBefore(since.plus(own.wait))) failed(late())
             version = office.changes.await(version, POLL_MILLIS)
