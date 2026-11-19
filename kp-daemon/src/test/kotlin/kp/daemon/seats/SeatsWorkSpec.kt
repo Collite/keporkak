@@ -2,6 +2,7 @@ package kp.daemon.seats
 
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.collections.shouldBeIn
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
@@ -99,7 +100,8 @@ class SeatsWorkSpec : StringSpec({
             office.until("coder-2 re-seated") { office.ops("seat.reseat").any { it.phase == "ok" && it.result?.text("seat") == "coder-2" } }
 
             office.lines().filterIsInstance<Fact>().filter { it.subject == "coder-1" }.map { it.fact } shouldBe listOf("seat.protocol_closed")
-            office.lines().filterIsInstance<Fact>().filter { it.subject == "coder-2" }.map { it.fact } shouldBe listOf("seat.process_gone")
+            // A process that ends closes its protocol too: its two reports come in either order (S2.9 T3), and the first is the one event.
+            office.lines().filterIsInstance<Fact>().filter { it.subject == "coder-2" }.map { it.fact }.single() shouldBeIn listOf("seat.process_gone", "seat.protocol_closed")
         }
     }
 
