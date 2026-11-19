@@ -117,6 +117,19 @@ class ConfigHomeSpec : StringSpec({
         }
     }
 
+    "the own file is in what a seat may write only when its persona has a …-beyond-own-… word (issue #24)" {
+        Sources().use { sources ->
+            /** Whether the session's own file is in what [role]'s home lets it write: `permissions.json`'s `writable`, one pattern. */
+            fun writesItsOwnFile(role: String) = Regex((Json.parseToJsonElement(ConfigHomes(sources.root, sources.seats).build(SeatId("$role-1"), role, "keporkak", sources.places, defaults)
+                .ok().path.resolve("permissions.json").readText()).jsonObject.getValue("writable") as JsonPrimitive).content).matches(sources.places.ownFile.toString())
+
+            writesItsOwnFile("coder") shouldBe true // write-project-beyond-own-list
+            writesItsOwnFile("retro") shouldBe true // write-project-beyond-own-report
+            writesItsOwnFile("reviewer") shouldBe false
+            writesItsOwnFile("teamlead") shouldBe false
+        }
+    }
+
     "a persona, a render or a profile that does not exist is reported, and nothing is built" {
         Sources().use { sources ->
             val homes = ConfigHomes(sources.root, sources.seats)

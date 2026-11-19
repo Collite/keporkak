@@ -75,7 +75,8 @@ data class Home(val path: Path, val servers: List<McpServer>)
  * and `permissions.json` (the same rules compiled, each with its border's name, and the defaults the caller gives).
  * Those four are replaced at every build; what Claude Code keeps in the home itself — its sessions — stays. The home
  * is the office user's only: the folder and its folders 0700, its files 0600. A persona the packaging data cannot
- * package is reported with every problem, and nothing is built or changed.
+ * package is reported with every problem, and nothing is built or changed — so is a hook script that is missing or
+ * cannot be run (§11: the `deny` hook fails closed only when it runs).
  */
 class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
     fun build(seat: SeatId, role: String, profile: String, places: Places, defaults: PermissionDefaults): Outcome<Home> {
@@ -90,8 +91,12 @@ class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
         val persona = read("agents/$role/AGENT.md", "persona $role: agents/$role/AGENT.md does not exist") { Persona.read(role, it) }
         val packaging = read(PACKAGING, "packaging: $PACKAGING does not exist") { text -> Packaging.read(text).let { if (it is Outcome.Failed) Outcome.Failed("packaging: ${it.reason}") else it } }
         val values = read("docs/profiles/$profile.md", "profile $profile: docs/profiles/$profile.md does not exist") { Profile.read(profile, it) }
+        // A hook that cannot be run would not fail closed (contracts.md §11): its script missing, or not executable, builds no home.
         val hooks = Packaging.HOOKS.associateWith { keporkak.resolve("hooks/$it").toAbsolutePath().normalize() }
-        hooks.filterValues { !it.isRegularFile() }.keys.forEach { problems += "hook $it: hooks/$it does not exist" }
+        hooks.forEach { (name, script) ->
+            if (!script.isRegularFile()) problems += "hook $name: hooks/$name does not exist"
+            else if (!Files.isExecutable(script)) problems += "hook $name: hooks/$name is not executable"
+        }
         if (persona == null || packaging == null || values == null || render == null || problems.isNotEmpty()) return Outcome.Failed(problems.joinToString("; "))
 
         val skills = persona.skills.associateWith { name ->
@@ -101,7 +106,9 @@ class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
         persona.deny.filterNot(packaging::maps).forEach { problems += "persona $role: deny word '$it' is not mapped by the packaging data" }
         persona.mcp.filterNot(packaging::serves).forEach { problems += "persona $role: MCP server '$it' is not mapped by the packaging data" }
         if (problems.isNotEmpty()) return Outcome.Failed(problems.joinToString("; "))
-        val permissions = packaging.permissions(persona.deny, values, places, defaults).or("persona $role: ")
+        // The own file is what a `…-beyond-own-…` word leaves writable (contracts.md §10, issue #24): a persona with none has no own file.
+        val owned = if (persona.deny.any { OWN_FILE_WORD in it }) places else places.copy(ownFile = null)
+        val permissions = packaging.permissions(persona.deny, values, owned, defaults).or("persona $role: ")
         val servers = packaging.servers(persona.mcp, places).or("persona $role: ")
         if (permissions == null || servers == null) return Outcome.Failed(problems.distinct().joinToString("; "))
 
@@ -188,6 +195,8 @@ class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
 
     companion object {
         const val PACKAGING = "agents/packaging/claude.yaml"
+        /** What every `deny:` word that leaves one project file writable has in its name (contracts.md §10). */
+        private const val OWN_FILE_WORD = "-beyond-own-"
         private val FOLDER = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------"))
         private val FILE = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------"))
     }
