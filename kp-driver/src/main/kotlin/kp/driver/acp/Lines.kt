@@ -4,6 +4,7 @@ import com.agentclientprotocol.annotations.UnstableApi
 import com.agentclientprotocol.model.ContentBlock
 import com.agentclientprotocol.model.SessionConfigOption
 import com.agentclientprotocol.model.SessionUpdate
+import com.agentclientprotocol.model.ToolCallContent
 import com.agentclientprotocol.rpc.ACPJson
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonElement
@@ -19,7 +20,8 @@ internal object Lines {
         is SessionUpdate.AgentMessageChunk -> "agent: ${text(update.content)}"
         is SessionUpdate.AgentThoughtChunk -> "thought: ${text(update.content)}"
         is SessionUpdate.ToolCall -> "tool ${update.toolCallId.value} ${update.status?.let(::wire) ?: "pending"}: ${update.title}${input(update.rawInput)}"
-        is SessionUpdate.ToolCallUpdate -> "tool ${update.toolCallId.value} ${update.status?.let(::wire) ?: "updated"}${update.title?.let { ": $it" } ?: ""}${input(update.rawInput)}"
+        is SessionUpdate.ToolCallUpdate -> "tool ${update.toolCallId.value} ${update.status?.let(::wire) ?: "updated"}${update.title?.let { ": $it" } ?: ""}${input(update.rawInput)}" +
+            output(update.content, update.rawOutput)
         is SessionUpdate.PlanUpdate -> "plan: ${update.entries.size} entries"
         is SessionUpdate.PlanUpdateV2 -> "plan updated"
         is SessionUpdate.PlanRemoved -> "plan removed: ${update.id}"
@@ -45,6 +47,19 @@ internal object Lines {
     }
 
     private fun input(raw: JsonElement?) = if (raw == null || raw == JsonNull) "" else " $raw"
+
+    /**
+     * A tool's result, as the agent reports it (S2.5): the text of its content — a refusal of a seat's `send` is one
+     * (contracts.md §5) — else its raw output; at most [OUTPUT_LIMIT] characters, and nothing when it reports none.
+     */
+    private fun output(content: List<ToolCallContent>?, raw: JsonElement?): String {
+        val text = content.orEmpty().mapNotNull { (it as? ToolCallContent.Content)?.content?.let(::text) }.joinToString(" ")
+            .ifEmpty { if (raw == null || raw == JsonNull) "" else raw.toString() }
+        if (text.isEmpty()) return ""
+        return " → " + if (text.length <= OUTPUT_LIMIT) text else text.take(OUTPUT_LIMIT) + " … (${text.length - OUTPUT_LIMIT} more characters)"
+    }
+
+    private const val OUTPUT_LIMIT = 2000
 
     /** The protocol's own word for an enum value, as it travels. */
     fun <T : Enum<T>> wire(value: T, serializer: KSerializer<T>): String = ACPJson.encodeToJsonElement(serializer, value).jsonPrimitive.content

@@ -76,6 +76,28 @@ class TurnsSpec : StringSpec({
         }
     }
 
+    "a tool's result reaches the transcript with its update: its text, else its raw output, at most 2000 characters" {
+        Office().use { office ->
+            val agent = office.agent(
+                """{"turns": [[{"do": "tool", "id": "t1", "title": "mcp__messaging__send"}, {"do": "tool_update", "id": "t1", "status": "completed", "text": "{\"status\":\"refused\",\"rule\":\"verdict\"}"},
+                {"do": "tool", "id": "t2", "title": "Bash"}, {"do": "tool_update", "id": "t2", "status": "failed", "raw": {"exit": 2}},
+                {"do": "tool", "id": "t3", "title": "Read"}, {"do": "tool_update", "id": "t3", "status": "completed", "text": "${"x".repeat(2003)}"},
+                {"do": "tool", "id": "t4", "title": "Glob"}, {"do": "tool_update", "id": "t4", "status": "completed"}, {"do": "end"}]]}""",
+            )
+            val driver = office.driver()
+            driver.start(office.session("coder-1", agent)).ok()
+
+            driver.prompt(seat, "go").ok()
+
+            office.transcript("coder-1").filter { " tool t" in it && " updated" !in it && "pending" !in it } shouldBe listOf(
+                """2026-11-15T10:00:00Z coder-1 tool t1 completed → {"status":"refused","rule":"verdict"}""",
+                """2026-11-15T10:00:00Z coder-1 tool t2 failed → {"exit":2}""",
+                "2026-11-15T10:00:00Z coder-1 tool t3 completed → ${"x".repeat(2000)} … (3 more characters)",
+                "2026-11-15T10:00:00Z coder-1 tool t4 completed",
+            )
+        }
+    }
+
     "an agent that dies during a turn fails the turn at once" {
         Office().use { office ->
             val agent = office.agent("""{"turns": [[{"do": "run", "seconds": 300}, {"do": "end"}]]}""")
