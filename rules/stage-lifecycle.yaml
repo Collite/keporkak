@@ -1277,6 +1277,34 @@ transitions:
   guard: tail_failed
   require: []
   effects: []
+- from: paused
+  to: paused
+  kind: seat-gone
+  guard: pid/pty gone or ACP protocol closed (observed) · an open in_progress tool call counts as busy, not gone · counter
+    seat_gone_events ≤ 3 per stage, then pause for Bora
+  id: T-80
+  'on': message
+  require:
+  - any:
+    - fact: seat.process_gone
+      seat:
+        arg: seat
+    - fact: seat.protocol_closed
+      seat:
+        arg: seat
+  - fact: seat.tool_call_open_for
+    seat:
+      arg: seat
+    eq: 0
+  - counter: seat_gone_events
+    lt:
+      cap: seat_gone_events_per_stage
+  effects:
+  - count: seat_gone_events
+  - do: seat.reseat
+    with:
+      seat:
+        arg: seat
 active_states:
 - assigned
 - building
@@ -1501,7 +1529,7 @@ seat:
         cap: seat_gone_events_per_stage
     effects: []
   - from: idle
-    to: idle
+    to: retired
     kind: retire
     guard: TeamLead's session-request to remove, or budget cap (C)
     id: SEAT-11
@@ -1512,16 +1540,6 @@ seat:
       with:
         seat:
           arg: seat
-  - from: '*'
-    to: retired
-    kind: retire
-    guard: TeamLead's session-request to remove, or budget cap (C)
-    id: SEAT-14
-    'on': op-result
-    require:
-    - op: seat.retire
-      eq: ok
-    effects: []
   - from: provisioned
     to: provisioned
     kind: session-report
@@ -1752,16 +1770,6 @@ seat:
         seat:
           arg: seat
     id: SEAT-33
-  - from: '*'
-    to: gone
-    kind: kill
-    'on': op-result
-    guard: stall (no update, no in_progress call) past the watchdog · or retire
-    require:
-    - op: seat.kill
-      eq: ok
-    effects: []
-    id: SEAT-34
   - from: provisioned
     to: provisioned
     kind: resume

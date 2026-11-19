@@ -8,6 +8,7 @@ import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import kp.daemon.checkout
 import kp.driver.scan.comparisons
+import kp.driver.scan.timers
 import java.nio.file.Files
 import kotlin.io.path.extension
 import kotlin.io.path.name
@@ -29,6 +30,15 @@ class DaemonSourceSpec : StringSpec({
         val found = sources.flatMap { file -> comparisons(file.readText()).map { "${file.name}: $it" } }
 
         found.sorted() shouldBe NOT_A_LIMIT.keys.sorted()
+    }
+
+    "the daemon's source holds no timer that stands for a limit" {
+        // A timer compares nothing, so the scan above does not see it — S2.4's two-second grace before a closed protocol
+        // was reported was one (S2.9 T3). Every line that sets a timer or waits for a time is listed, as written, with
+        // why it is none: a new one, or a listed one changed, turns this red until it is listed again.
+        val found = sources.flatMap { file -> timers(file.readText()).map { "${file.name}: $it" } }
+
+        found.sorted() shouldBe NOT_A_LIMIT_TIMER.keys.sorted()
     }
 
     "the daemon's source holds no kind's name, but where Bora's commands are the kinds they send" {
@@ -132,6 +142,8 @@ private val NOT_A_LIMIT = mapOf(
         "the walk player: the log before a step",
     "Script.kt: }.maxOfOrNull { it.key }" to
         "the walk player: the newest open ticket of an item",
+    "Seats.kt: if (!closing && !now.isBefore(next)) {" to
+        "the watch (S2.9 T5): whether the injected clock has reached the next `watch.every` — when to report, no limit",
     "Seats.kt: log.live.filterNot(held::containsKey).sorted().forEach { seat ->" to
         "the seats at a start (S2.4): those reported gone, in the order of their names",
     "Seats.kt: return folder.listDirectoryEntries(\"*.md\").sortedBy { it.name }.firstOrNull { file ->" to
@@ -142,4 +154,112 @@ private val NOT_A_LIMIT = mapOf(
         "`kp status`: the open tickets in order",
     "Views.kt: return numbers.sorted().flatMap { number -> tickets[number]?.let { item(number, it, lines) }.orEmpty() }" to
         "`kp inbox`: its items in the order of their tickets",
+)
+
+/** Every line of the daemon's source that sets a timer or waits for a time, by file and as written, and why none stands for a limit (S2.9 T3). */
+private val NOT_A_LIMIT_TIMER = mapOf(
+    "ControlSocket.kt: accepting.join(JOIN_MILLIS)" to
+        "the control socket's stop: how long it waits for its accepting thread to end",
+    "ControlSocket.kt: private const val JOIN_MILLIS = 5_000L" to
+        "the control socket's stop: how long it waits for its accepting thread to end",
+    "Daemon.kt: if (wait > 0) Thread.sleep(wait)" to
+        "the timers: how long until the next deadline the rules set, or the next look at the rule texts",
+    "Daemon.kt: private const val JOIN_MILLIS = 10_000L" to
+        "the daemon's stop: how long it waits for its timers' thread to end",
+    "Daemon.kt: private val RELOAD_EVERY: Duration = Duration.ofSeconds(5)" to
+        "how often the rule texts are compared with those in force (hot reload, architecture.md §3)",
+    "Daemon.kt: Thread.sleep(RELOAD_EVERY.toMillis())" to
+        "the timers after an error: they rest until the next look at the rule texts",
+    "Daemon.kt: timers.join(JOIN_MILLIS)" to
+        "the daemon's stop: how long it waits for its timers' thread to end",
+    "Daemon.kt: val next = listOfNotNull(office.nextDeadline(), now.plus(RELOAD_EVERY)).min()" to
+        "the timers: the earlier of the next deadline the rules set and the next look at the rule texts",
+    "Daemon.kt: val wait = Duration.between(now, next).toMillis()" to
+        "the timers: how long until the next deadline the rules set, or the next look at the rule texts",
+    "Journal.kt: fun say(text: String) = System.err.println(\"\${Instant.now().truncatedTo(ChronoUnit.SECONDS)} kp-daemon: \$text\")" to
+        "a time written to the second: no wait",
+    "KpCommands.kt: const val FOLLOW_MILLIS = 30_000L" to
+        "`kp` following the log: how long it waits for the next change before it looks again",
+    "KpCommands.kt: version = office.changes.await(version, FOLLOW_MILLIS)" to
+        "`kp` following the log: how long it waits for the next change before it looks again",
+    "Main.kt: val clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }" to
+        "a time written to the second: no wait",
+    "Office.kt: fun await(seen: Long, millis: Long): Long = synchronized(lock) {" to
+        "a wait for the office's next change: as long as its caller asks",
+    "Office.kt: IDLE_FOR -> Datum.of(ChronoUnit.SECONDS.between(signed, clock.now()))" to
+        "`bora.idle_for` as the vocabulary defines it: the time since his last signed command, reported; the rules compare",
+    "Office.kt: val end = System.nanoTime() + millis * 1_000_000" to
+        "a wait for the office's next change: as long as its caller asks",
+    "Office.kt: val left = (end - System.nanoTime()) / 1_000_000" to
+        "a wait for the office's next change: as long as its caller asks",
+    "Panes.kt: if (process.waitFor(WAIT_SECONDS, TimeUnit.SECONDS) && process.exitValue() == 0) text else null" to
+        "a tmux command: how long the panes wait for it to answer",
+    "Panes.kt: private const val WAIT_SECONDS = 10L" to
+        "a tmux command: how long the panes wait for it to answer",
+    "Rehearsal.kt: clock: Clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }, fake: FakeSeating? = null, out: (String) -> Unit," to
+        "a time written to the second: no wait",
+    "Rehearsal.kt: player.join(JOIN_MILLIS)" to
+        "a rehearsal waiting for Bora, or for its player to end",
+    "Rehearsal.kt: private const val JOIN_MILLIS = 10_000L" to
+        "a rehearsal waiting for Bora, or for its player to end",
+    "Rehearsal.kt: private const val WAIT_MILLIS = 30_000L" to
+        "a rehearsal waiting for Bora, or for its player to end",
+    "Rehearsal.kt: private fun waitFor(done: () -> Boolean) {" to
+        "a rehearsal waiting for Bora, or for its player to end",
+    "Rehearsal.kt: val end = System.nanoTime() + millis * 1_000_000" to
+        "a rehearsal waiting for Bora, or for its player to end",
+    "Rehearsal.kt: val left = (end - System.nanoTime()) / 1_000_000" to
+        "a rehearsal waiting for Bora, or for its player to end",
+    "Rehearsal.kt: version = office.changes.await(version, WAIT_MILLIS)" to
+        "a rehearsal waiting for Bora, or for its player to end",
+    "Script.kt: const val POLL_MILLIS = 1_000L" to
+        "the walk player's waits for what a step expects",
+    "Script.kt: const val WAIT_MILLIS = 120_000L" to
+        "the walk player's waits for what a step expects",
+    "Script.kt: if (left <= 0 || office.closed) throw WalkFailure(at(number, step) + \": waited \${WAIT_MILLIS / 1000}s for \$what\")" to
+        "the walk player's waits for what a step expects",
+    "Script.kt: private fun <T : Any> waitFor(number: Int, step: Walk.Step, what: String, found: () -> T?): T {" to
+        "the walk player's waits for what a step expects",
+    "Script.kt: val at = clock.now().truncatedTo(ChronoUnit.SECONDS).toString()" to
+        "a time written to the second: no wait",
+    "Script.kt: val end = System.nanoTime() + WAIT_MILLIS * 1_000_000" to
+        "the walk player's waits for what a step expects",
+    "Script.kt: val left = (end - System.nanoTime()) / 1_000_000" to
+        "the walk player's waits for what a step expects",
+    "Script.kt: val result = waitFor(number, step, \"\$operation's result for \$cause\") {" to
+        "the walk player's waits for what a step expects",
+    "Script.kt: version = office.changes.await(version, minOf(left, POLL_MILLIS))" to
+        "the walk player's waits for what a step expects",
+    "Script.kt: waitFor(number, step, \"the report that \$seat is gone\") {" to
+        "the walk player's waits for what a step expects",
+    "Seated.kt: fun watchEvery(): Duration? = office.rules.ruleSet.pool.offices[office.name]?.watchEvery?.let(::duration)?.toJavaDuration()" to
+        "the watch's period: `watch.every` of offices.yaml (contracts.md §9), the rules' value",
+    "Seats.kt: blocking { driver.kill(SeatId(seat), KILL_GRACE) }" to
+        "how `seat.kill` and `seat.retire` are performed (contracts.md §4.4): the agent's input closed, a grace, then its process tree by force — the operation's way, no limit on a seat",
+    "Seats.kt: private const val REPORTER_WAIT = 10L" to
+        "the seats' stop: how long the reporter is given to hand on what it holds",
+    "Seats.kt: private const val SEND_WAIT_SECONDS = 60L" to
+        "how long a prompt may take to be sent before a wake or a re-seat answers `failed` — issue #42 (4, 5), Known gaps for P2's retro; no report of a seat's end waits on it",
+    "Seats.kt: private fun kill(seat: String): OperationResult = when (val killed = blocking { driver.kill(SeatId(seat), KILL_GRACE) }) {" to
+        "how `seat.kill` and `seat.retire` are performed (contracts.md §4.4): the agent's input closed, a grace, then its process tree by force — the operation's way, no limit on a seat",
+    "Seats.kt: private val KILL_GRACE: Duration = Duration.ofSeconds(5)" to
+        "how `seat.kill` and `seat.retire` are performed (contracts.md §4.4): the agent's input closed, a grace, then its process tree by force — the operation's way, no limit on a seat",
+    "Seats.kt: read.get(SEND_WAIT_SECONDS, TimeUnit.SECONDS)" to
+        "how long a prompt may take to be sent before a wake or a re-seat answers `failed` — issue #42 (4, 5), Known gaps for P2's retro; no report of a seat's end waits on it",
+    "Seats.kt: reporter.awaitTermination(REPORTER_WAIT, TimeUnit.SECONDS)" to
+        "the seats' stop: how long the reporter is given to hand on what it holds",
+    "Seats.kt: sent.get(SEND_WAIT_SECONDS, TimeUnit.SECONDS)" to
+        "how long a prompt may take to be sent before a wake or a re-seat answers `failed` — issue #42 (4, 5), Known gaps for P2's retro; no report of a seat's end waits on it",
+    "Seats.kt: \"the prompt was not sent in \${SEND_WAIT_SECONDS}s\"" to
+        "how long a prompt may take to be sent before a wake or a re-seat answers `failed` — issue #42 (4, 5), Known gaps for P2's retro; no report of a seat's end waits on it",
+    "Seats.kt: val ended = if (session != null && !session.gone) blocking { driver.kill(SeatId(seat), KILL_GRACE) } else Outcome.Ok(Unit)" to
+        "how `seat.kill` and `seat.retire` are performed (contracts.md §4.4): the agent's input closed, a grace, then its process tree by force — the operation's way, no limit on a seat",
+    "Seats.kt: later.scheduleWithFixedDelay({" to
+        "the watch (S2.9 T5): it looks at the injected clock every LOOK_MILLIS; when it reports is `watch.every`'s, on that clock",
+    "Seats.kt: }, LOOK_MILLIS, LOOK_MILLIS, TimeUnit.MILLISECONDS)" to
+        "the watch (S2.9 T5): how often it looks at the injected clock — a look, no limit on a seat",
+    "Seats.kt: next = began.plus(every.multipliedBy(Duration.between(began, now).dividedBy(every) + 1))" to
+        "the watch (S2.9 T5): the next `watch.every` of the injected clock since the start, after now",
+    "Seats.kt: private const val LOOK_MILLIS = 250L" to
+        "the watch (S2.9 T5): how often it looks at the injected clock",
 )

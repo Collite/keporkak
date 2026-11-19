@@ -1,0 +1,38 @@
+# S2.9's two seats of one stage (T1): its coder and its reviewer — S2.1's fake agent — on a stage ready for review, and
+# the world's facts tabled: a `review-bind` goes to the reviewer and is copied to the coder, and wakes both.
+# Its steps are played by the specs, one at a time; the first names the coder's level, which its seed is seated at.
+name: two-seats
+stage: S2.9
+initial: ready_for_review
+seats:
+  coder-1: coder
+  reviewer-1: reviewer
+facts:
+  budget.slot_open: true
+  seat.name:
+    coder: coder-1
+    reviewer: reviewer-1
+    reviewer-1: reviewer-1
+    teamlead: teamlead
+    principal: principal
+    pool: pool
+  roster.rank:
+    coder: 1
+    reviewer-1: 2
+  roster.model_rank:
+    reviewer-1: 2
+  roster.floor_rank: 2
+steps:
+- id: coder-level
+  who: teamlead
+  kind: session-request
+  args:
+    action: add
+    role: coder
+    level: junior M
+    seat: coder-1
+- id: bind
+  who: teamlead
+  kind: review-bind
+  args:
+    reviewer: reviewer-1

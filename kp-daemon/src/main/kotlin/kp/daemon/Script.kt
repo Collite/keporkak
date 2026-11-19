@@ -23,6 +23,7 @@ import kp.model.Message
 import kp.model.OfficeId
 import kp.model.Op
 import kp.model.Refused
+import kp.rules.RobotTrigger
 import java.nio.file.Path
 import java.time.temporal.ChronoUnit
 
@@ -362,7 +363,7 @@ class Player internal constructor(private val script: Script, val office: Office
         val re = step.text(RE)?.let { ids[it] ?: it }
         val lines = lines()
         val message = lines.filterIsInstance<Message>().firstOrNull { message ->
-            message.id.value !in found && message.kind == step.kind && (if (by != null) message.by == by else message.from.value == MAILROOM) &&
+            message.id.value !in found && message.kind == step.kind && (if (by != null) message.by == by || twins(by, message.by) else message.from.value == MAILROOM) &&
                 (re == null || message.re?.value == re) && (step.text(TO)?.let { to -> message.to.value == to } ?: true)
         } ?: throw WalkFailure(at(number, step) + ": ${by ?: MAILROOM} sent no ${step.kind}" + (re?.let { " in reply to $it" } ?: "") + " — " +
             lines.filterIsInstance<Message>().filter { if (by != null) it.by.startsWith(ROBOT) else it.from.value == MAILROOM }.map { "${it.kind} ${it.by}" }
@@ -445,18 +446,45 @@ class Player internal constructor(private val script: Script, val office: Office
                 STATES_KEY -> Datum.Fields((value as Datum.Fields).fields.keys.associateWith { machine -> Datum.Text(machineState(machine, played) ?: "-") })
                 SENDS -> Datum.Items(sends(played).map { Datum.Text(it.kind) })
                 WAKES -> Datum.Items(wakes(played).map { Datum.Text(it.second) })
-                RULES -> Datum.Items((sends(played).map { it.by.removePrefix(ROBOT) } + wakes(played).map { it.first }).map(Datum::Text))
+                RULES -> Datum.Items((sends(played).map { it.by.removePrefix(ROBOT) } + wakes(played).map { it.first }).map(Datum::Text)).let { fired ->
+                    if (liveEnd(played)) heardAsTheWalkSays(fired, value) else fired
+                }
                 HELD -> Datum.Bool(played.outcome == HELD)
                 REFUSED_KEY -> Datum.Bool(refused)
                 // The walker's own words for a refusal ("no arrow", "body line cap exhausted"): the engine writes others, and
                 // the refusal itself is what `refused` checks.
                 REFUSAL_CONTAINS -> value
-                // The rule that refuses the step: the walker and the engine's walk harness hold the step to it (S2.8).
-                REFUSED_BY -> value
+                // The rule that refuses the step: the walker, the engine's walk harness and here a rehearsal and a hero hold
+                // the step to it — another rule refusing it fails the step (S2.8; S2.9 T6).
+                REFUSED_BY -> Datum.Text(refusal(played)?.rule ?: "-")
                 else -> throw WalkFailure(at(played.number, step) + ": expects '$key', which the harness does not read")
             }
             if (actual != value) fail(played, value.shown(), actual.shown(), key)
         }
+    }
+
+    /** A step that ends a live seat's process: its end is the driver's to report (S2.4), the walk's fact or not. */
+    private fun liveEnd(played: Played): Boolean =
+        script.live != null && (played.step.fields(EVENT)[FACT] as? Datum.Text)?.value in DEATHS
+
+    /**
+     * The rules a live seat's end fired, read as the walk names them (S2.9 T3): the driver reports the process gone and the
+     * protocol closed each as it happens, in either order, and the first is the one event — heard by the rule on that
+     * fact, the walk's or its twin on the seat's other end. A rule on the other end stands for the walk's at its place;
+     * what it sends is checked as `sends`.
+     */
+    private fun heardAsTheWalkSays(fired: Datum.Items, named: Datum): Datum {
+        val walk = (named as? Datum.Items)?.items.orEmpty().map { (it as? Datum.Text)?.value }
+        val heard = fired.items.map { (it as? Datum.Text)?.value }
+        val same = walk.size == heard.size && walk.zip(heard).all { (want, got) -> want == got || twins(ROBOT + want, ROBOT + got) }
+        return if (same) named else fired
+    }
+
+    /** Two robots' rules on a seat's two ends, with live seats: either may be the one that heard it first (S2.9 T3). */
+    private fun twins(by: String, other: String): Boolean {
+        if (script.live == null) return false
+        val ends = office.rules.ruleSet.robots.values.flatMap { it.rules }.filter { (it.on as? RobotTrigger.Fact)?.name in DEATHS }.map { ROBOT + it.id }.toSet()
+        return by in ends && other in ends
     }
 
     private fun fail(played: Played, expected: String, actual: String, key: String = "outcome"): Nothing {

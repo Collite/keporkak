@@ -4,6 +4,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import kp.model.Delivered
 import kp.model.Fact
 import kp.model.parseLine
@@ -119,7 +120,8 @@ class AStartCarriesAgainSpec : StringSpec({
         val uninterrupted = Office(seed = "building", robots = true).apply { gone(this) }.end()
         val office = Office(seed = "building", robots = true)
         office.stopWriterAfter { it is Fact }
-        shouldThrow<WriterStopped> { gone(office) }
+        gone(office) // a fact has no sender: stopped, it goes to the journal and to no caller (contracts.md §3, Amendment 29)
+        office.journal.single() shouldContain "the writer was stopped here"
         office.stop()
 
         office.texts.edit("rules/vocabulary.yaml", "  seat.process_gone:\n    params: seat\n", "  seat.process_gone:\n    params: the seat whose process is gone\n")

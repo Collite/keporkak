@@ -2,6 +2,7 @@ package kp.daemon.seats
 
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.collections.shouldBeIn
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
@@ -63,12 +64,13 @@ class SeatsWorkSpec : StringSpec({
             office.seated.watchEvery() shouldBe Duration.ofSeconds(30)
             office.send("principal", "triage", """{"outcome": "issue", "found": "0", "since": "m-panda-000001"}""")
             office.until("coder-1 holding its turn") { office.received("coder-1").any { it.text("event") == "hold" } }
-            office.clock.now = office.clock.now.plus(Duration.ofMinutes(61))
             // The driver has taken the tool call and the context from the wire: what the watch will read.
             val observed = office.seats.facts { _, _ -> null }
             fun seen(fact: String) = observed.observe(kp.engine.FactRef(fact, mapOf("seat" to kp.engine.Datum.Text("coder-1"))), office.stage())
-            office.until("the tool call and the context observed") { seen("seat.tool_call_open_for") == kp.engine.Datum.Text("3660s") && seen("seat.context_used") != null }
-            office.seats.watch()
+            office.until("the tool call and the context observed") { seen("seat.context_used") != null }
+            // 61 minutes on the injected clock: the watch reports at the `watch.every` it has passed (S2.9 T5).
+            office.clock.now = office.clock.now.plus(Duration.ofMinutes(61))
+            office.until("the watch's report judged") { office.lines().filterIsInstance<Fact>().size == 2 }
 
             // What triggered something was written: the context past its health threshold (POOL-3), the tool call open past its watch (POOL-9).
             val facts = office.lines().filterIsInstance<Fact>()
@@ -99,7 +101,8 @@ class SeatsWorkSpec : StringSpec({
             office.until("coder-2 re-seated") { office.ops("seat.reseat").any { it.phase == "ok" && it.result?.text("seat") == "coder-2" } }
 
             office.lines().filterIsInstance<Fact>().filter { it.subject == "coder-1" }.map { it.fact } shouldBe listOf("seat.protocol_closed")
-            office.lines().filterIsInstance<Fact>().filter { it.subject == "coder-2" }.map { it.fact } shouldBe listOf("seat.process_gone")
+            // A process that ends closes its protocol too: its two reports come in either order (S2.9 T3), and the first is the one event.
+            office.lines().filterIsInstance<Fact>().filter { it.subject == "coder-2" }.map { it.fact }.single() shouldBeIn listOf("seat.process_gone", "seat.protocol_closed")
         }
     }
 

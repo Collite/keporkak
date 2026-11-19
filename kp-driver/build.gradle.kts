@@ -19,12 +19,20 @@ dependencies {
     testFixturesImplementation(libs.serialization.json)
 }
 
+/**
+ * A system property a test reads that names paths of this worktree (S2.9 T7): the paths are no input of the test, so
+ * its build-cache key is no worktree's — what they hold is declared beside, by path relative to the checkout.
+ */
+class WorktreePaths(@get:Input val name: String, @get:Internal val paths: () -> String) : CommandLineArgumentProvider {
+    override fun asArguments(): List<String> = listOf("-D$name=${paths()}")
+}
+
 // The specs start the scripted fake agent as a child JVM on the test classpath (S2.1 T1). They also read the
 // checkout's renders, skills, profiles and hooks (S2.2): a change there runs them again. The personas and their
 // packaging data are every test task's inputs (the root convention, S2.8).
 tasks.named<Test>("test") {
     val classpath = sourceSets["test"].runtimeClasspath
-    jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dkp.driver.fake.classpath=${classpath.asPath}") })
+    jvmArgumentProviders.add(WorktreePaths("kp.driver.fake.classpath") { classpath.asPath }) // the test classpath: an input already
     for (folder in listOf("renders", "skills", "docs/profiles", "hooks")) {
         inputs.files(rootProject.fileTree(folder)).withPropertyName("checkout_" + folder.replace("/", "_")).withPathSensitivity(PathSensitivity.RELATIVE)
     }

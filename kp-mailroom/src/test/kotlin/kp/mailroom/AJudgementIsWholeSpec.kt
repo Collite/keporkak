@@ -4,6 +4,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FreeSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import kp.engine.fold
 import kp.model.Delivered
 import kp.model.Envelope
@@ -69,7 +70,9 @@ class AJudgementIsWholeSpec : FreeSpec({
         val stopped = Office(seed = "building", robots = true)
         stopped.stopWriterAfter { it is Message && it.kind == "seat-gone" }
 
-        shouldThrow<WriterStopped> { stopped.changed("seat.process_gone", true, stage = STAGE, params = mapOf("seat" to "coder-1")) }
+        // A fact has no sender: its judgement, stopped, goes to the journal and to no caller (contracts.md §3, Amendment 29).
+        stopped.changed("seat.process_gone", true, stage = STAGE, params = mapOf("seat" to "coder-1"))
+        stopped.journal.single() shouldContain "the writer was stopped here"
         stopped.restart()
 
         stopped.readBack().voidedJudgements() shouldBe listOf(listOf("fact seat.process_gone", "seat-gone by robot:POOL-1"))
@@ -81,7 +84,9 @@ class AJudgementIsWholeSpec : FreeSpec({
         val office = Office(seed = "proposed")
         office.stopWriterAfter(theJudgedLineAfter("op worktree.create requested"))
 
-        shouldThrow<WriterStopped> { office.bora(APPROVAL) }
+        // Bora's approval was written whole: he is answered for it; the result stopped in its turn goes to the journal (Amendment 29).
+        office.bora(APPROVAL).status shouldBe Status.DELIVERED
+        office.journal.first() shouldContain "the result of worktree.create"
         office.restart()
 
         val approval = office.readBack().sent("approval").single().id.value

@@ -29,9 +29,9 @@ RED, GREEN, DOES_NOT_APPLY, RUNS_NOTHING, DOES_NOT_BUILD = 0, 1, 2, 3, 4
 HERO = "kp/daemon/hero/"
 # Gradle's `--tests` with a leading wildcard (`*ProjectionsSpec`) does not keep Kotest from running a task's other specs —
 # Gradle only checks afterwards that a test matched — so the copy's test tasks are narrowed to the named spec classes,
-# as `test` and `hero` split theirs.
+# as `test` and `hero` split theirs: `hero` keeps to its own, under kp/daemon/hero/ (issue #43).
 NARROWED = """gradle.projectsEvaluated {
-    allprojects { tasks.withType(Test).configureEach { setIncludes([%s]) } }
+    allprojects { tasks.withType(Test).configureEach { setIncludes(name == 'hero' ? [%s] : [%s]) } }
 }
 """
 
@@ -58,6 +58,17 @@ def tasks_for(pattern):
 def class_files(pattern):
     """The filter as a pattern of class files: `kp.engine.Fold*` is `kp/engine/Fold*.class`, `Fold*` is `**/Fold*.class`."""
     return (pattern.replace(".", "/") if "." in pattern else "**/" + pattern) + ".class"
+
+
+def includes(task, pattern):
+    """What a test task named [task] includes of the filter: `hero` only the classes under kp/daemon/hero/ — those it runs
+    in the checkout — and every other task the filter's classes, which their own excludes still narrow."""
+    files = class_files(pattern)
+    if task != "hero":
+        return [files]
+    if files.startswith("**/"):
+        return [HERO + files]
+    return [files] if files.startswith(HERO) else [HERO + "no-spec-the-filter-names"]
 
 
 def copy_of_the_working_tree(into):
@@ -114,7 +125,7 @@ def main(arguments):
             say(f"error: the patch does not apply to the working tree — nothing was run (exit {DOES_NOT_APPLY})\n" + applies.stderr.strip())
             return DOES_NOT_APPLY
         subprocess.run(["git", "apply", str(patch)], cwd=copy, check=True)
-        (copy / "build/narrowed.gradle").write_text(NARROWED % repr(class_files(pattern)))
+        (copy / "build/narrowed.gradle").write_text(NARROWED % (", ".join(map(repr, includes("hero", pattern))), ", ".join(map(repr, includes("test", pattern)))))
         command = ["./gradlew", "--console=plain", "--continue", "--init-script", "build/narrowed.gradle"]
         for task in tasks:
             command += [task, "--rerun", "--tests", pattern]

@@ -59,9 +59,17 @@ tasks.named<Test>("test") {
     val handshakeClasspath = handshake.runtimeClasspath
     val fakeAgentClasspath = project(":kp-driver").the<SourceSetContainer>()["testFixtures"].runtimeClasspath
     dependsOn(handshake.classesTaskName, ":kp-driver:testFixturesClasses")
-    inputs.files(handshakeClasspath).withPropertyName("handshakeClasspath")
-    inputs.files(fakeAgentClasspath).withPropertyName("fakeAgentClasspath")
-    jvmArgumentProviders.add(CommandLineArgumentProvider {
-        listOf("-Dkp.handshake.classpath=${handshakeClasspath.asPath}", "-Dkp.driver.fake.classpath=${fakeAgentClasspath.asPath}")
-    })
+    // As classpaths, not by their paths: a worktree's paths are in no test task's key (S2.9 T7).
+    inputs.files(handshakeClasspath).withPropertyName("handshakeClasspath").withNormalizer(ClasspathNormalizer::class)
+    inputs.files(fakeAgentClasspath).withPropertyName("fakeAgentClasspath").withNormalizer(ClasspathNormalizer::class)
+    jvmArgumentProviders.add(WorktreePaths("kp.handshake.classpath") { handshakeClasspath.asPath })
+    jvmArgumentProviders.add(WorktreePaths("kp.driver.fake.classpath") { fakeAgentClasspath.asPath })
+}
+
+/**
+ * A system property a test reads that names paths of this worktree (S2.9 T7): the paths are no input of the test, so
+ * its build-cache key is no worktree's — what they hold is declared beside, by path relative to the checkout.
+ */
+class WorktreePaths(@get:Input val name: String, @get:Internal val paths: () -> String) : CommandLineArgumentProvider {
+    override fun asArguments(): List<String> = listOf("-D$name=${paths()}")
 }

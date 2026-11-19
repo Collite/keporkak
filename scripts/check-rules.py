@@ -768,6 +768,8 @@ class Walk:
         if name=="phase.state":return self.state("phase")
         if name=="bora.present":return self.state("presence")=="present"
         if name=="thread.state":return self.state("flag_thread")
+        # The seat machine answers a seat's state, as the engine answers it from the log (D-81): one seat per stage here.
+        if name=="seat.state":return self.state("seat")
         if name=="thread.open":return self.state("flag_thread") in ("asked","held")
         # The last signed delivery that carries `stages` (contracts.md §4.4, Amendment 12): the wave was checked when it
         # was delivered and is not checked again.
@@ -890,7 +892,8 @@ class Walk:
             selected=next((t for t in candidates if self.require(t["require"]) is None),None)
             if selected is None:continue
             src=self.state(machine);dst=selected["to"]
-            if machine=="stage" and dst=="paused":self.current["previous"]=src
+            # `*previous` is the state before the present one: a move to the same state keeps it, as the engine does (D-81).
+            if machine=="stage" and dst=="paused" and src!=dst:self.current["previous"]=src
             if dst=="*previous":dst=self.current["previous"]
             self.set_state(machine,dst)
             self.effects(selected["effects"],request_id)

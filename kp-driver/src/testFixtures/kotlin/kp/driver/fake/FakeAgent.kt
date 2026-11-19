@@ -35,7 +35,7 @@ import kotlin.system.exitProcess
  * is read back as, before the adapter's own rule — see [resolveModel]), `probe` (S2.4: before anything else, call the
  * daemon's stop hook with the session token the process was given, and record the answer's status). Steps: `say`,
  * `tool`, `tool_update`, `ask` (each tool step with an optional `name`, sent as the adapter sends the tool's name),
- * `usage`, `run`, `hold`, `hangup`, `leak`, `recall`, `end` — see [perform]. Steps after `end` are sent after the
+ * `usage`, `run`, `hold`, `hangup`, `leave`, `leak`, `recall`, `end` — see [perform]; any of them `once`. Steps after `end` are sent after the
  * turn's answer. The prompt `/compact` is answered as the pinned adapter answers it (S2.4's probe): the context it
  * reports drops to a fifth.
  */
@@ -214,8 +214,13 @@ private class FakeAgent(private val script: JsonObject) {
         return if (cancelled) stop("cancelled") else stop("end_turn")
     }
 
-    /** One step of a turn; returns the prompt's result when the step ends the turn. */
+    /**
+     * One step of a turn; returns the prompt's result when the step ends the turn. A step with `once` (a file's path) is
+     * performed by the first of the seat's processes to reach it, and passed by every later one — a re-seated process
+     * among them (S2.9).
+     */
     private fun perform(step: JsonObject): JsonObject? {
+        step.string("once")?.let { marker -> if (!File(marker).createNewFile()) return null }
         when (step.string("do")) {
             "say" -> emit(buildJsonObject { put("sessionUpdate", "agent_message_chunk"); put("content", text(step.string("text")!!)) })
             "tool" -> emit(buildJsonObject {
@@ -248,6 +253,13 @@ private class FakeAgent(private val script: JsonObject) {
             "hangup" -> {
                 System.out.close()
                 Thread.sleep(Long.MAX_VALUE)
+            }
+            // Ends its process while a child it leaves behind holds its stdout for `seconds`: the process is gone before the
+            // protocol closes (S2.9).
+            "leave" -> {
+                val holder = ProcessBuilder("sleep", step.long("seconds").toString()).redirectOutput(ProcessBuilder.Redirect.INHERIT).start()
+                note("child", "pid" to JsonPrimitive(holder.pid()))
+                exitProcess(0)
             }
             "run" -> runCommand(step)
             "recall" -> {

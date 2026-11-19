@@ -1,5 +1,6 @@
 """S2.8 T5 — `just mutant <patch> <spec filter>`: what is an error and never red or green. Its red and its green run
 Gradle on a copy and are shown in the stage's evidence; these need no Gradle run."""
+import importlib.util
 from pathlib import Path
 import subprocess
 import sys
@@ -42,7 +43,22 @@ NOT_THERE = """--- a/kp-engine/src/main/kotlin/kp/engine/Decision.kt
 """
 
 
+def narrowing():
+    spec = importlib.util.spec_from_file_location("mutant", MUTANT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.includes
+
+
 class JustMutant(unittest.TestCase):
+    def test_the_hero_keeps_to_its_own_specs_when_a_filter_also_names_others(self):
+        includes = narrowing()
+
+        self.assertEqual(includes("hero", "*Spec"), ["kp/daemon/hero/**/*Spec.class"])
+        self.assertEqual(includes("test", "*Spec"), ["**/*Spec.class"])
+        self.assertEqual(includes("hero", "kp.daemon.hero.HeroesSpec"), ["kp/daemon/hero/HeroesSpec.class"])
+        self.assertEqual(includes("hero", "kp.daemon.seats.TheSeatsSpec"), ["kp/daemon/hero/no-spec-the-filter-names"])
+
     def test_a_patch_that_does_not_apply_is_an_error_of_its_own_and_the_working_tree_stays_as_it_was(self):
         before = status()
 

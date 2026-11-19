@@ -6,7 +6,8 @@ The check reads each line, not each file (review of S2.8, B1): a line of a spec 
 `Status.REFUSED` or `REFUSED`, `refusal()`, a `Refused` record, a tool result's `"status": "refused"`) asserts it by
 `refusedBy(rule, failed)` on that line, or the list beside this script names the line by its text, with its reason —
 as the sweep lists its own exceptions. A file that calls `refusedBy` elsewhere excuses none of its other lines. An
-import names a refusal and asserts nothing; it is not read. The list is kept true: an entry with no reason, for a file
+import names a refusal and asserts nothing; it is not read — but an outcome it imports by name (`import
+kp.engine.Outcome.REFUSE`, an alias, or `Outcome.*`) is then a refusal's shape in that file, written bare (issue #43). The list is kept true: an entry with no reason, for a file
 that is gone, for a line the file does not have, that calls `refusedBy` or names no refusal, fails too, and a line the
 file has twice needs two entries.
 Usage: python3 build-support/check_refusal_assertions.py [--root DIR]
@@ -24,10 +25,21 @@ REFUSAL = re.compile(r'Outcome\.REFUSE\b|\bREFUSED\b|\.refusal\(\)|\bRefused\b|"
 BY_RULE = re.compile(r"\brefusedBy\(")
 
 
+# An outcome imported by name: `import kp.engine.Outcome.REFUSE`, `import kp.mailroom.Status.REFUSED as NO`, `….Outcome.*`.
+IMPORTED = re.compile(r"^\s*import\s+[\w.]*\b(?:Outcome|Status)\.(REFUSE|REFUSED|\*)(?:\s+as\s+(\w+))?\s*$")
+
+
 def refusal_lines(text):
-    """(number, text) of each line that names a refusal or calls refusedBy, imports left out."""
+    """(number, text) of each line that names a refusal or calls refusedBy, imports left out — the names the file imports
+    for a refusal's outcome among the shapes."""
+    names = set()
+    for line in text.splitlines():
+        imported = IMPORTED.match(line)
+        if imported:
+            names |= {imported.group(2)} if imported.group(2) else ({"REFUSE", "REFUSED"} if imported.group(1) == "*" else {imported.group(1)})
+    bare = re.compile(r"\b(?:" + "|".join(sorted(map(re.escape, names))) + r")\b") if names else None
     return [(number, line.strip()) for number, line in enumerate(text.splitlines(), 1)
-            if (REFUSAL.search(line) or BY_RULE.search(line)) and not line.lstrip().startswith("import ")]
+            if (REFUSAL.search(line) or BY_RULE.search(line) or (bare and bare.search(line))) and not line.lstrip().startswith("import ")]
 
 
 def entries(listed, failures):

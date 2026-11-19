@@ -48,6 +48,30 @@ class TheChangelogCheck(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("docs/wow/30-execution.md", result.stdout)
 
+    def test_an_old_line_reworded_is_no_new_line(self):
+        master = dict(MASTER, **{"docs/wow/CHANGELOG.md": "# Rulebook changelog\n\n- 2026-11-14 · DEP-4 · Old words. · KP D-52\n"})
+        repository = ThrowawayRepository(self, master)
+        repository.branch("feat/a")
+        repository.commit({"robots/pool.yaml": "rules: [POOL-1]\n",
+                           "docs/wow/CHANGELOG.md": "# Rulebook changelog\n\n- 2026-11-14 · DEP-4 · New words. · KP D-52\n"})
+
+        result = repository.check()
+
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("a reworded line is no new one", result.stdout)
+        self.assertIn("robots/pool.yaml", result.stdout)
+
+    def test_a_line_added_beside_a_reworded_one_counts(self):
+        master = dict(MASTER, **{"docs/wow/CHANGELOG.md": "# Rulebook changelog\n\n- 2026-11-14 · DEP-4 · Old words. · KP D-52\n"})
+        repository = ThrowawayRepository(self, master)
+        repository.branch("feat/a")
+        repository.commit({"robots/pool.yaml": "rules: [POOL-1]\n",
+                           "docs/wow/CHANGELOG.md": "# Rulebook changelog\n\n- 2026-11-19 · POOL-1 · New. · KP D-81\n- 2026-11-14 · DEP-4 · New words. · KP D-52\n"})
+
+        result = repository.check()
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+
     def test_a_branch_with_no_master_to_compare_with_fails_and_says_what_to_fetch(self):
         repository = on_a_branch(self)
         repository.git("branch", "--quiet", "-D", "master")

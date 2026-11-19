@@ -24,6 +24,9 @@ import kotlin.io.path.writeText
  * real mailroom, seat API and driver, S2.1's fake agent as every seat's process, the world's facts and the other
  * operations from the walk's table, an injected clock. Each spec is named as its sentence in the list.
  */
+/** The two facts of a seat's end the driver reports (contracts.md §4.4). */
+private val ENDS = setOf("seat.process_gone", "seat.protocol_closed")
+
 class TheSeatsSpec : StringSpec({
     "a message to an idle seat is its next prompt and is read; to a busy seat it waits in the inbox, and the seat is prompted with it when its turn has ended" {
         val hold = mapOf("coder-1" to """{"turns": [[{"do": "hold", "until": "%s"}]]}""")
@@ -36,7 +39,7 @@ class TheSeatsSpec : StringSpec({
             // Idle: the triage is its next prompt — the message, its `delivered` with `woke`, `seat.wake` requested and `ok`, then a `read`.
             office.told(before).filter { it.startsWith("triage") || it.startsWith("delivered") || "seat.wake" in it || it.startsWith("read coder-1") }
                 .dropWhile { !it.startsWith("triage") }.take(5) shouldBe
-                listOf("triage principal→coder", "delivered woke [coder-1]", "op seat.wake requested coder-1", "op seat.wake ok", "read coder-1")
+                listOf("triage principal→coder", "delivered woke [coder-1]", "op seat.wake requested coder-1", "op seat.wake ok coder-1", "read coder-1")
             office.prompts("coder-1").single() shouldContain triage
 
             // Busy — its first turn holds: the second triage waits in its inbox, and no wake is asked for it.
@@ -98,7 +101,8 @@ class TheSeatsSpec : StringSpec({
                 unread.last() shouldBe waiting
                 val before = office.lines().last().seq.toLong()
                 office.agents.die("coder-1") shouldBe true
-                office.until("the death of coder-1 judged") { office.lines().any { it.seq.toLong() > before && it is Fact && it.fact == "seat.process_gone" } }
+                // Its two reports — the process gone, the protocol closed — come in either order (S2.9 T3): the first is written.
+                office.until("the death of coder-1 judged") { office.lines().any { it.seq.toLong() > before && it is Fact && it.fact in ENDS } }
                 if (death <= 3) {
                     office.until("coder-1 re-seated") { office.lines().any { it.seq.toLong() > before && it is Message && it.kind == "re-seated" } }
                     // The re-seat's one prompt replayed every one of them and marked them read; what is unread now came after it.
@@ -114,7 +118,8 @@ class TheSeatsSpec : StringSpec({
             // Three re-seats — the rules' cap — then the fourth death pauses the seat, and nothing re-seats it.
             office.ops("seat.reseat").map { it.phase } shouldBe listOf("requested", "ok", "requested", "ok", "requested", "ok")
             office.office.state.counter(office.stage(), "seat_gone_events") shouldBe 3
-            office.lines().filterIsInstance<Message>().last { it.kind == "pause" }.by shouldBe "robot:POOL-11"
+            // Past the cap a dead seat is paused, not marked gone: either of its two reports pauses it (D-81's worked edit).
+            office.lines().filterIsInstance<Message>().filter { it.kind == "pause" }.map { it.by }.filterNot { it in setOf("robot:POOL-11", "robot:POOL-13") } shouldBe emptyList()
             replays.filterNotNull().forEach { prompt ->
                 prompt shouldContain "project:tasks-p2-s2.4-seats.md"
                 prompt shouldContain "project:STATUS.md"
@@ -156,8 +161,7 @@ class TheSeatsSpec : StringSpec({
 
             // kill, by the watchdog: silent past its limit, no tool call open — its process ends.
             val pid = office.agents.pid("coder-1")!!
-            office.clock.now = office.clock.now.plus(Duration.ofMinutes(6))
-            office.seats.watch()
+            office.clock.now = office.clock.now.plus(Duration.ofMinutes(6)) // the watch reports at the `watch.every` it passed (S2.9 T5)
             office.until("the kill done") { office.ops("seat.kill").any { it.phase != "requested" } }
             office.ops("seat.kill").map { it.phase } shouldBe listOf("requested", "ok")
             office.lines().filterIsInstance<Message>().single { it.kind == "kill" }.by shouldBe "robot:POOL-2"

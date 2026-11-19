@@ -104,17 +104,27 @@ class FakeFacts : FactSource {
     }
 }
 
-/** A performer that answers `ok` at once — or, while [holding], keeps the request and never answers. */
+/**
+ * A performer that answers `ok` at once — or, while [holding], keeps the request and never answers; while [keeping],
+ * keeps it until the spec gives its answer ([answer]).
+ */
 class FakeOperations : Operations {
     val requested = ArrayList<OperationRequest>()
     var holding = false
+    var keeping = false
     val failing = HashMap<String, String>()
+    private val kept = ArrayList<Pair<OperationRequest, (OperationResult) -> Unit>>()
 
     override fun perform(request: OperationRequest, done: (OperationResult) -> Unit) {
         requested += request
         if (holding) return
+        if (keeping) return run { kept += request to done }
         done(failing[request.operation]?.let { OperationResult.Failed(it) } ?: OperationResult.Ok())
     }
+
+    /** The first kept request of [operation] ends with [result], now. */
+    fun answer(operation: String, result: OperationResult = OperationResult.Ok()) =
+        kept.removeAt(kept.indexOfFirst { it.first.operation == operation }.also { check(it >= 0) { "no $operation is kept" } }).second(result)
 }
 
 /** Seats that are idle unless [busy]; every wake is noted. */
@@ -310,6 +320,8 @@ class Office(
     private val walk = Walk.named(walk)
     private val ids = HashMap<String, String>()
     private var next = 0
+    /** What the mailroom said in the daemon's journal: an arrival with no sender that could not be judged (contracts.md §3). */
+    val journal = java.util.concurrent.CopyOnWriteArrayList<String>()
     /** The id of every message submitted through this office: each must have its line and a record about it. */
     val submitted = ArrayList<String>()
     lateinit var mailroom: Mailroom
@@ -331,7 +343,7 @@ class Office(
         start()
     }
 
-    fun start() { mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots) }
+    fun start() { mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, journal = journal::add) }
     fun stop() = mailroom.close()
     fun restart() { stop(); start() }
 
@@ -343,13 +355,13 @@ class Office(
     fun stopWriterAfter(after: (Envelope) -> Boolean) {
         val disk = StoppingDisk(after)
         stop()
-        mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, disk = disk)
+        mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, disk = disk, journal = journal::add)
         disk.armed = true
     }
 
     /** As [start], on a disk that stops the writer after the line [after] matches — what the start itself writes included. */
     fun startStoppedAfter(after: (Envelope) -> Boolean) {
-        mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, disk = StoppingDisk(after).also { it.armed = true })
+        mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, disk = StoppingDisk(after).also { it.armed = true }, journal = journal::add)
     }
 
     /**

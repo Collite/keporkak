@@ -125,6 +125,11 @@ class Mailroom private constructor(
      * the mailroom only carries messages.
      */
     private val robots: Boolean,
+    /**
+     * The daemon's journal: where an arrival that has no sender — a result, an expiry, a fact — says that it could not be
+     * judged (contracts.md §3, Amendment 29). No caller hears of it.
+     */
+    private val journal: (String) -> Unit,
 ) : AutoCloseable {
     /** The rule set every judgement reads: one per message, replaced only between two (architecture.md §3). */
     private val rules: RuleSet get() = inForce.ruleSet
@@ -142,8 +147,8 @@ class Mailroom private constructor(
     private val world = ArrayDeque<() -> Unit>()
     /** What the judgement being written added to [messages] and [addressed]: what a judgement that cannot be finished takes back. */
     private val added = ArrayList<Pair<String?, String>>()
-    /** Results that arrived, each to be judged in a judgement of its own. */
-    private val arrivals = ArrayDeque<() -> Unit>()
+    /** Results that arrived, each to be judged in a judgement of its own: what it is, and its judgement. */
+    private val arrivals = ArrayDeque<Pair<String, () -> Unit>>()
     private var draining = false
     private var closed = false
 
@@ -184,7 +189,7 @@ class Mailroom private constructor(
     @Synchronized
     fun changed(fact: FactRef, value: Datum, stage: String? = null, evidence: String? = null) {
         require(fact.name != BORA_ACTED) { "$BORA_ACTED is a signed command: command(signed = true)" }
-        judged { fact(fact, value, stage, evidence) }
+        unanswered("the fact ${fact.name} ${fact.params.values.joinToString(" ") { (it as? Datum.Text)?.value ?: it.json() }}".trimEnd()) { judged { fact(fact, value, stage, evidence) } }
         drain()
     }
 
@@ -290,7 +295,7 @@ class Mailroom private constructor(
         due.forEach { id ->
             val wait = folded.deadlines[id]?.deadline ?: return@forEach
             if (instant(wait).isAfter(now)) return@forEach
-            judged { expire(id) }
+            unanswered("the expiry of $id") { judged { expire(id) } }
             drain()
         }
     }
@@ -666,7 +671,7 @@ class Mailroom private constructor(
     @Synchronized
     private fun finished(request: OperationRequest, result: OperationResult) {
         if (closed) return
-        arrivals += { complete(request, result) }
+        arrivals += "the result of ${request.operation} for ${request.cause}" to { complete(request, result) }
         drain()
     }
 
@@ -676,11 +681,13 @@ class Mailroom private constructor(
      */
     private fun complete(request: OperationRequest, result: OperationResult, first: (JsonObject) -> Unit = { write(it) }) {
         val now = now()
+        // A wake's result names its seat as its request does (contracts.md §4.4, Amendment 28): two wakes of one message end apart.
+        val wakes = (request.with.fields[SEAT] as? Datum.Text)?.takeIf { request.operation == SEAT_WAKE }?.let { Datum.Fields(mapOf(SEAT to it)).element() }
         first(when (result) {
             is OperationResult.Ok -> line(now, EVENT to text("op"), OP to text(request.operation), PHASE to text(OK), CAUSE to text(request.cause),
-                RESULT to seated(request, result.result).takeIf { it.fields.isNotEmpty() }?.element())
+                WITH to wakes, RESULT to seated(request, result.result).takeIf { it.fields.isNotEmpty() }?.element())
             is OperationResult.Failed -> line(now, EVENT to text("op"), OP to text(request.operation), PHASE to text(FAILED), CAUSE to text(request.cause),
-                REASON to text(result.reason))
+                WITH to wakes, REASON to text(result.reason))
         })
         val returned = (result as? OperationResult.Ok)?.let { seated(request, it.result) } ?: Datum.Fields(emptyMap())
         // A seat woken with a message has seen it (contracts.md §2.2, `read`): its `read` record follows the wake's `ok`.
@@ -734,7 +741,7 @@ class Mailroom private constructor(
             when (standing) {
                 is Message -> arrived(standing, now()) { stand(it) }
                 is Op -> if (standing.phase == REQUESTED) stand(voided) else {
-                    val flight = folded.operations.firstOrNull { it.op == standing.op && it.cause == standing.cause }
+                    val flight = folded.operations.firstOrNull { it.op == standing.op && it.cause == standing.cause && standing.with?.get(SEAT).let { seat -> seat == null || it.with.fields[SEAT]?.element() == seat } }
                     val with = flight?.with ?: Datum.Fields(emptyMap())
                     val returned = (Datum.of(standing.plain()[RESULT] ?: emptyMap<String, Any?>()) as? Datum.Fields) ?: Datum.Fields(emptyMap())
                     complete(OperationRequest(standing.op, standing.cause, with),
@@ -810,6 +817,17 @@ class Mailroom private constructor(
     }
 
     /**
+     * An arrival that has no sender — a result, an expiry, a fact — judged: when its judgement cannot be finished, it
+     * goes to the journal and to no caller (contracts.md §3, Amendment 29). A sender is answered for its own message
+     * only — not with the error of a result its message's drain judged.
+     */
+    private fun unanswered(what: String, judge: () -> Unit) = try {
+        judge()
+    } catch (error: Exception) {
+        journal("$what could not be judged, and nothing of it was written: ${error.message ?: error.javaClass.simpleName}")
+    }
+
+    /**
      * Turns to the world once the judgements are on disk: performs what they requested and wakes whom they woke, in
      * order; then judges each result that arrived, a judgement of its own; until nothing is left.
      */
@@ -820,7 +838,7 @@ class Mailroom private constructor(
             while (!closed) {
                 when {
                     world.isNotEmpty() -> world.removeFirst()()
-                    arrivals.isNotEmpty() -> judged(arrivals.removeFirst())
+                    arrivals.isNotEmpty() -> arrivals.removeFirst().let { (what, arrival) -> unanswered(what) { judged(arrival) } }
                     else -> break
                 }
             }
@@ -940,7 +958,7 @@ class Mailroom private constructor(
          */
         fun start(
             project: Path, office: OfficeId, rules: RuleTexts, facts: FactSource, operations: Operations, deliveries: Deliveries, clock: Clock,
-            robots: Boolean = false, disk: Channels = Channels.files,
+            robots: Boolean = false, disk: Channels = Channels.files, journal: (String) -> Unit = { System.err.println(it) },
         ): Mailroom {
             val writer = LogWriter.open(project, office, disk)
             try {
@@ -950,7 +968,7 @@ class Mailroom private constructor(
                 if (inForce == null) throw MailroomRefusal("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
                 // Under the mailroom's lock, as every other step: a performer that answers from its own thread while the
                 // start is carrying its queue waits for it (issue #21).
-                return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce, robots).apply {
+                return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce, robots, journal).apply {
                     synchronized(this) {
                         val entries = read.lines.map { it.entry }
                         // The judgement the log ends in begins after the last `judged` line — at the `voided` record after it, when

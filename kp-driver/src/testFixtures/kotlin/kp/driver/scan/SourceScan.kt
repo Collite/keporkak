@@ -16,6 +16,27 @@ fun comparisons(source: String): List<String> {
     return code(source).lines().withIndex().filter { (_, line) -> compares(line) }.map { (i, _) -> written[i].trim() }
 }
 
+/**
+ * The lines of [source] that set a timer or wait for a time, trimmed, as written (S2.9 T3): their code — comments and
+ * the text of string and char literals left out — names a duration or a time unit, sleeps, schedules, or waits with a
+ * timeout. A timer can stand for a limit — a grace, a time after which something is taken to be so — without comparing
+ * anything, so the comparison scan does not see it; this one lists each, for a reader to say why it is none.
+ */
+fun timers(source: String): List<String> {
+    val written = source.lines()
+    return code(source).lines().withIndex().filter { (_, line) -> TIMER.any { it.containsMatchIn(line) } }.map { (i, _) -> written[i].trim() }
+}
+
+/** What sets a timer or waits for a time: a duration or a time unit named, a sleep, a schedule, a wait with a timeout. */
+private val TIMER = listOf(
+    Regex("""\bDuration\s*\.\s*(?:of\w*|parse|between)\b|\bTimeUnit\s*\.\s*[A-Z]+\b"""),
+    Regex("""\.\s*(?:toMillis|toNanos|toSeconds|toMinutes|toJavaDuration)\s*\("""),
+    Regex("""\b(?:sleep|delay|schedule|scheduleAtFixedRate|scheduleWithFixedDelay|awaitTermination|withTimeout|withTimeoutOrNull|orTimeout|completeOnTimeout|nanoTime|currentTimeMillis)\s*\("""),
+    Regex("""\b(?:await|join|waitFor|poll|offer|tryAcquire|tryLock)\s*\(\s*[^()\s,]"""),
+    Regex("""\.\s*(?:seconds|milliseconds|minutes|hours|nanoseconds)\b"""),
+    Regex("""\b[A-Z_]*(?:SECONDS|MILLIS|NANOS|MINUTES|HOURS|GRACE|TIMEOUT|EVERY|WAIT)[A-Z_]*\b"""),
+)
+
 private fun compares(code: String): Boolean {
     val line = withoutTypeArguments(code.replace(ARROW, "  "))
     return '<' in line || '>' in line || ORDERING.any { it.containsMatchIn(line) }

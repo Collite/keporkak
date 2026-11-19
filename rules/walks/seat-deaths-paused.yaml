@@ -1,0 +1,54 @@
+# D-81: a seat that dies while its stage is paused is counted and re-seated too — T-80, the twin of T-59 — and the
+# stage's first re-seat returns it to the state it was first paused from. Two seats of one stage die, the reviewer's while
+# the stage is paused for the coder's. The Pool Manager's messages are given by the walk, not heard by its robot: the
+# walker keeps one seat per stage, so its robot would hear the second death as the first's. The walker cannot play the
+# second `re-seated` either (one seat per stage): the engine can, and S2.9's restart spec does.
+# Supplied observations and fake operation results; this walk never runs external actions.
+name: seat-deaths-paused-D-81
+stage: S2.9
+initial: building
+final: building
+seats:
+  coder-1: coder
+  reviewer-1: reviewer
+facts:
+  seat.process_gone: true
+  seat.protocol_closed: false
+  seat.tool_call_open_for: 0
+  seat.inbox_replayed: true
+steps:
+- id: coder-gone
+  who: pool
+  kind: seat-gone
+  args:
+    seat: coder-1
+  expect:
+    state: paused
+    transitions:
+    - T-59
+    - SEAT-06
+- id: reviewer-gone
+  who: pool
+  kind: seat-gone
+  args:
+    seat: reviewer-1
+  expect:
+    state: paused
+    transitions:
+    - T-80
+    - SEAT-06
+- operation: seat.reseat
+  request: coder-gone
+  result: ok
+- operation: seat.reseat
+  request: reviewer-gone
+  result: ok
+- who: pool
+  kind: re-seated
+  args:
+    seat: coder-1
+  expect:
+    state: building
+    transitions:
+    - T-60
+    - SEAT-07

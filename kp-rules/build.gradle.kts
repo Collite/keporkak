@@ -17,4 +17,9 @@ tasks.named<Test>("test") {
     for (file in listOf("settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew")) {
         inputs.files(rootProject.file(file)).withPropertyName("build_" + file.replace(".", "_")).withPathSensitivity(PathSensitivity.RELATIVE)
     }
+    // The zero-spec probe (RulesLoadSupport.gradleCheckWithoutSpecs) builds a copy of every module but its build output:
+    // what it copies is an input too, so its result is no stale one (S2.9 T7; issue #43).
+    rootDir.listFiles { file -> file.isDirectory && file.name.startsWith("kp-") }!!.sortedBy { it.name }.forEach { module ->
+        inputs.files(rootProject.fileTree(module) { exclude("build/**") }).withPropertyName("module_" + module.name.replace("-", "_")).withPathSensitivity(PathSensitivity.RELATIVE)
+    }
 }

@@ -215,10 +215,14 @@ private class Folding(state: State) {
                 }
             }
             is Op -> {
-                if (line.op == SEAT_WAKE && line.phase == OK) s.operations.firstOrNull { it.op == line.op && it.cause == line.cause }?.let(::woken)
+                // A result ends its request: by operation and cause — and a wake's by its seat too, which its result names
+                // as its request does, so that two wakes of one message end apart (contracts.md §4.4, Amendment 28).
+                val seat = (line.plain()[WITH] as? Map<*, *>)?.get(SEAT)
+                val ends = { flight: InFlight -> flight.op == line.op && flight.cause == line.cause && (seat == null || (flight.with.fields[SEAT] as? Datum.Text)?.value == seat) }
+                if (line.op == SEAT_WAKE && line.phase == OK) s.operations.firstOrNull(ends)?.let(::woken)
                 // A wake is no operation its message asked for (contracts.md §2.2, §4.4, Amendment 22): its result ends no wait.
                 s = if (line.phase == REQUESTED) s.copy(operations = s.operations + InFlight(line.op, line.cause, Datum.of(line.plain()[WITH] ?: emptyMap<String, Any?>()) as Datum.Fields, at))
-                else s.copy(deadlines = if (line.op == SEAT_WAKE) s.deadlines else s.deadlines - line.cause, operations = s.operations.minusFirst { it.op == line.op && it.cause == line.cause })
+                else s.copy(deadlines = if (line.op == SEAT_WAKE) s.deadlines else s.deadlines - line.cause, operations = s.operations.minusFirst(ends))
                 if (line.op == SEAT_START && line.phase == OK) seatUp(line)?.let { seat -> s = s.copy(sessions = s.sessions + (seat to at)) }
             }
             is Read -> {
