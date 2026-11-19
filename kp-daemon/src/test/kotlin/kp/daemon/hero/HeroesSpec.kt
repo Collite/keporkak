@@ -4,7 +4,6 @@ import io.kotest.core.spec.style.FreeSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.collections.shouldContain
-import io.kotest.matchers.ints.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.shouldBe
 
 /**
@@ -292,12 +291,25 @@ class HeroesSpec : FreeSpec({
 
         restarts.otherwise.map { "after line ${it.seq} (${it.told}): ${it.ending}" }.shouldBeEmpty()
         restarts.cuts.filter { it.ending.startsWith(Restarts.IN_FLIGHT) }.shouldNotBeEmpty()
-        // A wake is an operation of its own (S2.4, D-76, Amendment 22): each judgement that wakes a seat leaves a cut with that
-        // wake in flight — the seven S1.10 counted, and those of the seats a message copies, woken since S2.4 — and the start
-        // wakes the seat, idle with its mail, again: each ends as the uninterrupted run, its "same end" comparing the kinds
-        // delivered and the operations in flight as well. None is left with its message unread.
-        restarts.wakesInFlight.size shouldBeGreaterThanOrEqual 7
-        restarts.wakesInFlight.map { it.ending.substringAfter(", ") }.distinct() shouldBe listOf("and the walk ends as uninterrupted")
+        // A wake is an operation of its own (S2.4, D-76, Amendment 22): each judgement that wakes seats leaves a cut with a
+        // wake in flight for each seat it woke, and the start wakes each, idle with its mail, again. Every cut with only wakes
+        // in flight, however many, ends as the uninterrupted run, its "same end" comparing the kinds delivered and the
+        // operations in flight as well. None is left with its message unread.
+        restarts.wakesInFlight.filterNot { it.endsAsUninterrupted }.map { "after line ${it.seq} (${it.told}): ${it.ending}" }.shouldBeEmpty()
+        // The cuts right after such a judgement, by what the start found in flight: the seven S1.10 counted among them —
+        // review-bind's with both the reviewer's wake and the coder's it copies — each held to the end above.
+        restarts.wakesInFlight.filter { it.told == "judged" }.map { it.flights.joinToString() } shouldBe listOf(
+            "seat.wake of coder-1 for assign", // S1.10's
+            "seat.wake of coder-1 for triage", // S1.10's: the resume
+            "seat.wake of coder-1 for re-seated",
+            "seat.wake of coder-1 for triage", // S1.10's: the found-batch's triage
+            "seat.wake of reviewer-1 for review-bind, seat.wake of coder-1 for review-bind", // S1.10's: two wakes in flight
+            "seat.wake of coder-1 for review-bind", // the reviewer's wake judged, the coder's still in flight
+            "seat.wake of coder-1 for verdict", // S1.10's
+            "seat.wake of reviewer-1 for repair-done", // S1.10's
+            "seat.wake of coder-1 for re-verdict", // S1.10's
+            "seat.wake of the retro's own seat (stage-retro) for stage-exit", // a robot's own seat, woken in a mode
+        )
         restarts.report().none { "a wake in flight" in it || "stays unread" in it } shouldBe true
     }
 })
