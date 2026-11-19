@@ -83,7 +83,7 @@ class HeroesSpec : FreeSpec({
                 "stage-exit teamlead→principal, coder-1, reviewer-1, retro, board: delivered · S2.1 merged→merged · asks worktree.remove",
                 "worktree.remove ok · S2.1 merged→merged · asks register.rebuild",
                 "register.rebuild ok · S2.1 merged→merged · asks project.commit_push",
-                "project.commit_push ok · S2.1 merged→exited · asks seat.wake (stage-retro)",
+                "project.commit_push ok · S2.1 merged→exited · seat coder-1 ready→idle · asks seat.wake (stage-retro)", // the re-seated coder goes idle at the exit (D-80)
                 "seat.wake ok",
             )
             val status = h1.kp("status", h1.stage()).text.lines()
@@ -249,7 +249,7 @@ class HeroesSpec : FreeSpec({
         val sweep = Sweep.ofTheRulesOnMaster().also(HeroReport::sweep)
 
         sweep.failures.shouldBeEmpty()
-        sweep.onMaster shouldBe 277
+        sweep.onMaster shouldBe 279
         sweep.swept shouldBe 133
         sweep.reasons() shouldBe listOf(
             "68 · written the same way as a requirement of its kind, which is judged first: breaking it breaks the kind's, and the refusal names the kind: " +
@@ -259,9 +259,9 @@ class HeroesSpec : FreeSpec({
                 "T-50#3 (deploy-failed), T-51#1,3 (stage-exit), T-53#1 (ruling), T-54#1 (ruling), T-55#1 (ruling), T-56#1 (ruling), T-59#1-2 (seat-gone), " +
                 "T-60#1-2 (re-seated), FLAG_THREAD-01#1 (ruling), FLAG_THREAD-02#1 (hold), FLAG_THREAD-03#1 (ruling), SEAT-03#1 (assign), SEAT-06#1-2 (seat-gone), " +
                 "SEAT-07#1-2 (re-seated), PHASE-01#1-5 (phase-exit-request), PHASE-02#1 (approval)",
-            "36 · judged on an operation's result, which no message carries: nothing is refused — a result that breaks it fires nothing: T-03#1, T-05#1, T-36#1, " +
+            "38 · judged on an operation's result, which no message carries: nothing is refused — a result that breaks it fires nothing: T-03#1, T-05#1, T-36#1, " +
                 "T-37#1-2, T-39#1-2, T-41#1, T-42#1, T-43#1-2, T-45#1, T-46#1-2, T-49#1, T-52#1, T-58#1, T-61#1, T-62#1, T-63#1, T-64#1, T-65#1, T-66#1, T-67#1, T-68#1, " +
-                "T-69#1, T-71#1, T-73#1, SEAT-02#1, SEAT-04#1, SEAT-05#1, SEAT-14#1, SEAT-15#1, SEAT-34#1, PHASE-03#1, PHASE-04#1",
+                "T-69#1, T-71#1, T-73#1, SEAT-02#1, SEAT-04#1, SEAT-05#1, SEAT-41#1, SEAT-42#1, SEAT-14#1, SEAT-15#1, SEAT-34#1, PHASE-03#1, PHASE-04#1",
             "15 · a later candidate from the same state: when none fires, the refusal names the first candidate's first failure (contracts.md §4.1): " +
                 "T-14#1 (T-13), T-20#1-3 (T-19), T-23#1-2 (T-21), T-24#1-2 (T-21), T-29#1-2 (T-21), T-31#2 (T-30), T-34#1-2 (T-21), T-54#2 (T-53), T-56#2 (T-55)",
             "10 · it tells two candidates from the same state apart: breaking it fires the other: T-21#3 (T-24), T-24#3 (T-29), T-25#1 (T-26), T-26#1 (T-25), " +
@@ -279,9 +279,9 @@ class HeroesSpec : FreeSpec({
         sweep.exceptions.single { it.requirement == "T-24#1" } shouldBe Sweep.Exception("T-24", 1,
             "a later candidate from the same state: when none fires, the refusal names the first candidate's first failure (contracts.md §4.1)", "T-21")
         sweep.swept + sweep.exceptions.size shouldBe sweep.onMaster
-        // Every transition fires in a case of its own, and taking it out of a copy of the rules turns that case red —
-        // but for retire's moves of a seat that is not idle: the kind requires `seat.state eq idle` of the very seat they move.
-        sweep.uncontrolled shouldBe listOf("SEAT-08", "SEAT-09", "SEAT-10", "SEAT-12", "SEAT-13")
+        // Every transition fires in a case of its own, and taking it out of a copy of the rules turns that case red: since
+        // D-80, `retire` has no move of a seat that is not idle, which the kind's own requirement kept from ever firing.
+        sweep.uncontrolled.shouldBeEmpty()
         sweep.removalSurvivors.shouldBeEmpty()
     }
 

@@ -2,6 +2,7 @@
 
 One line per change: date · rule ids · what · the decision. Newest first.
 
+- 2026-11-19 · SEAT-41, SEAT-42 · `rules/stage-lifecycle.yaml`: a seat in `ready` goes idle at its stage's exit or close, as a busy one does — a reviewer's seat and a re-seated one are `ready`; the five `retire` moves of a seat that is not idle, which the kind's own requirement kept from ever firing, are removed (SEAT-08, -09, -10, -12, -13). · KP D-80
 - 2026-11-14 · PL-18 · A list cites every contract section its tasks touch, walked task by task before it is cut; a task needing what no contract names leaves the list uncut. · KP D-54
 - 2026-11-14 · PL-19 · The specs task names the seam its specs observe. · KP D-54
 - 2026-11-14 · PL-20 · A DONE item is checkable on the PR's head at the hand-off; what only the merge shows is an Exit line. · KP D-54

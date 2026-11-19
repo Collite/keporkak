@@ -319,7 +319,7 @@ private class Sweeper(private val root: Path) {
                 val seat = (world.args["seat"] as? Datum.Text)?.value ?: "coder-1"
                 if ("seat" in (rules.kinds[world.kind]?.args ?: emptyMap())) world.copy(args = world.args + ("seat" to Datum.Text(seat)))
                     .let { if (from != machine.states.keys.first()) it.seeded(Seed.Move("seat", seat, machine.states.keys.first(), from)) else it }
-                // A message that names no seat moves the seat a message of its stage last moved: bound by an assign of the stage.
+                // A message that names no seat moves each seat bound to its stage (contracts.md §2.2): this one, bound by an assign of the stage.
                 else world.seeded(Seed.Sent("bound", "assign", "teamlead", seat, mapOf("seat" to Datum.Text(seat))))
                     .seeded(Seed.Move("seat", seat, machine.states.keys.first(), from, cause = "bound"))
             }

@@ -1447,6 +1447,26 @@ seat:
     - op: project.commit_push
       eq: ok
     effects: []
+  - from: ready
+    to: idle
+    kind: stage-exit
+    guard: or close
+    id: SEAT-41
+    'on': op-result
+    require:
+    - op: project.commit_push
+      eq: ok
+    effects: []
+  - from: ready
+    to: idle
+    kind: close
+    guard: or close
+    id: SEAT-42
+    'on': op-result
+    require:
+    - op: project.commit_push
+      eq: ok
+    effects: []
   - from: '*'
     to: gone
     kind: seat-gone
@@ -1480,71 +1500,11 @@ seat:
       lte:
         cap: seat_gone_events_per_stage
     effects: []
-  - from: provisioned
-    to: provisioned
-    kind: retire
-    guard: TeamLead's session-request to remove, or budget cap (C)
-    id: SEAT-08
-    'on': message
-    require: []
-    effects:
-    - do: seat.retire
-      with:
-        seat:
-          arg: seat
-  - from: ready
-    to: ready
-    kind: retire
-    guard: TeamLead's session-request to remove, or budget cap (C)
-    id: SEAT-09
-    'on': message
-    require: []
-    effects:
-    - do: seat.retire
-      with:
-        seat:
-          arg: seat
-  - from: busy
-    to: busy
-    kind: retire
-    guard: TeamLead's session-request to remove, or budget cap (C)
-    id: SEAT-10
-    'on': message
-    require: []
-    effects:
-    - do: seat.retire
-      with:
-        seat:
-          arg: seat
   - from: idle
     to: idle
     kind: retire
     guard: TeamLead's session-request to remove, or budget cap (C)
     id: SEAT-11
-    'on': message
-    require: []
-    effects:
-    - do: seat.retire
-      with:
-        seat:
-          arg: seat
-  - from: gone
-    to: gone
-    kind: retire
-    guard: TeamLead's session-request to remove, or budget cap (C)
-    id: SEAT-12
-    'on': message
-    require: []
-    effects:
-    - do: seat.retire
-      with:
-        seat:
-          arg: seat
-  - from: retired
-    to: retired
-    kind: retire
-    guard: TeamLead's session-request to remove, or budget cap (C)
-    id: SEAT-13
     'on': message
     require: []
     effects:
