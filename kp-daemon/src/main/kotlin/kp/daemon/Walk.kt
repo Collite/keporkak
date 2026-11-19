@@ -13,7 +13,10 @@ import kp.mailroom.FactSource
 import java.math.BigDecimal
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.io.path.isDirectory
 import kotlin.io.path.readText
+import kotlin.time.toJavaDuration
+import kp.rules.duration
 
 /**
  * A walk of `rules/walks/` (contracts.md §4.8): a stage, its seats, a table of facts and the steps — who sends which
@@ -32,6 +35,12 @@ class Walk(
     val stages: Map<String, Setting> = emptyMap(),
     val final: Datum? = null,
     val expectedCounts: Map<String, Int> = emptyMap(),
+    /** The seats a rehearsal with live seats leaves to the seats themselves (S2.5): `claude_seats:`, when the walk names them. */
+    val claudeSeats: ClaudeSeats? = null,
+    /** The folder beside the walk's file named as the file (`thin-thread/` beside `thin-thread.yaml`), when there is one. */
+    val fixtures: Path? = null,
+    /** The file the walk was read from. */
+    val file: Path? = null,
 ) {
     /** One step, as the walk writes it; [fields] holds every key. */
     class Step(val fields: Map<String, Datum>) {
@@ -49,7 +58,13 @@ class Walk(
     }
 
     /** This walk with its steps replaced by [steps]. */
-    fun withSteps(steps: List<Step>): Walk = Walk(name, stage, seats, facts, steps, initial, stages, final, expectedCounts)
+    fun withSteps(steps: List<Step>): Walk = Walk(name, stage, seats, facts, steps, initial, stages, final, expectedCounts, claudeSeats, fixtures, file)
+
+    /**
+     * The walk's Claude seats (S2.5; contracts.md §12, Amendment 27): with live seats, a step whose `who` is one of [seats]
+     * is the seat's own — waited for, at most [wait] each, not sent; the seats together may use [tokens] (`seat.usage`).
+     */
+    class ClaudeSeats(val seats: Set<String>, val wait: java.time.Duration, val tokens: Long)
 
     /** A stage the walk names besides its own: the state it starts in, its companions' states (`machines:`), its facts. */
     class Setting(val initial: String?, val machines: Map<String, String>, val facts: Map<String, Datum>)
@@ -84,6 +99,15 @@ class Walk(
                 },
                 walk["final"],
                 fields(walk["expected_counts"]).mapValues { (it.value as Datum.Number).value.toInt() },
+                (walk["claude_seats"] as? Datum.Fields)?.fields?.let { claude ->
+                    ClaudeSeats(
+                        (claude["seats"] as? Datum.Items)?.items.orEmpty().map { (it as Datum.Text).value }.toSet(),
+                        (claude["wait"] as? Datum.Text)?.value?.let(::duration)?.toJavaDuration() ?: error("$path: claude_seats names no wait"),
+                        (claude["tokens"] as? Datum.Number)?.value?.toLong() ?: error("$path: claude_seats names no tokens"),
+                    )
+                },
+                path.resolveSibling(path.fileName.toString().removeSuffix(".yaml")).takeIf { it.isDirectory() },
+                path.toAbsolutePath().normalize(),
             )
         }
 
