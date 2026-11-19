@@ -1,0 +1,165 @@
+# The thin thread (S2.5, P2's certification; D-86, D-87): from an approved stage to its reviewer woken, as short as the
+# rules allow. `just rehearse thin-thread --seats real` plays it on the office with a real coder seat and a real reviewer
+# seat behind the real mailroom (contracts.md §12, Amendment 27); the table supplies the world, and this walk never runs
+# an external action. The files the seats read are in thin-thread/ beside it: the stage's list and its STATUS.
+name: thin-thread
+stage: S2.5
+initial: planned
+final: in_review
+note: The coder is woken by the review-bind it is copied on and has no step then (contracts.md §4.4); the thread ends
+  when the turn the reviewer was woken for has ended.
+seats:
+  coder-1: coder
+  reviewer-1: reviewer
+# The seats a rehearsal with real seats starts as Claude seats: a step whose `who` is one of them is that seat's own — not
+# sent by the rehearsal but waited for, at most `wait`; the seats together may use `tokens` (seat.usage).
+claude_seats:
+  seats: [coder-1, reviewer-1]
+  wait: 10m
+  tokens: 1500000
+facts:
+  plan.predecessors_exited: true
+  pool.seat_available: true
+  budget.slot_open: true
+  list.fence_complete: true
+  list.tasks_total: 6
+  list.lines: 40
+  git.branch_exists: true
+  list.stop_conditions:
+  - SC-10
+  stage.rolls: none
+  stage.live: none
+  list.found_untriaged: 0
+  list.tasks_open: 6
+  seat.name:
+    coder: coder-1
+    reviewer: reviewer-1
+    reviewer-1: reviewer-1
+    pool: pool-1
+  # The roster's order: both seats on claude-opus-5-5 low — the coder at senior S, the reviewer at the coder's line and
+  # the review floor.
+  roster.rank:
+    coder: 10
+    reviewer: 10
+    reviewer-1: 10
+  roster.model_rank:
+    coder: 10
+    reviewer: 10
+    reviewer-1: 10
+  roster.floor_rank: 10
+  seat.process_gone: false
+  seat.protocol_closed: false
+  seat.tool_call_open_for: 0
+  seat.inbox_replayed: false
+steps:
+- id: proposal
+  who: teamlead
+  kind: assignment-proposal
+  args:
+    role: coder
+    level: senior S
+    seat: coder-1
+  expect:
+    state: proposed
+- id: approval
+  who: bora
+  kind: approval
+  signed: bora
+  re: proposal
+  args: {}
+  expect:
+    state: assigned
+- operation: worktree.create
+  request: approval
+  result: ok
+  expect:
+    state: assigned
+- id: assign
+  who: teamlead
+  kind: assign
+  args:
+    seat: coder-1
+  body: "Your list: {project}/tasks-p2-s2.5-thin-thread.md. STATUS: {project}/STATUS.md."
+  expect:
+    states:
+      seat: busy
+- id: started
+  who: coder-1
+  kind: started
+  re: assign
+  args: {}
+  expect:
+    state: building
+- id: outside
+  who: coder-1
+  kind: verdict
+  args:
+    verdict: PASS
+    sha: none
+    blockers: []
+    follow_ups: []
+  expect:
+    refused: true
+    refused_by: verdict
+- who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: coder-1
+  facts:
+    seat.process_gone: true
+  expect:
+    rules:
+    - POOL-1
+    sends:
+    - seat-gone
+    wakes: []
+- id: seat-died
+  who: pool
+  by: robot:POOL-1
+  kind: seat-gone
+  args:
+    seat: coder-1
+  expect:
+    state: paused
+    states:
+      seat: gone
+- operation: seat.reseat
+  request: seat-died
+  result: ok
+  facts:
+    seat.inbox_replayed: true
+  expect:
+    sends:
+    - re-seated
+- who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: coder-1
+  expect:
+    state: building
+    states:
+      seat: ready
+- id: review-request
+  who: coder-1
+  kind: review-request
+  args:
+    attest:
+    - done_lines_hold
+  facts:
+    pr.ready: true
+    ci.state: green
+    pr.head: head-1
+    list.tasks_open: 0
+  expect:
+    state: ready_for_review
+- id: bind
+  who: teamlead
+  kind: review-bind
+  re: review-request
+  args:
+    reviewer: reviewer-1
+  body: "Your list: {project}/tasks-p2-s2.5-thin-thread.md. STATUS: {project}/STATUS.md."
+  expect:
+    state: in_review

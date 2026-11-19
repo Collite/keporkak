@@ -266,4 +266,6 @@ private val NOT_A_LIMIT = mapOf(
         "a generic helper's type parameter and function type (S2.2) — no comparison",
     "Packaging.kt: return problems.distinct().sorted()" to "the packaging check's problem lines, sorted to be reported (S2.2)",
     "Packaging.kt: while (i < glob.length) {" to "a glob's characters, read one by one into an expression (S2.2)",
+    "Lines.kt: return \" → \" + if (text.length <= OUTPUT_LIMIT) text else text.take(OUTPUT_LIMIT) + \" … (\${text.length - OUTPUT_LIMIT} more characters)\"" to
+        "a tool's result in the transcript (S2.5): how much of it a line carries — the transcript's length, no observation of a seat",
 )

@@ -55,3 +55,18 @@ kp-seat-api/src/test/kotlin/kp/seatapi/TheSeatsToolsSpec.kt:
     reason: >-
       compares the tool's whole result, its rule and requirement included (contracts.md §5); refusedBy is the spec
       support of kp-engine and kp-mailroom, which kp-seat-api's specs do not share
+kp-daemon/src/test/kotlin/kp/daemon/seats/TheThinThreadSpec.kt:
+  - line: '"""{"status":"refused","id":"${outside.message}","rule":"verdict","requirement":"from: reviewer","refusals_today":1}""",'
+    reason: >-
+      the seat tool's whole result as the fake seat got it (contracts.md §5): the rule, verdict, and what failed — the
+      role, `from: reviewer`, which a refusal for the sender's role gives as its requirement, with no `failed` (§2.2);
+      kp-daemon's specs have no refusedBy matcher (S2.5)
+  - line: 'thread.lines().filterIsInstance<Refused>().single().rule shouldBe "verdict"'
+    reason: >-
+      the refused record on the log: its rule, verdict; what failed is the role, asserted in the tool's result two lines
+      above (S2.5)
+kp-driver/src/test/kotlin/kp/driver/acp/TurnsSpec.kt:
+  - line: '"""2026-11-15T10:00:00Z coder-1 tool t1 completed → {"status":"refused","rule":"verdict"}""",'
+    reason: >-
+      a transcript line that carries a tool's result, whatever the result says (S2.5): the text is the fake agent's,
+      and nothing is judged, so no rule refuses anything

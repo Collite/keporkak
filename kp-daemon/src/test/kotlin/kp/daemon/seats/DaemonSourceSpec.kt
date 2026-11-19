@@ -154,6 +154,32 @@ private val NOT_A_LIMIT = mapOf(
         "`kp status`: the open tickets in order",
     "Views.kt: return numbers.sorted().flatMap { number -> tickets[number]?.let { item(number, it, lines) }.orEmpty() }" to
         "`kp inbox`: its items in the order of their tickets",
+    "Script.kt: lines().filterIsInstance<Message>().firstOrNull { it.from.value == seat && it.by == \"\$SEAT_BY\$seat\" && it.seq.toLong() > (taken[seat] ?: 0L) }" to
+        "the walk player (S2.5): a Claude seat's next message, after the last one a step of its own took",
+    "Script.kt: if (!office.clock.now().isBefore(since.plus(own.wait))) failed(late())" to
+        "the walk player (S2.5; contracts.md §12, Amendment 27): a Claude seat's step, its turn or the turns of the walk's end, waited for no longer than the walk's `wait` on the injected clock — the rehearsal's own end, no rule's limit",
+    "OwnSteps.kt: if (total > claude.tokens && over == null) {" to
+        "a rehearsal's end (S2.5; contracts.md §12, Amendment 27): the seats' `seat.usage` against the tokens the walk allows — the walk's limit on itself, which the rehearsal checks as the contract says; the office's daemon never runs it, and no rule's limit is compared",
+    "OwnSteps.kt: val token = runCatching { Files.readString(tokenFile).trim() }.getOrNull()?.takeIf { it.length >= MIN_SECRET }" to
+        "a rehearsal's evidence (S2.5): a token file too short to hold a token is not searched for — what is hidden, no limit on a seat",
+    "OwnSteps.kt: at.seats.sorted().forEach { seat ->" to
+        "a rehearsal's evidence (S2.5): the seats in the order of their names",
+    "OwnSteps.kt: \"\${at.transcript(seat)} | \${used[seat] ?: 0} in \${turns.size} turn\${if (turns.size == 1) \"\" else \"s\"}\${if (silent > 0) \", \$silent with no usage reported\" else \"\"} |\")" to
+        "a rehearsal's evidence (S2.5): its wording — one turn or more, and whether any reported no usage",
+    "OwnSteps.kt: at.seats.sorted().forEach { seat -> appendLine(\"- \$seat: transcript \${at.transcript(seat)} · sessions \${at.sessions[seat].orEmpty().joinToString(\" · \").ifEmpty { \"-\" }}\") }" to
+        "a rehearsal's evidence (S2.5): the seats in the order of their names",
+    "OwnSteps.kt: val after = log.filter { it.entry.seq.toLong() >= played.first }.map { it.entry }" to
+        "a rehearsal's evidence (S2.5): the log from a step's first line on",
+    "OwnSteps.kt: private fun section(title: String, lines: List<kp.model.Envelope>): String = \"\\n### \$title\\n\\n```\\n\" + lines.distinctBy { it.seq }.sortedBy { it.seq }.joinToString(\"\\n\", transform = ::shown) + \"\\n```\\n\"" to
+        "a rehearsal's evidence (S2.5): the log lines in their order",
+    "OwnSteps.kt: private fun StringBuilder.block(lines: List<kp.model.Envelope>) = append(\"```\\n\" + lines.distinctBy { it.seq }.sortedBy { it.seq }.joinToString(\"\\n\", transform = ::shown) + \"\\n```\\n\")" to
+        "a rehearsal's evidence (S2.5): the log lines in their order",
+    "OwnSteps.kt: val lines = if (played.last < played.first) \"its lines were on the log before the step\" else \"log lines \${played.first}–\${played.last}\"" to
+        "a rehearsal's evidence (S2.5): a step whose message was on the log before it began wrote no line of its own — wording",
+    "OwnSteps.kt: (woken() + own() + deaths()).sortedBy { it.first }.forEach { append(it.second) }" to
+        "a rehearsal's evidence (S2.5): its sections in the order of the log",
+    "OwnSteps.kt: (lines.minOfOrNull { it.seq.toLong() } ?: 0L) to section(\"\$seat sends \${played.step.kind}: \${played.outcome}\", lines) + shown" to
+        "a rehearsal's evidence (S2.5): a section placed by its first log line",
 )
 
 /** Every line of the daemon's source that sets a timer or waits for a time, by file and as written, and why none stands for a limit (S2.9 T3). */
@@ -196,7 +222,7 @@ private val NOT_A_LIMIT_TIMER = mapOf(
         "a tmux command: how long the panes wait for it to answer",
     "Panes.kt: private const val WAIT_SECONDS = 10L" to
         "a tmux command: how long the panes wait for it to answer",
-    "Rehearsal.kt: clock: Clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }, fake: FakeSeating? = null, out: (String) -> Unit," to
+    "Rehearsal.kt: clock: Clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }, seating: LiveSeating? = null, out: (String) -> Unit," to
         "a time written to the second: no wait",
     "Rehearsal.kt: player.join(JOIN_MILLIS)" to
         "a rehearsal waiting for Bora, or for its player to end",
@@ -218,7 +244,7 @@ private val NOT_A_LIMIT_TIMER = mapOf(
         "the walk player's waits for what a step expects",
     "Script.kt: if (left <= 0 || office.closed) throw WalkFailure(at(number, step) + \": waited \${WAIT_MILLIS / 1000}s for \$what\")" to
         "the walk player's waits for what a step expects",
-    "Script.kt: private fun <T : Any> waitFor(number: Int, step: Walk.Step, what: String, found: () -> T?): T {" to
+    "Script.kt: private fun <T : Any> waitFor(number: Int, step: Walk.Step, what: String, failing: Boolean = true, found: () -> T?): T {" to
         "the walk player's waits for what a step expects",
     "Script.kt: val at = clock.now().truncatedTo(ChronoUnit.SECONDS).toString()" to
         "a time written to the second: no wait",
@@ -262,4 +288,18 @@ private val NOT_A_LIMIT_TIMER = mapOf(
         "the watch (S2.9 T5): the next `watch.every` of the injected clock since the start, after now",
     "Seats.kt: private const val LOOK_MILLIS = 250L" to
         "the watch (S2.9 T5): how often it looks at the injected clock",
+    "Walk.kt: (claude[\"wait\"] as? Datum.Text)?.value?.let(::duration)?.toJavaDuration() ?: error(\"\$path: claude_seats names no wait\")," to
+        "a walk's `claude_seats.wait` read (S2.5): how long the walk player waits for a Claude seat — the rehearsal's own end",
+    "Script.kt: step.who != null && step.kind != null && own?.seats?.contains(step.who) == true -> await(index + 1, step, step.who!!, own!!)" to
+        "the walk player (S2.5): a Claude seat's own step — `await` is its name, no timer",
+    "Script.kt: private fun await(number: Int, step: Walk.Step, seat: String, own: OwnSteps): Pair<String?, String?> {" to
+        "the walk player (S2.5): a Claude seat's own step — `await` is its name, no timer",
+    "Script.kt: val outcome = waitFor(number, step, \"the judgement of \$id\", failing = false) { outcome(lines(), id).takeIf { it != WRITTEN } }" to
+        "the walk player's waits for what a step expects",
+    "Script.kt: version = office.changes.await(version, POLL_MILLIS)" to
+        "the walk player (S2.5; contracts.md §12, Amendment 27): a Claude seat's step, its turn or the turns of the walk's end, waited for no longer than the walk's `wait` on the injected clock — the rehearsal's own end, no rule's limit",
+    "Script.kt: private fun shown(duration: java.time.Duration): String = if (duration.seconds % 60 == 0L) \"\${duration.toMinutes()}m\" else \"\${duration.seconds}s\"" to
+        "the walk player (S2.5): the walk's `wait` written as the rules write a duration — no wait",
+    "Rehearsal.kt: fun awaitPlayed(millis: Long = Long.MAX_VALUE): Boolean = over.await(millis, TimeUnit.MILLISECONDS)" to
+        "a rehearsal with Claude seats (S2.5): its end waits for the walk's play to end",
 )

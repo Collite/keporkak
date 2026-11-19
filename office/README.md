@@ -140,6 +140,30 @@ the office's checkout once it has merged. The daemon reads the rules of the chec
 
    An office without tmux says so once in the journal; the seats run all the same.
 
+8. **The thin thread, with real seats** (S2.5; contracts.md §12, Amendment 27). It spends tokens: run it when a stage
+   says to, and once.
+
+   ```sh
+   just stop                                  # the rehearsal listens on the office's socket
+   just rehearse thin-thread --seats real     # in one ssh session
+   ```
+
+   It starts `coder-1` and `reviewer-1` as Claude seats on the adapter `just adapter` installed, with the token in
+   `claude-token` — the coder at `senior S`, the reviewer at the coder's line and the review floor: both on Opus 5.5 at
+   low effort — their homes, worktree and transcripts under the throwaway project's `office/`, the list and STATUS they
+   read beside the walk (`rules/walks/thin-thread/`). It stops at `waiting for Bora's approval`: in a second session
+   `kp inbox`, then `sudo kp approve <ticket>`; `tmux attach -t kp` shows the two transcripts as the seats work. From
+   then on the seats send their own steps: the coder its `started`, a `verdict` it may not send — refused — and, once
+   the rehearsal has ended its process and the Pool Manager has re-seated it, its `review-request`; the reviewer is
+   woken by `review-bind`. Each of a seat's steps is waited for at most 10 minutes, and the seats may use 1.5 million
+   tokens together. It ends when the turns the last message woke have ended — or at the first step that does not
+   come as the walk says, and names it — stops the seats, prints where its evidence is
+   (`~/Dev/_scratch/rehearsals/thin-thread-<time>.md`: the log, each seat's sessions, transcript, model, effort and
+   tokens, P2's DONE line by its log lines) and exits, 0 when the thread passed. `just run` starts the service again.
+
+   What it costs: S2.5's run (2026-11-19) used 388 861 tokens — the coder 232 471 in two turns, the reviewer 156 390
+   in one — and took 28 seconds after the approval; `just handshake` before it, about 158 000.
+
 `kp` without `sudo` reads (`kp inbox`, `kp status`, `kp check`); with `sudo` it answers (`approve`, `decline`,
 `rule`, `reverse`, `queue`, `away`) — and any command run with `sudo` counts as you acting. `kp help` lists them.
 
