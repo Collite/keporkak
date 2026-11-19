@@ -161,8 +161,7 @@ class TheSeatsSpec : StringSpec({
 
             // kill, by the watchdog: silent past its limit, no tool call open — its process ends.
             val pid = office.agents.pid("coder-1")!!
-            office.clock.now = office.clock.now.plus(Duration.ofMinutes(6))
-            office.seats.watch()
+            office.clock.now = office.clock.now.plus(Duration.ofMinutes(6)) // the watch reports at the `watch.every` it passed (S2.9 T5)
             office.until("the kill done") { office.ops("seat.kill").any { it.phase != "requested" } }
             office.ops("seat.kill").map { it.phase } shouldBe listOf("requested", "ok")
             office.lines().filterIsInstance<Message>().single { it.kind == "kill" }.by shouldBe "robot:POOL-2"

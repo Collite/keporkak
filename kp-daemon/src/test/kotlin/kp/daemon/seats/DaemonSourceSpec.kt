@@ -142,6 +142,8 @@ private val NOT_A_LIMIT = mapOf(
         "the walk player: the log before a step",
     "Script.kt: }.maxOfOrNull { it.key }" to
         "the walk player: the newest open ticket of an item",
+    "Seats.kt: if (!closing && !now.isBefore(next)) {" to
+        "the watch (S2.9 T5): whether the injected clock has reached the next `watch.every` — when to report, no limit",
     "Seats.kt: log.live.filterNot(held::containsKey).sorted().forEach { seat ->" to
         "the seats at a start (S2.4): those reported gone, in the order of their names",
     "Seats.kt: return folder.listDirectoryEntries(\"*.md\").sortedBy { it.name }.firstOrNull { file ->" to
@@ -252,6 +254,12 @@ private val NOT_A_LIMIT_TIMER = mapOf(
         "how long a prompt may take to be sent before a wake or a re-seat answers `failed` — issue #42 (4, 5), Known gaps for P2's retro; no report of a seat's end waits on it",
     "Seats.kt: val ended = if (session != null && !session.gone) blocking { driver.kill(SeatId(seat), KILL_GRACE) } else Outcome.Ok(Unit)" to
         "how `seat.kill` and `seat.retire` are performed (contracts.md §4.4): the agent's input closed, a grace, then its process tree by force — the operation's way, no limit on a seat",
-    "Seats.kt: watchEvery?.let { every -> later.scheduleWithFixedDelay({ runCatching { if (!closing) watch() }.onFailure { say(\"watch: \${it.message}\") } }, every.toMillis(), every.toMillis(), TimeUnit.MILLISECONDS) }" to
-        "the watch, every `watch.every` (contracts.md §4.4, §9)",
+    "Seats.kt: later.scheduleWithFixedDelay({" to
+        "the watch (S2.9 T5): it looks at the injected clock every LOOK_MILLIS; when it reports is `watch.every`'s, on that clock",
+    "Seats.kt: }, LOOK_MILLIS, LOOK_MILLIS, TimeUnit.MILLISECONDS)" to
+        "the watch (S2.9 T5): how often it looks at the injected clock — a look, no limit on a seat",
+    "Seats.kt: next = began.plus(every.multipliedBy(Duration.between(began, now).dividedBy(every) + 1))" to
+        "the watch (S2.9 T5): the next `watch.every` of the injected clock since the start, after now",
+    "Seats.kt: private const val LOOK_MILLIS = 250L" to
+        "the watch (S2.9 T5): how often it looks at the injected clock",
 )

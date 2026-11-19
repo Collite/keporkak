@@ -536,7 +536,8 @@ class Seats(
     /**
      * The seats' start, once the office is attached (contracts.md §4.4, Amendment 22): each seat the state holds live and
      * the driver does not is reported gone — the daemon's seats died with it, and come back by the rules' re-seat. Then
-     * the watch, every [watchEvery].
+     * the watch, every [watchEvery] of the injected clock (§9; issue #42, item 2): it reports when the clock has passed
+     * the next `watch.every` since the start, and not between; a clock that passes several at once is reported once.
      */
     fun start(watchEvery: Duration?) {
         val office = office ?: error("the seats are attached to no office")
@@ -546,7 +547,19 @@ class Seats(
             office.changed(FactRef(SeatFacts.PROCESS_GONE, mapOf(SEAT to Datum.Text(seat))), Datum.Bool(true), stage,
                 "the daemon started; the seat's process did not outlive the one before it")
         }
-        watchEvery?.let { every -> later.scheduleWithFixedDelay({ runCatching { if (!closing) watch() }.onFailure { say("watch: ${it.message}") } }, every.toMillis(), every.toMillis(), TimeUnit.MILLISECONDS) }
+        watchEvery?.let { every ->
+            val began = clock.now()
+            var next = began.plus(every)
+            later.scheduleWithFixedDelay({
+                runCatching {
+                    val now = clock.now()
+                    if (!closing && !now.isBefore(next)) {
+                        watch()
+                        next = began.plus(every.multipliedBy(Duration.between(began, now).dividedBy(every) + 1))
+                    }
+                }.onFailure { say("watch: ${it.message}") }
+            }, LOOK_MILLIS, LOOK_MILLIS, TimeUnit.MILLISECONDS)
+        }
     }
 
     /**
@@ -607,6 +620,8 @@ class Seats(
         /** A seat's two ends the driver reports (contracts.md §4.4): each is reported as it happens. */
         private val ENDS = setOf(SeatFacts.PROCESS_GONE, SeatFacts.PROTOCOL_CLOSED)
         private const val SEND_WAIT_SECONDS = 60L
+        /** How often the watch looks at the injected clock: when it reports is the clock's and `watch.every`'s. */
+        private const val LOOK_MILLIS = 250L
         private const val REPORTER_WAIT = 10L
 
         /** A fact's value as the driver gives it, as the engine reads it: a boolean, a number, or text — a duration among them. */
