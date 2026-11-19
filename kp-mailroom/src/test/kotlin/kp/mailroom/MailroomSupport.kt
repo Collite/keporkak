@@ -1,5 +1,7 @@
 package kp.mailroom
 
+import io.kotest.matchers.Matcher
+import io.kotest.matchers.MatcherResult
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -16,6 +18,7 @@ import kp.model.Message
 import kp.model.OfficeId
 import kp.model.Op
 import kp.model.Record
+import kp.model.Refused
 import kp.model.Rules
 import kp.model.Transition
 import kp.model.parseLine
@@ -125,6 +128,36 @@ class FakeClock(var now: Instant = Instant.parse(START)) : Clock {
     override fun now(): Instant = now
 }
 
+/**
+ * A refusal, asserted by the rule that refused and by what failed — never by its status or its words alone (the retro of
+ * P1, candidate 1; contracts.md §2.2, §5): the sender's [Answer] or the `refused` record. [failed] is the first requirement
+ * that failed, in its file form as the rules write it in flow style (`{fact: git.branch_exists}`); where what failed is
+ * held for every kind with no requirement written there is none, and [failed] is the rules' field its `requirement`
+ * names (`to: teamlead`). Another rule refusing a requirement written the same way does not pass (review-018 B1).
+ */
+fun refusedBy(rule: String, failed: String): Matcher<Any?> = Matcher { refusal ->
+    val (refused, by, what) = when (refusal) {
+        is Answer -> Triple(refusal.status == Status.REFUSED, refusal.rule, refusal.failed?.flow() ?: refusal.requirement)
+        is Refused -> Triple(true, refusal.rule, refusal.failed?.let { Datum.of(plain(it.toString())).flow() } ?: refusal.requirement)
+        else -> Triple(false, null, "$refusal")
+    }
+    MatcherResult(
+        refused && by == rule && what == failed,
+        { "expected a refusal by $rule, failed $failed — was ${if (refused) "refused" else "not refused"} by $by, failed $what" },
+        { "expected no refusal by $rule, failed $failed" },
+    )
+}
+
+/** A datum as the rules write a value in flow style: `{counter: resumes, lt: {cap: resumes_per_stage}}`. */
+private fun Datum.flow(): String = when (this) {
+    is Datum.Fields -> fields.entries.joinToString(", ", "{", "}") { (key, value) -> "$key: ${value.flow()}" }
+    is Datum.Items -> items.joinToString(", ", "[", "]") { it.flow() }
+    is Datum.Text -> value
+    is Datum.Number -> value.toPlainString()
+    is Datum.Bool -> value.toString()
+    Datum.Null -> "null"
+}
+
 /** A walk of `rules/walks/`, as the Python walker reads it (`check-rules.py --trace`), and the walker's own trace of it. */
 class Walk private constructor(val definition: Map<String, Datum>, val trace: List<Map<String, Datum>>) {
     val facts: Map<String, Datum> get() = definition["facts"].fields()
@@ -223,6 +256,29 @@ fun FakeFacts.setAll(stage: String, values: Map<String, Datum>) = values.forEach
 
 private fun Datum?.text(): String? = (this as? Datum.Text)?.value
 private fun Datum?.fields(): Map<String, Datum> = (this as? Datum.Fields)?.fields.orEmpty()
+
+/**
+ * What [Office.end] compares of the state — where a restart must end again — and what it leaves out, each with its reason
+ * (the retro of P1, candidate 2; S2.8 T4).
+ */
+val WHERE_THE_LOG_ENDS = Projection(
+    "where the office's log ends (Office.end)",
+    compares = setOf("machines", "counters", "delivered", "deadlines", "tickets", "operations", "unread"),
+    leavesOut = mapOf(
+        "seq" to "a start writes lines of its own (`voided`, `rules`): the numbers after it differ, as ids do",
+        "at" to "the time of the last line, which a start's own lines move",
+        "unjudged" to "a judgement left open: where a run ends, every judgement is closed",
+        "opened" to "a judgement left open: where a run ends, every judgement is closed",
+        "pending" to "a message not yet judged: where a run ends, every message is",
+        "hops" to "counts keyed by thread ids, which a restart numbers differently; the deliveries are compared in order",
+        "answered" to "message ids, which a restart numbers differently; a wait answered is no longer in `deadlines`",
+        "rules" to "not compared: the start reloads the same files, and nothing here asks that it did — a Found line of S2.8",
+        "held" to "not compared: a message held at the end is not asked for — a Found line of S2.8",
+        "refusals" to "not compared: a seat's refusals of the day are not asked for — a Found line of S2.8",
+        "sessions" to "not compared: where a seat's session window begins is not asked for — a Found line of S2.8",
+        "wakes" to "not compared: where a robot's own seat was last woken is not asked for — a Found line of S2.8",
+    ),
+)
 
 /**
  * One office on a throwaway project: master's rules, facts from a walk, faked operations and seats, a clock that moves

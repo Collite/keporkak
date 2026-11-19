@@ -2,11 +2,11 @@ package kp.mailroom
 
 import io.kotest.core.spec.style.FreeSpec
 import io.kotest.matchers.collections.shouldNotContain
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.engine.Datum
 import kp.model.Delivered
 import kp.mailroom.Status.DELIVERED
-import kp.mailroom.Status.REFUSED
 import kotlin.time.Duration.Companion.hours
 
 private val H1_PRIME = listOf(
@@ -118,7 +118,7 @@ class TheMailroomSpec : FreeSpec({
             office.mailroom.state.deadlines.keys shouldNotContain notice.id
             answer.status shouldBe DELIVERED
             office.mailroom.state.tickets.getValue(ticket).answeredBy shouldBe answer.id
-            listOf(again.status, again.requirement) shouldBe listOf(REFUSED, "ticket #$ticket: answered once")
+            again should refusedBy("ruling", "ticket #$ticket: answered once")
         }
     }
 

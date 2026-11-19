@@ -13,10 +13,11 @@ test: _python-env
     build/python/bin/python scripts/run-python-tests.py
     ./gradlew --console=plain test
 
-# S0.1 owns these scripts and generated personas.
+# S0.1 owns these scripts and generated personas. A spec asserts a refusal by its rule, or the list says why not (S2.8).
 rules: _python-env
     build/python/bin/python scripts/check-rules.py --self-test
     build/python/bin/python scripts/check-rules.py
+    build/python/bin/python build-support/check_refusal_assertions.py
     build/python/bin/python scripts/render-agents.py
 
 # CI checks the stored schemas; pass contracts.md for the verbatim source comparison.
@@ -40,8 +41,36 @@ hero:
     cat kp-daemon/build/hero/report.txt || status=1
     exit $status
 
-# The front door used by CI. Engine fences are part of Gradle's check/build.
-check: rules build test schema-check hero
+# Engine fences are part of Gradle's check/build. Each step ends with the time it took, and the last line with the
+# whole (S2.8): a slowdown shows in the hand-off.
+# The front door used by CI.
+check:
+    #!/usr/bin/env sh
+    set -u
+    began=$(date +%s)
+    for step in rules changelog build test schema-check hero; do
+        start=$(date +%s)
+        "{{just_executable()}}" --justfile "{{justfile()}}" "$step"
+        status=$?
+        if [ "$status" -ne 0 ]; then
+            echo "== just $step failed after $(( $(date +%s) - start )) s"
+            exit "$status"
+        fi
+        echo "== just $step: $(( $(date +%s) - start )) s"
+    done
+    echo "== just check: $(( $(date +%s) - began )) s"
+
+# S2.8, the retro of P1's candidate 8: rules/walks/ and fixtures are exempt; CI's checkout reaches the merge base.
+# A change to rules/*.yaml, robots/, pool/ or docs/wow/ since the merge base with master names its decision in docs/wow/CHANGELOG.md.
+changelog: _python-env
+    build/python/bin/python build-support/check_changelog.py
+
+# Applies <patch> to a throwaway copy of the working tree, runs the specs <filter> names there with a forced rerun, and
+# prints `red` and the specs that failed, or `green`; the working tree stays as it was (S2.8; architecture.md §7).
+# Exit 0 red · 1 green · 2 the patch does not apply · 3 the filter runs no spec · 4 the patched copy does not build.
+# Can a spec fail? `just mutant <patch> <spec filter>` — red or green, on a throwaway copy.
+mutant patch filter: _python-env
+    build/python/bin/python build-support/mutant.py --from "{{invocation_directory()}}" "$1" "$2"
 
 # Record one carried message (contracts.md §12): a kind and its flags, or one complete message on stdin.
 # Only the project's mail/<effort>/_hand/ is written.

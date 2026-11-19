@@ -1,6 +1,7 @@
 package kp.mailroom
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.model.Delivered
 import kp.model.Held
@@ -43,7 +44,7 @@ class QueueSpec : StringSpec({
 
         val asked = office.send("coder-1", """{"kind": "qa-request", "stage": "KP/P3/S3.1", "args": $certify}""")
 
-        asked.status shouldBe Status.REFUSED
+        asked should refusedBy("qa-request", "{fact: list.task_exists, id: {arg: task}}")
         office.readBack().records<Held>() shouldBe emptyList()
     }
 })

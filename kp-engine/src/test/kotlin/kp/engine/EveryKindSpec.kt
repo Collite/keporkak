@@ -1,6 +1,7 @@
 package kp.engine
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.engine.Trigger.Arrival
 
@@ -18,8 +19,8 @@ class EveryKindSpec : StringSpec({
         engine.judge(assigned, Arrival(message("started", from = "coder-1")), branch).outcome shouldBe Outcome.DELIVER
         engine.judge(building, Arrival(message("qa-request", from = "teamlead", to = "qa", args = qaRequest)), qaFacts).outcome shouldBe Outcome.DELIVER
         engine.judge(building, Arrival(message("qa-request", from = "coder-2", to = "qa", args = qaRequest)), qaFacts).outcome shouldBe Outcome.DELIVER
-        engine.judge(building, Arrival(message("qa-request", from = "reviewer-1", to = "qa", args = qaRequest)), qaFacts).refusal() shouldBe ("qa-request" to "from: coder | teamlead")
-        engine.judge(assigned, Arrival(message("started", from = "coders-1")), branch).refusal() shouldBe ("started" to "from: coder")
+        engine.judge(building, Arrival(message("qa-request", from = "reviewer-1", to = "qa", args = qaRequest)), qaFacts) should refusedBy("qa-request", "from: coder | teamlead")
+        engine.judge(assigned, Arrival(message("started", from = "coders-1")), branch) should refusedBy("started", "from: coder")
     }
     "max_fires within the stage: the kind's deliveries in this stage, whoever sent them" {
         val otherStage = folded(log(move("stage", STAGE, "planned", "assigned"), *sent("m-panda-000050", "started", from = "coder-1", stage = "KP/P1/S1.3")))
@@ -30,7 +31,7 @@ class EveryKindSpec : StringSpec({
         val wave = arrayOf("plan.in_current_wave(stage=[\"$STAGE\"])" to true)
         val queue = Arrival(message("queue-approval", from = "bora", args = """{"stages": ["$STAGE"]}""", signed = true))
 
-        supervised().judge(queuedYesterday, queue, table("now" to "2026-11-14T23:59:00Z", *wave)).refusal() shouldBe ("queue-approval" to "max_fires: 1, window: day")
+        supervised().judge(queuedYesterday, queue, table("now" to "2026-11-14T23:59:00Z", *wave)) should refusedBy("queue-approval", "max_fires: 1, window: day")
         supervised().judge(queuedYesterday, queue, table("now" to "2026-11-15T00:00:00Z", *wave)).outcome shouldBe Outcome.DELIVER
     }
     "max_fires within a return: the sender's deliveries of the kind since Bora last came back" {
@@ -39,7 +40,7 @@ class EveryKindSpec : StringSpec({
             move("presence", "bora", "present", "absent"), move("presence", "bora", "absent", "present")))
         val digest = Arrival(message("digest", from = "deputy", to = "bora"))
 
-        supervised().judge(digested, digest, table("now" to NOW)).refusal() shouldBe ("digest" to "max_fires: 1, window: return")
+        supervised().judge(digested, digest, table("now" to NOW)) should refusedBy("digest", "max_fires: 1, window: return")
         supervised().judge(awayAgain, digest, table("now" to NOW)).outcome shouldBe Outcome.DELIVER
     }
     "max_fires within a session: the sender's deliveries of the kind since its last seat.start that is ok in the log — from the beginning when there is none" {
@@ -49,16 +50,16 @@ class EveryKindSpec : StringSpec({
         val failedStart = """{"event":"op","op":"seat.start","phase":"failed","cause":"m-panda-000049","with":{"seat":"retro"}}"""
         val report = Arrival(message("retro-report", from = "retro", to = "principal", args = args))
 
-        supervised().judge(folded(log(started, *reported)), report, table("now" to NOW)).refusal() shouldBe ("retro-report" to "max_fires: 1, window: session")
+        supervised().judge(folded(log(started, *reported)), report, table("now" to NOW)) should refusedBy("retro-report", "max_fires: 1, window: session")
         supervised().judge(folded(log(*reported, started)), report, table("now" to NOW)).outcome shouldBe Outcome.DELIVER
-        supervised().judge(folded(log(*reported, failedStart)), report, table("now" to NOW)).refusal() shouldBe ("retro-report" to "max_fires: 1, window: session")
-        supervised().judge(folded(log(*reported)), report, table("now" to NOW)).refusal() shouldBe ("retro-report" to "max_fires: 1, window: session")
+        supervised().judge(folded(log(*reported, failedStart)), report, table("now" to NOW)) should refusedBy("retro-report", "max_fires: 1, window: session")
+        supervised().judge(folded(log(*reported)), report, table("now" to NOW)) should refusedBy("retro-report", "max_fires: 1, window: session")
     }
     "a kind with no max_fires of its own is capped by caps.max_fires_default" {
         val threeAways = folded(log(*sent("m-panda-000051", "away", from = "bora", to = "mailroom"), *sent("m-panda-000052", "away", from = "bora", to = "mailroom"),
             *sent("m-panda-000053", "away", from = "bora", to = "mailroom")))
-        supervised().judge(threeAways, Arrival(message("away", from = "bora", to = "mailroom", signed = true)), table("now" to NOW)).refusal() shouldBe
-            ("away" to "caps.max_fires_default: 3, window: stage")
+        supervised().judge(threeAways, Arrival(message("away", from = "bora", to = "mailroom", signed = true)), table("now" to NOW)) should
+            refusedBy("away", "caps.max_fires_default: 3, window: stage")
     }
     "max_fires: null on a kind only the mailroom sends counts nothing of its own: a stage's fourth nudge is delivered (S1.8, Amendment 16)" {
         val threeNudges = folded(log(*sent("m-panda-000060", "review-request", from = "coder-1"),
@@ -93,12 +94,12 @@ class EveryKindSpec : StringSpec({
     }
     "args against the kind's declaration: an unknown key, a missing required one, a wrong type and a value outside the enum are refused" {
         val stopped = folded(log(move("stage", STAGE, "building", "stopped")))
-        fun triage(args: String) = supervised().judge(stopped, Arrival(message("triage", from = "principal", to = "coder", args = args)), table("now" to NOW)).refusal()
+        fun triage(args: String) = supervised().judge(stopped, Arrival(message("triage", from = "principal", to = "coder", args = args)), table("now" to NOW))
 
-        triage("""{"outcome": "drop", "reason": "x"}""") shouldBe ("triage" to "args: 'reason' is not declared")
-        triage("""{"found": "F1"}""") shouldBe ("triage" to "args: 'outcome' is required")
-        triage("""{"outcome": "drop", "found": 7}""") shouldBe ("triage" to "args: 'found' is not string")
-        triage("""{"outcome": "maybe"}""") shouldBe ("triage" to "args: 'outcome' is not one of resume | recut | issue | stage | drop")
+        triage("""{"outcome": "drop", "reason": "x"}""") should refusedBy("triage", "args: 'reason' is not declared")
+        triage("""{"found": "F1"}""") should refusedBy("triage", "args: 'outcome' is required")
+        triage("""{"outcome": "drop", "found": 7}""") should refusedBy("triage", "args: 'found' is not string")
+        triage("""{"outcome": "maybe"}""") should refusedBy("triage", "args: 'outcome' is not one of resume | recut | issue | stage | drop")
     }
     "the addressee is a party the kind names: a seat of its role, the sender of the message answered for {re: from}, any seat — never a party — for a seat" {
         val absent = folded(log(move("presence", "bora", "present", "absent"), *sent("m-panda-000060", "merge", from = "teamlead", to = "daemon")))
@@ -107,9 +108,9 @@ class EveryKindSpec : StringSpec({
         val crowded = table("now" to NOW, "seat.context_used(seat=coder-1)" to 0.9)
 
         supervised().judge(absent, hold("teamlead"), table("now" to NOW)).outcome shouldBe Outcome.DELIVER
-        supervised().judge(absent, hold("coder-1"), table("now" to NOW)).refusal() shouldBe ("hold" to "to: {re: from}")
+        supervised().judge(absent, hold("coder-1"), table("now" to NOW)) should refusedBy("hold", "to: {re: from}")
         supervised().judge(State(), compact("coder-1"), crowded).outcome shouldBe Outcome.DELIVER
-        supervised().judge(State(), compact("bora"), crowded).refusal() shouldBe ("compact" to "to: a seat")
+        supervised().judge(State(), compact("bora"), crowded) should refusedBy("compact", "to: a seat")
         supervised().judge(assigned, Arrival(message("started", from = "coder-1", to = "teamlead-panda")), branch).outcome shouldBe Outcome.DELIVER
     }
     "an emit the rules declare is addressed by the rule that declares it: the kind's to is checked for what a seat, a robot or Bora sends (S1.8)" {
@@ -119,7 +120,7 @@ class EveryKindSpec : StringSpec({
 
         supervised().judge(waiting, nudge("teamlead", "expiry:review-request"), table("now" to NOW)).outcome shouldBe Outcome.DELIVER
         supervised().judge(waiting, nudge("principal", "effect:T-07"), table("now" to NOW)).outcome shouldBe Outcome.DELIVER
-        supervised().judge(waiting, nudge("teamlead", "robot:DEP-1"), table("now" to NOW)).refusal() shouldBe ("nudge" to "to: {re: from}")
+        supervised().judge(waiting, nudge("teamlead", "robot:DEP-1"), table("now" to NOW)) should refusedBy("nudge", "to: {re: from}")
         supervised().judge(waiting, nudge("coder-1", "robot:DEP-1"), table("now" to NOW)).outcome shouldBe Outcome.DELIVER
     }
 })

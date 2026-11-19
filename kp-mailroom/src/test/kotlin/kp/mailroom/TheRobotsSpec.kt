@@ -2,6 +2,7 @@ package kp.mailroom
 
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.model.Delivered
 import kp.model.Held
@@ -100,7 +101,7 @@ class TheRobotsSpec : StringSpec({
             "anomaly-stop by robot:DEP-6 delivered",
             "anomaly-stop by robot:DEP-6 refused",
         )
-        office.readBack().records<Refused>().single().requirement shouldBe "caps.max_fires_default: 3, window: stage"
+        office.readBack().records<Refused>().single() should refusedBy("anomaly-stop", "caps.max_fires_default: 3, window: stage")
     }
 
     "a message a robot intercepts is held, not delivered, and is delivered when what holds it ends" {
@@ -153,7 +154,7 @@ class TheRobotsSpec : StringSpec({
         val roster = (Rules.load(Texts().read()) as Loaded.Valid).ruleSet.pool.roster
 
         val refused = played.last().outcome as Refused
-        listOf(refused.rule, refused.failed.toString()) shouldBe listOf("SEAT-01", """{"fact":"roster.model_allowed","seat":{"arg":"seat"}}""")
+        refused should refusedBy("SEAT-01", "{fact: roster.model_allowed, seat: {arg: seat}}")
         played.map { it.mailroom } shouldBe played.map { it.python }
         roster.reserved shouldBe mapOf("claude-fable-5-2" to listOf("principal"))
         roster.levels.values.flatMap { it.values }.filter { it.model in roster.reserved } shouldBe emptyList()

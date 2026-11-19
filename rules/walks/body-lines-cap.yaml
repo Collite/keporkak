@@ -15,6 +15,7 @@ steps:
   expect:
     refused: true
     refusal_contains: body line cap exhausted
+    refused_by: started
 - who: coder-1
   kind: started
   args: {}

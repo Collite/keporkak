@@ -444,6 +444,8 @@ class Player internal constructor(private val script: Script, val office: Office
                 // The walker's own words for a refusal ("no arrow", "body line cap exhausted"): the engine writes others, and
                 // the refusal itself is what `refused` checks.
                 REFUSAL_CONTAINS -> value
+                // The rule that refuses the step: the walker and the engine's walk harness hold the step to it (S2.8).
+                REFUSED_BY -> value
                 else -> throw WalkFailure(at(played.number, step) + ": expects '$key', which the harness does not read")
             }
             if (actual != value) fail(played, value.shown(), actual.shown(), key)
@@ -600,6 +602,7 @@ class Player internal constructor(private val script: Script, val office: Office
         const val RULES = "rules"
         const val REFUSED_KEY = "refused"
         const val REFUSAL_CONTAINS = "refusal_contains"
+        const val REFUSED_BY = "refused_by"
         /** A seat's death, as a walk reports it. */
         val DEATHS = setOf("seat.process_gone", "seat.protocol_closed")
         const val WAIT_MILLIS = 120_000L
