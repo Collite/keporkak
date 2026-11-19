@@ -5,6 +5,7 @@ package kp.daemon.seats
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import kotlinx.serialization.json.JsonObject
@@ -80,10 +81,12 @@ class TheThinThreadSpec : StringSpec({
         val costly = """{"turns": [[{"do": "mcp", "tool": "send", "arguments": {"kind": "started", "subject": "started", "args": {}}},
             {"do": "end", "usage": {"input": 1500000, "output": 1, "total": 1500001}}]]}"""
         ThinThread(coder = costly).use { thread ->
-            val failure = shouldThrow<WalkFailure> { thread.hero.rest() }
+            // Without that end the walk would wait for the coder's next step on a clock that never moves: a minute is the bound.
+            var failure: Throwable? = null
+            thread(isDaemon = true) { failure = runCatching { thread.hero.rest() }.exceptionOrNull() }.join(60_000)
 
-            failure.message shouldContain Regex("""^walk thin-thread step [0-9]+ \(""")
-            failure.message shouldContain "the seats have used 1500001 tokens, more than the walk's 1500000 (coder-1 1500001); the last turn was coder-1's — its transcript: " +
+            failure.shouldBeInstanceOf<WalkFailure>().message shouldContain Regex("""^walk thin-thread step [0-9]+ \(""")
+            failure?.message shouldContain "the seats have used 1500001 tokens, more than the walk's 1500000 (coder-1 1500001); the last turn was coder-1's — its transcript: " +
                 thread.hero.project.resolve("office/seats/_transcripts/coder-1.log")
         }
     }
