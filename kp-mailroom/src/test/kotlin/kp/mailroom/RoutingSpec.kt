@@ -13,16 +13,17 @@ private const val BIND = """{"kind": "review-bind", "stage": "$STAGE", "subject"
 class RoutingSpec : StringSpec({
     afterTest { Office.checkAndCloseAll() }
 
-    "the addressee and the kind's cc are delivered to, a role as the seat the stage binds to it; only the addressee is woken, and has then read it" {
+    "the addressee and the kind's cc are delivered to, a role as the seat the stage binds to it; each idle seat among them is woken, and has then read it" {
         val office = Office(seed = "ready_for_review")
 
         val bind = office.send("teamlead", BIND)
 
+        // A delivery to an idle seat wakes it (S2.4, Amendment 22): the addressee and the seat it copies, each a wake of its own.
         val delivered = office.readBack().records<Delivered>().single { it.id == bind.id }
-        listOf(delivered.to, delivered.woke) shouldBe listOf(listOf("reviewer-1", "coder-1"), listOf("reviewer-1"))
-        office.seats.woken shouldBe listOf("reviewer-1" to bind.id)
-        office.readBack().records<Read>().map { it.seat to it.ids } shouldBe listOf("reviewer-1" to listOf(bind.id))
-        office.mailroom.state.unread shouldBe mapOf("coder-1" to listOf(bind.id))
+        listOf(delivered.to, delivered.woke) shouldBe listOf(listOf("reviewer-1", "coder-1"), listOf("reviewer-1", "coder-1"))
+        office.seats.woken shouldBe listOf("reviewer-1" to bind.id, "coder-1" to bind.id)
+        office.readBack().records<Read>().map { it.seat to it.ids } shouldBe listOf("reviewer-1" to listOf(bind.id), "coder-1" to listOf(bind.id))
+        office.mailroom.state.unread shouldBe emptyMap()
     }
 
     "a busy addressee is not woken: the message waits in its inbox, and the inbox that returns it records it read" {
@@ -34,12 +35,13 @@ class RoutingSpec : StringSpec({
         val second = office.mailroom.inbox("reviewer-1")
         val everything = office.mailroom.inbox("reviewer-1", unread = false)
 
-        office.readBack().records<Delivered>().single { it.id == bind.id }.woke shouldBe null
-        office.seats.woken shouldBe emptyList()
+        // Only the seat it copies, idle, is woken (S2.4).
+        office.readBack().records<Delivered>().single { it.id == bind.id }.woke shouldBe listOf("coder-1")
+        office.seats.woken shouldBe listOf("coder-1" to bind.id)
         first.messages.map { it.id.value } shouldBe listOf(bind.id)
         second.messages shouldBe emptyList()
         everything.messages.map { it.id.value } shouldBe listOf(bind.id)
-        office.readBack().records<Read>().map { it.seat to it.ids } shouldBe listOf("reviewer-1" to listOf(bind.id))
+        office.readBack().records<Read>().filter { it.seat == "reviewer-1" }.map { it.seat to it.ids } shouldBe listOf("reviewer-1" to listOf(bind.id))
     }
 
     "an inbox returns at most its limit, oldest first, and says that more are left" {
@@ -70,7 +72,8 @@ class RoutingSpec : StringSpec({
 
         office.send("teamlead", BIND)
 
-        onDisk shouldBe listOf(listOf("Message", "Delivered", "Transition", "Judged"))
+        // The wake is requested in the judgement that delivers, and performed once that judgement is on disk (S2.4).
+        onDisk shouldBe List(2) { listOf("Message", "Delivered", "Transition", "Op", "Op", "Judged") }
     }
 
     "a class-B delivery raises a ticket — the seq of the record that carries it — and requests notify.bora for it; a party is never woken" {

@@ -141,9 +141,14 @@ internal fun readOffices(doc: Doc, node: Node, vendors: Set<String>?): Map<Strin
         }
         if (ports.size == 2 && ports[0] == ports[1]) doc.problem(name, "mcp and board listen on one port")
         (listen.keys - setOf("mcp", "board")).forEach { doc.problem(name, "unknown field 'listen.$it'") }
+        // How often the daemon reports its seats' facts (contracts.md §9, Amendment 22): a positive duration.
+        val watch = (read?.get("watch") as? Node.Mapping)?.entries.orEmpty()
+        val every = (watch["every"] as? Node.Scalar)?.text
+        if (every == null || duration(every)?.isPositive() != true) doc.problem(name, "watch.every must be a duration such as 30s")
+        (watch.keys - setOf("every")).forEach { doc.problem(name, "unknown field 'watch.$it'") }
         read?.close()
         Office(name, text["os"] ?: "", text["user"] ?: "", rootsMap.mapValues { it.value ?: "" }, Project(checkout ?: "", efforts.mapValues { it.value ?: "" }),
-            repos.mapValues { it.value ?: "" }, targets.orEmpty().filterNotNull(), use ?: "", qaVendor ?: "", listen.mapValues { it.value ?: "" })
+            repos.mapValues { it.value ?: "" }, targets.orEmpty().filterNotNull(), use ?: "", qaVendor ?: "", listen.mapValues { it.value ?: "" }, every ?: "")
     }.associateBy { it.name }
 }
 

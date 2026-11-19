@@ -53,7 +53,7 @@ class ExpiriesSpec : StringSpec({
         val expired = office.readBack().expired(stop.id).single()
         listOf(expired.report, expired.deliveryClass, expired.ticket?.toLong(), expired.deadline) shouldBe listOf("bora", "B", expired.seq.toLong(), null)
         office.mailroom.state.openTickets().getValue(expired.seq.toLong()).item shouldBe stop.id
-        office.readBack().records<Op>().map { "${it.op} ${it.phase} ${it.cause}" } shouldBe listOf("notify.bora requested #${expired.seq}", "notify.bora ok #${expired.seq}")
+        office.readBack().records<Op>().map { "${it.op} ${it.phase} ${it.cause}" }.withoutWakes() shouldBe listOf("notify.bora requested #${expired.seq}", "notify.bora ok #${expired.seq}")
     }
 
     "an expiry's emit is by the expiry of its kind, in reply to the waiting message, judged and delivered like any other" {

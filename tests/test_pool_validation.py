@@ -70,6 +70,13 @@ class PoolValidationTests(unittest.TestCase):
         self.edit("offices.yaml", 'board: "127.0.0.1:7712"', 'board: "0.0.0.0:7712"')
         self.assertEqual(self.failures(), ["pool/offices.yaml: panda: listen.board must be 127.0.0.1:<port>"])
 
+    def test_the_watch_period_is_a_positive_duration_with_no_other_field(self):
+        # S2.4 (contracts.md §9, Amendment 22): how often the daemon reports its seats' facts.
+        self.edit("offices.yaml", "watch: {every: 30s}", "watch: {every: 30}")
+        self.assertEqual(self.failures(), ["pool/offices.yaml: panda: watch.every must be a duration such as 30s"])
+        self.edit("offices.yaml", "watch: {every: 30}", "watch: {every: 0s, limit: 5m}")
+        self.assertEqual(self.failures(), ["pool/offices.yaml: panda: watch.every must be a duration such as 30s", "pool/offices.yaml: panda: unknown field 'watch.limit'"])
+
     def test_an_unquoted_off_is_the_word_not_a_boolean(self):
         self.edit("offices.yaml", 'computer_use: "off"', "computer_use: off")
         self.assertEqual(self.failures(), [])

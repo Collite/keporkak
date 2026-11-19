@@ -1,0 +1,54 @@
+# S2.4's seats (T1): a stage in `building` with its coder seated — S2.1's fake agent — beside a frozen stage and one whose
+# coder is idle, and the world's facts tabled.
+# Its steps are played by the specs, one at a time; the first names the coder's level, which its seed is seated at.
+name: seats
+stage: S2.4
+initial: building
+seats:
+  coder-1: coder
+  coder-2: coder
+stages:
+  S2.5:
+    initial: frozen
+  S2.6:
+    initial: building
+    machines:
+      seat: idle
+    facts:
+      seat.name:
+        coder: coder-2
+facts:
+  budget.slot_open: true
+  budget.slots_over:
+    office: 1
+  list.sections_changed:
+  - Found while doing
+  seat.name:
+    coder: coder-1
+    reviewer: reviewer-1
+    teamlead: teamlead
+    principal: principal
+    pool: pool
+steps:
+- id: coder-level
+  who: teamlead
+  kind: session-request
+  args:
+    action: add
+    role: coder
+    level: junior M
+    seat: coder-1
+- id: reviewer-request
+  who: teamlead
+  kind: session-request
+  args:
+    action: add
+    role: reviewer
+    seat: reviewer-1
+- id: reviewer-report
+  who: pool
+  kind: session-report
+  re: reviewer-request
+  args:
+    seat: reviewer-1
+    role: reviewer

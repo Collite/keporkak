@@ -130,7 +130,7 @@ class TheMailroomSpec : FreeSpec({
 
             office.operations.requested.filter { it.cause == approval.id } shouldBe
                 listOf(OperationRequest("worktree.create", approval.id, Datum.Fields(mapOf("stage" to Datum.Text(STAGE)))))
-            office.readBack().ops(approval.id) shouldBe listOf("worktree.create requested", "worktree.create ok")
+            office.readBack().ops(approval.id).withoutWakes() shouldBe listOf("worktree.create requested", "worktree.create ok")
             office.readBack().transitions(approval.id) shouldBe listOf("T-02 proposed→assigned", "T-03 assigned→assigned")
         }
 
@@ -143,7 +143,7 @@ class TheMailroomSpec : FreeSpec({
             office.restart()
 
             office.operations.requested shouldBe performed
-            office.readBack().ops(approval.id) shouldBe listOf("worktree.create requested", "worktree.create failed interrupted")
+            office.readBack().ops(approval.id).withoutWakes() shouldBe listOf("worktree.create requested", "worktree.create failed interrupted")
             office.stage() shouldBe "assigned"
         }
     }

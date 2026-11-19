@@ -45,6 +45,25 @@ class DaemonProcessSpec : FreeSpec({
         TestOffice(project = project).use { again -> again.office.lines().map { it.entry }.filterIsInstance<Rules>().size shouldBe 2 }
     }
 
+    "the service drives the seats (S2.4 T8): through main, its seat API listens where it is told — `listen.mcp`, unless `--listen` says otherwise — and answers a call without a live token 401" {
+        val project = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "service-")
+        val socket = Files.createTempDirectory("kp-").resolve("kp.sock")
+        val daemon = Launched(project, socket)
+        val listening = daemon.awaitLine("seats: the seat API listens on ").substringAfter("listens on ").substringBefore(';')
+        daemon.awaitLine("started: office panda")
+
+        val connection = java.net.URI.create("http://$listening/hook/stop").toURL().openConnection() as java.net.HttpURLConnection
+        connection.requestMethod = "POST"
+        connection.doOutput = true
+        connection.outputStream.use { it.write("""{"stop_hook_active": false}""".toByteArray()) }
+        val status = connection.responseCode
+        daemon.process.toHandle().destroy()
+        daemon.process.waitFor(60, TimeUnit.SECONDS)
+
+        listening shouldStartWith "127.0.0.1:"
+        status shouldBe 401
+    }
+
     "a daemon started through its launcher reads its peer from the socket: `kp away` from this spec's own user is refused, logged, and leaves Bora present" {
         val project = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "service-")
         val socket = Files.createTempDirectory("kp-").resolve("kp.sock")
@@ -97,16 +116,16 @@ private class Launched(project: Path, socket: Path) {
     private val seen = StringBuilder()
     val process: Process = ProcessBuilder(
         checkout.resolve("kp-daemon/build/install/kp-daemon/bin/kp-daemon").toString(), "run",
-        "--root", checkout.toString(), "--office", "panda", "--project", project.toString(), "--socket", socket.toString(),
+        "--root", checkout.toString(), "--office", "panda", "--project", project.toString(), "--socket", socket.toString(), "--listen", "127.0.0.1:0",
     ).redirectErrorStream(true).start().also { process ->
         Thread.ofVirtual().start { process.inputStream.bufferedReader().forEachLine { lines += it } }
     }
 
-    fun awaitLine(part: String) {
+    fun awaitLine(part: String): String {
         while (true) {
             val line = lines.poll(60, TimeUnit.SECONDS) ?: error("no line with '$part' in:\n$seen")
             seen.appendLine(line)
-            if (part in line) return
+            if (part in line) return line
         }
     }
 

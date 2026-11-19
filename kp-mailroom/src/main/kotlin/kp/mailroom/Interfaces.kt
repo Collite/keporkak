@@ -29,13 +29,24 @@ sealed interface OperationResult {
     data class Failed(val reason: String) : OperationResult
 }
 
-/** How a delivered message reaches a seat (architecture.md §2, `kp-driver`): an idle seat is prompted with it. */
+/**
+ * How a delivered message reaches a seat (architecture.md §2, `kp-driver`; contracts.md §4.4, Amendment 22): an idle
+ * seat — a live session, no turn in flight — is prompted with it, a wake the mailroom records as the operation
+ * `seat.wake`.
+ */
 interface Deliveries {
     /** Whether [seat] is idle: a message to it would be its next prompt. A busy seat finds it in its inbox. */
     fun idle(seat: String): Boolean
 
     /** Prompts [seat] with [message]; false when it could not — the message then waits in its inbox. */
     fun wake(seat: String, message: Message): Boolean
+
+    /** The wake's result: `ok` once [seat] is prompted with [message], else `failed` with the reason. */
+    fun prompt(seat: String, message: Message): OperationResult =
+        if (wake(seat, message)) OperationResult.Ok() else OperationResult.Failed("$seat could not be prompted")
+
+    /** The seats with a live session when the mailroom starts: each that is idle with unread mail is woken with the oldest. */
+    fun live(): Set<String> = emptySet()
 }
 
 /** The time, in UTC — the only clock the mailroom reads (architecture.md §3: deadlines are timers on it). */

@@ -22,6 +22,8 @@ dependencies {
     testImplementation(libs.kotest.assertions)
     // The logging spec asks SLF4J — the ACP SDK's logging — what it would write.
     testImplementation(libs.slf4j.api)
+    // The seats' specs (S2.4): S2.1's fake agent as every seat's process, and the source scan S2.1's spec uses.
+    testImplementation(testFixtures(project(":kp-driver")))
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
@@ -59,4 +61,14 @@ tasks.named<Test>("test") {
     // DaemonProcessSpec starts the daemon through the launcher `just install` installs.
     dependsOn("installDist")
     readsTheCheckout()
+}
+
+// The seats' specs and the heroes start S2.1's fake agent as a child JVM on the test classpath (S2.4); the seats' homes
+// are built from the checkout's renders, skills, profiles and hooks.
+tasks.withType<Test>().configureEach {
+    val classpath = sourceSets["test"].runtimeClasspath
+    jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dkp.driver.fake.classpath=${classpath.asPath}") })
+    for (folder in listOf("renders", "skills", "docs/profiles", "hooks")) {
+        inputs.files(rootProject.fileTree(folder)).withPropertyName("seats_" + folder.replace("/", "_")).withPathSensitivity(PathSensitivity.RELATIVE)
+    }
 }

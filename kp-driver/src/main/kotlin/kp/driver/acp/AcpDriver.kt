@@ -129,11 +129,16 @@ internal class AcpDriver(
         return opened(seat)
     }
 
-    /** A fresh process for the seat, initialized, with a fresh token; refused while the seat has a live session. */
+    /**
+     * A fresh process for the seat, initialized, with a fresh token; refused while the seat has a live session. The
+     * token is announced when it is minted, before the process starts (contracts.md §5, Amendment 22), and reported
+     * dead if the process cannot be started.
+     */
     private suspend fun fresh(spec: SessionSpec): Outcome<SeatSession> {
         seats[spec.seat]?.takeIf { it.live }?.let { return Outcome.Failed("seat ${spec.seat.value} has a live session ${it.session.sessionId.value}") }
         val seat = SeatSession(spec.seat, spec, mint(), transcript(spec.seat), clock, listener, answerer, scope)
         seat.transcript.hide(seat.token.value)
+        listener.tokenMinted(spec.seat, seat.token)
         // The stop hook's call (§11): the token is minted before the process starts, and given to it with the URL.
         val hooked = spec.hookUrl?.let { url ->
             seat.transcript.hide(url)
@@ -141,7 +146,7 @@ internal class AcpDriver(
         } ?: spec
         val launched = when (val result = launch(hooked, onClosed = seat::protocolClosed, wire = seat.wire)) {
             is Outcome.Ok -> result.value
-            is Outcome.Failed -> return result
+            is Outcome.Failed -> return result.also { seat.neverStarted() }
         }
         seat.launched = launched
         seat.observations.started(launched.process.pid)
@@ -178,8 +183,8 @@ internal class AcpDriver(
 
     /** The session token (§5): random, one per started process. */
     private fun mint() = SessionToken(Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(TOKEN_BYTES).also(random::nextBytes)))
-    override suspend fun prompt(seat: SeatId, text: String): Outcome<TurnEnd> =
-        seats[seat]?.prompt(text) ?: Outcome.Failed("seat ${seat.value} has no session")
+    override suspend fun prompt(seat: SeatId, text: String, sent: () -> Unit): Outcome<TurnEnd> =
+        seats[seat]?.prompt(text, sent) ?: Outcome.Failed("seat ${seat.value} has no session")
 
     override suspend fun cancel(seat: SeatId): Outcome<Cancel> =
         seats[seat]?.cancel() ?: Outcome.Failed("seat ${seat.value} has no session")

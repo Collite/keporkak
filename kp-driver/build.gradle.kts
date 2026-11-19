@@ -1,3 +1,9 @@
+plugins {
+    // The scripted fake agent and the source scan are test fixtures (S2.4): the daemon's specs and `just rehearse
+    // <walk> --seats fake` start the same fake agent the driver's specs do.
+    `java-test-fixtures`
+}
+
 dependencies {
     implementation(project(":kp-model"))
     implementation(libs.serialization.json)
@@ -10,6 +16,7 @@ dependencies {
     // The packaging data, the personas' and the profiles' frontmatter (S2.2 T2); the specs also read rules/vocabulary.yaml.
     implementation(libs.kaml)
     testRuntimeOnly(libs.junit.platform.launcher)
+    testFixturesImplementation(libs.serialization.json)
 }
 
 // The specs start the scripted fake agent as a child JVM on the test classpath (S2.1 T1). They also read the
@@ -38,6 +45,17 @@ tasks.register("handshakeClasspath") {
     dependsOn(handshake.classesTaskName)
     val out = layout.buildDirectory.file("handshake.classpath")
     val classpath = handshake.runtimeClasspath
+    outputs.file(out)
+    doLast { out.get().asFile.writeText(classpath.asPath) }
+}
+
+// `just rehearse <walk> --seats fake` (S2.4 T8): the fake agent's run-time classpath, written to build/fake.classpath.
+tasks.register("fakeClasspath") {
+    description = "Writes the fake agent's run-time classpath to build/fake.classpath for `just rehearse <walk> --seats fake`."
+    val fixtures = sourceSets["testFixtures"]
+    dependsOn(fixtures.classesTaskName)
+    val out = layout.buildDirectory.file("fake.classpath")
+    val classpath = fixtures.runtimeClasspath
     outputs.file(out)
     doLast { out.get().asFile.writeText(classpath.asPath) }
 }
