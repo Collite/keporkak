@@ -1,0 +1,12 @@
+{"turns": [
+  [{"do": "mcp", "tool": "send", "arguments": {"kind": "started", "subject": "started", "args": {}}},
+   {"do": "mcp", "tool": "send", "arguments": {"kind": "verdict", "subject": "a kind outside the coder's", "args": {"verdict": "PASS", "sha": "none", "blockers": [], "follow_ups": []}}},
+   {"do": "end", "usage": {"input": 1000, "output": 100, "total": 1100}}]
+ ],
+ "loaded_turns": [
+  [{"do": "run", "seconds": 2},
+   {"do": "mcp", "tool": "send", "arguments": {"kind": "review-request", "subject": "review-request", "args": {"attest": ["done_lines_hold"]}}},
+   {"do": "end", "usage": {"input": 1000, "output": 100, "total": 1100}}],
+  [{"do": "end", "usage": {"input": 1000, "output": 100, "total": 1100}}],
+  [{"do": "end", "usage": {"input": 1000, "output": 100, "total": 1100}}]
+ ]}

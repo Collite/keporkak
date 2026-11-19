@@ -29,13 +29,14 @@ import kotlin.system.exitProcess
  * It appends what it received to the script's `record` file as JSON lines. A secret never goes there: header values
  * and the token variable are written as SHA-256 only.
  *
- * The script (JSON): `record` · `turns` — one list of steps per prompt · optional `mode`, `model`, `effort` (what a
+ * The script (JSON): `record` · `turns` — one list of steps per prompt · optional `loaded_turns` — those of a process
+ * whose session was loaded, a re-seated one (S2.5), in place of `turns` · optional `mode`, `model`, `effort` (what a
  * session starts on), `modes`, `models`, `efforts` (what it offers), `w1` (send `auth.status` as `{}`, default true),
  * `onEof` (`exit`, `linger` or `orphan`), `loadable` (default true), `resolve` (a model value → the offered value it
  * is read back as, before the adapter's own rule — see [resolveModel]), `probe` (S2.4: before anything else, call the
  * daemon's stop hook with the session token the process was given, and record the answer's status). Steps: `say`,
  * `tool`, `tool_update`, `ask` (each tool step with an optional `name`, sent as the adapter sends the tool's name),
- * `usage`, `run`, `hold`, `hangup`, `leave`, `leak`, `recall`, `end` — see [perform]; any of them `once`. Steps after `end` are sent after the
+ * `usage`, `run`, `hold`, `hangup`, `leave`, `leak`, `recall`, `mcp`, `end` — see [perform]; any of them `once`. Steps after `end` are sent after the
  * turn's answer. The prompt `/compact` is answered as the pinned adapter answers it (S2.4's probe): the context it
  * reports drops to a fifth.
  */
@@ -53,11 +54,13 @@ private class FakeAgent(private val script: JsonObject) {
     private var model = script.string("model") ?: "default"
     private var effort = script.string("effort") ?: "default"
     private var prompts = 0
+    @Volatile private var loaded = false
     @Volatile private var used: Long? = null
     @Volatile private var size: Long? = null
     @Volatile private var cancelled = false
     @Volatile private var child: Process? = null
     @Volatile private var headers: List<String> = emptyList()
+    @Volatile private var servers: JsonArray = JsonArray(emptyList())
 
     private val modes = script.strings("modes") ?: listOf("default", "acceptEdits", "plan", "auto", "bypassPermissions")
     private val models = script.strings("models") ?: listOf("default", "sonnet", "fable", "opus", "haiku")
@@ -106,6 +109,7 @@ private class FakeAgent(private val script: JsonObject) {
             }
             method == "session/new" -> {
                 headers = headerValues(params.getValue("mcpServers"))
+                servers = params.getValue("mcpServers").jsonArray
                 note("session/new", "cwd" to params.getValue("cwd"), "mcpServers" to hidden(params.getValue("mcpServers")))
                 session = UUID.randomUUID().toString()
                 historyFile(session!!)?.apply { parentFile.mkdirs(); createNewFile() }
@@ -179,11 +183,13 @@ private class FakeAgent(private val script: JsonObject) {
     /** A loaded session replays its history and starts again on the script's mode, model and effort (spike `06` Q6). */
     private fun load(id: JsonElement, params: JsonObject) {
         headers = headerValues(params.getValue("mcpServers"))
+        servers = params.getValue("mcpServers").jsonArray
         val wanted = params.string("sessionId")!!
         note("session/load", "sessionId" to JsonPrimitive(wanted), "cwd" to params.getValue("cwd"), "mcpServers" to hidden(params.getValue("mcpServers")))
         val history = historyFile(wanted)
         if (script.boolean("loadable") == false || history == null || !history.exists()) return fail(id, -32002, "Resource not found: session $wanted")
         session = wanted
+        loaded = true
         history.readLines().filter { it.isNotBlank() }.forEach { send(update(Json.parseToJsonElement(it).jsonObject)) }
         answer(id, sessionState(withId = false))
     }
@@ -193,7 +199,8 @@ private class FakeAgent(private val script: JsonObject) {
         note("session/prompt", "text" to JsonPrimitive(text))
         remember(buildJsonObject { put("sessionUpdate", "user_message_chunk"); put("content", text(text)) })
         if (text == "/compact") return compact(id)
-        val steps = script["turns"]?.jsonArray?.getOrNull(prompts++)?.jsonArray ?: JsonArray(emptyList())
+        val played = (if (loaded) script["loaded_turns"] else null) ?: script["turns"]
+        val steps = played?.jsonArray?.getOrNull(prompts++)?.jsonArray ?: JsonArray(emptyList())
         cancelled = false
         // Steps after `end` are sent after the turn's answer: updates between turns.
         val endAt = steps.indexOfFirst { it.jsonObject.string("do") == "end" }
@@ -229,8 +236,11 @@ private class FakeAgent(private val script: JsonObject) {
                 // The tool's name, where the adapter puts it beside the protocol's fields (S2.2 probe).
                 step.string("name")?.let { name -> put("name", name); put("_meta", buildJsonObject { put("claudeCode", buildJsonObject { put("toolName", name) }) }) }
             })
+            // A tool's result, when the step gives one (S2.5): `text` as its content, `raw` as its raw output.
             "tool_update" -> emit(buildJsonObject {
                 put("sessionUpdate", "tool_call_update"); put("toolCallId", step.string("id")); put("status", step.string("status"))
+                step.string("text")?.let { said -> put("content", JsonArray(listOf(buildJsonObject { put("type", "content"); put("content", text(said)) }))) }
+                step["raw"]?.let { put("rawOutput", it) }
             })
             "usage" -> emit(buildJsonObject {
                 used = step.long("used"); size = step.long("size")
@@ -262,6 +272,7 @@ private class FakeAgent(private val script: JsonObject) {
                 exitProcess(0)
             }
             "run" -> runCommand(step)
+            "mcp" -> mcp(step)
             "recall" -> {
                 val first = historyFile(session!!)!!.readLines().map { Json.parseToJsonElement(it).jsonObject }
                     .first { it.string("sessionUpdate") == "user_message_chunk" }.getValue("content").jsonObject.string("text")
@@ -323,6 +334,51 @@ private class FakeAgent(private val script: JsonObject) {
             "kind" to (options.firstOrNull { it.string("optionId") == chosen }?.getValue("kind") ?: JsonNull))
         val allowed = chosen != null && chosen.startsWith("opt-allow")
         emit(buildJsonObject { put("sessionUpdate", "tool_call_update"); put("toolCallId", toolCallId); put("status", if (allowed) "completed" else "failed") })
+    }
+
+    /**
+     * A seat tool called as a seat calls it (S2.5): `tools/call` of `tool` with `arguments` posted to the MCP server named
+     * `server` (default `messaging`) the session was given, with the headers it was given — each `${'$'}{NAME}` in a string
+     * of the arguments replaced by that variable of the process's environment. The call and its result go out as a tool
+     * call and its update, as the adapter reports an MCP tool's; the record notes the tool and the result's text.
+     */
+    private fun mcp(step: JsonObject) {
+        val name = step.string("server") ?: "messaging"
+        val server = servers.map { it.jsonObject }.firstOrNull { it.string("name") == name } ?: error("no MCP server named $name was given")
+        val tool = step.string("tool")!!
+        val callId = step.string("id") ?: "mcp-${requestIds.incrementAndGet()}"
+        val given = step["arguments"] ?: JsonObject(emptyMap())
+        emit(buildJsonObject {
+            put("sessionUpdate", "tool_call"); put("toolCallId", callId); put("title", "mcp__${name}__$tool"); put("kind", "other")
+            put("status", "pending"); put("rawInput", given); put("name", "mcp__${name}__$tool")
+        })
+        val body = buildJsonObject {
+            put("jsonrpc", "2.0"); put("id", 1); put("method", "tools/call")
+            put("params", buildJsonObject { put("name", tool); put("arguments", expanded(given)) })
+        }
+        val request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(server.string("url")!!))
+            .header("Content-Type", "application/json").header("Accept", "application/json, text/event-stream")
+            .apply { (server["headers"]?.jsonArray ?: JsonArray(emptyList())).forEach { header(it.jsonObject.string("name")!!, it.jsonObject.string("value")!!) } }
+            .POST(java.net.http.HttpRequest.BodyPublishers.ofString(body.toString())).build()
+        val answered = java.net.http.HttpClient.newHttpClient().send(request, java.net.http.HttpResponse.BodyHandlers.ofString())
+        // Streamable HTTP answers with JSON, or with an event stream whose data line is the JSON.
+        val payload = answered.body().lines().firstOrNull { it.startsWith("data:") }?.removePrefix("data:")?.trim() ?: answered.body()
+        val result = runCatching { Json.parseToJsonElement(payload).jsonObject["result"]?.jsonObject }.getOrNull()
+        val said = result?.get("content")?.jsonArray?.joinToString(" ") { it.jsonObject.string("text") ?: "" } ?: "HTTP ${answered.statusCode()}: $payload"
+        val failed = result == null || result.boolean("isError") == true
+        note("mcp", "tool" to JsonPrimitive(tool), "status" to JsonPrimitive(answered.statusCode()), "result" to JsonPrimitive(said))
+        emit(buildJsonObject {
+            put("sessionUpdate", "tool_call_update"); put("toolCallId", callId); put("status", if (failed) "failed" else "completed")
+            put("content", JsonArray(listOf(buildJsonObject { put("type", "content"); put("content", text(said)) })))
+        })
+    }
+
+    /** [value] with each `${'$'}{NAME}` in its strings replaced by that variable of the environment (empty when unset). */
+    private fun expanded(value: JsonElement): JsonElement = when (value) {
+        is JsonObject -> JsonObject(value.mapValues { expanded(it.value) })
+        is JsonArray -> JsonArray(value.map(::expanded))
+        is JsonPrimitive -> if (value.isString) JsonPrimitive(VARIABLE.replace(value.content) { System.getenv(it.groupValues[1]).orEmpty() }) else value
+        else -> value
     }
 
     /** A command that runs until it ends or the turn is cancelled; its pid is recorded. */
@@ -393,3 +449,4 @@ private fun JsonObject.boolean(key: String) = (get(key) as? JsonPrimitive)?.cont
 private fun JsonObject.strings(key: String) = (get(key) as? JsonArray)?.map { it.jsonPrimitive.content }
 private fun sha256(text: String) = MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
 
+private val VARIABLE = Regex("""\$\{([A-Z_]+)}""")
