@@ -8,6 +8,7 @@ import kp.daemon.seats.SeatsOffice.Companion.text
 import kp.engine.Datum
 import kp.engine.fold
 import kp.model.Fact
+import kp.model.Judged
 import kp.model.Message
 import kp.model.Read
 import java.time.Duration
@@ -81,9 +82,15 @@ class AfterTheReviewsSpec : StringSpec({
             val second = office.send("principal", "triage", """{"outcome": "issue", "found": "2", "since": "m-panda-000001"}""").id
             office.until("its wake answered") { office.ops("seat.wake").any { it.cause == second && it.phase != "requested" } }
 
-            office.ops("seat.wake").filter { it.cause == second }.take(2).map { it.phase } shouldBe listOf("requested", "failed")
+            office.ops("seat.wake").filter { it.cause == second }.map { it.phase } shouldBe listOf("requested", "failed")
             office.lines().filterIsInstance<Read>().filter { second in it.ids } shouldBe emptyList()
             office.office.state.unread("coder-1") shouldBe listOf(second)
+
+            // A wake that fails is no turn's end: nothing wakes the seat again for it — another message for the seat does, with that message.
+            val third = office.send("principal", "triage", """{"outcome": "issue", "found": "3", "since": "m-panda-000001"}""").id
+            office.until("the next wake answered") { office.ops("seat.wake").any { it.cause == third && it.phase != "requested" } }
+            office.ops("seat.wake").map { "${it.phase} ${it.cause}" }.drop(2) shouldBe listOf("requested $second", "failed $second", "requested $third", "failed $third")
+            office.office.state.unread("coder-1") shouldBe listOf(second, third)
         }
     }
 
@@ -96,9 +103,10 @@ class AfterTheReviewsSpec : StringSpec({
             // Each record of a wake names its seat: the request and its result alike.
             office.ops("seat.wake").filter { it.cause == bind }.map { "${it.phase} ${it.with?.text("seat")}" } shouldBe
                 listOf("requested reviewer-1", "requested coder-1", "ok reviewer-1", "ok coder-1")
-            // The first result ends its own seat's wake: the coder's is still in flight.
+            // The first result ends its own seat's wake: through its judgement, the coder's is still in flight.
             val first = office.ops("seat.wake").first { it.cause == bind && it.phase == "ok" }
-            fold(office.lines().filter { it.seq.toLong() <= first.seq.toLong() }).operations.filter { it.op == "seat.wake" }
+            val judged = office.lines().first { it is Judged && it.seq > first.seq }
+            fold(office.lines().filter { it.seq <= judged.seq }).operations.filter { it.op == "seat.wake" }
                 .map { (it.with.fields["seat"] as Datum.Text).value } shouldBe listOf("coder-1")
         }
     }

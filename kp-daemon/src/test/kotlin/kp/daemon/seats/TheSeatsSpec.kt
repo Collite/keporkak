@@ -39,7 +39,7 @@ class TheSeatsSpec : StringSpec({
             // Idle: the triage is its next prompt — the message, its `delivered` with `woke`, `seat.wake` requested and `ok`, then a `read`.
             office.told(before).filter { it.startsWith("triage") || it.startsWith("delivered") || "seat.wake" in it || it.startsWith("read coder-1") }
                 .dropWhile { !it.startsWith("triage") }.take(5) shouldBe
-                listOf("triage principal→coder", "delivered woke [coder-1]", "op seat.wake requested coder-1", "op seat.wake ok", "read coder-1")
+                listOf("triage principal→coder", "delivered woke [coder-1]", "op seat.wake requested coder-1", "op seat.wake ok coder-1", "read coder-1")
             office.prompts("coder-1").single() shouldContain triage
 
             // Busy — its first turn holds: the second triage waits in its inbox, and no wake is asked for it.

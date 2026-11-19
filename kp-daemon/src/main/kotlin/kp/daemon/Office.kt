@@ -147,7 +147,7 @@ class Office private constructor(
             val files = RuleFiles(root)
             val presence = Presence(clock)
             val facts = FactSource { fact, stage -> presence.observe(fact) ?: world.observe(fact, stage) }
-            val mailroom = Mailroom.start(project, OfficeId(name), files, facts, operations, deliveries, clock, robots = true)
+            val mailroom = Mailroom.start(project, OfficeId(name), files, facts, operations, deliveries, clock, robots = true, journal = Journal::say)
             val rules = InForceRules.of(files.lastRead).first ?: error("the mailroom started on rules kp-rules refuses")
             presence.seed(mailroom.state)
             presence.state = { mailroom.state }

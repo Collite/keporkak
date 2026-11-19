@@ -170,10 +170,12 @@ class Seats(
             }
         }.whenComplete { end, error ->
             val outcome: Outcome<*> = end ?: Outcome.Failed("the turn failed: ${error?.message ?: "?"}")
-            sent.complete((outcome as? Outcome.Failed)?.reason ?: "the turn ended before the prompt was sent")
+            // A prompt never sent began no turn (contracts.md §4.4, Amendment 30): its caller hears it failed, and the seat
+            // is idle again without being said to be — it is not woken again for that message until another arrival.
+            val unsent = sent.complete((outcome as? Outcome.Failed)?.reason ?: "the turn ended before the prompt was sent")
             reporter.execute {
-                then.turn(outcome)
-                ended(seat, session)
+                if (!unsent) then.turn(outcome)
+                ended(seat, session, turned = !unsent)
             }
         }
         val failed = try {
@@ -184,8 +186,11 @@ class Seats(
         return if (failed == null) OperationResult.Ok() else OperationResult.Failed(failed)
     }
 
-    /** A turn ended: a compaction waiting for it, then the mailroom — the seat is idle, and woken with its oldest unread message. */
-    private fun ended(seat: String, session: Held) {
+    /**
+     * A turn ended — or, not [turned], a prompt was never sent: a compaction waiting for it, then the seat is idle again.
+     * Only a turn's end tells the mailroom, which wakes the seat with its oldest unread message (contracts.md §4.4).
+     */
+    private fun ended(seat: String, session: Held, turned: Boolean = true) {
         val waiting = compacts.remove(seat)
         if (waiting != null && !session.gone && !closing) {
             work.execute { compact(seat, session) { result -> waiting.forEach { it(result) } } }
@@ -193,7 +198,7 @@ class Seats(
         }
         waiting?.forEach { it(OperationResult.Failed("seat $seat has no session")) }
         session.busy = false
-        if (!closing) office?.idle(seat)
+        if (turned && !closing) office?.idle(seat)
     }
 
     /** A message as the prompt that wakes a seat with it (contracts.md §4.4: the prompt is that message). */

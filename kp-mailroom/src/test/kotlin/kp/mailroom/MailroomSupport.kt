@@ -320,6 +320,8 @@ class Office(
     private val walk = Walk.named(walk)
     private val ids = HashMap<String, String>()
     private var next = 0
+    /** What the mailroom said in the daemon's journal: an arrival with no sender that could not be judged (contracts.md §3). */
+    val journal = java.util.concurrent.CopyOnWriteArrayList<String>()
     /** The id of every message submitted through this office: each must have its line and a record about it. */
     val submitted = ArrayList<String>()
     lateinit var mailroom: Mailroom
@@ -341,7 +343,7 @@ class Office(
         start()
     }
 
-    fun start() { mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots) }
+    fun start() { mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, journal = journal::add) }
     fun stop() = mailroom.close()
     fun restart() { stop(); start() }
 
@@ -353,13 +355,13 @@ class Office(
     fun stopWriterAfter(after: (Envelope) -> Boolean) {
         val disk = StoppingDisk(after)
         stop()
-        mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, disk = disk)
+        mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, disk = disk, journal = journal::add)
         disk.armed = true
     }
 
     /** As [start], on a disk that stops the writer after the line [after] matches — what the start itself writes included. */
     fun startStoppedAfter(after: (Envelope) -> Boolean) {
-        mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, disk = StoppingDisk(after).also { it.armed = true })
+        mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, disk = StoppingDisk(after).also { it.armed = true }, journal = journal::add)
     }
 
     /**
