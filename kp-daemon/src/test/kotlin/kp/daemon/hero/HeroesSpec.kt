@@ -169,6 +169,7 @@ class HeroesSpec : FreeSpec({
                 "git.merge ok · tail passed→merged",
             )
             h2.log().messages("digest").size shouldBe 1
+            h2.kp("inbox").text shouldBe "nothing waits for Bora\n" // the merge the Deputy held was let go, and its ticket closed (S2.7 T3)
             h2.kp("status", "REHEARSAL").text.lines().filter { it.startsWith("Bora") || it.startsWith("stage") } shouldBe listOf(
                 "Bora: present",
                 "stage REHEARSAL/P0/S0.1: merged · merge_attempts 1",

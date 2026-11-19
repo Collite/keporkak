@@ -30,7 +30,10 @@ data class InFlight(val op: String, val cause: String, val with: Datum.Fields, v
 /** A held message: which robot held it, what releases it, since when. */
 data class Hold(val by: String, val until: String, val since: String)
 
-/** An item that waits for Bora: the message it is about, the record that raised it, and Bora's answer once given. */
+/**
+ * An item that waits for Bora: the message it is about, the record that raised it, and Bora's answer once given — for a
+ * ticket raised when a message was held, the message itself once it is let go and waits no more (contracts.md §2.2).
+ */
 data class Ticket(val item: String, val raisedBy: String, val at: String, val answeredBy: String? = null)
 
 /** A seat's refusals on one UTC day, as its last refusal that day counted them. */
@@ -176,6 +179,9 @@ private class Folding(state: State) {
                 }
                 // Bora answers an item by any signed delivery whose `re` names it (Amendment 13): an item that does not wait too.
                 message?.takeIf { it.signed }?.re?.let { answer(it, line.id) }
+                // The ticket raised when a message was held closes when it is let go (contracts.md §2.2, Amendments 21, 23): it no
+                // longer waits — unless its delivery waits for Bora in its own right: a class-B item that is not his own message.
+                if (line.id in s.held && !(line.deliveryClass == CLASS_B && message?.from != BORA)) answer(line.id, line.id)
                 s = s.copy(
                     pending = s.pending - line.id,
                     held = s.held - line.id,
@@ -183,12 +189,14 @@ private class Folding(state: State) {
                 )
             }
             is Refused -> {
-                s.pending[line.id]?.let { message ->
+                // `refusals.today` is a seat's (contracts.md §4.4): a refusal of Bora's message, or of a robot's, is counted for no one.
+                s.pending[line.id]?.takeIf { it.by.startsWith(SEAT_BY) }?.let { message ->
                     val day = utc(at).toLocalDate().toString()
                     val earlier = s.refusals[message.from]?.takeIf { it.day == day }?.count ?: 0L
                     s = s.copy(refusals = s.refusals + (message.from to Refusals(day, line.refusalsToday?.longValueExact() ?: earlier.inc())))
                 }
-                // A held message refused when it is released waits no more.
+                // A held message refused when it is let go waits no more, and the ticket raised when it was held closes (contracts.md §2.2, Amendment 21).
+                if (line.id in s.held) answer(line.id, line.id)
                 s = s.copy(pending = s.pending - line.id, held = s.held - line.id, deadlines = s.deadlines - line.id)
             }
             is Held -> {
@@ -260,6 +268,9 @@ private class Folding(state: State) {
 }
 
 private const val HAND = "hand:"
+/** The `by` of a seat's own message (contracts.md §2.1). */
+private const val SEAT_BY = "seat:"
+private const val CLASS_B = "B"
 private const val SEAT_START = "seat.start"
 private const val SEAT_WAKE = "seat.wake"
 private const val ROLE = "role"
