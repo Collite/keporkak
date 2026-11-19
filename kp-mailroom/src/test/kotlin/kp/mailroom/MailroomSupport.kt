@@ -54,6 +54,9 @@ const val SEEDED = "m-panda-000000"
 
 fun json(text: String): JsonObject = Json.parseToJsonElement(text).jsonObject
 
+/** The answer to a submission that is a message; a spec that submits one fails here when it is not. */
+fun Offer.answered(): Answer = (this as? Offer.Answered)?.answer ?: error("the input is no message: $this")
+
 /** An empty project checkout under the build directory; Gradle's clean removes it. */
 fun throwawayProject(): Path = Files.createTempDirectory(root.resolve("build").toPath().createDirectories(), "mailroom-")
 
@@ -366,8 +369,8 @@ class Office(
             state.unread.flatMap { (seat, ids) -> ids.map { "unread $seat ${kind(it)}" } }.sorted()
     }
 
-    fun send(seat: String, input: String): Answer = mailroom.submit(Sender.Seat(seat), json(input)).also { submitted += it.id }
-    fun bora(input: String, signed: Boolean = true): Answer = mailroom.submit(Sender.Bora(signed), json(input)).also { submitted += it.id }
+    fun send(seat: String, input: String): Answer = mailroom.submit(Sender.Seat(seat), json(input)).answered().also { submitted += it.id }
+    fun bora(input: String, signed: Boolean = true): Answer = mailroom.submit(Sender.Bora(signed), json(input)).answered().also { submitted += it.id }
 
     /** Bora runs a command that is no message (`kp status`): signed when he ran it with `sudo` (contracts.md §6). */
     fun command(signed: Boolean) = mailroom.command(signed)

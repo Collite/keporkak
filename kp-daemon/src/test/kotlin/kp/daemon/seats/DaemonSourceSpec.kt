@@ -72,6 +72,8 @@ private val NOT_A_LIMIT = mapOf(
         "`kp decline`: how many words the command takes",
     "KpCommands.kt: \"rule\" -> answer(out, peer, args, 2..Int.MAX_VALUE, \"kp rule <ticket | message id> <outcome> [key=value \u2026] [text]\", byId = true) { item ->" to
         "`kp rule`: how many words the command takes",
+    "KpCommands.kt: answer(out, peer, args, 2..2, \"kp reverse <digest item> minor|serious\", byId = true) { item ->" to
+        "`kp reverse`: how many words the command takes (S2.7 T6: it names its item as `kp rule` does)",
     "KpCommands.kt: \"status\" -> if (args.size > 1) usage(out, \"kp status [effort | stage | seat]\") else print(out, views.status(args.firstOrNull()))" to
         "`kp status`: how many words the command takes",
     "Levels.kt: val above = roster.order.withIndex().filter { (index, line) -> index >= rank && roster.order.indexOfFirst { it.model == line.model } >= floor }.map { it.value }" to

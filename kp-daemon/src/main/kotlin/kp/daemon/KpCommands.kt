@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kp.mailroom.Answer
 import kp.mailroom.FactSource
+import kp.mailroom.Offer
 import kp.mailroom.Sender
 import kp.mailroom.Status
 
@@ -84,14 +85,13 @@ class KpCommands(private val office: Office, world: FactSource) : Commands {
 
     /**
      * `kp reverse <digest item> minor|serious` (contracts.md §6): `reverse`, in reply to the item — a message id, or a
-     * ticket whose item it is — so that it goes to whoever sent it, and naming it in `args.digest_item`.
+     * ticket whose item it is — so that it goes to whoever sent it, and naming it in `args.digest_item`. An item the log
+     * does not hold is answered as `kp rule` answers one: nothing is sent, and the answer says so (Amendment 25).
      */
-    private fun reverse(out: Out, peer: Peer, args: List<String>): Int {
-        if (args.size != 2) return usage(out, "kp reverse <digest item> minor|serious")
-        val named = args[0]
-        val item = named.removePrefix("#").toLongOrNull()?.let { office.state.tickets[it]?.item } ?: named
-        return submit(out, peer, message(REVERSE, Item(item, stageOf(item)), mapOf(DIGEST_ITEM to JsonPrimitive(named), SEVERITY to JsonPrimitive(args[1]))))
-    }
+    private fun reverse(out: Out, peer: Peer, args: List<String>): Int =
+        answer(out, peer, args, 2..2, "kp reverse <digest item> minor|serious", byId = true) { item ->
+            message(REVERSE, item, mapOf(DIGEST_ITEM to JsonPrimitive(args[0]), SEVERITY to JsonPrimitive(args[1])))
+        }
 
     private class Item(val id: String, val stage: String?)
 
@@ -108,9 +108,15 @@ class KpCommands(private val office: Office, world: FactSource) : Commands {
             body?.let { BODY to JsonPrimitive(it) }, args.takeIf { it.isNotEmpty() }?.let { ARGS to JsonObject(it) }).toMap(),
     )
 
-    /** Submits [input] in Bora's name (`by: bora-cli`), signed when the peer is root; the mailroom's answer, in one line. */
+    /**
+     * Submits [input] in Bora's name (`by: bora-cli`), signed when the peer is root; the mailroom's answer, in one line.
+     * Input that is no message is told as the mailroom answers it, and nothing is sent (contracts.md §3, §5).
+     */
     private fun submit(out: Out, peer: Peer, input: JsonObject): Int {
-        val answer = office.submit(Sender.Bora(signed = peer.root), input)
+        val answer = when (val offer = office.submit(Sender.Bora(signed = peer.root), input)) {
+            is Offer.Answered -> offer.answer
+            is Offer.Malformed -> return ControlSocket.USAGE.also { out.line("kp: no message — $offer; nothing was sent") }
+        }
         out.line(said(answer))
         if (answer.status == Status.REFUSED && !peer.root) out.line("   (unsigned: Bora's answers count only under sudo — sudo kp …)")
         return if (answer.status == Status.REFUSED) REFUSED else OK

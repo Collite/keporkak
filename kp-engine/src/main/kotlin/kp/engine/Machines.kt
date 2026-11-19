@@ -40,27 +40,32 @@ internal class Machines(private val rules: RuleSet, private val state: State) {
     fun leaves(recordName: String, from: String?): Boolean = byRecordName(recordName)?.transitions?.any { it.from == from } == true
 
     /**
-     * Whom a machine's transition moves (the contract leaves it to the engine): the stage of the message; the Found
-     * line it names (`args.found`); its thread; the seat it names (`args.seat`), else the seat a message of its stage
-     * last moved; the stage's phase; Bora's presence. Null: this trigger moves no subject of that machine.
+     * Whom a machine's transition moves (contracts.md §2.2): the stage of the message; the Found line it names
+     * (`args.found`); its thread; the seat it names (`args.seat`), else each seat bound to the message's stage; the
+     * stage's phase; Bora's presence. Empty: this trigger moves no subject of that machine.
      */
-    fun subject(machine: Machine, context: Context): String? {
+    fun subjects(machine: Machine, context: Context): List<String> {
         val stage = context.stage
         fun arg(name: String) = (context.args.fields[name] as? Datum.Text)?.value
         return when (recordName(machine.name)) {
-            STAGE_MACHINE -> stage
-            FOUND -> stage?.let { at -> arg(FOUND)?.let { "$at#$it" } }
-            FLAG_MACHINE -> context.message?.thread
-            SEAT_MACHINE -> arg(SEAT_MACHINE) ?: stage?.let(::seatOf)
-            PHASE_MACHINE -> stage?.let(::phaseOf)
-            PRESENCE_MACHINE -> BORA
-            else -> null
+            STAGE_MACHINE -> listOfNotNull(stage)
+            FOUND -> listOfNotNull(stage?.let { at -> arg(FOUND)?.let { "$at#$it" } })
+            FLAG_MACHINE -> listOfNotNull(context.message?.thread)
+            SEAT_MACHINE -> arg(SEAT_MACHINE)?.let(::listOf) ?: stage?.let(::seatsOf).orEmpty()
+            PHASE_MACHINE -> listOfNotNull(stage?.let(::phaseOf))
+            PRESENCE_MACHINE -> listOf(BORA)
+            else -> emptyList()
         }
     }
 
-    /** The seat whose last move a delivered message of [stage] caused. */
-    private fun seatOf(stage: String): String? = state.machines[SEAT_MACHINE].orEmpty().entries
-        .lastOrNull { (_, seat) -> state.delivered[seat.cause]?.stage == stage }?.key
+    /**
+     * The seats bound to [stage], in the order the log first moved them: each whose last move a delivered message of
+     * the stage caused — that message's own transition, or the result of an operation it requested (a `transition`
+     * record's `cause` is the message in both). A seat brought up for the stage, given its work or brought back in it
+     * is one — a reviewer's seat too; a seat whose last move was about another stage, or that no message moved, is not.
+     */
+    private fun seatsOf(stage: String): List<String> = state.machines[SEAT_MACHINE].orEmpty()
+        .filterValues { seat -> state.delivered[seat.cause]?.stage == stage }.keys.toList()
 
     /** The candidates (contracts.md §4.1): this machine's transitions for the trigger, from the subject's state, in file order. */
     fun candidates(machine: Machine, subject: String, context: Context): List<Transition> {

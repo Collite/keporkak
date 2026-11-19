@@ -33,6 +33,21 @@ class SendAndReplySpec : StringSpec({
         }
     }
 
+    "send's stage defaults to the seat's when it is given as null; with no subject, the subject is the kind and the stage, as the recorder writes it (S2.7 T6, issue #35)" {
+        SeatOffice().use { office ->
+            val coder = office.seat("coder-1", role = "coder")
+
+            val nullStage = coder.call("send", """{"kind": "started", "subject": "started on the branch", "stage": null}""")
+            val noSubject = coder.call("send", """{"kind": "stop", "stage": "KP/P1/S1.9", "args": {"sc": "SC-1"}}""")
+            val neither = coder.call("send", """{"kind": "stop", "subject": null, "args": {"sc": "SC-1"}}""")
+
+            listOf(nullStage, noSubject, neither).map { it.isError } shouldBe listOf(false, false, false)
+            office.messages().map { it.text("stage") to it.text("subject") } shouldBe listOf(
+                STAGE to "started on the branch", "KP/P1/S1.9" to "stop KP/P1/S1.9", STAGE to "stop $STAGE",
+            )
+        }
+    }
+
     "input that is no message at all is an error of the tool that names the field, and the log does not grow" {
         SeatOffice().use { office ->
             val coder = office.seat("coder-1", role = "coder")

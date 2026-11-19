@@ -189,7 +189,7 @@ data class World(
             return office.use {
                 val before = office.state.seq
                 val id = when (trigger) {
-                    Trigger.Sent -> office.submit(if (sender == BORA) Sender.Bora(signed) else Sender.Seat(sender), input(ids)).id
+                    Trigger.Sent -> office.submit(if (sender == BORA) Sender.Bora(signed) else Sender.Seat(sender), input(ids)).let { (it as? kp.mailroom.Offer.Answered)?.answer?.id ?: error("the sweep's input is no message: $it") }
                     is Trigger.Expiry -> ids.getValue(trigger.key).also { office.tick() }
                     is Trigger.Changed -> null.also { office.changed(kp.engine.FactRef(trigger.fact), trigger.value) }
                     Trigger.Acted -> null.also { office.acted() }
@@ -199,6 +199,7 @@ data class World(
                 Outcome(id ?: "", record, written.filterIsInstance<Transition>().filter { if (id != null) it.cause == id else it.seq.toLong() > before }.mapNotNull { it.rule })
             }
         } finally {
+            kp.daemon.Judgements.check(project)
             project.deleteRecursively()
         }
     }

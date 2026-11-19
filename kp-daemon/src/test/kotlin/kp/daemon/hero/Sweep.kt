@@ -56,20 +56,30 @@ class Sweep internal constructor(
     }
 
     /**
-     * The transitions whose removal from a copy of the rule set leaves their control green: each is taken out of the
-     * copy's file in turn, and its control run on the copy.
+     * What taking a transition out of a copy of the rules does to its control: it still fires — the case stays green — or
+     * the case goes red, and why (issue #37): the transition is absent and the rest of the rules load, or the copy
+     * without it is refused by the loader — a kind's `fires`, an expiry's `{transition: …}`, the file's form names it.
      */
-    val removalSurvivors: List<String> by lazy { survivingTheirRemoval() }
+    data class Removal(val transition: String, val red: Boolean, val why: String, val problem: String? = null)
 
-    private fun survivingTheirRemoval(): List<String> = controls.values.filter { control ->
+    /** Each transition with a control taken out of a copy of the rule set in turn, and its control run on the copy. */
+    val removals: List<Removal> by lazy { removed() }
+
+    /** The transitions whose removal from a copy of the rule set leaves their control green. */
+    val removalSurvivors: List<String> get() = removals.filterNot { it.red }.map { it.transition }
+
+    private fun removed(): List<Removal> = controls.values.map { control ->
         val copy = kp.daemon.TestOffice.copyOfTheRules()
         try {
             withoutTransition(copy, control.transition)
-            control.fires(copy)
+            when (val loaded = Rules.load(RuleFiles(copy).read())) {
+                is Loaded.Invalid -> Removal(control.transition, red = true, NOT_LOADED, loaded.problems.firstOrNull()?.toString())
+                is Loaded.Valid -> if (control.fires(copy)) Removal(control.transition, red = false, STILL_FIRES) else Removal(control.transition, red = true, ABSENT)
+            }
         } finally {
             copy.toFile().deleteRecursively()
         }
-    }.map { it.transition }
+    }
 
     /** The exceptions by reason, each with the requirements it covers: the list `just hero` prints. */
     fun reasons(): List<String> = exceptions.groupBy { it.reason }.map { (reason, items) ->
@@ -81,14 +91,36 @@ class Sweep internal constructor(
         "${items.size} · $reason: ${named.joinToString(", ")}"
     }
 
-    /** What `just hero` prints of the sweep: the reasons, then the counts. */
+    /** What `just hero` prints of the sweep: the reasons, then the counts — and why each removal turned its case red. */
     fun report(): List<String> = listOf("exceptions, each with its reason:") + reasons().map { "  $it" } +
         listOf("transitions no world fires: ${uncontrolled.size}" + (if (uncontrolled.isEmpty()) "" else " — ${uncontrolled.joinToString(", ")}"),
-            "transitions whose removal from a copy of the rules leaves their case green: ${removalSurvivors.size}" + (if (removalSurvivors.isEmpty()) "" else " — ${removalSurvivors.joinToString(", ")}"),
-            "requirements on master: $onMaster · swept: $swept · exceptions: ${exceptions.size} · swept + exceptions = ${swept + exceptions.size}")
+            "transitions whose removal from a copy of the rules leaves their case green: ${removalSurvivors.size}" + (if (removalSurvivors.isEmpty()) "" else " — ${removalSurvivors.joinToString(", ")}")) +
+        removals.filter { it.red }.groupBy { it.why }.map { (why, red) -> "  red — $why: ${red.size}" + (if (why == NOT_LOADED) " — " + red.joinToString(", ") { it.transition } else "") } +
+        listOf("requirements on master: $onMaster · swept: $swept · exceptions: ${exceptions.size} · swept + exceptions = ${swept + exceptions.size}")
 
     companion object {
         fun ofTheRulesOnMaster(root: Path = checkout): Sweep = Sweeper(root).run()
+
+        /** Why a removal turned its case red, or left it green (issue #37). */
+        const val ABSENT = "the transition is absent, and the rest of the rules load"
+        const val NOT_LOADED = "the loader refuses the copy without it: a kind's `fires`, an expiry or the file's form names it"
+        const val STILL_FIRES = "its case still fires it"
+
+        /**
+         * Every reason a requirement may be excepted for — a closed list (issue #37): the sweeper excepting one for any
+         * other reason is a failure, as is a requirement no world breaks alone, or one refused naming another requirement.
+         */
+        val REASONS: List<String> = listOf(
+            "written the same way as a requirement of its kind, which is judged first: breaking it breaks the kind's, and the refusal names the kind",
+            "judged on an operation's result, which no message carries: nothing is refused — a result that breaks it fires nothing",
+            "a later candidate from the same state: when none fires, the refusal names the first candidate's first failure (contracts.md §4.1)",
+            "it tells two candidates from the same state apart: breaking it fires the other",
+            "judged when a deadline passes, which no message carries: nothing is refused — an expiry that breaks it fires nothing",
+            "the kind's args declaration accepts no value that breaks it: what would is refused as args first",
+            "another machine moves on the same message from any state: it is delivered",
+            "judged when a fact changes, which no message carries: nothing is refused — a fact that breaks it fires nothing",
+            "breaking it means Bora is absent, and the Deputy holds the message until he is back: held, not refused",
+        )
 
         /** Takes the transition [id] out of the copy of the rules at [root]: its item of `rules/stage-lifecycle.yaml`, every line of it. */
         fun withoutTransition(root: Path, id: String) {
@@ -210,8 +242,10 @@ private class Sweeper(private val root: Path) {
         return Sweep.Control(transition.id, world, World.Trigger.Changed(requirement.fact.name, value))
     }
 
+    /** An exception, for a reason of the closed list only: any other is a failure (issue #37). */
     private fun except(owned: Owned, reason: String, detail: String? = null) {
-        exceptions += Sweep.Exception(owned.owner, owned.index + 1, reason, detail)
+        if (reason !in Sweep.REASONS) failures += "${owned.name} ${owned.form.json()}: $reason" + (detail?.let { " ($it)" } ?: "")
+        else exceptions += Sweep.Exception(owned.owner, owned.index + 1, reason, detail)
     }
 
     private fun sweep(owned: Owned) {
@@ -228,8 +262,10 @@ private class Sweeper(private val root: Path) {
         val control = if (targets.isEmpty()) control(kind, null) else targets.firstNotNullOfOrNull { control(kind, it) }
         if (control == null) return except(owned, "no world delivers its message and fires its transition: it cannot hold with the rest", targets.joinToString(" or ") { it.id }.ifEmpty { null })
         val broken = breakOnly(owned, control)
-        if (broken == null) return except(owned, "the kind's args declaration accepts no value that breaks it: what would is refused as args first",
-            (owned.requirement as? Requirement.Arg)?.name)
+        // Only an arg can be unbreakable for its declaration; any other form no world breaks is one the sweep builds no world for (issue #37).
+        if (broken == null && owned.requirement is Requirement.Arg) return except(owned, "the kind's args declaration accepts no value that breaks it: what would is refused as args first",
+            owned.requirement.name)
+        if (broken == null) return except(owned, "no world breaks it alone: the sweep builds none for its form")
         val decision = broken.judge(rules)
         if (names(decision, owned)) {
             val outcome = broken.inOffice(root)
@@ -319,7 +355,7 @@ private class Sweeper(private val root: Path) {
                 val seat = (world.args["seat"] as? Datum.Text)?.value ?: "coder-1"
                 if ("seat" in (rules.kinds[world.kind]?.args ?: emptyMap())) world.copy(args = world.args + ("seat" to Datum.Text(seat)))
                     .let { if (from != machine.states.keys.first()) it.seeded(Seed.Move("seat", seat, machine.states.keys.first(), from)) else it }
-                // A message that names no seat moves the seat a message of its stage last moved: bound by an assign of the stage.
+                // A message that names no seat moves each seat bound to its stage (contracts.md §2.2): this one, bound by an assign of the stage.
                 else world.seeded(Seed.Sent("bound", "assign", "teamlead", seat, mapOf("seat" to Datum.Text(seat))))
                     .seeded(Seed.Move("seat", seat, machine.states.keys.first(), from, cause = "bound"))
             }

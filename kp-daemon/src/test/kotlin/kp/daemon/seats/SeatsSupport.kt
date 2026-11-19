@@ -5,6 +5,7 @@ package kp.daemon.seats
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kp.daemon.answered
 import kp.daemon.Bora
 import kp.daemon.Daemon
 import kp.daemon.FakeSeating
@@ -84,7 +85,7 @@ class SeatsOffice(
     fun send(from: String, kind: String, args: String = "{}", re: String? = null, stage: String = stage()): Answer =
         office.submit(Sender.Seat(from), kotlinx.serialization.json.Json.parseToJsonElement(
             """{"kind": "$kind", "stage": "$stage", "subject": "$kind", "args": $args""" + (re?.let { """, "re": "$it"""" } ?: "") + "}",
-        ) as JsonObject)
+        ) as JsonObject).answered()
 
     /** The log as it counts, in `seq` order. */
     fun lines(): List<Envelope> = office.counted()

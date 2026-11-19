@@ -14,7 +14,9 @@ Fill [references/pr-description.md](references/pr-description.md) — six sectio
    a shape) is welcome when it makes the change visible faster than prose.
 3. **DONE line** — each item of the list's DONE, ticked, with **the spec that shows it**: the spec's name (it reads as
    the behaviour) and its file. This is the reading list for Bora and the reviewer — keep it to the acceptance specs;
-   for a live item, QA's fixture path and command.
+   for a live item, QA's fixture path and command. With each item, **one mutant** that breaks it and its result:
+   `just mutant <patch> <spec filter>` — the patch (a few lines, quoted or pointed at), the filter, and `red` with the
+   specs that failed. A mutant that comes back green is a missing spec: you are not done.
 4. **Verified** — the test command and its counts; the CI run on the head sha; for a live item, QA's report and the
    fixture path.
 5. **Not in this stage** — the list's out-of-scope line, verbatim.

@@ -331,9 +331,10 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
     }
 
     /**
-     * Each machine in turn (contracts.md §4.1, choosing among transitions): its candidates for this trigger, from its
-     * subject's state, in file order; the first whose requirements are all met fires, and its effects apply before the next
-     * machine is read. An expiry's `{transition: …, if: …}` keeps a candidate only while its `if` holds.
+     * Each machine in turn (contracts.md §4.1, choosing among transitions), and each subject it moves (§2.2) in turn: its
+     * candidates for this trigger, from that subject's state, in file order; the first whose requirements are all met
+     * fires, and its effects apply before the next is read. A seat transition that names no seat is read for each seat
+     * bound to the stage: one move per seat. An expiry's `{transition: …, if: …}` keeps a candidate only while its `if` holds.
      */
     private fun fireMachines(kind: Kind?): Fired {
         val gated = kind?.takeIf { context.event == Event.EXPIRY }?.expiry?.filterIsInstance<Effect.Transition>()?.associateBy { it.id }.orEmpty()
@@ -341,15 +342,16 @@ private class Judgement(private val rules: RuleSet, private val state: State, pr
         val effects = ArrayList<Requested>()
         var first: Pair<Transition, String>? = null
         rules.lifecycle.machines.values.forEach { machine ->
-            val subject = machines.subject(machine, context) ?: return@forEach
-            val candidates = machines.candidates(machine, subject, context).filter { gated[it.id]?.condition?.let(evaluation::holds) ?: true }
-            if (first == null) first = candidates.firstOrNull()?.let { it to subject }
-            val selected = candidates.firstOrNull { evaluation.firstFailure(it.require) == null } ?: return@forEach
-            val from = machines.state(machines.recordName(machine.name), subject) ?: return@forEach
-            val to = machines.destination(selected, machine, subject) ?: return@forEach
-            val before = evaluation.moved.toMap()
-            effects += effects(selected.effects, selected.id)
-            moves += Move(machines.recordName(machine.name), subject, from, to, selected.id, evaluation.moved.filter { before[it.key] != it.value })
+            machines.subjects(machine, context).forEach subject@{ subject ->
+                val candidates = machines.candidates(machine, subject, context).filter { gated[it.id]?.condition?.let(evaluation::holds) ?: true }
+                if (first == null) first = candidates.firstOrNull()?.let { it to subject }
+                val selected = candidates.firstOrNull { evaluation.firstFailure(it.require) == null } ?: return@subject
+                val from = machines.state(machines.recordName(machine.name), subject) ?: return@subject
+                val to = machines.destination(selected, machine, subject) ?: return@subject
+                val before = evaluation.moved.toMap()
+                effects += effects(selected.effects, selected.id)
+                moves += Move(machines.recordName(machine.name), subject, from, to, selected.id, evaluation.moved.filter { before[it.key] != it.value })
+            }
         }
         return Fired(moves, effects, first)
     }
@@ -425,10 +427,11 @@ internal class Needs(private val rules: RuleSet, private val state: State, priva
         }
         if (context.event == Event.EXPIRY && kind != null) kind.expiry.forEach(::effect)
         rules.lifecycle.machines.values.forEach { machine ->
-            val subject = machines.subject(machine, context) ?: return@forEach
-            machines.candidates(machine, subject, context).forEach { transition ->
-                transition.require.forEach(::requirement)
-                transition.effects.forEach(::effect)
+            machines.subjects(machine, context).forEach { subject ->
+                machines.candidates(machine, subject, context).forEach { transition ->
+                    transition.require.forEach(::requirement)
+                    transition.effects.forEach(::effect)
+                }
             }
         }
         return needs.toList()

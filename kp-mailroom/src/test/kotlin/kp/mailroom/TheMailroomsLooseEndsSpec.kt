@@ -87,16 +87,17 @@ class TheMailroomsLooseEndsSpec : FreeSpec({
         office.readBack().records<Refused>().single().id shouldBe report.id
     }
 
-    "a submission whose to is not a string naming a party is written to the mailroom and refused: nothing is thrown at its sender (review B1)" {
+    "a submission whose to is text naming no party is written to the mailroom and refused; one whose to is no text is no message, answered by its field: nothing is thrown at its sender (review B1; S2.7 T4, one way in)" {
         val office = Office(seed = "assigned")
+        fun started(to: String) = json("""{"kind": "started", "stage": "$STAGE", "to": $to, "subject": "started on the branch"}""")
 
-        val answers = listOf("\"Not A Party\"", "7", "true", "[\"teamlead\"]").map { to ->
-            office.send("coder-1", """{"kind": "started", "stage": "$STAGE", "to": $to, "subject": "started on the branch"}""")
-        }
+        val answers = listOf(office.send("coder-1", """{"kind": "started", "stage": "$STAGE", "to": "Not A Party", "subject": "started on the branch"}"""))
+        val noMessages = listOf("7", "true", "[\"teamlead\"]").map { office.mailroom.submit(Sender.Seat("coder-1"), started(it)) }
 
         answers.forEach { it should refusedBy("started", "to: teamlead") }
-        answers.map { office.readBack().message(it.id).to.value } shouldBe List(4) { "mailroom" }
+        answers.map { office.readBack().message(it.id).to.value } shouldBe listOf("mailroom")
         office.readBack().records<Refused>().map { it.id } shouldBe answers.map { it.id }
+        noMessages shouldBe List(3) { Offer.Malformed("to", "not text — a party's name") }
         office.readBack().records<Delivered>() shouldBe emptyList()
     }
 

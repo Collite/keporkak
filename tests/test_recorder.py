@@ -119,14 +119,14 @@ class RecorderCommandLineTests(unittest.TestCase):
     def test_a_reply_takes_the_thread_of_the_message_it_answers(self):
         self.record("review-request", "--from", "coder", "--to", "teamlead", "--stage", "KP/P0/S0.3")
         self.record("started", "--from", "coder", "--to", "teamlead", "--stage", "KP/P0/S0.3")
-        result = self.record("review-bind", "--from", "teamlead", "--to", "coder", "--stage", "KP/P0/S0.3", "--re", "m-hand-000001")
+        result = self.record("review-bind", "--from", "teamlead", "--to", "reviewer", "--stage", "KP/P0/S0.3", "--re", "m-hand-000001", "--args", "reviewer=reviewer-1")
         self.assertEqual(result.returncode, 0, result.stderr)
         reply = self.lines()[2]
         self.assertEqual((reply["id"], reply["seq"], reply["thread"], reply["re"]), ("m-hand-000003", 3, "m-hand-000001", "m-hand-000001"))
     def test_a_reply_to_a_message_not_in_the_hand_log_is_refused_and_changes_nothing(self):
         self.record("started", "--from", "coder", "--to", "teamlead", "--stage", "KP/P0/S0.3")
         before = self.log.read_bytes()
-        result = self.record("review-bind", "--from", "teamlead", "--to", "coder", "--stage", "KP/P0/S0.3", "--re", "m-hand-000009")
+        result = self.record("review-bind", "--from", "teamlead", "--to", "reviewer", "--stage", "KP/P0/S0.3", "--re", "m-hand-000009", "--args", "reviewer=reviewer-1")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("m-hand-000009, is not in p0-s0.3.jsonl", result.stderr)
         self.assertEqual(self.log.read_bytes(), before)
@@ -141,9 +141,9 @@ class RecorderCommandLineTests(unittest.TestCase):
         toy = self.lines(self.project / "mail/TOY/_hand/p0-s0.2.jsonl")[0]
         self.assertEqual((toy["id"], toy["seq"]), ("m-hand-000002", 1))
     def test_args_are_json_when_they_parse_and_strings_otherwise(self):
-        result = self.record("verdict", "--from", "reviewer", "--to", "coder", "--stage", "KP/P0/S0.3", "--args", "verdict=FIX FIRST", "blockers=[\"B1\", \"B2\"]", "--args", "sha=0123abc")
+        result = self.record("verdict", "--from", "reviewer", "--to", "coder", "--stage", "KP/P0/S0.3", "--args", "verdict=FIX FIRST", "blockers=[{\"id\": \"B1\"}, {\"id\": \"B2\"}]", "--args", "sha=0123abc")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.lines()[0]["args"], {"verdict": "FIX FIRST", "blockers": ["B1", "B2"], "sha": "0123abc"})
+        self.assertEqual(self.lines()[0]["args"], {"verdict": "FIX FIRST", "blockers": [{"id": "B1"}, {"id": "B2"}], "sha": "0123abc"})
     def test_a_seat_name_is_recorded_by_hand_of_its_role(self):
         self.record("started", "--from", "coder-1", "--to", "teamlead", "--stage", "KP/P0/S0.3")
         self.assertEqual((self.lines()[0]["from"], self.lines()[0]["by"]), ("coder-1", "hand:coder"))
@@ -182,5 +182,66 @@ class RecorderCommandLineTests(unittest.TestCase):
         self.assertEqual(stdin.returncode, 0, stdin.stderr)
         self.record("started", "--from", "coder", "--to", "teamlead", "--stage", "KP/P0/S0.3")
         self.assertEqual((self.lines()[1]["seq"], self.lines()[1]["id"]), (6, "m-hand-000001"))
+
+class RecorderSlipTests(unittest.TestCase):
+    """S2.7 T6 (contracts.md §12, Amendment 26): the recorder refuses what `kp check` would call a slip — each of the four
+    slips `kp check` found in P1's hand logs (`_closed/p1-exit-kp-check-261118.md`), given again on a throwaway log — and
+    warns about a missing `started` or verdict."""
+    STAGE = "KP/P1/S1.1"
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(dir=ROOT / "build")
+        self.addCleanup(self.temp.cleanup)
+        self.project = Path(self.temp.name) / "project"
+        self.project.mkdir()
+        self.log = self.project / "mail/KP/_hand/p1-s1.1.jsonl"
+    def record(self, kind, *args):
+        return subprocess.run([sys.executable, "scripts/kp-record.py", kind, "--stage", self.STAGE, "--project", str(self.project), *args],
+                              text=True, capture_output=True, cwd=ROOT)
+    def recorded(self, kind, *args):
+        result = self.record(kind, *args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(self.log.read_text().splitlines()[-1])["id"]
+    def refused(self, kind, *args):
+        before = self.log.read_bytes() if self.log.exists() else None
+        result = self.record(kind, *args)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertEqual(self.log.read_bytes() if self.log.exists() else None, before, "nothing is written")
+        return result.stderr.removeprefix("refused: ").split(" — kp check")[0]
+    def test_each_of_the_four_slips_of_p1s_hand_logs_is_refused_with_its_reason_and_nothing_is_written(self):
+        # p1-s1.1.jsonl:1 — `started` recorded to the Principal
+        self.assertEqual(self.refused("started", "--from", "coder", "--to", "principal"), "to: teamlead")
+        self.assertFalse(self.log.exists())
+        self.recorded("started", "--from", "coder", "--to", "teamlead")
+        self.recorded("review-request", "--from", "coder", "--to", "teamlead", "--args", 'attest=["done_lines_hold"]')
+        bind = self.recorded("review-bind", "--from", "teamlead", "--to", "reviewer", "--re", "m-hand-000002", "--args", "reviewer=reviewer-1")
+        # p1-s1.9.jsonl:4 — a verdict in the review's words
+        self.assertEqual(self.refused("verdict", "--from", "reviewer", "--to", "coder", "--re", bind, "--args", "verdict=PASS — follow-ups filed",
+                                      "sha=bc9c095009807043c53cabb3476aa853a3e013a6", 'follow_ups=["https://github.com/Collite/keporkak/issues/34"]'),
+                         "args: 'verdict' is not one of PASS | PASS-FU | FIX FIRST")
+        verdict = self.recorded("verdict", "--from", "reviewer", "--to", "coder", "--re", bind, "--args", "verdict=FIX FIRST", "sha=0123abc", 'blockers=[{"id": "B1"}]')
+        # p1-s1.1.jsonl:9 — a repair-done without the review it answers
+        self.assertEqual(self.refused("repair-done", "--from", "coder", "--to", "reviewer", "--re", verdict, "--args", 'attest=["done_lines_hold"]'),
+                         "args: 'verdict' is required")
+        repair = self.recorded("repair-done", "--from", "coder", "--to", "reviewer", "--re", verdict, "--args", "verdict=review-005")
+        # p1-s1.6.jsonl:6 — a re-verdict without `reviewed`
+        self.assertEqual(self.refused("re-verdict", "--from", "reviewer", "--to", "coder", "--re", repair, "--args", "verdict=PASS-FU",
+                                      "sha=fd96ca392e0c9b2b46cdb8feb3766f23ce831de5", "blockers=[]", 'follow_ups=["Collite/keporkak#37"]'),
+                         "args: 'reviewed' is required")
+        self.assertEqual(len(self.log.read_text().splitlines()), 5)
+    def test_a_sender_not_the_kinds_an_arg_it_does_not_declare_and_a_reply_without_its_re_are_refused(self):
+        self.assertEqual(self.refused("started", "--from", "reviewer", "--to", "teamlead"), "from: coder")
+        self.assertEqual(self.refused("started", "--from", "coder", "--to", "teamlead", "--args", "colour=blue"), "args: 'colour' is not declared")
+        self.recorded("stop", "--from", "coder", "--to", "principal", "--args", "sc=SC-2")
+        self.assertEqual(self.refused("triage", "--from", "principal", "--to", "coder", "--args", "outcome=resume"),
+                         "re: a triage answers a stop, and m-hand-000001 is in p1-s1.1.jsonl — give --re")
+        self.recorded("triage", "--from", "principal", "--to", "coder", "--re", "m-hand-000001", "--args", "outcome=resume")
+    def test_a_review_request_or_a_repair_done_with_no_started_or_no_verdict_before_it_is_written_with_a_warning(self):
+        request = self.record("review-request", "--from", "coder", "--to", "teamlead")
+        repair = self.record("repair-done", "--from", "coder", "--to", "reviewer", "--args", "verdict=review-005")
+        self.assertEqual((request.returncode, repair.returncode), (0, 0), request.stderr + repair.stderr)
+        self.assertEqual(request.stderr, "warning: no started before this review-request in p1-s1.1.jsonl; written all the same\n")
+        self.assertEqual(repair.stderr.splitlines(), ["warning: no started before this repair-done in p1-s1.1.jsonl; written all the same",
+                                                      "warning: no verdict before this repair-done in p1-s1.1.jsonl; written all the same"])
+        self.assertEqual(len(self.log.read_text().splitlines()), 2)
 
 if __name__ == "__main__": unittest.main()

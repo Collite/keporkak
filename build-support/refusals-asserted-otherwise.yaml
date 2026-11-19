@@ -13,6 +13,11 @@ kp-engine/src/test/kotlin/kp/engine/RecordsAndRulesCatchUpSpec.kt:
     reason: >-
       the refused record, read back from its line; the lines after it assert its rule, its requirement in the rules'
       words and what failed, field by field — the record's fields are the subject
+kp-daemon/src/test/kotlin/kp/daemon/seats/SeatsWorkSpec.kt:
+  - line: 'listOf(refused.status, refused.rule) shouldBe listOf(Status.REFUSED, "SEAT-01")'
+    reason: >-
+      asserts the refusal's rule, SEAT-01, on this line and what failed (roster.model_allowed) on the next; kp-daemon's
+      specs have no refusedBy matcher — S2.4's spec, listed when S2.7 took in master, whose CI this line had turned red
 kp-mailroom/src/test/kotlin/kp/mailroom/HoldsSpec.kt:
   - line: 'whileAway.records<kp.model.Refused>() shouldBe emptyList()'
     reason: asserts that nothing was refused; there is no rule to name

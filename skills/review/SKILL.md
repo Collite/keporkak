@@ -23,6 +23,10 @@ against the DONE line — no code review beyond the fixture spec.
    look for producer-through-consumer, an oracle that shares no code with the code under test, the failure path
    (refused, nothing changed), and the second language's way in (the fence tried from Java as well as Kotlin, from the
    build's side doors). A boundary claim without such a test is a test that does not test what it claims.
+   **A sentence over a whole class** — *every*, *any*, *nothing* — is tried over the whole class (the kinds, the
+   robots, the shapes of input), not one example; a spec that tests one example of it does not test what it claims.
+   **The hand-off's mutants:** rerun each with `just mutant <patch> <spec filter>` on the head — each must come back
+   red — and add mutants of your own where you doubt a spec.
 3. Classify every finding. A **blocker** violates the contract, a D-n, the DONE line or a security invariant, or is a
    test that does not test what it claims. Everything else is a **follow-up** → a GitHub issue (group them).
 4. Settle doubts yourself: run the test, or a throwaway probe (say so; dummy credentials only). Do not ask the coder

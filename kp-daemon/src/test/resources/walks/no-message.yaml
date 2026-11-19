@@ -1,0 +1,13 @@
+# S2.7 T1 — a step whose input is no message: its `re` names no step of the walk and is no message's id, so what the
+# harness hands the mailroom has a `re` outside its form (contracts.md §2.1, §5).
+name: no-message
+stage: S2.1
+initial: assigned
+seats:
+  coder-1: coder
+facts: {}
+steps:
+- who: coder-1
+  kind: started
+  re: nowhere
+  args: {}

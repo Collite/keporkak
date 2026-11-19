@@ -106,6 +106,7 @@ class Rehearsed(walk: String = "h1-prime", root: Path = checkout) : AutoCloseabl
     override fun close() {
         rehearsal.close()
         sockets.toFile().deleteRecursively()
+        Judgements.check(project)
     }
 
     companion object {
@@ -155,4 +156,48 @@ class Log(folder: Path) {
 fun edit(folder: Path, marker: String, from: String, to: String) {
     val file = folder.walk().single { file -> file.isRegularFile() && file.readLines().any { marker in it && from in it } }
     file.writeLines(file.readLines().map { if (marker in it && from in it) it.replace(from, to) else it })
+}
+
+/**
+ * Every line belongs to a judgement (S1.10's DONE; S2.7 T7, issue #39 item 5): what a spec's harness checks of its
+ * project's log when it closes it — a rehearsal, a test office, a hero, a restart, a case of the sweep — and what the
+ * check after each spec (ProjectConfig) reads.
+ */
+object Judgements {
+    private val problems = java.util.concurrent.CopyOnWriteArrayList<String>()
+
+    /** Checks the daemon's log in [project]; what is wrong waits for the check after the spec. */
+    fun check(project: Path) {
+        val mail = project.resolve("mail")
+        if (mail.exists()) problems += outsideAJudgement(Log(mail).lines).map { "${project.fileName}: $it" }
+    }
+
+    /** What the checks since the last call found, and none kept. */
+    fun drain(): List<String> = problems.toList().also { problems.clear() }
+
+    /**
+     * Every line that no `judged` closes and no `voided` voids, and a log that does not end with a `judged` line: a
+     * judgement runs from its first line to the `judged` naming it; a `voided` names the judgement before it and opens
+     * the one that carries its first line again (contracts.md §2.2, §3).
+     */
+    fun outsideAJudgement(lines: List<Envelope>): List<String> {
+        val problems = ArrayList<String>()
+        var first: Long? = null
+        lines.forEach { line ->
+            val seq = line.seq.toLong()
+            when (line) {
+                is kp.model.Judged -> {
+                    if (line.first.toLong() != first) problems += "$seq judged names ${line.first}, not the first line of its judgement ($first)"
+                    first = null
+                }
+                is kp.model.Voided -> {
+                    if (first == null || line.first.toLong() != first || line.last.toLong() != seq - 1) problems += "$seq voided names ${line.first}–${line.last}, not the judgement before it"
+                    first = seq
+                }
+                else -> if (first == null) first = seq
+            }
+        }
+        if (lines.isNotEmpty() && lines.last() !is kp.model.Judged) problems += "${lines.last().seq}: the log does not end with a judged line"
+        return problems
+    }
 }

@@ -2,6 +2,20 @@
 
 One line per change: date · rule ids · what · the decision. Newest first.
 
+- 2026-11-19 · PL-18 · The walk reaches amendments: before Bora rules on one that changes how a message is judged, the planner walks it against every rule on master it reaches and the proposal carries `check-rules.py`'s output on a copy of the rules with the edit applied. · KP D-78
+- 2026-11-19 · — · The `planning` skill: PL-18 reaches amendments; a DONE item states the property and lets the report give the number; the Pre-flight's paths are the files its tasks name; a list built from triaged Found lines names their `_closed/` file. · KP D-78
+- 2026-11-19 · — · The `tdd` and `review` skills: a sentence that says every, any or nothing is tested over its whole class, generated from the rules where it can be. · KP D-78 (retro of P1, candidate 6)
+- 2026-11-19 · — · The `handoff-pr` skill names one mutant per DONE item with its result (`just mutant`); the `review` skill reruns them and adds its own. · KP D-78 (retro of P1, candidate 3)
+- 2026-11-19 · EX-13 · By hand, every session works the project repo in a worktree and a branch of its own, edits only its own file and merges its own pull request; the main checkout is Bora's. · KP D-59
+- 2026-11-19 · SEAT-41, SEAT-42 · `rules/stage-lifecycle.yaml`: a seat in `ready` goes idle at its stage's exit or close, as a busy one does — a reviewer's seat and a re-seated one are `ready`; the five `retire` moves of a seat that is not idle, which the kind's own requirement kept from ever firing, are removed (SEAT-08, -09, -10, -12, -13). · KP D-80
+- 2026-11-17 · — · `rules/message-kinds.yaml`: `assignment-proposal`'s `reply` prose reads `approval | decline | queued-approval`, as its `replies` do. · KP D-73
+- 2026-11-17 · — · `rules/vocabulary.yaml`: the fact written at the stop gate's cap is `turn.blocked`, the seat API's, not the driver's `seat.stop_blocks`. · KP D-72
+- 2026-11-17 · — · `rules/engagement.yaml`: the stop gate's block is judged only when a turn is about to end; it is no block a `{holds: …}` may name, and POOL-14 keeps its own requirement. · KP D-71
+- 2026-11-17 · QA-6 · `assignment-proposal`'s `replies` gains `queued-approval`, so the Deputy's yes from the queue closes the proposal's ticket and wait; QA's queue holds by an id of its own, QA-6; robots are asked in the order of their files' names; `refusals.today` is a seat's. · KP D-70
+- 2026-11-16 · T-07, T-29 · A declared emit carries the args its kind requires: T-07's nudge its `rule` and `failed_guard`, T-29's ruling-request `default: recut` and its `citation`; a kind only the mailroom sends counts nothing of its own. · KP D-68
+- 2026-11-15 · — · The rules' data catches up with Amendment 12: each kind's `replies`; `{wait: again}`, under a counter with a cap; `profile: supervised` in `engagement.yaml`. · KP D-64
+- 2026-11-15 · — · `pool/roster.yaml`: `sdk` leaves the roster; Fable 5.2 enters it, reserved for the Principal, and `seat.start` requires `roster.model_allowed`. · KP D-62
+- 2026-11-14 · DEP-4, DEP-16 · `engagement.yaml` names the block `second_key`, which `merge`'s class reads with `{holds: …}`; DEP-4 triggers on the delivered re-verdict, and its twin DEP-16 is folded into it. · KP D-58
 - 2026-11-14 · PL-18 · A list cites every contract section its tasks touch, walked task by task before it is cut; a task needing what no contract names leaves the list uncut. · KP D-54
 - 2026-11-14 · PL-19 · The specs task names the seam its specs observe. · KP D-54
 - 2026-11-14 · PL-20 · A DONE item is checkable on the PR's head at the hand-off; what only the merge shows is an Exit line. · KP D-54

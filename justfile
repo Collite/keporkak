@@ -73,7 +73,7 @@ mutant patch filter: _python-env
     build/python/bin/python build-support/mutant.py --from "{{invocation_directory()}}" "$1" "$2"
 
 # Record one carried message (contracts.md §12): a kind and its flags, or one complete message on stdin.
-# Only the project's mail/<effort>/_hand/ is written.
+# Only the project's mail/<effort>/_hand/ is written; what `kp check` would call a slip is refused, and nothing is written.
 record *args: _python-env
     build/python/bin/python scripts/kp-record.py "$@"
 

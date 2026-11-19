@@ -6,6 +6,7 @@ import kotlinx.serialization.json.jsonObject
 import kp.mailroom.Answer
 import kp.mailroom.Clock
 import kp.mailroom.Deliveries
+import kp.mailroom.Offer
 import kp.mailroom.OperationResult
 import kp.mailroom.Operations
 import kp.mailroom.Sender
@@ -42,7 +43,7 @@ class TestOffice(val root: Path = checkout, private val project: Path = Files.cr
         commands = KpCommands(office, facts)
     }
 
-    fun send(seat: String, input: String): Answer = office.submit(Sender.Seat(seat), json(input))
+    fun send(seat: String, input: String): Answer = office.submit(Sender.Seat(seat), json(input)).answered()
 
     /** Runs a `kp` command as [peer] and collects what it prints. */
     fun kp(vararg args: String, peer: Peer = Peer("bora")): Ran {
@@ -53,7 +54,10 @@ class TestOffice(val root: Path = checkout, private val project: Path = Files.cr
 
     fun messages(): List<Message> = office.lines().map { it.entry }.filterIsInstance<Message>()
 
-    override fun close() = office.close()
+    override fun close() {
+        office.close()
+        Judgements.check(project)
+    }
 
     companion object {
         /** A copy of the checkout's rule files — rules, robots, pool, personas — that a spec may edit. */
@@ -101,3 +105,6 @@ private fun keepLines(project: Path, keep: (Long) -> Boolean) = project.resolve(
 /** The TeamLead's proposal of `h1-prime.yaml`, for [stage]. */
 fun proposal(stage: String = "KP/P2/S2.1") =
     """{"kind": "assignment-proposal", "stage": "$stage", "subject": "coder-1 for $stage", "args": {"role": "coder", "level": "senior", "seat": "coder-1"}}"""
+
+/** The answer to a submission that is a message; a spec that submits one fails here when it is not. */
+fun Offer.answered(): Answer = (this as? Offer.Answered)?.answer ?: error("the input is no message: $this")

@@ -99,6 +99,18 @@ class FactsSpec : StringSpec({
             "{fact: refusals.today, seat: coder-1, eq: {cap: tail_retries}}", "{fact: seat.inbox_replayed, seat: coder-1}").failure(state = thread) shouldBe null
         requiring("{fact: seat.inbox_replayed, seat: bora}").failure(state = thread) shouldBe "{fact: seat.inbox_replayed, seat: bora}"
     }
+    "refusals.today is a seat's: the engine answers 0 for Bora and for a robot's role whose messages were refused, and 1 for the seat (S2.7 T3, issue #34)" {
+        fun refused(id: String, from: String, by: String) = arrayOf(
+            """{"id":"$id","thread":"$id","from":"$from","to":"teamlead","kind":"started","stage":"$STAGE","subject":"s","created":"$NOW","by":"$by"}""",
+            """{"event":"refused","id":"$id","rule":"started","requirement":"r","at":"2026-11-15T09:00:00Z"}""")
+        val state = folded(log(*refused("m-panda-000001", "bora", "bora-cli"), *refused("m-panda-000003", "deputy", "robot:DEP-8"),
+            *refused("m-panda-000005", "mailroom", "mailroom"), *refused("m-panda-000007", "coder-1", "seat:coder-1")))
+
+        state.refusals.keys shouldBe setOf("coder-1")
+        // tail_retries is 1 on master: below it is none, at it is one.
+        requiring("{fact: refusals.today, seat: bora, lt: {cap: tail_retries}}", "{fact: refusals.today, seat: deputy, lt: {cap: tail_retries}}",
+            "{fact: refusals.today, seat: mailroom, lt: {cap: tail_retries}}", "{fact: refusals.today, seat: coder-1, eq: {cap: tail_retries}}").failure(state = state) shouldBe null
+    }
     "queue.names: the last delivered queue Bora signed names the stage; an unsigned one names none, and the wave is not read again" {
         fun queue(signed: Boolean) = folded(log(*sent("m-panda-000001", "queue-approval", from = "bora", to = "teamlead", args = """{"stages": ["$STAGE"]}""")
             .let { arrayOf(it[0].replace("\"by\":\"seat:bora\"", "\"by\":\"bora-cli\"" + if (signed) ",\"signed\":true" else ""), it[1]) }))

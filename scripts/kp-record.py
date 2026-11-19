@@ -11,7 +11,12 @@ Two ways in:
   kp-record.py [--effort <effort>] < message.json
       One complete message, with its own ids, sequence number and timestamps.
 Either way the message is validated before any path is created, appended once under a lock and synced to disk, and
-nothing but the project's mail/<effort>/_hand/ is written. --project defaults to the office's one project checkout in
+nothing but the project's mail/<effort>/_hand/ is written.
+What `kp check` would call a slip is refused, and nothing is written (contracts.md §12, Amendment 26): a sender whose
+role is not the kind's, an addressee that is not the kind's `to`, `args` that break the kind's declaration — one it
+does not declare, one it requires and lacks, a value outside its type or its list — and a reply kind given without
+--re while a message it could answer is in the stage's hand log. A `review-request` or a `repair-done` with no
+`started` before it in that log, or a `repair-done` with no verdict before it, is written with a warning. --project defaults to the office's one project checkout in
 pool/offices.yaml, when the effort has a folder there (--office defaults to the short host name); `mail/` is at its root.
 """
 import argparse
@@ -30,6 +35,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 HAND_ID = re.compile(r"^m-hand-([0-9]{6,})$")
+# The parties that are no seat (kp-rules' PARTIES): `a seat` is none of them.
+PARTIES = {"bora", "daemon", "mailroom", "ledger", "board"}
 STAGE = re.compile(r"([A-Z][A-Z0-9-]*)/P([0-9]+)/S([0-9]+\.[0-9]+)")
 
 def integer(_checker, value):
@@ -135,7 +142,7 @@ def assign(message, project, effort, answers):
         message["thread"] = answered.get("thread", answers)
     return path
 
-def typed(pairs):
+def parsed(pairs):
     result = {}
     for pair in pairs:
         key, separator, raw = pair.partition("=")
@@ -170,9 +177,94 @@ def project_of(args, effort):
         raise ValueError(f"effort '{effort}' has no folder in office '{args.office}'s project checkout (pool/offices.yaml); pass --project")
     return Path(os.path.expanduser(checkout))
 
+def kinds():
+    return yaml.safe_load((ROOT / "rules/message-kinds.yaml").read_text())["kinds"]
+
+def owns(role, party):
+    """A party a role names (kp-engine's roleOwns): the role itself, or one of its seats, `<role>-…`."""
+    return party == role or party.startswith(role + "-")
+
+def described(destination):
+    """A kind's `to` as a refusal quotes it (contracts.md §4.1): its parties, `{re: from}`, or `a seat`."""
+    if isinstance(destination, dict):
+        return "{" + ", ".join(f"re: {value}" for value in destination.values()) + "}"
+    return destination
+
+def typed(value, declaration):
+    """An arg against its declaration, as the engine and both validators type it: its list, its type, its items, its fields."""
+    if "enum" in declaration and not any(value == item and type(value) is type(item) for item in declaration["enum"]):
+        return False
+    kind = declaration.get("type")
+    checks = {"string": lambda v: isinstance(v, str), "array": lambda v: isinstance(v, list), "object": lambda v: isinstance(v, dict),
+              "boolean": lambda v: isinstance(v, bool), "integer": lambda v: isinstance(v, (int, Decimal)) and not isinstance(v, bool) and v == int(v),
+              "number": lambda v: isinstance(v, (int, float, Decimal)) and not isinstance(v, bool)}
+    if kind in checks and not checks[kind](value):
+        return False
+    if isinstance(value, list) and "items" in declaration and not all(typed(item, declaration["items"]) for item in value):
+        return False
+    if isinstance(value, dict) and not all(field in value for field in declaration.get("required_fields", [])):
+        return False
+    return True
+
+def declared(declaration):
+    """What an arg's declaration allows, as a refusal quotes it: `one of A | B`, else its type."""
+    if "enum" in declaration:
+        return "one of " + " | ".join(str(item) for item in declaration["enum"])
+    return declaration.get("type", "valid")
+
+def slips(message, logged_lines, log_name):
+    """What `kp check` would call a slip in [message], recorded beside [logged_lines] of its hand log (contracts.md §12,
+    Amendment 26): the first, as the engine words it — or None; and the warnings it is written with."""
+    every = kinds()
+    kind = every[message["kind"]]
+    sender, to = message["from"], message["to"]
+    answers = message.get("re")
+    answered = next((line for line in logged_lines if line.get("id") == answers), None) if answers else None
+    warnings = []
+    if not any(owns(role.strip(), sender) for role in kind["from"].split("|")):
+        return f"from: {kind['from']}", warnings
+    destination = kind["to"]
+    if isinstance(destination, dict):
+        addressed = answered is None or all(answered.get(field) == to for field in destination.values())
+    elif destination.strip() == "a seat":
+        addressed = to not in PARTIES
+    else:
+        addressed = any(owns(name.strip(), to) for name in destination.split("|"))
+    if not addressed:
+        return f"to: {described(destination)}", warnings
+    args = message.get("args") or {}
+    declarations = kind.get("args") or {}
+    for name in args:
+        if name not in declarations:
+            return f"args: '{name}' is not declared", warnings
+    for name, declaration in declarations.items():
+        if name not in args:
+            if declaration.get("required"):
+                return f"args: '{name}' is required", warnings
+        elif not typed(args[name], declaration):
+            return f"args: '{name}' is not {declared(declaration)}", warnings
+    if not answers:
+        asked = [other for other, definition in every.items() if message["kind"] in (definition.get("replies") or [])]
+        open_ = next((line for line in logged_lines if line.get("kind") in asked), None)
+        if open_ is not None:
+            return f"re: a {message['kind']} answers a {open_['kind']}, and {open_['id']} is in {log_name} — give --re", warnings
+    earlier = {line.get("kind") for line in logged_lines}
+    if message["kind"] in ("review-request", "repair-done") and "started" not in earlier:
+        warnings.append(f"no started before this {message['kind']} in {log_name}")
+    if message["kind"] == "repair-done" and not earlier & {"verdict", "re-verdict"}:
+        warnings.append(f"no verdict before this repair-done in {log_name}")
+    return None, warnings
+
+def unslipped(message, path):
+    """Refuses a slip (ValueError, nothing written); prints each warning, and the message is written."""
+    slip, warnings = slips(message, logged(path), path.name)
+    if slip:
+        raise ValueError(f"{slip} — kp check would call this line a slip; nothing was written")
+    for warning in warnings:
+        print(f"warning: {warning}; written all the same", file=sys.stderr)
+
 def from_command_line(args):
-    kinds = yaml.safe_load((ROOT / "rules/message-kinds.yaml").read_text())["kinds"]
-    if args.kind not in kinds:
+    if args.kind not in kinds():
         raise ValueError(f"unknown kind '{args.kind}' (rules/message-kinds.yaml)")
     if not (args.sender and args.to):
         raise ValueError("a recorded message needs --from and --to")
@@ -189,7 +281,7 @@ def from_command_line(args):
     if args.pointers:
         message["pointers"] = args.pointers
     if args.args:
-        message["args"] = typed(args.args)
+        message["args"] = parsed(args.args)
     message["created"] = ""
     message["by"] = "hand:" + role_of(args.sender)
     effort = args.effort
@@ -198,6 +290,7 @@ def from_command_line(args):
     project = project_of(args, effort)
     path = assign(message, project, args.effort, args.answers)
     checked(message)
+    unslipped(message, path)
     # Validation finishes before the first filesystem mutation; the assignment, and with its time the hand log, is
     # redone under the lock. Every hand log of an effort is in the same directory.
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -217,6 +310,9 @@ def from_stdin(args):
         stage = message.get("stage") or ""
         args.project = project_of(args, stage.split("/")[0] if stage else args.effort)
     path = destination(args.project, message, args.effort)
+    if message.get("kind") not in kinds():
+        raise ValueError(f"unknown kind '{message.get('kind')}' (rules/message-kinds.yaml)")
+    unslipped(message, path)
     # Validation and serialization finish before the first filesystem mutation.
     path.parent.mkdir(parents=True, exist_ok=True)
     append(path, line)

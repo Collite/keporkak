@@ -49,7 +49,10 @@
 - **PL-17 Plans stay markdown.** Stage lists are the human-facing plan; machine indexes are generated from them. `D-10`
 - **PL-18 Walk the contract before cutting.** A list cites every contract section its tasks touch, and the planner
   walks each task against those sections before cutting the list. A task that needs something no contract names means
-  the list is not cut yet: the gap goes to the contract first. `D-54`
+  the list is not cut yet: the gap goes to the contract first. The walk reaches amendments too: before Bora rules on an
+  amendment that changes how a message is judged, the planner walks it against every rule on master it reaches — each
+  declared emit, each kind's addressee and cap, each expiry — and the proposal carries `check-rules.py`'s output on a
+  copy of the rules with the edit applied. `D-54, D-78`
 - **PL-19 The specs task names its seam** — the interface its specs observe the behaviours at (an entry point, a
   command, a file another program reads). The executor writes the specs there and nowhere further in. `D-54`
 - **PL-20 DONE is checkable at the hand-off.** Every DONE item can be seen on the PR's head before the merge; what

@@ -23,7 +23,14 @@ ticks boxes, appends `done <sha>`, writes Found lines and Retro notes, and stops
 - **Size.** 6–8 tasks; a task is ½–1 day with one observable result; a stage is one PR and ≤ 8 working days.
 - **Walk the contract before cutting (PL-18).** The header cites every contract section the tasks touch. Walk each
   task against those sections — what it reads, what it writes, where each value comes from — before cutting the list.
-  A task that needs something no contract names means the list is not cut yet: fix the contract first.
+  A task that needs something no contract names means the list is not cut yet: fix the contract first. Walk an
+  amendment too: before Bora rules on one that changes how a message is judged, walk it against every rule on master
+  it reaches — each declared emit, each kind's addressee and cap, each expiry — and bring `check-rules.py`'s output on
+  a copy of the rules with the edit applied.
+- **A DONE item states the property; the report gives the number** ("every cut after a waking judgement", not "the
+  seven cuts"): never a number taken from data that changes.
+- **The Pre-flight's paths are the files its tasks name.** A list built from triaged Found lines names their
+  `_closed/` file, which its executor may then read.
 - **Specific about the result and its test — not the implementation.** Name interfaces, behaviours and acceptance;
   do not pre-decide detail the executor can read from the code; avoid file paths and line numbers that go stale. A
   specs task names ≤ 5 behaviours.
