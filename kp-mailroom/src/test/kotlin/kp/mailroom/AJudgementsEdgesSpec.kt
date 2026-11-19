@@ -39,7 +39,7 @@ class AJudgementsEdgesSpec : StringSpec({
         failing = false
         val next = office.send("teamlead", """{"kind": "assign", "stage": "$STAGE", "args": {"seat": "coder-1"}}""")
         next.id shouldBe "m-panda-%06d".format(onDisk.size + 1)
-        office.readBack().judgements().filter { "assign by seat:teamlead" in it } shouldBe listOf(listOf("assign by seat:teamlead", "delivered", "transition ready→busy", "judged"))
+        office.readBack().judgements().filter { "assign by seat:teamlead" in it } shouldBe listOf(listOf("assign by seat:teamlead", "delivered", "transition ready→busy", "op seat.wake requested", "judged"))
         office.mailroom.state shouldBe fold(office.readBack().lines)
     }
 
