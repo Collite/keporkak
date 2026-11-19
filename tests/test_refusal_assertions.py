@@ -13,14 +13,16 @@ SPEC = "kp-mailroom/src/test/kotlin/kp/mailroom/QueueSpec.kt"
 BY_STATUS_LINE = "asked.status shouldBe Status.REFUSED"
 BY_STATUS = f'class QueueSpec : StringSpec({{\n    "x" {{\n        {BY_STATUS_LINE}\n    }}\n}})\n'
 BY_RULE = 'class QueueSpec : StringSpec({\n    "x" {\n        asked should refusedBy("qa-request", "{fact: list.task_exists}")\n    }\n})\n'
-BY_RULE_AND_BY_STATUS = """import kp.mailroom.Status.REFUSED
+BESIDE_BY_RULE = """import kp.mailroom.Status.REFUSED
 class QueueSpec : StringSpec({
     "x" {
         asked should refusedBy("qa-request", "{fact: list.task_exists}")
-        other.status shouldBe Status.REFUSED
+        %s
     }
 })
 """
+EVERY_KIND = "kp-engine/src/test/kotlin/kp/engine/EveryKindSpec.kt"
+PROBE = 'supervised().judge(State(), compact("bora"), crowded)'
 
 
 def listing(line, reason, spec=SPEC, times=1):
@@ -53,12 +55,28 @@ class RefusalsByTheirRule(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn(unlisted(3, BY_STATUS_LINE), result.stdout)
 
-    def test_a_refusal_asserted_by_its_status_alone_fails_though_the_same_file_asserts_another_by_its_rule(self):
-        result = Fixture(self, BY_RULE_AND_BY_STATUS).check()
+    def test_a_refusal_asserted_by_its_status_or_outcome_alone_fails_though_the_same_file_asserts_another_by_its_rule(self):
+        for alone in ["other.status shouldBe Status.REFUSED", "decision.outcome shouldBe Outcome.REFUSE"]:
+            with self.subTest(alone):
+                result = Fixture(self, BESIDE_BY_RULE % alone).check()
+
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertEqual([line for line in result.stdout.splitlines() if line.startswith("FAIL")], [unlisted(5, alone)])
+
+    def test_the_reviews_probe_one_every_kind_line_back_to_its_outcome_fails(self):
+        every_kind = (ROOT / EVERY_KIND).read_text()
+        by_rule = f'        {PROBE} should refusedBy("compact", "to: a seat")\n'
+        self.assertEqual(every_kind.count(by_rule), 1)
+        number = every_kind[:every_kind.index(by_rule)].count("\n") + 1
+        fixture = Fixture(self, BY_RULE)
+        (fixture.root / EVERY_KIND).parent.mkdir(parents=True)
+        (fixture.root / EVERY_KIND).write_text(every_kind.replace(by_rule, f"        {PROBE}.outcome shouldBe Outcome.REFUSE\n"))
+
+        result = fixture.check()
 
         self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertEqual([line for line in result.stdout.splitlines() if line.startswith("FAIL")],
-                         [unlisted(5, "other.status shouldBe Status.REFUSED")])
+        self.assertIn(f"FAIL {EVERY_KIND}:{number}: asserts a refusal without refusedBy(rule, failed), and the list does not name the line — "
+                      f"{PROBE}.outcome shouldBe Outcome.REFUSE", result.stdout)
 
     def test_the_same_spec_passes_when_it_asserts_the_rule_or_its_line_is_listed_with_its_reason(self):
         by_rule = Fixture(self, BY_RULE).check()
