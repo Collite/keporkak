@@ -188,6 +188,27 @@ class LogWriterSpec : StringSpec({
         project.resolve("mail/KP/p1-s1.1.jsonl").seqs() shouldBe listOf(1, 2)
         project.resolve("mail/_office/panda-2026-11.jsonl").seqs() shouldBe listOf(3)
     }
+    "a judgement abandoned writes none of its lines: the next line takes the seq its first took, and a file it would have closed stays open (S2.7 T7)" {
+        val project = throwawayProject()
+        LogWriter.open(project, panda).use { log ->
+            log.append(record(), stage)
+            val judgement = log.judgement()
+            judgement.add(message("m-panda-000002"))
+            judgement.add(stageMove("exited"), stage)
+            log.isClosed(stage) shouldBe true
+
+            judgement.abandon()
+
+            judgement.isOpen shouldBe false
+            log.last shouldBe 1L
+            log.isClosed(stage) shouldBe false
+            log.judgement().run {
+                add(record(), stage).seq.toInt() shouldBe 2
+                close("2026-11-14T09:00:01Z")
+            }
+        }
+        project.resolve("mail/KP/p1-s1.1.jsonl").seqs() shouldBe listOf(1, 2, 3)
+    }
     "while a judgement is open no line is appended alone, and a line it refuses changes nothing" {
         val project = throwawayProject()
         LogWriter.open(project, panda).use { log ->

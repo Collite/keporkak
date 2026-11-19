@@ -199,6 +199,7 @@ data class World(
                 Outcome(id ?: "", record, written.filterIsInstance<Transition>().filter { if (id != null) it.cause == id else it.seq.toLong() > before }.mapNotNull { it.rule })
             }
         } finally {
+            kp.daemon.Judgements.check(project)
             project.deleteRecursively()
         }
     }

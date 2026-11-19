@@ -140,6 +140,8 @@ class Mailroom private constructor(
     private val carrying = ArrayDeque<() -> Unit>()
     /** What waits for a judgement's `judged` line to be on disk: the operations it requested, performed, and the seats it wakes. */
     private val world = ArrayDeque<() -> Unit>()
+    /** What the judgement being written added to [messages] and [addressed]: what a judgement that cannot be finished takes back. */
+    private val added = ArrayList<Pair<String?, String>>()
     /** Results that arrived, each to be judged in a judgement of its own. */
     private val arrivals = ArrayDeque<() -> Unit>()
     private var draining = false
@@ -196,7 +198,8 @@ class Mailroom private constructor(
         val ids = if (unread) folded.unread(seat) else addressed[seat].orEmpty()
         val shown = limit?.let(ids::take) ?: ids
         val seen = shown.filter { it in folded.unread(seat) }
-        if (seen.isNotEmpty()) judged { write(line(now(), EVENT to text("read"), SEAT to text(seat), IDS to texts(seen))) }
+        // Turns to the world after its judgement, as every way in does: what a release in it asked for is done now (issue #39).
+        if (seen.isNotEmpty()) judged { write(line(now(), EVENT to text("read"), SEAT to text(seat), IDS to texts(seen))) }.also { drain() }
         return Inbox(shown.map(messages::getValue), more = ids.size > shown.size)
     }
 
@@ -285,6 +288,7 @@ class Mailroom private constructor(
         }
         inForce = next
         judged { recordRules() }
+        drain()
         return Reload.Accepted(next.hash)
     }
 
@@ -722,6 +726,9 @@ class Mailroom private constructor(
     private fun <T> judged(arrival: () -> T): T {
         check(!judging) { "a judgement is being written" }
         judging = true
+        val before = folded
+        val worldBefore = world.size
+        added.clear()
         try {
             val result = arrival()
             if (judgement != null) {
@@ -735,7 +742,20 @@ class Mailroom private constructor(
                 take(listOf(judged))
             }
             return result
+        } catch (error: Throwable) {
+            // A judgement that cannot be finished writes no line (contracts.md §3, Amendment 25): its lines are dropped,
+            // and with them all it added — to the state, which is the fold of what is on disk again, to what it carried
+            // and to what it would have done. The next arrival begins a judgement of its own; the sender is answered
+            // with the error, which the daemon's journal shows.
+            judgement?.takeIf { it.isOpen }?.abandon()
+            judgement = null
+            carrying.clear()
+            while (world.size > worldBefore) world.removeLast()
+            added.forEach { (seat, id) -> if (seat == null) messages.remove(id) else addressed[seat]?.let { ids -> ids.removeAt(ids.lastIndexOf(id)) } }
+            folded = before
+            throw error
         } finally {
+            added.clear()
             judging = false
         }
     }
@@ -853,8 +873,11 @@ class Mailroom private constructor(
      */
     private fun take(lines: List<Envelope>, asWritten: Boolean = true, counts: (Envelope) -> Boolean = { true }) {
         lines.forEach { line ->
-            if (line is Message) messages[line.id.value] = line
-            if (line is Delivered && counts(line)) line.to.forEach { addressed.getOrPut(it, ::ArrayList) += line.id }
+            if (line is Message && messages.put(line.id.value, line) == null && judging) added += null to line.id.value
+            if (line is Delivered && counts(line)) line.to.forEach { seat ->
+                addressed.getOrPut(seat, ::ArrayList) += line.id
+                if (judging) added += seat to line.id
+            }
         }
         folded = fold(lines, folded).let { if (asWritten) it.settled() else it }
     }

@@ -90,6 +90,24 @@ class LogWriter private constructor(
         private val lines = ArrayList<Placed>()
         /** The stage of the first line's file: the `judged` line goes there, or to the office's file once that is closed. */
         private var owner: StageId? = null
+        /** What the writer stood at when the judgement opened: what [abandon] puts back. */
+        private val from = last
+        private val closedBefore = closed.toSet()
+
+        /** Whether lines may still be added: neither closed nor abandoned. */
+        val isOpen: Boolean get() = open === this
+
+        /**
+         * Drops the judgement (contracts.md §3, Amendment 25): a judgement that cannot be finished writes no line. None of
+         * its lines is on disk; the next line takes the `seq` its first one took, and a file its lines would have closed
+         * is open again.
+         */
+        fun abandon() {
+            check(open === this) { "the judgement is closed" }
+            last = from
+            closed.retainAll(closedBefore)
+            open = null
+        }
 
         /** Adds [draft] as [append] would place it, and returns the line with its `seq`; a line the contract refuses changes nothing. */
         fun add(draft: JsonObject, stage: StageId? = null): Envelope {

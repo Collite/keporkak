@@ -54,7 +54,10 @@ class TestOffice(val root: Path = checkout, private val project: Path = Files.cr
 
     fun messages(): List<Message> = office.lines().map { it.entry }.filterIsInstance<Message>()
 
-    override fun close() = office.close()
+    override fun close() {
+        office.close()
+        Judgements.check(project)
+    }
 
     companion object {
         /** A copy of the checkout's rule files — rules, robots, pool, personas — that a spec may edit. */

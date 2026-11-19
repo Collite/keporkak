@@ -106,6 +106,7 @@ class Hero(
     override fun close() {
         daemon.close()
         sockets.deleteRecursively()
+        kp.daemon.Judgements.check(project)
     }
 
     /**
