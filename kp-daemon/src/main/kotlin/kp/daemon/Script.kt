@@ -143,6 +143,8 @@ class Script(val walk: Walk, val effort: String = EFFORT) {
         private const val PROVISIONED = "provisioned"
         private const val READY = "ready"
         private val NUMBERED = Regex("S([0-9]+)\\.([0-9]+)")
+        /** A seat's two ends, as a walk reports one and the driver observes it (contracts.md §4.4). */
+        val DEATHS_OF_A_SEAT = setOf("seat.process_gone", "seat.protocol_closed")
 
         /**
          * A stage id for each stage the walk names: `S2.1` is `<effort>/P2/S2.1`; a name of another form (`tail`,
@@ -183,6 +185,9 @@ interface LiveSeats {
 
     /** [seat]'s process ends from outside; false when it has none. */
     fun die(seat: String): Boolean
+
+    /** The walk's Claude seats, which play their own steps (S2.5): null unless the walk names them (`claude_seats:`). */
+    val own: OwnSteps? get() = null
 }
 
 /** A step that did not do what the walk expected of it. */
@@ -197,6 +202,16 @@ class Played(val number: Int, val step: Walk.Step, val stage: String, val messag
  */
 class Player internal constructor(private val script: Script, val office: Office, private val bora: Bora, private val out: (String) -> Unit) {
     private val walk = script.walk
+    /** The walk's name, and the stage id its stage is played as. */
+    val walkName: String get() = walk.name
+    val stageId: String get() = script.stageId(walk.stage)
+    /** The Claude seat whose own step is waited for now, if any (S2.5). */
+    @Volatile var awaiting: String? = null
+        private set
+    /** Per Claude seat, the `seq` of the last of its messages a step of its own has taken (S2.5). */
+    private val taken = HashMap<String, Long>()
+    /** The walk's Claude seats, when the seats are processes and the walk names them: their steps are their own. */
+    private val own: OwnSteps? get() = script.live?.own
     /** A step's id → the id of the message it is about. */
     val ids = HashMap<String, String>()
     /** The messages robot and mailroom steps have found, so that each is found once. */
@@ -231,6 +246,7 @@ class Player internal constructor(private val script: Script, val office: Office
     fun step(): Played {
         val index = next++
         val step = walk.steps[index]
+        own?.failure()?.let { throw WalkFailure(at(index + 1, step) + ": " + it) }
         stage = step.text(STAGE) ?: stage
         script.facts.current = stage
         script.facts.table(stage).set(step.facts)
@@ -241,6 +257,7 @@ class Player internal constructor(private val script: Script, val office: Office
             step.fields.containsKey(EVENT) -> fact(index + 1, step)
             step.who == MAILROOM || step.text(BY)?.startsWith(ROBOT) == true -> find(index + 1, step)
             step.who == BORA && step.kind != null -> bora(index + 1, step, step.kind!!)
+            step.who != null && step.kind != null && own?.seats?.contains(step.who) == true -> await(index + 1, step, step.who!!, own!!)
             step.who != null && step.kind != null -> send(index + 1, step, step.who!!)
             else -> null to null
         }
@@ -262,8 +279,28 @@ class Player internal constructor(private val script: Script, val office: Office
     /** Plays the steps up to and including the [number]th (from 1). */
     fun throughStep(number: Int): List<Played> = buildList { while (next < number) add(step()) }
 
-    /** Plays every step left, then checks how the walk ends: its `final` states and its `expected_counts`. */
-    fun rest(): List<Played> = buildList { while (!done) add(step()) }.also { finish() }
+    /**
+     * Plays every step left, then checks how the walk ends: its `final` states and its `expected_counts`. With Claude seats
+     * (S2.5) the play ends once each of them the last message woke has ended the turn it was woken for, and its evidence is
+     * written then — passed or failed — and named ([evidence]).
+     */
+    fun rest(): List<Played> {
+        val own = own ?: return buildList { while (!done) add(step()) }.also { finish() }
+        try {
+            val played = buildList { while (!done) add(step()) }
+            turnsOfTheEnd(own)
+            finish()
+            evidence = own.ended(this, null)
+            return played
+        } catch (failure: WalkFailure) {
+            evidence = own.ended(this, failure.message)
+            throw failure
+        }
+    }
+
+    /** The evidence file of a play with Claude seats, once [rest] has ended (S2.5). */
+    @Volatile var evidence: Path? = null
+        private set
 
     /** The walk's end: each stage in the state `final` gives, and as many deliveries of each counted kind as it says. */
     fun finish() {
@@ -315,6 +352,60 @@ class Player internal constructor(private val script: Script, val office: Office
         return answer.id to answer.status.name.lowercase()
     }
 
+    /**
+     * A Claude seat's own step (S2.5; contracts.md §12, Amendment 27): not sent, waited for. A seat's messages are taken in
+     * order, each by its next step of its own: one of the step's kind is the step's — judged like any other message, as
+     * it came — and one of another kind ends the play. So does nothing within the walk's `wait`, by the office's clock, and
+     * the seats having used more tokens than the walk allows. Each names the step, the seat and its transcript.
+     */
+    private fun await(number: Int, step: Walk.Step, seat: String, own: OwnSteps): Pair<String?, String?> {
+        val message = try {
+            withinTheWalksWait(own, { throw WalkFailure(at(number, step) + ": " + it) }, { "$seat sent nothing in ${shown(own.wait)} — its transcript: ${own.transcript(seat)}" },
+                waiting = { awaiting = seat }) {
+                lines().filterIsInstance<Message>().firstOrNull { it.from.value == seat && it.by == "$SEAT_BY$seat" && it.seq.toLong() > (taken[seat] ?: 0L) }
+            }
+        } finally {
+            awaiting = null
+        }
+        taken[seat] = message.seq.toLong()
+        if (message.kind != step.kind) throw WalkFailure(at(number, step) + ": $seat sent ${message.kind}, not ${step.kind} — its transcript: ${own.transcript(seat)}")
+        val id = message.id.value
+        val outcome = waitFor(number, step, "the judgement of $id", failing = false) { outcome(lines(), id).takeIf { it != WRITTEN } }
+        return id to outcome
+    }
+
+    /**
+     * The end of a play with Claude seats (S2.5): each of them that the walk's last message woke — its addressee, and a seat
+     * it copies — has ended the turn it was woken for, within the walk's `wait`, by the office's clock.
+     */
+    private fun turnsOfTheEnd(own: OwnSteps) {
+        val last = played.lastOrNull { it.message != null } ?: return
+        val id = last.message!!
+        val woke = lines().filterIsInstance<Delivered>().lastOrNull { it.id == id }?.woke.orEmpty().filter { it in own.seats }
+        withinTheWalksWait(own, { throw WalkFailure(at(last.number, last.step) + ", at the walk's end: " + it) }, {
+            woke.filterNot { own.turnEnded(it, id) }.joinToString("; ") { "the turn $it was woken for did not end in ${shown(own.wait)} — its transcript: ${own.transcript(it)}" }
+        }) { if (woke.all { own.turnEnded(it, id) }) Unit else null }
+    }
+
+    /**
+     * Waits on the office's changes until [done] answers, at most the walk's `wait` on the office's clock (S2.5): [failed]
+     * ends the play when the seats have used more tokens than the walk allows, or with [late] when the time is up.
+     * [waiting] hears that the wait has begun, its time taken.
+     */
+    private fun <T : Any> withinTheWalksWait(own: OwnSteps, failed: (String) -> Nothing, late: () -> String, waiting: () -> Unit = {}, done: () -> T?): T {
+        val since = office.clock.now()
+        var version = office.changes.version()
+        waiting()
+        while (true) {
+            done()?.let { return it }
+            own.failure()?.let(failed)
+            if (!office.clock.now().isBefore(since.plus(own.wait))) failed(late())
+            version = office.changes.await(version, POLL_MILLIS)
+        }
+    }
+
+    private fun shown(duration: java.time.Duration): String = if (duration.seconds % 60 == 0L) "${duration.toMinutes()}m" else "${duration.seconds}s"
+
     private fun input(number: Int, step: Walk.Step): JsonObject = JsonObject(listOfNotNull(
         KIND to JsonPrimitive(step.kind),
         STAGE to JsonPrimitive(script.stageId(stage)),
@@ -322,7 +413,7 @@ class Player internal constructor(private val script: Script, val office: Office
         ARGS to Json.parseToJsonElement(args(step).json()),
         step.text(RE)?.let { RE to JsonPrimitive(ids[it] ?: it) },
         step.text(TO)?.let { TO to JsonPrimitive(it) },
-        step.text(BODY)?.let { BODY to JsonPrimitive(it) },
+        step.text(BODY)?.let { BODY to JsonPrimitive(it.replace(PROJECT, office.project.toString())) },
     ).toMap())
 
     /** The step's args, a value that names one of the walk's stages read as the stage id it is played as. */
@@ -407,6 +498,8 @@ class Player internal constructor(private val script: Script, val office: Office
         val seat = (ref.params[SEAT] as? Datum.Text)?.value
         val live = script.live
         if (live != null && name in DEATHS && seat != null) {
+            // A Claude seat's process ends between its turns (S2.5): the one in flight has ended first, its transcript whole.
+            own?.takeIf { seat in it.seats }?.let { own -> idle(number, step, seat, own) }
             // The seat's process ends; the driver reports it, and the walk waits until the mailroom has judged it.
             val before = last()
             if (!live.die(seat)) throw WalkFailure(at(number, step) + ": $seat has no process to end")
@@ -420,12 +513,23 @@ class Player internal constructor(private val script: Script, val office: Office
         return null to null
     }
 
-    /** Waits until [found] finds something on the log, at most [WAIT_MILLIS]: what the step waits for, as [what] says. */
-    private fun <T : Any> waitFor(number: Int, step: Walk.Step, what: String, found: () -> T?): T {
+    /** Waits until a Claude seat's turn in flight has ended — [seat] is idle — at most the walk's `wait`, by the office's clock. */
+    private fun idle(number: Int, step: Walk.Step, seat: String, own: OwnSteps) {
+        withinTheWalksWait(own, { throw WalkFailure(at(number, step) + ": " + it) }, { "$seat's turn did not end in ${shown(own.wait)} — its transcript: ${own.transcript(seat)}" }) {
+            if (own.idle(seat)) Unit else null
+        }
+    }
+
+    /**
+     * Waits until [found] finds something on the log, at most [WAIT_MILLIS]: what the step waits for, as [what] says. With
+     * Claude seats, the seats having used more tokens than the walk allows ends it too, unless not [failing].
+     */
+    private fun <T : Any> waitFor(number: Int, step: Walk.Step, what: String, failing: Boolean = true, found: () -> T?): T {
         val end = System.nanoTime() + WAIT_MILLIS * 1_000_000
         var version = office.changes.version()
         while (true) {
             found()?.let { return it }
+            if (failing) own?.failure()?.let { throw WalkFailure(at(number, step) + ": " + it) }
             val left = (end - System.nanoTime()) / 1_000_000
             if (left <= 0 || office.closed) throw WalkFailure(at(number, step) + ": waited ${WAIT_MILLIS / 1000}s for $what")
             version = office.changes.await(version, minOf(left, POLL_MILLIS))
@@ -572,7 +676,7 @@ class Player internal constructor(private val script: Script, val office: Office
             is Delivered -> DELIVERED
             is Held -> HELD
             is Refused -> REFUSED
-            else -> "written"
+            else -> WRITTEN
         }
     }
 
@@ -637,9 +741,13 @@ class Player internal constructor(private val script: Script, val office: Office
         const val RULES = "rules"
         const val REFUSED_KEY = "refused"
         const val REFUSAL_CONTAINS = "refusal_contains"
+        const val WRITTEN = "written"
+        const val SEAT_BY = "seat:"
+        /** In a step's body, the throwaway project's path: where a seat finds its list and STATUS (S2.5). */
+        const val PROJECT = "{project}"
         const val REFUSED_BY = "refused_by"
         /** A seat's death, as a walk reports it. */
-        val DEATHS = setOf("seat.process_gone", "seat.protocol_closed")
+        val DEATHS = Script.DEATHS_OF_A_SEAT
         const val WAIT_MILLIS = 120_000L
         const val POLL_MILLIS = 1_000L
     }
