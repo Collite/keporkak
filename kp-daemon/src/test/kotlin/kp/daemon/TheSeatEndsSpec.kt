@@ -5,10 +5,7 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
-import io.kotest.matchers.string.shouldNotContain
-import io.kotest.matchers.string.shouldStartWith
 import kp.mailroom.Clock
 import kp.mailroom.Deliveries
 import kp.mailroom.FactSource
@@ -50,7 +47,9 @@ class TheSeatEndsSpec : FreeSpec({
         }
     }
 
-    "input that is no message is answered, never thrown — to a seat, to `kp` and in a rehearsal alike" - {
+    // `kp` builds only messages: an item it cannot find it answers itself (FollowUpsSpec), and none of its words is a field
+    // outside its form — so the case "to `kp`" went with the branch of `kp` it was to reach (S2.9 T6; issue #45).
+    "input that is no message is answered, never thrown — to a seat and in a rehearsal alike" - {
         "to a seat: its tool answers an error that names the field, and nothing is written" {
             val project = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "no-message-")
             val mailroom = Mailroom.start(project, OfficeId("panda"), RuleFiles(checkout), FactSource { _, _ -> null },
@@ -65,20 +64,6 @@ class TheSeatEndsSpec : FreeSpec({
             }
             mailroom.close()
             Log(project.resolve("mail")).lines.size shouldBe before
-        }
-
-        "to `kp`: it prints why and sends nothing, and the daemon goes on" {
-            Rehearsed("held-then-refused").use { office ->
-                val before = office.log().lines.size
-
-                val ran = office.kp("reverse", "nowhere", "minor", root = true)
-
-                ran.code shouldNotBe ControlSocket.FAILED
-                ran.text shouldNotContain "could not carry"
-                ran.text shouldStartWith "kp: "
-                office.log().lines.drop(before).filterIsInstance<Message>().shouldBeEmpty()
-                office.kp("status").code shouldBe 0
-            }
         }
 
         "in a rehearsal: it prints the error, naming the step and the field, writes nothing, and the walk stops there" {

@@ -110,13 +110,11 @@ class KpCommands(private val office: Office, world: FactSource) : Commands {
 
     /**
      * Submits [input] in Bora's name (`by: bora-cli`), signed when the peer is root; the mailroom's answer, in one line.
-     * Input that is no message is told as the mailroom answers it, and nothing is sent (contracts.md §3, §5).
+     * `kp` builds only messages — a kind, an item the log names, its stage and args as words (issue #45): input that is
+     * no message would be a fault of `kp`'s own, not an answer to Bora's words.
      */
     private fun submit(out: Out, peer: Peer, input: JsonObject): Int {
-        val answer = when (val offer = office.submit(Sender.Bora(signed = peer.root), input)) {
-            is Offer.Answered -> offer.answer
-            is Offer.Malformed -> return ControlSocket.USAGE.also { out.line("kp: no message — $offer; nothing was sent") }
-        }
+        val answer = (office.submit(Sender.Bora(signed = peer.root), input) as? Offer.Answered)?.answer ?: error("kp built input that is no message: $input")
         out.line(said(answer))
         if (answer.status == Status.REFUSED && !peer.root) out.line("   (unsigned: Bora's answers count only under sudo — sudo kp …)")
         return if (answer.status == Status.REFUSED) REFUSED else OK

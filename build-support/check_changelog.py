@@ -2,7 +2,9 @@
 """A change to the rules carries its changelog line (retro of P1, candidate 8; S2.8 T6).
 
 A branch that changes `rules/*.yaml`, `robots/`, `pool/` or `docs/wow/` against its merge base with master, and adds no
-line to `docs/wow/CHANGELOG.md` that names a decision (`D-<n>`), fails, with the changed files named. `rules/walks/`,
+line to `docs/wow/CHANGELOG.md` that names a decision (`D-<n>`), fails, with the changed files named. A line is added
+when the changelog has more lines naming a decision than at the merge base: an old line reworded is no new one (issue
+#43). `rules/walks/`,
 fixtures and the changelog itself are exempt. The working tree is compared — committed or not, and files git does not
 track yet — so a change fails here before it is pushed. CI's checkout must reach the merge base (`fetch-depth: 0`): a
 master that cannot be found, or no merge base with it, fails too — never passes unchecked.
@@ -53,8 +55,12 @@ def main():
         diff = git("diff", "--no-renames", "-U0", since, "--", CHANGELOG).stdout.splitlines()
         added = [line[1:] for line in diff if line.startswith("+") and not line.startswith("+++")]
     named = [line for line in added if DECISION.search(line)]
-    if not named:
-        print(f"FAIL {CHANGELOG} gains no line naming a decision (D-<n>), and these change the rules since {since[:12]} ({base}): "
+    shown = git("show", f"{since}:{CHANGELOG}")
+    before = sum(1 for line in shown.stdout.splitlines() if DECISION.search(line)) if shown.returncode == 0 else 0
+    now = sum(1 for line in open(CHANGELOG, encoding="utf-8").read().splitlines() if DECISION.search(line))
+    if not named or now <= before:
+        reworded = " — a reworded line is no new one" if named else ""
+        print(f"FAIL {CHANGELOG} gains no line naming a decision (D-<n>){reworded}, and these change the rules since {since[:12]} ({base}): "
               + ", ".join(rules))
         return 1
     print(f"ok   {len(rules)} changed file(s) of the rules carry {len(named)} changelog line(s) naming a decision: " + ", ".join(rules))

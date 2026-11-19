@@ -1,0 +1,16 @@
+# S2.9 T6 — a refused step that names another rule than the one that refuses it: `started` without its branch is refused
+# by the kind's own requirement (`started`), and the walk says T-08. A rehearsal holds the step to its `refused_by`.
+name: refused-by-another-rule
+stage: S2.1
+initial: assigned
+seats:
+  coder-1: coder
+facts:
+  git.branch_exists: false
+steps:
+- who: coder-1
+  kind: started
+  args: {}
+  expect:
+    refused: true
+    refused_by: T-08

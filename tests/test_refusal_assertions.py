@@ -55,6 +55,18 @@ class RefusalsByTheirRule(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn(unlisted(3, BY_STATUS_LINE), result.stdout)
 
+    def test_an_outcome_imported_by_name_and_asserted_bare_fails(self):
+        for imported, line in [("import kp.engine.Outcome.REFUSE", "decision.outcome shouldBe REFUSE"),
+                               ("import kp.engine.Outcome.REFUSE as NO", "decision.outcome shouldBe NO"),
+                               ("import kp.engine.Outcome.*", "decision.outcome shouldBe REFUSE")]:
+            with self.subTest(imported):
+                spec = f'{imported}\nclass QueueSpec : StringSpec({{\n    "x" {{\n        {line}\n    }}\n}})\n'
+
+                result = Fixture(self, spec).check()
+
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn(unlisted(4, line), result.stdout)
+
     def test_a_refusal_asserted_by_its_status_or_outcome_alone_fails_though_the_same_file_asserts_another_by_its_rule(self):
         for alone in ["other.status shouldBe Status.REFUSED", "decision.outcome shouldBe Outcome.REFUSE"]:
             with self.subTest(alone):
