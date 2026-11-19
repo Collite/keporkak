@@ -85,14 +85,13 @@ class KpCommands(private val office: Office, world: FactSource) : Commands {
 
     /**
      * `kp reverse <digest item> minor|serious` (contracts.md §6): `reverse`, in reply to the item — a message id, or a
-     * ticket whose item it is — so that it goes to whoever sent it, and naming it in `args.digest_item`.
+     * ticket whose item it is — so that it goes to whoever sent it, and naming it in `args.digest_item`. An item the log
+     * does not hold is answered as `kp rule` answers one: nothing is sent, and the answer says so (Amendment 25).
      */
-    private fun reverse(out: Out, peer: Peer, args: List<String>): Int {
-        if (args.size != 2) return usage(out, "kp reverse <digest item> minor|serious")
-        val named = args[0]
-        val item = named.removePrefix("#").toLongOrNull()?.let { office.state.tickets[it]?.item } ?: named
-        return submit(out, peer, message(REVERSE, Item(item, stageOf(item)), mapOf(DIGEST_ITEM to JsonPrimitive(named), SEVERITY to JsonPrimitive(args[1]))))
-    }
+    private fun reverse(out: Out, peer: Peer, args: List<String>): Int =
+        answer(out, peer, args, 2..2, "kp reverse <digest item> minor|serious", byId = true) { item ->
+            message(REVERSE, item, mapOf(DIGEST_ITEM to JsonPrimitive(args[0]), SEVERITY to JsonPrimitive(args[1])))
+        }
 
     private class Item(val id: String, val stage: String?)
 

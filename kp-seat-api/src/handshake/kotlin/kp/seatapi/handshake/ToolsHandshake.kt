@@ -78,20 +78,29 @@ import kotlin.system.exitProcess
  * argument or a file — and only then starts the adapter: the token is live before Claude Code can connect. The stop
  * hook's calls go through a recorder that forwards each to the API's `/hook/stop` and keeps what it answered.
  *
+ * With `--agent <file>` — the agent's command, one word per line — and `--token-file <file>`, the same walk runs in
+ * front of another ACP agent instead of the pinned adapter: a spec runs it so with the driver's fake agent, which spends
+ * no token and calls no tool, to see what the evidence holds (S2.7 T6).
+ *
  * Usage: ToolsHandshakeKt --root <keporkak checkout> [--adapter <dir with package-lock.json and node_modules>] [--office <name>]
+ *        [--agent <file> --token-file <file>]
  */
 fun main(args: Array<String>) {
     val options = args.toList().chunked(2).associate { it.first() to it.getOrNull(1) }
     val root = Path.of(options["--root"] ?: ".").toAbsolutePath().normalize()
     val adapter = Path.of(options["--adapter"] ?: root.resolve("office/adapter").toString()).toAbsolutePath().normalize()
     val office = options["--office"] ?: InetAddress.getLocalHost().hostName.substringBefore('.')
-    exitProcess(if (runBlocking { ToolsHandshake(root, adapter, office).run() }) 0 else 1)
+    val agent = options["--agent"]?.let { Path.of(it).readLines().filter(String::isNotBlank) }
+    val tokenFile = options["--token-file"]?.let(Path::of)
+    require((agent == null) == (tokenFile == null)) { "--agent and --token-file go together" }
+    exitProcess(if (runBlocking { ToolsHandshake(root, adapter, office, agent, tokenFile).run() }) 0 else 1)
 }
 
-private class ToolsHandshake(private val root: Path, private val adapter: Path, private val office: String) {
+/** The walk; [agent] and [given], when the caller gives them, stand in for the pinned adapter and the office's Claude token. */
+private class ToolsHandshake(private val root: Path, private val adapter: Path, private val office: String, private val agent: List<String>? = null, given: Path? = null) {
     private val roster = yaml(root.resolve("pool/roster.yaml"))
     private val offices = yaml(root.resolve("pool/offices.yaml"))
-    private val tokenFile = Path.of(offices.get<YamlMap>("offices")!!.get<YamlMap>(office)!!.get<YamlMap>("roots")!!.getScalar("secrets")!!.content
+    private val tokenFile = given ?: Path.of(offices.get<YamlMap>("offices")!!.get<YamlMap>(office)!!.get<YamlMap>("roots")!!.getScalar("secrets")!!.content
         .replaceFirst("~", System.getProperty("user.home"))).resolve("claude-token")
     private val cheapest = roster.get<YamlList>("order")!!.items.first().yamlMap
     private val model = cheapest.getScalar("model")!!.content
@@ -117,10 +126,11 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
         val bundled = adapter.resolve("node_modules/@anthropic-ai/claude-agent-sdk/package.json").takeIf { it.exists() }
             ?.let { Json.parseToJsonElement(it.readText()).jsonObject["claudeCodeVersion"]?.jsonPrimitive?.content }
         val node = System.getenv("PATH").split(':').map { Path.of(it, "node") }.firstOrNull { Files.isExecutable(it) }
-        val header = "adapter $ADAPTER: installed ${installed ?: "nothing"} · lockfile $lockfile — bundles Claude Code ${bundled ?: "?"}\n" +
+        val header = (agent?.let { "agent: the command given (${it.size} words), in place of $ADAPTER" }
+            ?: "adapter $ADAPTER: installed ${installed ?: "nothing"} · lockfile $lockfile — bundles Claude Code ${bundled ?: "?"}") + "\n" +
             "the tools walk (S2.3): a seat built by the builder for the coder's persona, this API, a mailroom on a throwaway log; two prompts"
         println(header)
-        if (installed == null || installed != lockfile || node == null) {
+        if (agent == null && (installed == null || installed != lockfile || node == null)) {
             steps += Triple("install", false, "installed ${installed ?: "nothing"}, lockfile $lockfile, node ${node ?: "not on PATH"}: run `just adapter`")
             return report(header)
         }
@@ -139,7 +149,7 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
         val recorder = StopRecorder(api.address.port)
         val driver = ClaudeAdapter.driver(tokenFile, seats, java.time.Clock.systemUTC(), CompiledAnswerer(seats), object : Listener {})
         try {
-            walk(driver, node, mailroom, api, registrar, recorder)
+            walk(driver, agent ?: listOf(node!!.toString(), adapter.resolve("node_modules/$ADAPTER/dist/index.js").toString()), mailroom, api, registrar, recorder)
         } finally {
             driver.close()
             recorder.close()
@@ -150,7 +160,7 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
         return report(header)
     }
 
-    private suspend fun walk(driver: Driver, node: Path, mailroom: Mailroom, api: SeatApi, registrar: Registrar, recorder: StopRecorder) {
+    private suspend fun walk(driver: Driver, command: List<String>, mailroom: Mailroom, api: SeatApi, registrar: Registrar, recorder: StopRecorder) {
         val first = step("one message waits in the seat's inbox before its session starts") {
             val answer = mailroom.submit(Sender.Seat(TEAMLEAD), json("""{"kind": "assign", "stage": "$STAGE", "subject": "the handshake's first message", "args": {"seat": "$CODER"}}""")).answered()
             check(answer.status == Status.DELIVERED) { "the first message was not delivered: $answer" }
@@ -168,9 +178,9 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
             home to "servers handed back: ${home.servers.joinToString { "${it.name} ${it.url}${if (it.carriesToken) " (the session token as bearer)" else ""}" }}"
         } ?: return
         val spec = SessionSpec(
-            SeatId(CODER), listOf("/bin/sh", "-c", WRAPPER, node.toString(), adapter.resolve("node_modules/$ADAPTER/dist/index.js").toString()),
+            SeatId(CODER), listOf("/bin/sh", "-c", WRAPPER) + command,
             work, built.path, model, effort, built.servers,
-            mapOf("PATH" to "${node.parent}:/usr/local/bin:/usr/bin:/bin", "HOME" to home.toString(), "LANG" to "C.UTF-8", REGISTRAR to registrar.url),
+            mapOf("PATH" to "${Path.of(command.first()).parent}:/usr/local/bin:/usr/bin:/bin", "HOME" to home.toString(), "LANG" to "C.UTF-8", REGISTRAR to registrar.url),
             hookUrl = recorder.base,
         )
         val started = step("a session in the built home, its token registered before the agent's process started") {
@@ -188,10 +198,13 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
         }
         val said = said(before)
         step("the bundled Claude Code connects with the injected server and header") {
+            // What the API answers a call that carries no live session token, as the run observes it (issue #35).
+            val unauthorized = unauthorized(api)
             val calls = listOf("whoami", "inbox", "send").associateWith { toolCalls(it, before) }
-            check(calls.values.all { it.isNotEmpty() && "completed" in it.values }) { "the seat's calls: $calls" }
+            check(calls.values.all { it.isNotEmpty() && "completed" in it.values }) { "the seat's calls: $calls; a call without the session token was answered $unauthorized" }
+            check(unauthorized == UNAUTHORIZED) { "a call without the session token was answered $unauthorized" }
             Unit to "the seat's calls of the messaging server's whoami, inbox and send completed (${calls.map { (tool, ids) -> "$tool ${ids.values.joinToString()}" }.joinToString("; ")}) — " +
-                "the API answers a call without the live session token in its header 401, before any tool runs"
+                "a call of whoami without the live session token in its header was answered $unauthorized, and wrote nothing to the log"
         }
         step("the seat calls whoami and repeats its seat and role") {
             check(CODER in said && Regex("""role\W{0,3}$ROLE\b""", RegexOption.IGNORE_CASE).containsMatchIn(said)) { "the seat said '$said'" }
@@ -257,6 +270,17 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
 
     private fun records(event: String) = lines().filter { it.text("event") == event }
 
+    /** The status the API answers a `tools/call` of `whoami` that carries no session token — and that the log did not grow. */
+    private fun unauthorized(api: SeatApi): Int {
+        val before = lines().size
+        val call = HttpRequest.newBuilder(URI.create("http://127.0.0.1:${api.address.port}/mcp")).header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .POST(HttpRequest.BodyPublishers.ofString("""{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "whoami", "arguments": {}}}""")).build()
+        val status = HttpClient.newHttpClient().send(call, HttpResponse.BodyHandlers.ofString()).statusCode()
+        check(lines().size == before) { "a call without the session token wrote to the log" }
+        return status
+    }
+
     private suspend fun <T> step(name: String, block: suspend () -> Pair<T, String>): T? {
         val outcome = runCatching { block() }
         val (ok, detail) = outcome.fold({ true to it.second }, { false to (it.message ?: it.javaClass.simpleName) })
@@ -282,7 +306,8 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
             appendLine()
             appendLine("## The throwaway log")
             appendLine("```")
-            lines().forEach { appendLine(it.toString()) }
+            // The handshake's own lines(), not the builder's CharSequence.lines() (issue #35): the log, not this file's head.
+            this@ToolsHandshake.lines().forEach { appendLine(it.toString()) }
             appendLine("```")
             appendLine()
             appendLine("## The transcript of seat $CODER")
@@ -319,6 +344,7 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
 
     companion object {
         const val ADAPTER = "@agentclientprotocol/claude-agent-acp"
+        const val UNAUTHORIZED = 401
         const val STEPS = 9
         const val STAGE = "KP/P2/S2.3"
         const val CODER = "coder-handshake"

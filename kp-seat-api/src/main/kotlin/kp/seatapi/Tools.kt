@@ -30,9 +30,10 @@ internal class Tools(private val mailroom: Mailroom) {
         Implementation(name = "keporkak", version = "1"),
         ServerOptions(capabilities = ServerCapabilities(tools = ServerCapabilities.Tools(listChanged = false))),
     ).apply {
-        addTool(SEND, "Send a message of a kind your role may send. Your seat is its sender, whatever the input says; `stage` defaults to yours. " +
+        addTool(SEND, "Send a message of a kind your role may send. Your seat is its sender, whatever the input says; `stage` defaults to yours, " +
+            "and `subject` to the kind and the stage. " +
             "The result says delivered, held or refused — a refusal names the rule and the requirement. There is no way to wait: after a " +
-            "message that expects a reply, end your turn; the reply wakes you.", schema(SENT, required = listOf(KIND, SUBJECT))) { request ->
+            "message that expects a reply, end your turn; the reply wakes you.", schema(SENT, required = listOf(KIND))) { request ->
             send(binding, request.arguments ?: EMPTY)
         }
         addTool(REPLY, "Reply to a message: its thread, its stage and, when you give none, its subject are the message's. The result is send's.",
@@ -98,11 +99,16 @@ internal class Tools(private val mailroom: Mailroom) {
 
     /**
      * `send` (contracts.md §5): the input goes to the mailroom in the seat's name — `from` and `by` are never taken from
-     * it; only the fields a sender supplies are handed on. `stage` defaults to the seat's.
+     * it; only the fields a sender supplies are handed on. `stage` defaults to the seat's, also when it is given as null;
+     * `subject`, when none is given, is the kind's name and the stage, as the recorder writes it (§12).
      */
     private fun send(binding: Binding, arguments: JsonObject): CallToolResult {
-        val stage = binding.stage?.takeIf { STAGE !in arguments }?.let { mapOf(STAGE to JsonPrimitive(it)) }.orEmpty()
-        return offered(mailroom.submit(Sender.Seat(binding.seat), JsonObject(arguments.filterKeys { it in SENT } + stage)))
+        val given = arguments.filterKeys { it in SENT }.filterValues { it !is JsonNull }
+        val stage = given[STAGE] ?: binding.stage?.let(::JsonPrimitive)
+        val subject = given[SUBJECT] ?: (given[KIND] as? JsonPrimitive)?.takeIf { it.isString }?.let { kind ->
+            JsonPrimitive(listOfNotNull(kind.content, (stage as? JsonPrimitive)?.takeIf { it.isString }?.content).joinToString(" "))
+        }
+        return offered(mailroom.submit(Sender.Seat(binding.seat), JsonObject(given + listOfNotNull(stage?.let { STAGE to it }, subject?.let { SUBJECT to it }))))
     }
 
     /** `reply`: as `send`, with `re` — the mailroom gives it the thread, the stage and, when none is given, the subject of the message it answers. */

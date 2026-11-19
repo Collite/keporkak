@@ -284,6 +284,28 @@ class HeroesSpec : FreeSpec({
         // D-80, `retire` has no move of a seat that is not idle, which the kind's own requirement kept from ever firing.
         sweep.uncontrolled.shouldBeEmpty()
         sweep.removalSurvivors.shouldBeEmpty()
+        // Why each removal turned its case red (issue #37): the transition is absent, or the loader refuses the copy without it.
+        sweep.removals.map { it.why }.toSet() shouldBe setOf(Sweep.ABSENT, Sweep.NOT_LOADED)
+        sweep.removals.filter { it.why == Sweep.NOT_LOADED }.mapNotNull { it.problem }.size shouldBe sweep.removals.count { it.why == Sweep.NOT_LOADED }
+    }
+
+    "the sweep's exceptions are held against its closed list of reasons: a requirement no world it builds breaks is a failure, not an exception for its args (issue #37)" {
+        val copy = kp.daemon.TestOffice.copyOfTheRules()
+        try {
+            val kinds = copy.resolve("rules/message-kinds.yaml")
+            val started = "    require:\n    - fact: git.branch_exists\n    expiry: []\n  # ---- building\n"
+            check(kinds.toFile().readText().contains(started))
+            // `thread.hops` is a fact of the log the sweep builds no world for: nothing breaks the requirement alone.
+            kinds.toFile().writeText(kinds.toFile().readText().replace(started, started.replace("    expiry: []", "    - fact: thread.hops\n      lt:\n        cap: hops_per_thread\n    expiry: []")))
+
+            val sweep = Sweep.ofTheRulesOnMaster(copy)
+
+            sweep.failures shouldContain """started#2 {"fact":"thread.hops","lt":{"cap":"hops_per_thread"}}: no world breaks it alone: the sweep builds none for its form"""
+            sweep.exceptions.filter { it.reason !in Sweep.REASONS }.shouldBeEmpty()
+            sweep.exceptions.none { it.requirement == "started#2" } shouldBe true
+        } finally {
+            copy.toFile().deleteRecursively()
+        }
     }
 
     "a daemon stopped after any line of H-1′ and started again ends where the uninterrupted run does — or, an operation in flight, where the rules put its failure — or, right after a wake, with its message unread" {

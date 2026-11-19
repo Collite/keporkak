@@ -50,3 +50,18 @@ tasks.register("handshakeClasspath") {
     outputs.file(out)
     doLast { out.get().asFile.writeText(classpath.asPath) }
 }
+
+// A spec runs the tools handshake with the driver's fake agent in place of the pinned adapter (S2.7 T6, issue #35): it
+// reads the evidence the run writes. The handshake's run-time classpath and the fake agent's — kp-driver's test classes,
+// as kp-driver's own specs start it — are handed to the specs, and are their inputs.
+evaluationDependsOn(":kp-driver")
+tasks.named<Test>("test") {
+    val handshakeClasspath = handshake.runtimeClasspath
+    val fakeAgentClasspath = project(":kp-driver").the<SourceSetContainer>()["test"].runtimeClasspath
+    dependsOn(handshake.classesTaskName, ":kp-driver:testClasses")
+    inputs.files(handshakeClasspath).withPropertyName("handshakeClasspath")
+    inputs.files(fakeAgentClasspath).withPropertyName("fakeAgentClasspath")
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Dkp.handshake.classpath=${handshakeClasspath.asPath}", "-Dkp.driver.fake.classpath=${fakeAgentClasspath.asPath}")
+    })
+}
