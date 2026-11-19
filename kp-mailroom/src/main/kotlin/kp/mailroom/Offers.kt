@@ -7,13 +7,16 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
-/** What a submission offered through [Mailroom.offer] came to (contracts.md §5). */
+/** What a submission through the mailroom's one way in, [Mailroom.submit], came to (contracts.md §3, §5). */
 sealed interface Offer {
     /** A message: written, judged, and answered as [answer] says. */
     data class Answered(val answer: Answer) : Offer
 
     /** Input that is no message at all: [field] is missing or not of its form, as [problem] says. Nothing was written. */
-    data class Malformed(val field: String, val problem: String) : Offer
+    data class Malformed(val field: String, val problem: String) : Offer {
+        /** What a sender is told: `<field>: <problem>`. */
+        override fun toString(): String = "$field: $problem"
+    }
 }
 
 /**

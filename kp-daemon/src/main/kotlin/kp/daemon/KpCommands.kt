@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kp.mailroom.Answer
 import kp.mailroom.FactSource
+import kp.mailroom.Offer
 import kp.mailroom.Sender
 import kp.mailroom.Status
 
@@ -108,9 +109,15 @@ class KpCommands(private val office: Office, world: FactSource) : Commands {
             body?.let { BODY to JsonPrimitive(it) }, args.takeIf { it.isNotEmpty() }?.let { ARGS to JsonObject(it) }).toMap(),
     )
 
-    /** Submits [input] in Bora's name (`by: bora-cli`), signed when the peer is root; the mailroom's answer, in one line. */
+    /**
+     * Submits [input] in Bora's name (`by: bora-cli`), signed when the peer is root; the mailroom's answer, in one line.
+     * Input that is no message is told as the mailroom answers it, and nothing is sent (contracts.md §3, §5).
+     */
     private fun submit(out: Out, peer: Peer, input: JsonObject): Int {
-        val answer = office.submit(Sender.Bora(signed = peer.root), input)
+        val answer = when (val offer = office.submit(Sender.Bora(signed = peer.root), input)) {
+            is Offer.Answered -> offer.answer
+            is Offer.Malformed -> return ControlSocket.USAGE.also { out.line("kp: no message — $offer; nothing was sent") }
+        }
         out.line(said(answer))
         if (answer.status == Status.REFUSED && !peer.root) out.line("   (unsigned: Bora's answers count only under sudo — sudo kp …)")
         return if (answer.status == Status.REFUSED) REFUSED else OK

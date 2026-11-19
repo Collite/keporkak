@@ -30,6 +30,7 @@ import kp.mailroom.Clock
 import kp.mailroom.Deliveries
 import kp.mailroom.FactSource
 import kp.mailroom.Mailroom
+import kp.mailroom.Offer
 import kp.mailroom.OperationRequest
 import kp.mailroom.OperationResult
 import kp.mailroom.Operations
@@ -151,7 +152,7 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
 
     private suspend fun walk(driver: Driver, node: Path, mailroom: Mailroom, api: SeatApi, registrar: Registrar, recorder: StopRecorder) {
         val first = step("one message waits in the seat's inbox before its session starts") {
-            val answer = mailroom.submit(Sender.Seat(TEAMLEAD), json("""{"kind": "assign", "stage": "$STAGE", "subject": "the handshake's first message", "args": {"seat": "$CODER"}}"""))
+            val answer = mailroom.submit(Sender.Seat(TEAMLEAD), json("""{"kind": "assign", "stage": "$STAGE", "subject": "the handshake's first message", "args": {"seat": "$CODER"}}""")).answered()
             check(answer.status == Status.DELIVERED) { "the first message was not delivered: $answer" }
             answer.id to "${answer.id}, from $TEAMLEAD to $CODER, delivered"
         } ?: return
@@ -209,7 +210,7 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
             Unit to "the log: ${refused.single().text("id")} refused, rule ${refused.single().text("rule")}, requirement '${refused.single().text("requirement")}'; the seat repeated it"
         }
 
-        val second = mailroom.submit(Sender.Seat(POOL), json("""{"kind": "compact", "stage": "$STAGE", "subject": "the handshake's second message: read it, then end your turn", "args": {"seat": "$CODER"}}"""))
+        val second = mailroom.submit(Sender.Seat(POOL), json("""{"kind": "compact", "stage": "$STAGE", "subject": "the handshake's second message: read it, then end your turn", "args": {"seat": "$CODER"}}""")).answered()
         val stopsBefore = recorder.stops.size
         val again = transcript().size
         step("with a second message left unread it is kept from ending its turn once, reads it, and the turn ends") {
@@ -438,3 +439,6 @@ private fun JsonObject.text(key: String): String? = (this[key] as? kotlinx.seria
 private fun JsonObject.ids(): List<String> = (this["ids"] as? kotlinx.serialization.json.JsonArray)?.map { it.jsonPrimitive.content }.orEmpty()
 
 private fun now(): String = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString()
+
+/** The answer to the handshake's own message; its input is a message, or the step it is in fails here. */
+private fun Offer.answered(): kp.mailroom.Answer = (this as? Offer.Answered)?.answer ?: error("the handshake's input is no message: $this")

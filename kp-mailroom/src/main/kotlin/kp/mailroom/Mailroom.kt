@@ -149,22 +149,18 @@ class Mailroom private constructor(
     val state: State @Synchronized get() = folded
 
     /**
-     * Carries one message submitted in [sender]'s name; [input] holds what a sender supplies (contracts.md §2.1, §5).
-     * A message from Bora's command line is a command of his: what it does to his presence comes first.
+     * The mailroom's one way in (contracts.md §3, §5): carries one message submitted in [sender]'s name — a seat's tool,
+     * Bora's command line, a rehearsal — where [input] holds what a sender supplies (§2.1). Input that is no message at
+     * all — no kind, a kind, stage, subject, body, pointers, `args` or `re` outside its form — is answered
+     * [Offer.Malformed], naming the field, and nothing is written: nothing is thrown at a sender. A message from Bora's
+     * command line is a command of his: what it does to his presence comes first.
      */
     @Synchronized
-    fun submit(sender: Sender, input: JsonObject): Answer {
+    fun submit(sender: Sender, input: JsonObject): Offer {
+        malformed(input)?.let { return it }
         if (sender is Sender.Bora) command(sender.signed)
-        return judged { arrive(sender.author(), input) }.also { drain() }
+        return Offer.Answered(judged { arrive(sender.author(), input) }.also { drain() })
     }
-
-    /**
-     * As [submit], for input a seat's tool hands on as it came (contracts.md §5): input that is no message at all — no
-     * kind, a kind, stage, subject, body, pointers, `args` or `re` outside its form — is answered [Offer.Malformed],
-     * naming the field, and nothing is written.
-     */
-    @Synchronized
-    fun offer(sender: Sender, input: JsonObject): Offer = malformed(input) ?: Offer.Answered(submit(sender, input))
 
     /**
      * Bora ran a command (contracts.md §6) — [signed] when it came over a root peer. Only a signed command counts as

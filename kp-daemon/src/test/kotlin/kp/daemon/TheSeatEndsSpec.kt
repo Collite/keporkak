@@ -8,6 +8,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import io.kotest.matchers.string.shouldStartWith
 import kp.mailroom.Clock
 import kp.mailroom.Deliveries
 import kp.mailroom.FactSource
@@ -74,7 +75,7 @@ class TheSeatEndsSpec : FreeSpec({
 
                 ran.code shouldNotBe ControlSocket.FAILED
                 ran.text shouldNotContain "could not carry"
-                ran.text shouldContain "nowhere"
+                ran.text shouldStartWith "kp: "
                 office.log().lines.drop(before).filterIsInstance<Message>().shouldBeEmpty()
                 office.kp("status").code shouldBe 0
             }

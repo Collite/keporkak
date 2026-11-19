@@ -102,13 +102,13 @@ internal class Tools(private val mailroom: Mailroom) {
      */
     private fun send(binding: Binding, arguments: JsonObject): CallToolResult {
         val stage = binding.stage?.takeIf { STAGE !in arguments }?.let { mapOf(STAGE to JsonPrimitive(it)) }.orEmpty()
-        return offered(mailroom.offer(Sender.Seat(binding.seat), JsonObject(arguments.filterKeys { it in SENT } + stage)))
+        return offered(mailroom.submit(Sender.Seat(binding.seat), JsonObject(arguments.filterKeys { it in SENT } + stage)))
     }
 
     /** `reply`: as `send`, with `re` — the mailroom gives it the thread, the stage and, when none is given, the subject of the message it answers. */
     private fun reply(binding: Binding, arguments: JsonObject): CallToolResult {
         if (arguments[RE] == null || arguments[RE] is JsonNull) return error(RE, "missing — a reply names the message it answers")
-        return offered(mailroom.offer(Sender.Seat(binding.seat), JsonObject(arguments.filterKeys { it in REPLIED })))
+        return offered(mailroom.submit(Sender.Seat(binding.seat), JsonObject(arguments.filterKeys { it in REPLIED })))
     }
 
     /** What the mailroom answered: §5's result, or the error of the tool that names the field. */

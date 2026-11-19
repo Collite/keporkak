@@ -11,6 +11,7 @@ import kp.log.LogWriter
 import kp.log.counted
 import kp.mailroom.Clock
 import kp.mailroom.Deliveries
+import kp.mailroom.Offer
 import kp.mailroom.OperationRequest
 import kp.mailroom.OperationResult
 import kp.mailroom.Operations
@@ -286,9 +287,15 @@ class Player internal constructor(private val script: Script, val office: Office
 
     // ---- the kinds of step
 
-    /** A seat's message: the step's kind, args, `re`, `to` and body, as a seat's tool hands them on. */
+    /**
+     * A seat's message: the step's kind, args, `re`, `to` and body, as a seat's tool hands them on. Input that is no
+     * message is answered as the mailroom answers it, nothing is written, and the walk stops at the step (contracts.md §3).
+     */
     private fun send(number: Int, step: Walk.Step, who: String): Pair<String?, String?> {
-        val answer = office.submit(Sender.Seat(who), input(number, step))
+        val answer = when (val offer = office.submit(Sender.Seat(who), input(number, step))) {
+            is Offer.Answered -> offer.answer
+            is Offer.Malformed -> throw WalkFailure(at(number, step) + ": its input is no message — $offer; nothing was written")
+        }
         return answer.id to answer.status.name.lowercase()
     }
 

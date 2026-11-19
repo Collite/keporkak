@@ -6,12 +6,12 @@ import kp.engine.FactRef
 import kp.engine.State
 import kp.log.LogLine
 import kp.log.LogReader
-import kp.mailroom.Answer
 import kp.mailroom.Clock
 import kp.mailroom.Deliveries
 import kp.mailroom.FactSource
 import kp.mailroom.Mailroom
 import kp.mailroom.MailroomRefusal
+import kp.mailroom.Offer
 import kp.mailroom.Operations
 import kp.mailroom.Reload
 import kp.mailroom.Sender
@@ -60,8 +60,11 @@ class Office private constructor(
         changes.signal()
     }
 
-    /** Carries one message through the mailroom (contracts.md §2.1: it sets `from`, `by` and `signed`). */
-    fun submit(sender: Sender, input: JsonObject): Answer = mailroom.submit(sender, input).also { changes.signal() }
+    /**
+     * Carries one message through the mailroom's one way in (contracts.md §2.1: it sets `from`, `by` and `signed`); input
+     * that is no message is answered [Offer.Malformed], and nothing is written (§3, §5).
+     */
+    fun submit(sender: Sender, input: JsonObject): Offer = mailroom.submit(sender, input).also { changes.signal() }
 
     /**
      * A fact the world reports changed — what an observer reports (contracts.md §4.1 `on: fact`, §8): the mailroom
