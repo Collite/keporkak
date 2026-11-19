@@ -59,8 +59,9 @@ tasks.named<Test>("test") {
     val handshakeClasspath = handshake.runtimeClasspath
     val fakeAgentClasspath = project(":kp-driver").the<SourceSetContainer>()["testFixtures"].runtimeClasspath
     dependsOn(handshake.classesTaskName, ":kp-driver:testFixturesClasses")
-    inputs.files(handshakeClasspath).withPropertyName("handshakeClasspath")
-    inputs.files(fakeAgentClasspath).withPropertyName("fakeAgentClasspath")
+    // As classpaths, not by their paths: a worktree's paths are in no test task's key (S2.9 T7).
+    inputs.files(handshakeClasspath).withPropertyName("handshakeClasspath").withNormalizer(ClasspathNormalizer::class)
+    inputs.files(fakeAgentClasspath).withPropertyName("fakeAgentClasspath").withNormalizer(ClasspathNormalizer::class)
     jvmArgumentProviders.add(WorktreePaths("kp.handshake.classpath") { handshakeClasspath.asPath })
     jvmArgumentProviders.add(WorktreePaths("kp.driver.fake.classpath") { fakeAgentClasspath.asPath })
 }

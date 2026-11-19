@@ -35,7 +35,7 @@ application {
 // The specs run `scripts/kp` as a subprocess against a rehearsal of a walk: a change to it runs them again. The walks,
 // rules, robots, pool and personas are every test task's inputs (the root convention, S2.8).
 fun Test.readsTheCheckout() {
-    inputs.files(rootProject.file("scripts/kp")).withPropertyName("kp_client")
+    inputs.files(rootProject.file("scripts/kp")).withPropertyName("kp_client").withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 // The hero specs (S1.6) are `just hero`'s, which `just check` runs: the `test` task leaves them out, so they run once.
