@@ -81,10 +81,21 @@ class Seats(
     private val profileOf: ((String?) -> String?)? = null,
     /** Efforts' folders in the project beside those of `pool/offices.yaml`: a rehearsal's own effort's. */
     private val moreEfforts: Map<String, String> = emptyMap(),
+    /** What hears each turn's end: a rehearsal whose seats play their own steps (S2.5). */
+    private val turns: Turns? = null,
     driver: (Listener, java.time.Clock) -> Driver,
 ) : Deliveries, AutoCloseable {
     /** A seat a rehearsal starts outside the rules, as an earlier part of the log would have left it: its role, stage and level. */
     data class Seed(val role: String, val stage: String?, val level: String? = null)
+
+    /**
+     * What hears that a seat's turn has ended (S2.5), before the seat is idle again: the seat, the message that woke it for
+     * the turn — null for a re-seat's replay and a compaction — and the turn's `seat.usage` as the driver observes it then;
+     * null when the turn ended without the agent's answer or reported no usage.
+     */
+    fun interface Turns {
+        fun ended(seat: String, cause: String?, usage: Long?)
+    }
 
     /** The registry of live session tokens the seat API reads (contracts.md §5). */
     val tokens = Tokens()
@@ -95,6 +106,8 @@ class Seats(
     private val later: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { Thread(it, "kp-seats-watch").apply { isDaemon = true } }
     private val held = ConcurrentHashMap<String, Held>()
     private val minting = ConcurrentHashMap<String, Binding>()
+    /** The SHA-256 of every session token minted here: what lets a rehearsal's evidence find one without holding it (S2.5). */
+    private val minted: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val compacts = ConcurrentHashMap<String, MutableList<(OperationResult) -> Unit>>()
     @Volatile private var office: Office? = null
     @Volatile private var hookUrl: String? = null
@@ -107,6 +120,7 @@ class Seats(
     }
     private val listener = object : Listener {
         override fun tokenMinted(seat: SeatId, token: SessionToken) {
+            minted += sha256(token.value)
             minting[seat.value]?.let { tokens.register(token.value, it) }
         }
 
@@ -153,7 +167,7 @@ class Seats(
             if (session.busy || session.gone || session.ending) return OperationResult.Failed("seat $seat is not idle: a turn is in flight")
             session.busy = true
         }
-        return turn(seat, session, mail(message))
+        return turn(seat, session, mail(message), cause = message.id.value)
     }
 
     /**
@@ -161,7 +175,7 @@ class Seats(
      * asked for meanwhile is done first, then the mailroom is told. [then] hears how the turn ended; [onSent] is queued
      * for the mailroom when the prompt is sent — before anything its end queues.
      */
-    private fun turn(seat: String, session: Held, text: String, then: Ended = Ended {}, onSent: (() -> Unit)? = null): OperationResult {
+    private fun turn(seat: String, session: Held, text: String, then: Ended = Ended {}, onSent: (() -> Unit)? = null, cause: String? = null): OperationResult {
         val sent = CompletableFuture<String?>()
         later {
             driver.prompt(SeatId(seat), text) {
@@ -174,7 +188,10 @@ class Seats(
             // is idle again without being said to be — it is not woken again for that message until another arrival.
             val unsent = sent.complete((outcome as? Outcome.Failed)?.reason ?: "the turn ended before the prompt was sent")
             reporter.execute {
-                if (!unsent) then.turn(outcome)
+                if (!unsent) {
+                    then.turn(outcome)
+                    turns?.ended(seat, cause, (outcome as? Outcome.Ok<*>)?.let { used(seat) })
+                }
                 ended(seat, session, turned = !unsent)
             }
         }
@@ -200,6 +217,10 @@ class Seats(
         session.busy = false
         if (turned && !closing) office?.idle(seat)
     }
+
+    /** The `seat.usage` of [seat]'s last turn, as the driver observes it (contracts.md §4.4): null when it reported none. */
+    private fun used(seat: String): Long? =
+        ((driver.observe(SeatId(seat), SeatFacts.USAGE, UsageWindow.TURN) as? Outcome.Ok)?.value?.value as? JsonPrimitive)?.content?.toLongOrNull()
 
     /** A message as the prompt that wakes a seat with it (contracts.md §4.4: the prompt is that message). */
     private fun mail(message: Message): String = "Mail ${message.id.value}: ${message.kind} from ${message.from.value}" +
@@ -575,6 +596,24 @@ class Seats(
         }
     }
 
+    /**
+     * A rehearsal's crash of [seat] (S2.5): its process tree ended by force through the driver, with no grace and outside
+     * any operation — its end is observed and reported as any other. False when it has no live process.
+     */
+    fun end(seat: String): Boolean {
+        if (held[seat]?.takeIf { !it.gone } == null) return false
+        return blocking { driver.kill(SeatId(seat), Duration.ZERO) } is Outcome.Ok
+    }
+
+    /** What [seat]'s session is bound with — role, stage, model and effort — while it has one. */
+    fun binding(seat: String): Binding? = held[seat]?.binding
+
+    /** The session [seat] has now, or had last. */
+    fun session(seat: String): String? = held[seat]?.session
+
+    /** The SHA-256 of each session token minted here, never a token. */
+    fun mintedDigests(): Set<String> = minted.toSet()
+
     /** The daemon stops: no more reports; the seats die with it — their panes closed — and the driver lets go of them. */
     override fun close() {
         closing = true
@@ -643,6 +682,9 @@ class Seats(
 
         /** `~` as the office user's home. */
         internal fun home(path: String): Path = Path.of(path.replaceFirst(Regex("^~(?=/|$)"), System.getProperty("user.home")))
+
+        /** The SHA-256 of [text], in hex. */
+        fun sha256(text: String): String = java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
     }
 }
 

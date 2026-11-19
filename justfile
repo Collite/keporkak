@@ -100,7 +100,10 @@ logs:
 # rules/walks/<walk>.yaml, pausing where the walk needs Bora — who answers with the real `kp` (`sudo kp approve <ticket>`).
 # It listens on the office's socket: stop the service first (`just stop`). Ctrl-C ends it. `just rehearse <walk> --seats
 # fake` plays the walk's seats with S2.1's fake agent: processes the daemon starts, wakes, re-seats and watches through
-# the driver and the seat API, each with a pane in the tmux session `kp` (`tmux attach -t kp`). S2.5 runs real ones.
+# the driver and the seat API, each with a pane in the tmux session `kp` (`tmux attach -t kp`). `--seats real` (S2.5) runs
+# Claude seats on the adapter `just adapter` installed and the office's token: a walk that names `claude_seats` has their
+# steps waited for, ends once the seats the last message woke have ended that turn, and leaves its evidence under the
+# office's scratch root (`rehearsals/`). It spends tokens: run it on demand (office/README.md); CI never runs it.
 rehearse walk *args:
     #!/usr/bin/env sh
     set -eu

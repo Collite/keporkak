@@ -23,9 +23,10 @@ import kotlin.io.path.createDirectories
 import kotlin.system.exitProcess
 
 private const val USAGE = """kp-daemon run [--root DIR] [--office NAME] [--project DIR] [--socket PATH] [--listen HOST:PORT]
-kp-daemon rehearse <walk.yaml> [--root DIR] [--office NAME] [--socket PATH] [--seats scripted|fake --fake-classpath CP]
+kp-daemon rehearse <walk.yaml> [--root DIR] [--office NAME] [--socket PATH] [--seats scripted|fake --fake-classpath CP|real]
   --root: the keporkak checkout whose rules are in force (default: the working folder)
-  --seats: the walk's seats scripted (default), or S2.1's fake agent run from --fake-classpath (`just rehearse <walk> --seats fake`)
+  --seats: the walk's seats scripted (default), S2.1's fake agent run from --fake-classpath (`just rehearse <walk> --seats fake`),
+           or Claude seats on the pinned adapter and the office's token (`just rehearse <walk> --seats real`: it spends tokens)
   --office: the office (default: the short host name) · --project: its project checkout (default: pool/offices.yaml's)
   --listen: where the seat API listens (default: the office's listen.mcp in pool/offices.yaml)
   --socket: the control socket (default: <runtime folder>/keporkak/kp.sock; the runtime folder is ${'$'}XDG_RUNTIME_DIR, or /run/user/<uid>)"""
@@ -54,12 +55,19 @@ fun main(args: Array<String>) {
             "rehearse" -> {
                 val walk = words.singleOrNull()?.let(Path::of) ?: fail("rehearse names one walk")
                 val throwaway = Files.createTempDirectory(root.resolve("build/rehearsal").createDirectories(), "${walk.fileName.toString().removeSuffix(".yaml")}-")
-                val fake = when (seats) {
+                val seating = when (seats) {
                     "scripted" -> null
                     "fake" -> FakeSeating(fakeClasspath ?: fail("--seats fake needs --fake-classpath"))
-                    else -> fail("--seats is scripted or fake")
+                    "real" -> RealSeating()
+                    else -> fail("--seats is scripted, fake or real")
                 }
-                Rehearsal.start(root, walk, throwaway, office, socket, SoPeerCred, fake = fake) { println(it) }
+                Rehearsal.start(root, walk, throwaway, office, socket, SoPeerCred, seating = seating) { println(it) }.also { rehearsal ->
+                    // With Claude seats the rehearsal ends with the walk's play — its seats stop with it, and spend no more.
+                    if (seating is RealSeating) Thread.ofPlatform().name("kp-rehearsal-end").start {
+                        rehearsal.awaitPlayed()
+                        exitProcess(if (rehearsal.passed == true) 0 else 1)
+                    }
+                }
             }
             else -> fail(if (command == null) "a command" else "no command '$command'")
         }
