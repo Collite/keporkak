@@ -56,6 +56,12 @@ test on one side proves little. Test it from the far side too:
 - **The second language's way in.** A fence built for one language is tried from the other (Java beside Kotlin, Python
   beside the JVM) and from the build's side doors.
 
+## A sentence over a whole class
+- A spec whose sentence says *every*, *any* or *nothing* is tested over its whole class — every kind, every robot,
+  every shape of input — not one example: the next example is where it fails.
+- Generate the class from the rules where it can be (as the refusal sweep is generated from the loaded rule set),
+  so that a new kind or robot joins the test without anyone editing it.
+
 ## Not in the loop
 Refactoring beyond what the task needs, speculative features, a later stage's component. If the code wants a refactor,
 that is one Found line.

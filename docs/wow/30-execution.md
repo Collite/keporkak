@@ -37,8 +37,12 @@
 - **EX-11 Read in this order:** `30` (this chapter), the plan's `tasks-overview.md`, then the one stage list. Nothing
   under `_closed/` or `_to_delete/` is read or reused. `AGENTS`
 - **EX-12 Shared lists are fresh-read before each update,** and other sessions' edits are preserved. `AGENTS`
-- **EX-13 The project repo.** Human-attended sessions update it in the main checkout and leave committing to Bora. The
-  daemon commits, pushes and merges it at stage and phase exits (`70` EN-8). Seats do not create `project` branches. `AGENTS, D-27 m`
+- **EX-13 The project repo.** Until the daemon is the one writer of `project` on its office, every human-attended
+  session — coder, reviewer, retro — works it like the code: a worktree and a branch of its own (`_wt/project-<stage>`,
+  `proj/<stage>`), where it edits only its own file; at each hand-point it merges a pull request to `master` itself,
+  carrying that file and nothing else, and after a triage the coder merges `master` back before it goes on. The main
+  checkout is Bora's alone: `master`, the hand log and the Planner's edits. Once the daemon carries the stages, it
+  commits, pushes and merges `project` at stage and phase exits (`70` EN-8), and seats create no `project` branches. `AGENTS, D-27 m, D-59`
 - **EX-14 Code repos.** One worktree and one branch per stage; DCO `Signed-off-by` with Bora's identity is authorized;
   seats push the stage branch only; master moves only through the daemon. `AGENTS, D-27 n`
 - **EX-15 Working artefacts** — logs, reports, probes, byte comparisons — live in the worktree's `build/` or under
