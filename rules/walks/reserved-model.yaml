@@ -31,3 +31,4 @@ steps:
   expect:
     refused: true
     refusal_contains: session-report
+    refused_by: SEAT-01

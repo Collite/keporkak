@@ -9,19 +9,34 @@ import java.io.File
 /** One step of a walk as either side saw it: refused or not, the transitions it fired, and every stage's state. */
 data class TraceStep(val step: Int, val refused: Boolean, val fired: List<String>, val stages: Map<String, String>)
 
-private fun pythonWalk(name: String): List<String> {
-    val process = ProcessBuilder(File(root, "build/python/bin/python").path, "scripts/check-rules.py", "--trace", name)
+/** What the Python walker prints for [walk]: a walk's name in `rules/walks/`, or the path of a walk file elsewhere. */
+private fun walker(walk: String): List<String> {
+    val process = ProcessBuilder(File(root, "build/python/bin/python").path, "scripts/check-rules.py", "--trace", walk)
         .directory(root).redirectErrorStream(true).start()
     val output = process.inputStream.bufferedReader().readLines()
     process.waitFor()
-    val failures = output.filter { it.startsWith("FAIL walk $name") }
+    return output
+}
+
+private fun pythonWalk(name: String): List<String> {
+    val output = walker(name)
+    val failures = output.filter { it.startsWith("FAIL walk ") }
     check(failures.isEmpty()) { failures.joinToString("\n") }
     return output
 }
 
-/** The walk as the Python walker read it from `rules/walks/` (its `WALK` line). */
+/** The walker's failures of [walk], each as it prints it after `FAIL `. */
+fun walkerFailures(walk: String): List<String> = walker(walk).filter { it.startsWith("FAIL walk ") }.map { it.removePrefix("FAIL ") }
+
+/** A walk of the specs' own, written to a file under build/: its path, which the walker and [engineTrace] take as a name. */
+fun fixtureWalk(yaml: String): String {
+    val folder = File(root, "build/fixture-walks").apply { mkdirs() }
+    return File.createTempFile("walk-", ".yaml", folder).apply { writeText(yaml); deleteOnExit() }.path
+}
+
+/** The walk as the Python walker read it — from `rules/walks/`, or from the file [name] names (its `WALK` line). */
 fun walkDefinition(name: String): Datum.Fields =
-    parseDatum(pythonWalk(name).single { it.startsWith("WALK ") }.removePrefix("WALK ")) as Datum.Fields
+    parseDatum(walker(name).single { it.startsWith("WALK ") }.removePrefix("WALK ")) as Datum.Fields
 
 /** The Python walker's own steps (`check-rules.py --trace`): the second opinion. */
 fun walkerTrace(name: String): List<TraceStep> = pythonWalk(name).filter { it.startsWith("TRACE ") }.map { line ->
@@ -103,10 +118,21 @@ private class WalkThrough(private val walk: Datum.Fields) {
             current = step["stage"].text() ?: current
             val stageId = stage(current)
             facts.getValue(current).putAll(step["facts"].fields())
-            val decision = if (step["operation"] != null) result(step) else arrival(step, index + 1, stageId)
+            val decision = if (step["operation"] != null) result(step) else arrival(step, index + 1, stageId).also { byItsRule(step, index + 1, it) }
             TraceStep(index + 1, decision.outcome == Outcome.REFUSE, decision.moves.map { it.rule },
                 stageIds.mapValues { (_, id) -> state.stage(id) ?: "planned" })
         }
+    }
+
+    /**
+     * A refused step is refused by the rule it names, `expect.refused_by` — the walker holds it to the same (S2.8, the
+     * retro of P1): another rule refusing it, a refusal where the walk names none, or a delivery where it names one fails.
+     */
+    private fun byItsRule(step: Map<String, Datum>, number: Int, decision: Decision) {
+        val named = step["expect"].fields()["refused_by"].text()
+        val walk = "walk ${definition["name"].text()} step $number"
+        if (decision.outcome == Outcome.REFUSE && decision.rule != named) throw AssertionError("$walk: refused by ${decision.rule}, the walk names ${named ?: "no rule"}")
+        if (decision.outcome != Outcome.REFUSE && named != null) throw AssertionError("$walk: ${decision.outcome}, the walk expects a refusal by $named")
     }
 
     private fun result(step: Map<String, Datum>): Decision {

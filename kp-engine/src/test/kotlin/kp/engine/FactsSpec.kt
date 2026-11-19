@@ -1,6 +1,7 @@
 package kp.engine
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.engine.Need.Param.Known
 import kp.engine.Need.Param.Of
@@ -50,8 +51,7 @@ class FactsSpec : StringSpec({
     "a fact the table does not supply is unknown: the requirement reading it fails, and the refusal says it was not supplied" {
         val decision = supervised().judge(building, Arrival(review), table("now" to NOW, "pr.ready" to true, "pr.head" to "abc", "list.tasks_open" to 0))
 
-        decision.outcome shouldBe Outcome.REFUSE
-        decision.failed?.flow() shouldBe "{fact: ci.state, of: {fact: pr.head}, eq: green}"
+        decision should refusedBy("review-request", "{fact: ci.state, of: {fact: pr.head}, eq: green}")
         decision.unsupplied shouldBe listOf(ref("ci.state(of=abc)"))
         decision.observed["ci.state(of=abc)"] shouldBe UNKNOWN_FACT
     }

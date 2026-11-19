@@ -101,6 +101,50 @@ private fun State.times(): List<String> = listOfNotNull(at) +
     machines.values.flatMap { subjects -> subjects.values.map { it.since } } +
     deadlines.values.mapNotNull { it.deadline } + held.values.map { it.since } + tickets.values.map { it.at } + sessions.values + operations.map { it.since }
 
+/**
+ * What "every time in the state is a time of the log" reads of the state — [times], and the refusals' days — and what
+ * it leaves out, each with its reason (S2.8 T4). The fold's determinism compares the whole state and declares nothing.
+ */
+val TIMES_IN_THE_STATE = Projection(
+    "every time in the state (FoldDeterminismSpec)",
+    compares = setOf("at", "machines", "deadlines", "held", "tickets", "sessions", "operations", "refusals"),
+    leavesOut = mapOf(
+        "seq" to "a line's number, not a time",
+        "rules" to "the hash of the rule set in force, not a time",
+        "counters" to "counts, not times",
+        "unread" to "message ids, not times",
+        "hops" to "counts per thread, not times",
+        "answered" to "message ids, not times",
+        "wakes" to "counts of deliveries, not times",
+        "unjudged" to "the lines of the log themselves, held as they were read",
+        "opened" to "a line's number, not a time",
+        "pending" to "not read: a pending message's deadline is a time, and nothing here asks it — a Found line of S2.8",
+        "delivered" to "not read: a delivery's `at` is a time, and nothing here asks it — a Found line of S2.8",
+    ),
+)
+
+/**
+ * What "the generated logs exercise every record and every question the state answers" asks of the state, and what it
+ * does not ask, each with its reason (S2.8 T4): a field no generated log fills would leave the fold's determinism
+ * unproved for it.
+ */
+val QUESTIONS_THE_LOGS_EXERCISE = Projection(
+    "every question the state answers (FoldDeterminismSpec)",
+    compares = setOf("deadlines", "held", "tickets", "unread", "refusals", "counters", "answered", "operations", "sessions"),
+    leavesOut = mapOf(
+        "seq" to "every line moves it",
+        "at" to "every line moves it",
+        "rules" to "not asked: the record list asks for a `rules` line, not that one is applied — a Found line of S2.8",
+        "machines" to "not asked: the record list asks for a `transition` line, not that one is applied — a Found line of S2.8",
+        "pending" to "not asked: a message line with no record after it is generated, and not asked for — a Found line of S2.8",
+        "hops" to "not asked: deliveries are generated, threads of more than one are not asked for — a Found line of S2.8",
+        "delivered" to "not asked: the record list asks for a `delivered` line, not that one is applied — a Found line of S2.8",
+        "wakes" to "never filled: the generator requests no `seat.wake` — a Found line of S2.8",
+        "unjudged" to "not asked: an unfinished last judgement is generated, and not asked for — a Found line of S2.8",
+        "opened" to "not asked: an unfinished last judgement is generated, and not asked for — a Found line of S2.8",
+    ),
+)
+
 class FoldDeterminismSpec : StringSpec({
     "a valid log cut at every line, folded in two parts, gives the state of folding it whole — and folding it twice changes nothing" {
         (1..150).forEach { seed ->

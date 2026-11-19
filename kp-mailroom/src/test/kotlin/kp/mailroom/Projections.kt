@@ -1,0 +1,25 @@
+package kp.mailroom
+
+import java.lang.reflect.Modifier
+import kotlin.reflect.KClass
+
+/**
+ * A projection of the state: what an oracle compares of the state, and what it leaves out — each field it leaves out
+ * with its reason (the retro of P1, candidate 2; S2.8 T4). kp-engine's specs keep the same; a module's specs do not
+ * share another's support.
+ */
+class Projection(val name: String, val compares: Set<String>, val leavesOut: Map<String, String>) {
+    /**
+     * What the projection does not account for among [fields]: a field it neither compares nor lists, by its name; a
+     * name it gives that is no field, one it both compares and lists, a field it lists with no reason — each said so.
+     */
+    fun unaccounted(fields: List<String>): List<String> =
+        fields.filter { it !in compares && it !in leavesOut } +
+            (compares + leavesOut.keys).filter { it !in fields }.map { "$it: no such field" } +
+            compares.filter { it in leavesOut }.map { "$it: compared and left out" } +
+            leavesOut.filterValues { it.isBlank() }.keys.map { "$it: left out with no reason" }
+}
+
+/** The fields a class's instances hold, in declaration order: for a data class, its constructor's. */
+fun fieldsOf(type: KClass<*>): List<String> =
+    type.java.declaredFields.filterNot { Modifier.isStatic(it.modifiers) || it.isSynthetic }.map { it.name }

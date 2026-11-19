@@ -3,6 +3,7 @@
 package kp.daemon.hero
 
 import kp.daemon.Played
+import kp.daemon.Projection
 import kp.daemon.WalkFailure
 import kp.daemon.checkout
 import kp.engine.State
@@ -201,6 +202,30 @@ class Restarts private constructor(val cuts: List<Cut>, private val seeds: Long)
             (mine.keys + theirs.keys).filter { mine[it] != theirs[it] }.takeIf { it.isNotEmpty() }?.joinToString(", ", "$what ") { "$it ${mine[it]} (not ${theirs[it]})" }
 
         companion object {
+            /**
+             * What [of] compares of the state, and what it leaves out today, each with its reason (the retro of P1,
+             * candidate 2; S2.8 T4). S2.4 is changing what it compares (issue #39, item 6): this lists it, nothing else.
+             */
+            val PROJECTION = Projection(
+                "where a walk ends (Restarts.Ending)",
+                compares = setOf("machines", "counters", "deadlines", "held", "tickets", "unread"),
+                leavesOut = mapOf(
+                    "seq" to "a start writes lines of its own (`voided`, `rules`): the numbers after it differ, as ids do",
+                    "at" to "the time of the last line, which a start's own lines move",
+                    "unjudged" to "a judgement left open: where a walk ends, every judgement is closed",
+                    "opened" to "a judgement left open: where a walk ends, every judgement is closed",
+                    "pending" to "a message not yet judged: where a walk ends, every message is",
+                    "hops" to "counts keyed by thread ids, which a restart numbers differently",
+                    "answered" to "message ids, which a restart numbers differently; a wait answered is no longer in `deadlines`",
+                    "delivered" to "not compared yet: issue #39, item 6 — S2.4 widens what the restart compares",
+                    "operations" to "not compared yet: issue #39, item 6 — S2.4 widens what the restart compares",
+                    "rules" to "not compared: the start reloads the same files, and nothing here asks that it did — a Found line of S2.8",
+                    "refusals" to "not compared: a seat's refusals of the day are not asked for — a Found line of S2.8",
+                    "sessions" to "not compared: where a seat's session window begins is not asked for — a Found line of S2.8",
+                    "wakes" to "not compared: where a robot's own seat was last woken is not asked for — a Found line of S2.8",
+                ),
+            )
+
             fun of(state: State, lines: List<Envelope>): Ending {
                 val kinds = lines.filterIsInstance<Message>().associate { it.id.value to it.kind }
                 fun named(subject: String) = kinds[subject]?.let { "the $it's thread" } ?: subject

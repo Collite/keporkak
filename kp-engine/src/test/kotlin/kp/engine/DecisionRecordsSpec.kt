@@ -1,6 +1,7 @@
 package kp.engine
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.engine.Trigger.Arrival
 import kp.model.Delivered
@@ -109,6 +110,7 @@ class DecisionRecordsSpec : StringSpec({
 
         val refused = read(refusedRecord(decision, "m-panda-000100")) as Refused
 
+        decision should refusedBy("review-request", "{fact: ci.state, of: {fact: pr.head}, eq: green}")
         refused.rule shouldBe "review-request"
         refused.requirement shouldBe "PR ready · CI green on head · every task done <sha> · DONE lines ticked · Found lines carried (fan-out found-batch)"
         observed(refused) shouldBe setOf("pr.ready", "pr.head", "ci.state(of=abc)")

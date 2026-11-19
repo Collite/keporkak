@@ -117,7 +117,7 @@ scenarios:
           initial: planned
           steps:
             - {who: coder, kind: started, args: {}}
-            - {who: coder, kind: started, args: {}, expect: {refused: true, refusal_contains: cap exhausted}}
+            - {who: coder, kind: started, args: {}, expect: {refused: true, refusal_contains: cap exhausted, refused_by: started}}
           final: planned
     expect:
       output: ["ok   walk the second started is past the default cap reached planned"]

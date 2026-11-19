@@ -1,0 +1,52 @@
+# Lines of spec files that name a refusal without refusedBy(rule, failed) — each by its text, with its reason (S2.8 T3;
+# per line since review B1). Read by build-support/check_refusal_assertions.py, which `just rules` runs: a line not here
+# asserts its refusal by its rule, a file's other lines excuse none, and an entry the check no longer needs fails it.
+kp-engine/src/test/kotlin/kp/engine/DecisionRecordsSpec.kt:
+  - line: 'if (decision.outcome == Outcome.REFUSE) return delivered to decision.rule'
+    reason: >-
+      a helper counts deliveries until the first refusal and returns that refusal's rule; its callers assert the rule
+      (`deliveriesBeforeRefusal(…) shouldBe (n to rule)`)
+  - line: 'val refused = read(refusedRecord(decision, "m-panda-000100")) as Refused'
+    reason: the refused record a decision fills, read back; the next line asserts the decision by refusedBy
+kp-engine/src/test/kotlin/kp/engine/RecordsAndRulesCatchUpSpec.kt:
+  - line: 'val refused = parseLine(stamped(refusedRecord(supervised().judge(stopped, Arrival(resume), facts), resume.id.value))) as Refused'
+    reason: >-
+      the refused record, read back from its line; the lines after it assert its rule, its requirement in the rules'
+      words and what failed, field by field — the record's fields are the subject
+kp-mailroom/src/test/kotlin/kp/mailroom/HoldsSpec.kt:
+  - line: 'whileAway.records<kp.model.Refused>() shouldBe emptyList()'
+    reason: asserts that nothing was refused; there is no rule to name
+kp-mailroom/src/test/kotlin/kp/mailroom/PreparedSpec.kt:
+  - line: 'office.readBack().records<Refused>().single { it.id == answer.id }.json["failed"].toString() shouldBe'
+    reason: the record's `failed` in its file form; the line before asserts the answer by refusedBy
+kp-mailroom/src/test/kotlin/kp/mailroom/RepairsSpec.kt:
+  - line: 'val refused = office.readBack().records<Refused>()'
+    reason: the refused records, read back; the lines after it assert each one by refusedBy
+kp-mailroom/src/test/kotlin/kp/mailroom/RulesInForceSpec.kt:
+  - line: 'office.readBack().records<Refused>().size shouldBe 1'
+    reason: counts the refused records; the line before asserts the refusal by refusedBy
+kp-mailroom/src/test/kotlin/kp/mailroom/TheLoopSpec.kt:
+  - line: 'written.map { it::class.simpleName } shouldBe listOf("Message", "Refused", "Judged")'
+    reason: the order of the records written; the answer is asserted by refusedBy two lines below
+  - line: '(written[1] as Refused).let { listOf(it.id, it.rule, it.requirement, it.refusalsToday?.toLong()) } shouldBe'
+    reason: the record carries the answer's id, rule and requirement; the answer is asserted by refusedBy on the next line
+kp-mailroom/src/test/kotlin/kp/mailroom/TheMailroomsLooseEndsSpec.kt:
+  - line: 'office.readBack().records<Refused>().single().id shouldBe report.id'
+    reason: which submission's refusal was written; the report is asserted by refusedBy two lines above
+  - line: 'office.readBack().records<Refused>().map { it.id } shouldBe answers.map { it.id }'
+    reason: which submissions' refusals were written; every answer is asserted by refusedBy two lines above
+  - line: 'office.readBack().records<Refused>().map { it.id } shouldBe answers.map { it.id }'
+    reason: which submissions' refusals were written; every answer is asserted by refusedBy three and four lines above
+kp-mailroom/src/test/kotlin/kp/mailroom/TheRobotsSpec.kt:
+  - line: 'val refused = played.last().outcome as Refused'
+    reason: the walk's last outcome, as its record; the next line asserts it by refusedBy
+kp-model/src/test/kotlin/kp/model/ModelCodecSpec.kt:
+  - line: 'val refused = parseLine("""{"v":1,"seq":4,"at":"2026-11-15T12:00:00Z","event":"refused","id":"m-panda-000004","rule":"T-13","requirement":"counter resumes ≤ 2","failed":{"counter":"resumes","lt":{"cap":"resumes_per_stage"}}}""") as Refused'
+    reason: >-
+      the `refused` record's codec: a line read and written back with its rule and failed among its fields — nothing
+      is judged, so no rule refuses anything
+kp-seat-api/src/test/kotlin/kp/seatapi/TheSeatsToolsSpec.kt:
+  - line: 'verdict.json!!.withoutId() shouldBe json("""{"status": "refused", "rule": "verdict", "requirement": "from: reviewer", "refusals_today": 1}""")'
+    reason: >-
+      compares the tool's whole result, its rule and requirement included (contracts.md §5); refusedBy is the spec
+      support of kp-engine and kp-mailroom, which kp-seat-api's specs do not share

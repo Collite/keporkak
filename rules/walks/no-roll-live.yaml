@@ -166,6 +166,7 @@ steps:
   expect:
     refused: true
     refusal_contains: no arrow
+    refused_by: T-44
 - id: exit
   who: teamlead
   kind: stage-exit

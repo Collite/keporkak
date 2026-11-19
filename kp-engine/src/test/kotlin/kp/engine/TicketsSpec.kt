@@ -1,6 +1,7 @@
 package kp.engine
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.engine.Trigger.Arrival
 
@@ -39,7 +40,7 @@ class TicketsSpec : StringSpec({
 
         val decision = supervised().judge(answered, Arrival(second), table("now" to NOW))
 
-        decision.refusal() shouldBe ("ruling" to "ticket #2: answered once")
+        decision should refusedBy("ruling", "ticket #2: answered once")
         decision.failed shouldBe null
     }
 

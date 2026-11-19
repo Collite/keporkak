@@ -1,5 +1,7 @@
 package kp.engine
 
+import io.kotest.matchers.Matcher
+import io.kotest.matchers.MatcherResult
 import kp.model.Message
 import kp.model.parseLine
 import kp.model.plain
@@ -96,6 +98,22 @@ fun table(vararg entries: Pair<String, Any?>): Facts = Facts(entries.associate {
 
 /** A refusal's rule and requirement. */
 fun Decision.refusal(): Pair<String?, String?> = rule to requirement.takeIf { outcome == Outcome.REFUSE }
+
+/**
+ * A refusal, asserted by the rule that refused and by what failed — never by its outcome or its words alone (the retro
+ * of P1, candidate 1; contracts.md §2.2). [failed] is the first requirement that failed, in its file form as the rules
+ * write it in flow style (`{fact: git.branch_exists}`); where what failed is held for every kind with no requirement
+ * written there is none, and [failed] is the rules' field its `requirement` names (`from: coder`). Another rule refusing
+ * a requirement written the same way does not pass (S1.6's sweep, review-018 B1).
+ */
+fun refusedBy(rule: String, failed: String): Matcher<Decision> = Matcher { decision ->
+    val what = decision.failed?.flow() ?: decision.requirement
+    MatcherResult(
+        decision.outcome == Outcome.REFUSE && decision.rule == rule && what == failed,
+        { "expected a refusal by $rule, failed $failed — was ${decision.outcome} by ${decision.rule}, failed $what" },
+        { "expected no refusal by $rule, failed $failed" },
+    )
+}
 
 /** The `delivered` record a mailroom writes from a delivery's decision (contracts.md §2.2), less `v`, `seq` and `at`; [to] is its routing. */
 fun deliveredRecord(decision: Decision, id: String, to: String): String {

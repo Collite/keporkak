@@ -1,6 +1,7 @@
 package kp.mailroom
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.engine.Datum
 import kp.model.Op
@@ -72,7 +73,7 @@ class OperationsSpec : StringSpec({
 
         val retry = office.bora(APPROVAL)
 
-        listOf(retry.status, retry.requirement) shouldBe listOf(Status.REFUSED, "max_fires: 1, window: stage")
+        retry should refusedBy("approval", "max_fires: 1, window: stage")
         office.operations.requested.map { it.operation } shouldBe listOf("worktree.create")
     }
 

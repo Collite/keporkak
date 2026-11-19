@@ -1,6 +1,7 @@
 package kp.engine
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 
 /** S1.4 T2 — `react`: a robot's rules on each trigger of contracts.md §8, read by the guard's evaluator. */
@@ -62,6 +63,6 @@ class ReactSpec : StringSpec({
     "a robot's message is judged like a seat's: a kind its role does not own is refused, and the guard names the sender's rule" {
         val stop = message("stop", "deputy", """{"sc":"SC-3"}""", by = "robot:DEP-8", to = "principal")
 
-        engine.judge(State(), Trigger.Arrival(stop), table("now" to NOW)).refusal() shouldBe ("stop" to "from: coder")
+        engine.judge(State(), Trigger.Arrival(stop), table("now" to NOW)) should refusedBy("stop", "from: coder")
     }
 })

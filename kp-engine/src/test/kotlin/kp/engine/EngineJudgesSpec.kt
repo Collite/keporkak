@@ -1,6 +1,7 @@
 package kp.engine
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kp.engine.Trigger.Arrival
 
@@ -30,10 +31,8 @@ class EngineJudgesSpec : StringSpec({
 
         val decision = supervised().judge(state, Arrival(resume), facts)
 
-        decision.outcome shouldBe Outcome.REFUSE
-        decision.rule shouldBe "T-13"
+        decision should refusedBy("T-13", "{counter: resumes, lt: {cap: resumes_per_stage}}")
         decision.requirement shouldBe "outcome=resume · task-count diff within R4.11 · no edit outside the Found section (observed) · counter resumes ≤ 2, the 3rd needs Bora"
-        decision.failed?.flow() shouldBe "{counter: resumes, lt: {cap: resumes_per_stage}}"
     }
 
     "a kind its sender's role does not own, a kind past its max_fires in its window, a thread past its hop cap and a body past its line cap are refused though no requirement says so" {
@@ -48,10 +47,10 @@ class EngineJudgesSpec : StringSpec({
         val facts = table("now" to NOW, "git.branch_exists" to true)
         val engine = supervised()
 
-        engine.judge(assigned, Arrival(message("started", from = "teamlead")), facts).refusal() shouldBe ("started" to "from: coder")
-        engine.judge(startedOnce, Arrival(message("started", from = "coder-1")), facts).refusal() shouldBe ("started" to "max_fires: 1, window: stage")
-        engine.judge(eightHops, Arrival(message("started", from = "coder-1", thread = "m-panda-000051")), facts).refusal() shouldBe ("started" to "caps.hops_per_thread: 8")
-        engine.judge(assigned, Arrival(message("started", from = "coder-1", body = fortyOneLines)), facts).refusal() shouldBe ("started" to "caps.body_lines: 40")
+        engine.judge(assigned, Arrival(message("started", from = "teamlead")), facts) should refusedBy("started", "from: coder")
+        engine.judge(startedOnce, Arrival(message("started", from = "coder-1")), facts) should refusedBy("started", "max_fires: 1, window: stage")
+        engine.judge(eightHops, Arrival(message("started", from = "coder-1", thread = "m-panda-000051")), facts) should refusedBy("started", "caps.hops_per_thread: 8")
+        engine.judge(assigned, Arrival(message("started", from = "coder-1", body = fortyOneLines)), facts) should refusedBy("started", "caps.body_lines: 40")
     }
 
     "of two candidate transitions, the first in file order whose requirements hold is the one that fires" {
