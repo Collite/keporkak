@@ -12,6 +12,16 @@ rules:
   'on':
     fact: seat.process_gone
   if:
+  - not:
+      any:
+      - fact: seat.state
+        seat:
+          trigger: seat
+        eq: gone
+      - fact: seat.state
+        seat:
+          trigger: seat
+        eq: retired
   - fact: seat.tool_call_open_for
     seat:
       trigger: seat
@@ -32,6 +42,16 @@ rules:
   'on':
     fact: seat.process_gone
   if:
+  - not:
+      any:
+      - fact: seat.state
+        seat:
+          trigger: seat
+        eq: gone
+      - fact: seat.state
+        seat:
+          trigger: seat
+        eq: retired
   - fact: seat.tool_call_open_for
     seat:
       trigger: seat
@@ -54,6 +74,16 @@ rules:
   'on':
     fact: seat.protocol_closed
   if:
+  - not:
+      any:
+      - fact: seat.state
+        seat:
+          trigger: seat
+        eq: gone
+      - fact: seat.state
+        seat:
+          trigger: seat
+        eq: retired
   - fact: seat.tool_call_open_for
     seat:
       trigger: seat
@@ -74,6 +104,16 @@ rules:
   'on':
     fact: seat.protocol_closed
   if:
+  - not:
+      any:
+      - fact: seat.state
+        seat:
+          trigger: seat
+        eq: gone
+      - fact: seat.state
+        seat:
+          trigger: seat
+        eq: retired
   - fact: seat.tool_call_open_for
     seat:
       trigger: seat

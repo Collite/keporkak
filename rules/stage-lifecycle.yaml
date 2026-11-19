@@ -1277,6 +1277,34 @@ transitions:
   guard: tail_failed
   require: []
   effects: []
+- from: paused
+  to: paused
+  kind: seat-gone
+  guard: pid/pty gone or ACP protocol closed (observed) · an open in_progress tool call counts as busy, not gone · counter
+    seat_gone_events ≤ 3 per stage, then pause for Bora
+  id: T-80
+  'on': message
+  require:
+  - any:
+    - fact: seat.process_gone
+      seat:
+        arg: seat
+    - fact: seat.protocol_closed
+      seat:
+        arg: seat
+  - fact: seat.tool_call_open_for
+    seat:
+      arg: seat
+    eq: 0
+  - counter: seat_gone_events
+    lt:
+      cap: seat_gone_events_per_stage
+  effects:
+  - count: seat_gone_events
+  - do: seat.reseat
+    with:
+      seat:
+        arg: seat
 active_states:
 - assigned
 - building
