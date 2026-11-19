@@ -12,7 +12,14 @@ import kp.model.Judged
 import kp.model.Message
 import kp.model.Read
 import java.time.Duration
-import kotlin.io.path.readLines
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.createDirectories
+import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.name
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
+import kp.daemon.checkout
 
 /**
  * S2.9 T1 — after the reviews of S2.4 and S2.8: through S2.4's seam ([SeatsOffice]) — the daemon as a rehearsal starts
@@ -22,12 +29,14 @@ import kotlin.io.path.readLines
 class AfterTheReviewsSpec : StringSpec({
     "a seat's death is one event, whichever of its two reports comes first" {
         // coder-1's protocol closes while its process lives; coder-2's process ends while a child it leaves holds its
-        // protocol open. Each does it once: a re-seated process passes the step.
+        // protocol open. Each does it once: a re-seated process passes the step. The rules are the checkout's and two
+        // witnesses (review-023 B1): a rule on each end of a seat that acts on nothing, so that every report the
+        // mailroom judges leaves its `fact` record.
         val scripts = mapOf(
             "coder-1" to """{"turns": [[{"do": "hangup", "once": "${SeatsOffice.holdPath("hung-up")}"}]]}""",
             "coder-2" to """{"turns": [[{"do": "leave", "seconds": 600, "once": "${SeatsOffice.holdPath("left")}"}]]}""",
         )
-        SeatsOffice(scripts = scripts).use { office ->
+        SeatsOffice(root = witnessedRoot(), scripts = scripts).use { office ->
             office.send("principal", "triage", """{"outcome": "issue", "found": "1", "since": "m-panda-000001"}""")
             office.until("coder-1 re-seated") { "coder-1" in office.reSeated() }
             office.send("principal", "triage", """{"outcome": "issue", "found": "2", "since": "m-panda-000001"}""", stage = office.stage("S2.6"))
@@ -35,11 +44,12 @@ class AfterTheReviewsSpec : StringSpec({
             office.childOf("coder-2").destroyForcibly() // its protocol closes now
             office.until("coder-2 re-seated") { "coder-2" in office.reSeated() }
 
-            // Each death was reported twice, in either order...
-            office.observed("coder-1") shouldBe listOf("seat.protocol_closed", "seat.process_gone")
-            office.observed("coder-2") shouldBe listOf("seat.process_gone", "seat.protocol_closed")
-            // ...and is one event: one `seat-gone`, one re-seat, one count.
-            office.seatGone() shouldBe listOf("coder-1", "coder-2")
+            // Each death's two reports reached the mailroom, in either order...
+            office.reported("coder-1") shouldBe listOf("seat.protocol_closed", "seat.process_gone")
+            office.reported("coder-2") shouldBe listOf("seat.process_gone", "seat.protocol_closed")
+            // ...and only the first acted: one `seat-gone`, by the rule on that end, one re-seat, one count.
+            office.lines().filterIsInstance<Message>().filter { it.kind == "seat-gone" }.map { "${it.args!!.text("seat")} ${it.by}" } shouldBe
+                listOf("coder-1 robot:POOL-12", "coder-2 robot:POOL-1")
             office.ops("seat.reseat").filter { it.phase == "requested" }.map { it.with!!.text("seat") } shouldBe listOf("coder-1", "coder-2")
             office.office.state.counter(office.stage(), "seat_gone_events") shouldBe 1L
             office.office.state.counter(office.stage("S2.6"), "seat_gone_events") shouldBe 1L
@@ -146,9 +156,27 @@ private fun SeatsOffice.seatGone(): List<String> = lines().filterIsInstance<Mess
 /** The seats a `re-seated` was sent for, in the log's order. */
 private fun SeatsOffice.reSeated(): List<String> = lines().filterIsInstance<Message>().filter { it.kind == "re-seated" }.map { it.args!!.text("seat")!! }
 
-/** The ends of [seat]'s first process as the driver observed them, in order (its transcript). */
-private fun SeatsOffice.observed(seat: String): List<String> =
-    project.resolve("office/seats/_transcripts/$seat.log").readLines().mapNotNull { Regex(" observed (seat\\.\\w+) true:").find(it)?.groupValues?.get(1) }.take(2)
+/** The ends of [seat] the mailroom judged, in order: each `fact` record of one (a witness hears each). */
+private fun SeatsOffice.reported(seat: String): List<String> =
+    lines().filterIsInstance<Fact>().filter { it.subject == seat && it.fact in setOf("seat.process_gone", "seat.protocol_closed") }.map { it.fact }
+
+/**
+ * The checkout's rules with two witnesses beside the Pool Manager's (a spec's fixture, never the rules): each wakes the
+ * pool's own seat on one end of a seat, whatever its state, so that a report the mailroom judges is a `fact` record
+ * even when no rule of the checkout's acts on it.
+ */
+private fun witnessedRoot(): Path {
+    val root = fixtureRoot { it }
+    Files.delete(root.resolve("robots"))
+    val robots = root.resolve("robots").createDirectories()
+    checkout.resolve("robots").listDirectoryEntries("*.yaml").forEach { Files.copy(it, robots.resolve(it.name)) }
+    val pool = robots.resolve("pool.yaml")
+    val witnesses = listOf("seat.process_gone" to "POOL-91", "seat.protocol_closed" to "POOL-92").joinToString("") { (fact, id) ->
+        "- id: $id\n  when: a spec's witness of each report of a seat's end\n  note: wake the report mode\n  'on':\n    fact: $fact\n  if: []\n  then:\n  - wake: report\n"
+    }
+    pool.writeText(pool.readText().replace("\nthresholds:\n", "\n$witnesses" + "thresholds:\n").also { check(it.contains("POOL-92")) { "pool.yaml has no thresholds to put the witnesses before" } })
+    return root
+}
 
 /** The child [seat]'s last process left behind. */
 private fun SeatsOffice.childOf(seat: String): ProcessHandle =
