@@ -1,6 +1,14 @@
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
+/**
+ * A system property a test reads that names paths of this worktree (S2.9 T7): the paths are no input of the test, so
+ * its build-cache key is no worktree's — what they hold is declared beside, by path relative to the checkout.
+ */
+class WorktreePaths(@get:Input val name: String, @get:Internal val paths: () -> String) : CommandLineArgumentProvider {
+    override fun asArguments(): List<String> = listOf("-D$name=${paths()}")
+}
+
 fun verifyDecisionConstruction(module: String, script: File, directories: List<File>) {
     val command = listOf("python3", script.absolutePath, "--module", module, "--classes") + directories.map { it.absolutePath }
     val process = ProcessBuilder(command).redirectErrorStream(true).start()
@@ -41,7 +49,7 @@ subprojects {
     }
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
-        systemProperty("kp.root", rootDir.absolutePath)
+        jvmArgumentProviders.add(WorktreePaths("kp.root") { rootDir.absolutePath })
         maxHeapSize = "768m"
         testLogging { events("failed", "skipped"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
         // Every test task reads the checkout's rules, robots, pool and personas (retro of P1, candidate 5): a change to a

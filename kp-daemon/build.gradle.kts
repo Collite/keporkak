@@ -67,8 +67,16 @@ tasks.named<Test>("test") {
 // are built from the checkout's renders, skills, profiles and hooks.
 tasks.withType<Test>().configureEach {
     val classpath = sourceSets["test"].runtimeClasspath
-    jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dkp.driver.fake.classpath=${classpath.asPath}") })
+    jvmArgumentProviders.add(WorktreePaths("kp.driver.fake.classpath") { classpath.asPath }) // the test classpath: an input already
     for (folder in listOf("renders", "skills", "docs/profiles", "hooks")) {
         inputs.files(rootProject.fileTree(folder)).withPropertyName("seats_" + folder.replace("/", "_")).withPathSensitivity(PathSensitivity.RELATIVE)
     }
+}
+
+/**
+ * A system property a test reads that names paths of this worktree (S2.9 T7): the paths are no input of the test, so
+ * its build-cache key is no worktree's — what they hold is declared beside, by path relative to the checkout.
+ */
+class WorktreePaths(@get:Input val name: String, @get:Internal val paths: () -> String) : CommandLineArgumentProvider {
+    override fun asArguments(): List<String> = listOf("-D$name=${paths()}")
 }
