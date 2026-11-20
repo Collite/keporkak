@@ -112,9 +112,9 @@ def owner_alive(copy):
 
 
 def remove(copy, gradle):
-    """[copy] gone, with nothing left writing into it: its Gradle run stopped first — the client's process group ended,
-    which cancels the build in the daemon; the copy compiles Kotlin in that build, so no compiler daemon outlives it —
-    then the folder removed until it has stayed gone for three seconds."""
+    """[copy] gone, with nothing left writing into it: its Gradle run stopped first — the run's process group ended: the
+    client, the single-use daemon it forked and that daemon's workers, Kotlin compiled inside it — then the folder
+    removed until it has stayed gone for three seconds."""
     if gradle is not None and gradle.poll() is None:
         for sent, wait in ((signal.SIGTERM, 30), (signal.SIGKILL, 10)):
             try:
@@ -182,8 +182,10 @@ def main(arguments):
             return DOES_NOT_APPLY
         subprocess.run(["git", "apply", str(patch)], cwd=copy, check=True)
         (copy / "build/narrowed.gradle").write_text(NARROWED % (", ".join(map(repr, includes("hero", pattern))), ", ".join(map(repr, includes("test", pattern)))))
-        # Kotlin compiles inside the copy's build, not in the shared compiler daemon: a run stopped stops its compiler too.
-        command = ["./gradlew", "--console=plain", "--continue", "--init-script", "build/narrowed.gradle", "-Pkotlin.compiler.execution.strategy=in-process"]
+        # A daemon of its own and Kotlin compiled inside it, not the shared Gradle and compiler daemons: a run killed
+        # takes all of its build with it, and nothing writes into the copy after it is removed (S3.0 T4).
+        command = ["./gradlew", "--console=plain", "--no-daemon", "--continue", "--init-script", "build/narrowed.gradle",
+                   "-Pkotlin.compiler.execution.strategy=in-process"]
         for task in tasks:
             command += [task, "--rerun", "--tests", pattern]
         say(f"mutant: {patch.name} on a copy of the working tree; running {' '.join(tasks)} --tests '{pattern}'")
