@@ -96,6 +96,12 @@ class Rehearsed(walk: String = "h1-prime", root: Path = checkout) : AutoCloseabl
     /** Every line of the daemon's log (not the hand logs), in `seq` order. */
     fun log(): Log = Log(project.resolve("mail"))
 
+    /** The id of the [nth] message of [kind] (S3.0 T5). */
+    fun id(kind: String, nth: Int = 0): String = idOf(log().lines, kind, nth)
+
+    /** The ticket the message [id] opened: the `seq` of the line that opens it (S3.0 T5). */
+    fun ticket(id: String): Long = ticketOf(log().lines, id)
+
     /** A copy of the daemon's log in a folder of its own, to edit. */
     fun copyOfTheLog(): Path = Files.createTempDirectory(project, "copy-").also { project.resolve("mail").copyToRecursively(it.resolve("mail"), followLinks = false, overwrite = false) }.resolve("mail")
 
@@ -116,6 +122,20 @@ class Rehearsed(walk: String = "h1-prime", root: Path = checkout) : AutoCloseabl
             checkout.resolve("rules/walks/$walk.yaml").takeIf { it.exists() } ?: checkout.resolve("kp-daemon/src/test/resources/walks/$walk.yaml")
     }
 }
+
+/**
+ * The id of the [nth] message of [kind] on [lines] (S3.0 T5): a message's id is its line's `seq` (contracts.md §2), which
+ * moves with the rules and walks every stage shares — a spec reads it from the log, and pins no number.
+ */
+fun idOf(lines: List<Envelope>, kind: String, nth: Int = 0): String = lines.filterIsInstance<Message>().filter { it.kind == kind }[nth].id.value
+
+/**
+ * The ticket the message [id] opened, as contracts.md §2 numbers it: the `seq` of the line that opens it — its delivery or
+ * its hold. Read from the line's place in the log, not from its `ticket`: a spec that compares the two shows that
+ * the mailroom numbers a ticket as the contract says, and pins no number the shared rules and walks move (S3.0 T5).
+ */
+fun ticketOf(lines: List<Envelope>, id: String): Long =
+    lines.first { (it is Delivered && it.id == id && it.ticket != null) || (it is Held && it.id == id && it.ticket != null) }.seq.toLong()
 
 /** A log read back with kp-model's reader. */
 class Log(folder: Path) {

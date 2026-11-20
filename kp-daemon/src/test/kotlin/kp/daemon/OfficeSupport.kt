@@ -54,6 +54,12 @@ class TestOffice(val root: Path = checkout, private val project: Path = Files.cr
 
     fun messages(): List<Message> = office.lines().map { it.entry }.filterIsInstance<Message>()
 
+    /** The id of the [nth] message of [kind] (S3.0 T5). */
+    fun id(kind: String, nth: Int = 0): String = idOf(office.lines().map { it.entry }, kind, nth)
+
+    /** The ticket the message [id] opened: the `seq` of the line that opens it (S3.0 T5). */
+    fun ticket(id: String): Long = ticketOf(office.lines().map { it.entry }, id)
+
     override fun close() {
         office.close()
         Judgements.check(project)

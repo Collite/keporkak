@@ -21,12 +21,17 @@ class TheLoopSpec : StringSpec({
             "from": "teamlead", "by": "seat:teamlead", "signed": true, "seq": 99, "at": "2020-01-01T00:00:00Z", "created": "2020-01-01T00:00:00Z",
             "deadline": "2020-01-02T00:00:00Z"}"""
 
+        val before = office.readBack().lines.maxOf { it.seq.toLong() }
+
         val answer = office.send("coder-1", forged)
 
+        // The next line after the seeded judgement and the start's `rules` judgement, each closed by its `judged` line — read
+        // from the log, not pinned to what a start writes (S3.0 T5); its id is its `seq` (contracts.md §2).
         val line = office.readBack().message(answer.id)
+        val id = "m-panda-%06d".format(before + 1)
         listOf(line.id.value, line.thread.value, line.from.value, line.by, line.signed, line.at.value, line.created.value, line.deadline?.value) shouldBe
-            listOf("m-panda-000007", "m-panda-000007", "coder-1", "seat:coder-1", false, START, START, "2026-11-16T13:00:00Z")
-        line.seq.toLong() shouldBe 7L // after the seeded judgement and the start's `rules` judgement, each closed by its `judged` line
+            listOf(id, id, "coder-1", "seat:coder-1", false, START, START, "2026-11-16T13:00:00Z")
+        line.seq.toLong() shouldBe before + 1
     }
 
     "Bora's message is from bora by bora-cli, and signed only when the caller says it came over a root peer" {

@@ -1,6 +1,10 @@
 package kp.rules
 
+import com.charleskorn.kaml.Yaml
+import com.charleskorn.kaml.YamlList
+import com.charleskorn.kaml.yamlMap
 import io.kotest.core.spec.style.StringSpec
+import java.io.File
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 
@@ -29,7 +33,9 @@ class RobotsPoolSpec : StringSpec({
     }
 
     "the roster's order, levels, floor, reserved models and role models are typed" {
-        rules.pool.roster.order.size shouldBe 20
+        // By content, not by a count another stage's roster edit moves (S3.0 T5): the order as pool/roster.yaml writes it.
+        rules.pool.roster.order shouldBe Yaml.default.parseToYamlNode(File(root, "pool/roster.yaml").readText()).yamlMap.get<YamlList>("order")!!.items
+            .map { it.yamlMap }.map { Line(it.getScalar("vendor")!!.content, it.getScalar("model")!!.content, it.getScalar("effort")!!.content) }
         rules.pool.roster.order.last() shouldBe Line("claude", "claude-fable-5-2", "max")
         rules.pool.roster.reserved shouldBe mapOf("claude-fable-5-2" to listOf("principal"))
         rules.pool.roster.roleModels shouldBe emptyMap()

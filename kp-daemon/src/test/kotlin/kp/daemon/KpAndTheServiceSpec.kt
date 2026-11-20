@@ -9,7 +9,8 @@ import io.kotest.matchers.string.shouldContain
  * socket of a daemon that rehearses `rules/walks/h1-prime.yaml` on a throwaway project, and `scripts/kp` run as a
  * subprocess. Whether a connection's peer is root is read through [SimulatedPeers]: `kp(…, root = true)` is `sudo kp …`,
  * simulated. Each rehearsal starts paused where the walk first needs Bora: the TeamLead's assignment-proposal waits for
- * his approval, under ticket #5 — the `seq` of the line that opened it (contracts.md §1).
+ * his approval, under the ticket the `seq` of the line that opened it gives (contracts.md §1, §2) — read from the log, not
+ * pinned to the walk's length (S3.0 T5).
  */
 class KpAndTheServiceSpec : FreeSpec({
     "`kp inbox` lists what waits for Bora by ticket, with its class, kind, stage and the list's three lines" {
@@ -18,7 +19,7 @@ class KpAndTheServiceSpec : FreeSpec({
 
             inbox.code shouldBe 0
             inbox.text shouldBe """
-                #7 · B · assignment-proposal · REHEARSAL/P2/S2.1 · from teamlead
+                #${office.ticket(office.id("assignment-proposal"))} · B · assignment-proposal · REHEARSAL/P2/S2.1 · from teamlead
                    rolls: none · live: none · touches: unknown
 
             """.trimIndent()
@@ -27,18 +28,19 @@ class KpAndTheServiceSpec : FreeSpec({
 
     "a signed `approve` fires the transition; the same command unsigned is refused and logged; a ticket answered twice is refused" {
         Rehearsed("h1-prime").use { office ->
-            val unsigned = office.kp("approve", "7")
-            val signed = office.kp("approve", "7", root = true)
+            val ticket = office.ticket(office.id("assignment-proposal"))
+            val unsigned = office.kp("approve", "$ticket")
+            val signed = office.kp("approve", "$ticket", root = true)
             office.rehearsal.awaitBora() // the walk goes on: `worktree.create` ends `ok` at its step (S1.6's harness), and the walk next waits for Bora's ruling
-            val approvedAgain = office.kp("approve", "7", root = true)
-            val declinedAfter = office.kp("decline", "7", root = true)
+            val approvedAgain = office.kp("approve", "$ticket", root = true)
+            val declinedAfter = office.kp("decline", "$ticket", root = true)
 
             listOf(unsigned.code, signed.code, approvedAgain.code, declinedAfter.code) shouldBe listOf(1, 0, 1, 1)
             office.log().messages("approval", "decline").map { "${it.kind} signed=${it.signed} ${office.log().outcome(it)}" } shouldBe listOf(
                 "approval signed=false refused: signed by Bora's CLI",
                 "approval signed=true delivered: T-02 proposed→assigned, T-03 assigned→assigned",
                 "approval signed=true refused: max_fires: 1, window: stage",
-                "decline signed=true refused: ticket #7: answered once",
+                "decline signed=true refused: ticket #$ticket: answered once",
             )
         }
     }
@@ -77,18 +79,19 @@ class KpAndTheServiceSpec : FreeSpec({
 
     "`kp check` on a daemon's own log reproduces every recorded outcome, and prints the line where one differs" {
         Rehearsed("h1-prime").use { office ->
-            office.kp("approve", "7", root = true)
+            val proposal = office.id("assignment-proposal")
+            office.kp("approve", "${office.ticket(proposal)}", root = true)
             office.rehearsal.awaitBora()
             val copy = office.copyOfTheLog()
 
             val clean = office.kp("check", copy.toString())
-            edit(copy, """"event":"delivered","id":"m-panda-000006"""", """"list.fence_complete":true""", """"list.fence_complete":false""")
+            edit(copy, """"event":"delivered","id":"$proposal"""", """"list.fence_complete":true""", """"list.fence_complete":false""")
             val edited = office.kp("check", copy.toString())
 
             clean.code shouldBe 0
             clean.text shouldContain "every recorded outcome is reproduced"
             edited.code shouldBe 1
-            edited.text shouldContain "$copy/REHEARSAL/p2-s2.1.jsonl:1 m-panda-000006 assignment-proposal: recorded delivered T-01"
+            edited.text shouldContain "$copy/REHEARSAL/p2-s2.1.jsonl:1 $proposal assignment-proposal: recorded delivered T-01"
             edited.text shouldContain "re-judged refused assignment-proposal"
         }
     }

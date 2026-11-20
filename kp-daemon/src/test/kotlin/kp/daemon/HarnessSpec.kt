@@ -25,7 +25,7 @@ class HarnessSpec : FreeSpec({
             val failure = shouldThrow<WalkFailure> { hero.through(6) }
 
             failure.message shouldBe "walk H-1-prime step 6 (stop · coder-1 · stop): expected outcome delivered, found refused" +
-                " — refused m-panda-000033 by stop: names a stop-condition id (SC-n) from the fence (failed: {\"arg\":\"sc\",\"in\":{\"fact\":\"list.stop_conditions\"}})"
+                " — refused ${hero.id("stop")} by stop: names a stop-condition id (SC-n) from the fence (failed: {\"arg\":\"sc\",\"in\":{\"fact\":\"list.stop_conditions\"}})"
         }
     }
 
@@ -40,7 +40,7 @@ class HarnessSpec : FreeSpec({
     "an operation the walk names ends when the walk reaches its step, not when the mailroom asks for it" {
         Hero("h1-prime").use { hero ->
             hero.through(2) shouldBe listOf(
-                "assignment-proposal teamlead→bora: delivered, class B, ticket #7 · S2.1 planned→proposed (proposals 1) · asks notify.bora",
+                "assignment-proposal teamlead→bora: delivered, class B, ticket #${hero.ticket(hero.id("assignment-proposal"))} · S2.1 planned→proposed (proposals 1) · asks notify.bora",
                 "notify.bora ok",
                 "approval bora→teamlead signed: delivered, class B · S2.1 proposed→assigned · asks worktree.create",
             )
@@ -50,7 +50,7 @@ class HarnessSpec : FreeSpec({
 
     "a rehearsal feeds the walk's facts to the daemon: the coder's seat dies, the robots take it, and the walk goes on to Bora's next step" {
         Rehearsed("h1-prime").use { office ->
-            office.kp("approve", "7", root = true)
+            office.kp("approve", "${office.ticket(office.id("assignment-proposal"))}", root = true)
 
             office.rehearsal.awaitBora() shouldBe "ruling"
             office.log().story() shouldContainAll listOf("fact seat.process_gone", "seat-gone by robot:POOL-1 delivered", "re-seated by robot:POOL-14 delivered")
