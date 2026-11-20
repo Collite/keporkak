@@ -53,3 +53,17 @@ class Git(val path: String?) {
 
 /** A `git` command's exit code and standard output. */
 internal data class Ran(val code: Int, val output: String)
+
+/** A commit of a checkout's history: its sha, its committer time in seconds and as `git` writes it (`%cI`). */
+internal data class Commit(val sha: String, val time: Long, val at: String) {
+    val short: String get() = sha.take(12)
+}
+
+/** The commits of [dir]'s history from `HEAD` that `git log` lists with [args]; none when `HEAD` has no commit. */
+internal fun Git.commits(dir: java.nio.file.Path, vararg args: String): List<Commit> {
+    if (run(dir, "rev-parse", "--verify", "--quiet", "HEAD", ok = setOf(0, 1)).code != 0) return emptyList()
+    return run(dir, "log", "--format=%H%x09%ct%x09%cI", *args).output.lines().filter { it.isNotBlank() }.map { line ->
+        val (sha, time, at) = line.split("\t")
+        Commit(sha, time.toLong(), at)
+    }
+}

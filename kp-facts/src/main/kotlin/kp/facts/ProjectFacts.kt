@@ -106,7 +106,14 @@ class ProjectFacts(private val where: Checkouts, private val log: WhatTheLogKnow
         )
 
         /** Each answered fact's reader. */
-        private val READERS: Map<String, Reading.() -> Observation> = mapOf()
+        private val READERS: Map<String, Reading.() -> Observation> = mapOf(
+            "plan.predecessors_exited" to Reading::predecessorsExited,
+            "plan.stage_has_list" to Reading::stageHasList,
+            "plan.last_stage_exited" to Reading::lastStageExited,
+            "plan.in_current_wave" to Reading::inCurrentWave,
+            "plan.wave_of" to Reading::waveOf,
+            "plan.chart_fresh" to Reading::chartFresh,
+        )
     }
 }
 
@@ -166,5 +173,9 @@ internal data class PhaseId(val effort: String, val n: String) {
 
 /** One observation: what it reads, and what it has read so far. */
 internal class Reading(val where: Checkouts, val log: WhatTheLogKnows, val git: Git, val asked: Asked) {
+    val waves = Waves(this)
+
     fun stage(): StageId = StageId.of(asked.text("stage"))
+
+    fun phase(): PhaseId = PhaseId.of(asked.text("phase"))
 }
