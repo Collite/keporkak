@@ -16,7 +16,9 @@ Fill [references/pr-description.md](references/pr-description.md) — six sectio
    the behaviour) and its file. This is the reading list for Bora and the reviewer — keep it to the acceptance specs;
    for a live item, QA's fixture path and command. With each item, **one mutant** that breaks it and its result:
    `just mutant <patch> <spec filter>` — the patch (a few lines, quoted or pointed at), the filter, and `red` with the
-   specs that failed. A mutant that comes back green is a missing spec: you are not done.
+   specs that failed. A mutant that comes back green is a missing spec: you are not done. A mutant is a wrong
+   implementation at the edge of the class the item names: drop the last or the second case, take the other order,
+   add a timer, a join or a literal. Removing your own line does not count.
 4. **Verified** — the test command and its counts; the CI run on the head sha; for a live item, QA's report and the
    fixture path.
 5. **Not in this stage** — the list's out-of-scope line, verbatim.

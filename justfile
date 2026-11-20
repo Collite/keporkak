@@ -65,6 +65,11 @@ check:
 changelog: _python-env
     build/python/bin/python build-support/check_changelog.py
 
+# What the rulebook is owed (D-90 (4), S3.0 T2): each decision of <log> marked "→ rulebook" that no line of
+# docs/wow/CHANGELOG.md names, with its line; exits 1 when it lists one. From P3's exit a phase does not exit while it does.
+owed log *args: _python-env
+    build/python/bin/python build-support/owed.py --from "{{invocation_directory()}}" "$@"
+
 # Applies <patch> to a throwaway copy of the working tree, runs the specs <filter> names there with a forced rerun, and
 # prints `red` and the specs that failed, or `green`; the working tree stays as it was (S2.8; architecture.md §7).
 # Exit 0 red · 1 green · 2 the patch does not apply · 3 the filter runs no spec · 4 the patched copy does not build.
