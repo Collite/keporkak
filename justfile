@@ -137,3 +137,13 @@ handshake *args:
     fi
     ./gradlew --console=plain -q :kp-driver:handshakeClasspath
     exec java -cp "$(cat kp-driver/build/handshake.classpath)" kp.driver.handshake.HandshakeKt --root "$PWD" "$@"
+
+
+git-it:
+    cd ~/Dev/keporkak/project
+    git add .
+    git commit -am "messages"
+    git pull 
+    git push 
+    cd - 
+    
