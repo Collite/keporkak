@@ -25,17 +25,26 @@ from retro_checks_support import copy_of_the_checkout  # noqa: E402
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ALLOW_LIST = "build-support/decides-nothing.yaml"
 FINDING = re.compile(r"^\s*not on the allow-list: (kp-[\w-]+/src/main/kotlin/\S+\.kt):(\d+): (\w+) in (\S+): (.*)$")
+ITS_LINE = re.compile(r"^\s*its line: (.*)$")
 
 # Each of T3's shapes, planted in two of the modules the check covers, each in two forms: the one a regex scan listed,
-# then one it did not. A form's line number is its index in PLANTED's lines, counted from 1.
+# then one it did not — and, for a comparison and a timer, each form review-026 (B2) found the check missed.
 SHAPES = {
     "comparison": (("kp-driver", "kp-daemon"), [
         "fun over(heard: Instant, clock: Clock): Boolean = Duration.between(heard, clock.instant()) > Duration.ofMinutes(20)",
         "fun overToo(heard: Instant, clock: Clock): Boolean = Duration.between(heard, clock.instant()).toMinutes() / 20 != 0L",
+        "fun overWhen(used: Long, cap: Long) = when (used - cap) { in 1L.rangeTo(Long.MAX_VALUE) -> true; else -> false }",
+        "fun overWhenVal(used: Long, cap: Long) = when (val d = used - cap) { 0L -> false; else -> true }",
+        "fun overTakeIf(used: Long, cap: Long) = used.takeIf { it in cap.inc().rangeTo(Long.MAX_VALUE) }",
+        "fun overUntil(used: Long, cap: Long) = used.until(cap).isEmpty()",
+        "fun overWhenIn(used: Long, cap: Long, over: Set<Long>) = when (used - cap) { in over -> true; else -> false }",
     ]),
     "timer": (("kp-driver", "kp-daemon"), [
         "fun grace() = Thread.sleep(2_000)",
         "fun graceToo() = java.util.concurrent.locks.LockSupport.parkNanos(2_000_000_000)",
+        "fun graceParsed() = java.time.Duration.parse(\"PT2S\")",
+        "fun graceBetween(a: Instant, b: Instant) = java.time.Duration.between(a, b)",
+        "fun graceUnit() = java.util.concurrent.TimeUnit.SECONDS",
     ]),
     "kind": (("kp-daemon", "kp-seat-api"), [
         "fun assigned(kind: String) = kind == \"assign\"",
@@ -87,29 +96,53 @@ def working_in(folder):
 
 
 def findings(output):
-    return [FINDING.match(line).groups() for line in output.splitlines() if FINDING.match(line)]
+    """Each finding the check reports no entry excuses: its path, line number, shape, declaration, code and line."""
+    lines = output.splitlines()
+    return [FINDING.match(line).groups() + (ITS_LINE.match(after).group(1),) for line, after in zip(lines, lines[1:] + [""]) if FINDING.match(line)]
+
+
+def grace_on_an_excused_line(copy, module):
+    """review-026 B1: a grace added to the first line of [module] the list excuses for a timer that declares a value by a
+    call on a line of its own, as S2.4's was; returns its path, line number, the entry, and the file as it was."""
+    listed = yaml.safe_load((copy / ALLOW_LIST).read_text())["exceptions"]
+    path, entry = next((path, entry) for path, entries in listed.items() if path.startswith(module + "/") for entry in entries
+                       if entry["shape"] == "timer" and re.fullmatch(r"val \w+ = .*\)", entry["line"]))
+    was = (copy / path).read_text()
+    lines = was.split("\n")
+    at = next(i for i, line in enumerate(lines) if " ".join(line.split()) == entry["line"])
+    lines[at] += " + 2_000"
+    (copy / path).write_text("\n".join(lines))
+    return path, at + 1, entry, was
 
 
 class TheChecksP2sRetroAskedFor(unittest.TestCase):
-    def test_the_check_fails_on_each_shape_planted_in_two_modules_in_two_forms_and_passes_once_each_line_is_listed_with_a_reason(self):
+    def test_the_check_fails_on_each_shape_planted_in_two_modules_in_two_forms_and_on_an_edit_to_an_excused_line_and_passes_once_each_line_is_listed_with_a_reason(self):
         copy = copy_of_the_checkout(self)
         planted = {}
         for shape, (modules, forms) in SHAPES.items():
             for module in modules:
                 path, numbers = plant(copy, module, "Planted" + shape.capitalize(), forms)
-                planted.update({(shape, module, form): (path, number) for form, number in zip(("listed", "unlisted"), numbers)})
+                labels = ["listed", "unlisted"] + [f"review-026 B2, form {n}" for n in range(1, len(forms) - 1)]
+                planted.update({(shape, module, form): (path, number) for form, number in zip(labels, numbers)})
+        graced = [grace_on_an_excused_line(copy, module) for module in ("kp-daemon", "kp-driver")]
 
         red = just(copy, "spec", "DecidesNothingSpec")
         found = findings(red.stdout)
-        reported = {(path, int(line), shape) for path, line, shape, _, _ in found}
+        reported = {(path, int(line), shape) for path, line, shape, *_ in found}
 
         self.assertNotEqual(red.returncode, 0, red.stdout[-3000:])
         self.assertEqual(sorted(key for key, (path, line) in planted.items() if (path, line, key[0]) not in reported), [], red.stdout[-6000:])
+        # An edit to a line the list excuses, outside its finding's own code, is a finding no entry excuses, by file and line.
+        for path, line, entry, _ in graced:
+            self.assertIn((path, str(line), "timer", entry["in"], entry["code"]), {f[:5] for f in found}, red.stdout[-6000:])
+            self.assertIn(f"an exception the sources no longer need: {path}: timer in {entry['in']}: {entry['code']}", red.stdout)
+        for path, _, _, was in graced:
+            (copy / path).write_text(was)
 
         # Every finding in a planted file listed with its reason: green — master's own findings are on the list already.
         listed = yaml.safe_load((copy / ALLOW_LIST).read_text())
-        for path, _, shape, inside, code in {f for f in found if "/planted/" in f[0]}:
-            listed["exceptions"].setdefault(path, []).append({"shape": shape, "in": inside, "code": code, "reason": "planted by the spec, listed"})
+        for path, _, shape, inside, code, line in {f for f in found if "/planted/" in f[0]}:
+            listed["exceptions"].setdefault(path, []).append({"shape": shape, "in": inside, "code": code, "line": line, "reason": "planted by the spec, listed"})
         (copy / ALLOW_LIST).write_text(yaml.safe_dump(listed, allow_unicode=True, sort_keys=False, width=200))
         green = just(copy, "spec", "DecidesNothingSpec")
 

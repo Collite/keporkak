@@ -2,6 +2,7 @@ package kp.rules.decidesnothing
 
 import io.kotest.assertions.fail
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -11,7 +12,8 @@ import java.io.File
  * S3.0 T3 — the daemon decides nothing, held on the syntax tree of the main sources of kp-driver, kp-daemon, kp-seat-api
  * and kp-engine ([Scan], DecidesNothing.kt): the daemon reports and performs, the rules compare (contracts.md §4.4;
  * architecture.md §2). Each finding is listed in build-support/decides-nothing.yaml with its reason, or the check fails
- * with its file and line; the list holds no entry without a reason, and none the sources no longer need. It replaces
+ * with its file and line — an entry excuses its finding on the line it stands on, as written, and no edit of that line;
+ * the list holds no entry without a reason, and none the sources no longer need. It replaces
  * nine regex sentences (DaemonSourceSpec, SeatFactsSpec, AnswererSpec, WhoamiSpec, NoTokenSpec, DecisionRecordsSpec).
  */
 class DecidesNothingSpec : StringSpec({
@@ -32,13 +34,24 @@ class DecidesNothingSpec : StringSpec({
         names.stopGateCap shouldBe Regex("""(?m)^\s*stop_gate_blocks:\s*(\d+)""").find(File(root, "rules/engagement.yaml").readText())!!.groupValues[1].toLong()
     }
 
-    "each shape is found in two modules the check holds to it, in the form a regex scan listed and in one it did not" {
+    "each shape is found in two modules the check holds to it, in the form a regex scan listed, in one it did not, and in each form review-026 found it missed" {
         // The forms of S3.0 T1's planted lines (tests/test_s3_0_retro_checks.py), each as a main source of its module.
         val planted = mapOf(
             Shape.COMPARISON to listOf("kp-driver", "kp-daemon") to listOf(
                 "fun over(heard: Instant, clock: Clock): Boolean = Duration.between(heard, clock.instant()) > Duration.ofMinutes(20)",
-                "fun overToo(heard: Instant, clock: Clock): Boolean = Duration.between(heard, clock.instant()).toMinutes() / 20 != 0L"),
-            Shape.TIMER to listOf("kp-driver", "kp-daemon") to listOf("fun grace() = Thread.sleep(2_000)", "fun graceToo() = java.util.concurrent.locks.LockSupport.parkNanos(2_000_000_000)"),
+                "fun overToo(heard: Instant, clock: Clock): Boolean = Duration.between(heard, clock.instant()).toMinutes() / 20 != 0L",
+                // review-026 B2: a range made by a call, in a `when`'s branch, a `takeIf` and on its own; a `when` over a `val`.
+                "fun overWhen(used: Long, cap: Long) = when (used - cap) { in 1L.rangeTo(Long.MAX_VALUE) -> true; else -> false }",
+                "fun overWhenVal(used: Long, cap: Long) = when (val d = used - cap) { 0L -> false; else -> true }",
+                "fun overTakeIf(used: Long, cap: Long) = used.takeIf { it in cap.inc().rangeTo(Long.MAX_VALUE) }",
+                "fun overUntil(used: Long, cap: Long) = used.until(cap).isEmpty()",
+                // and where the same `when` puts the difference by `in`, whatever the range is.
+                "fun overWhenIn(used: Long, cap: Long, over: Set<Long>) = when (used - cap) { in over -> true; else -> false }"),
+            Shape.TIMER to listOf("kp-driver", "kp-daemon") to listOf(
+                "fun grace() = Thread.sleep(2_000)", "fun graceToo() = java.util.concurrent.locks.LockSupport.parkNanos(2_000_000_000)",
+                // review-026 B2: a duration and a time unit by their qualified names.
+                "fun graceParsed() = java.time.Duration.parse(\"PT2S\")", "fun graceBetween(a: Instant, b: Instant) = java.time.Duration.between(a, b)",
+                "fun graceUnit() = java.util.concurrent.TimeUnit.SECONDS"),
             Shape.KIND to listOf("kp-daemon", "kp-seat-api") to listOf("fun assigned(kind: String) = kind == \"assign\"", "fun begun(kind: String) = Regex(\"started|stop\").matches(kind)"),
             Shape.NUMBER to listOf("kp-engine", "kp-seat-api") to listOf("val most = 7", "val mostToo = 0x7"),
             Shape.CONCLUSION to listOf("kp-driver", "kp-seat-api") to listOf("val stalled = true", "val isStalled = true"),
@@ -57,7 +70,7 @@ class DecidesNothingSpec : StringSpec({
         val faults = listOf(
             listed - one,
             listed.map { if (it === one) it.copy(reason = "") else it },
-            listed + Excused("kp-seat-api/src/main/kotlin/kp/seatapi/StopGate.kt", Shape.NUMBER.id, "StopGate.route", "${names.stopGateCap}", "a reason"),
+            listed + Excused("kp-seat-api/src/main/kotlin/kp/seatapi/StopGate.kt", Shape.NUMBER.id, "StopGate.route", "${names.stopGateCap}", "${names.stopGateCap}", "a reason"),
             listed + one.copy(code = one.code + " // gone"),
         ).map { scan.problems(it) }
         // Each fault beside what the list as written yields — nothing on master — so that the spec reads the faults alone.
@@ -69,6 +82,25 @@ class DecidesNothingSpec : StringSpec({
             listOf("an exception for the stop gate's cap, ${names.stopGateCap}, which no number in kp-seat-api may be", "an exception the sources no longer need"),
             listOf("an exception the sources no longer need"),
         )
+    }
+
+    "an edit to a line the list excuses, beside its finding's own code, fails the check with its file and line — in the daemon and in the driver" {
+        // review-026 B1: a grace added to a timer's line, as S2.4's was — on the first line of each module that the list
+        // excuses for a timer and that declares a value by a call on a line of its own.
+        val baseline = scan.problems().toSet()
+        val edits = listOf("kp-daemon", "kp-driver").map { module ->
+            val entry = names.exceptions.first { it.path.startsWith("$module/") && it.shape == Shape.TIMER.id && Regex("""val \w+ = .*\)""").matches(it.line) }
+            val lines = File(root, entry.path).readLines()
+            val at = lines.indexOfFirst { collapse(it) == entry.line }
+            val edited = lines.mapIndexed { i, line -> if (i == at) "$line + 2_000" else line }.joinToString("\n", postfix = "\n")
+            entry to (at + 1) to (Scan(root, names, mapOf(entry.path to edited)).problems() - baseline).map { it.lines().first() }
+        }
+
+        edits.forEach { (at, problems) ->
+            val (entry, line) = at
+            problems shouldContain "not on the allow-list: ${entry.path}:$line: ${entry.shape} in ${entry.inside}: ${entry.code}"
+            problems shouldContain "an exception the sources no longer need: $entry"
+        }
     }
 
     "the check finds a comparison in every form review-008 listed, and takes no type argument, arrow, comment or string for one" {

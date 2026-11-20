@@ -12,9 +12,11 @@ import io.github.detekt.test.utils.compileContentForTest
 import org.jetbrains.kotlin.com.intellij.psi.PsiComment
 import org.jetbrains.kotlin.com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.com.intellij.psi.PsiErrorElement
+import org.jetbrains.kotlin.com.intellij.psi.PsiWhiteSpace
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtAnonymousInitializer
 import org.jetbrains.kotlin.psi.KtBinaryExpression
+import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtCallableReferenceExpression
 import org.jetbrains.kotlin.psi.KtClassBody
@@ -25,11 +27,13 @@ import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtImportList
 import org.jetbrains.kotlin.psi.KtPackageDirective
 import org.jetbrains.kotlin.psi.KtLambdaArgument
+import org.jetbrains.kotlin.psi.KtLambdaExpression
 import org.jetbrains.kotlin.psi.KtLiteralStringTemplateEntry
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtObjectDeclaration
+import org.jetbrains.kotlin.psi.KtObjectLiteralExpression
 import org.jetbrains.kotlin.psi.KtParameter
 import org.jetbrains.kotlin.psi.KtParenthesizedExpression
 import org.jetbrains.kotlin.psi.KtPrefixExpression
@@ -39,6 +43,7 @@ import org.jetbrains.kotlin.psi.KtQualifiedExpression
 import org.jetbrains.kotlin.psi.KtSecondaryConstructor
 import org.jetbrains.kotlin.psi.KtStringTemplateExpression
 import org.jetbrains.kotlin.psi.KtUserType
+import org.jetbrains.kotlin.psi.KtWhenConditionInRange
 import org.jetbrains.kotlin.psi.KtWhenConditionWithExpression
 import org.jetbrains.kotlin.psi.KtWhenExpression
 import org.jetbrains.kotlin.KtNodeTypes
@@ -54,7 +59,9 @@ import java.io.File
  * It holds what nine regex sentences held, per module as they did (DaemonSourceSpec, SeatFactsSpec, AnswererSpec,
  * WhoamiSpec, NoTokenSpec, DecisionRecordsSpec): the names it looks for are read from rules/ and from the seat's
  * permissions data; the words for a conclusion and every exception are in build-support/decides-nothing.yaml, each
- * exception with its reason.
+ * exception with its reason. An exception excuses its finding on the line it stands on, as written — every line of the
+ * statement the finding is in, but the inside of a lambda or an object beside it: an edit anywhere on that line leaves a
+ * finding no exception excuses (review-026 B1).
  */
 
 /** The six shapes of a decision the check looks for. */
@@ -103,14 +110,17 @@ val CAP_REFUSED = setOf("kp-seat-api", "kp-engine")
 
 const val ALLOW_LIST = "build-support/decides-nothing.yaml"
 
-/** One finding: a shape at a file's line, in a declaration, as written (whitespace collapsed). */
-data class Finding(val path: String, val line: Int, val shape: Shape, val inside: String, val code: String) {
+/**
+ * One finding: a shape at a file's line, in a declaration, as written, and the line it stands on — every line of the
+ * statement it is in, whole, but the inside of a lambda or an object beside it (whitespace collapsed in both).
+ */
+data class Finding(val path: String, val line: Int, val shape: Shape, val inside: String, val code: String, val stands: String) {
     override fun toString() = "$path:$line: ${shape.id} in $inside: $code"
 }
 
-/** One exception of the allow-list. */
-data class Excused(val path: String, val shape: String, val inside: String, val code: String, val reason: String) {
-    override fun toString() = "$path: ${shape} in $inside: $code"
+/** One exception of the allow-list: the finding it excuses, by its code and the line it stands on. */
+data class Excused(val path: String, val shape: String, val inside: String, val code: String, val line: String, val reason: String) {
+    override fun toString() = "$path: ${shape} in $inside: $code — its line: $line"
 }
 
 /** What the check reads besides the sources: the names from rules/ and the permissions data, and the allow-list. */
@@ -144,7 +154,7 @@ class Names(private val root: File) {
         entries.yamlList.items.map { entry ->
             val fields = entry.yamlMap
             fun field(name: String) = fields.get<YamlScalar>(name)?.content.orEmpty()
-            Excused(path.content, field("shape"), field("in"), field("code"), field("reason").trim())
+            Excused(path.content, field("shape"), field("in"), field("code"), field("line"), field("reason").trim())
         }
     }
 }
@@ -154,13 +164,16 @@ fun coveredSources(root: File): List<File> = COVERS.keys.sorted().flatMap { modu
     File(root, "$module/src/main/kotlin").walk().filter { it.isFile && it.extension == "kt" }.sortedBy { it.path }.toList()
 }
 
-/** What the check found in [root]: every finding, and the files whose tree holds a parse error. */
-class Scan(val root: File, val names: Names = Names(root)) {
+/**
+ * What the check found in [root]: every finding, and the files whose tree holds a parse error. [edited] stands in for a
+ * source's text, by its path: an edit the check's own specs make, never written.
+ */
+class Scan(val root: File, val names: Names = Names(root), edited: Map<String, String> = emptyMap()) {
     val parseErrors = mutableListOf<String>()
     val findings: List<Finding> = coveredSources(root).flatMap { file ->
         val path = file.relativeTo(root).invariantSeparatorsPath
         val module = path.substringBefore('/')
-        val tree = compileContentForTest(file.readText(), file.name)
+        val tree = compileContentForTest(edited[path] ?: file.readText(), file.name)
         FileScan(path, tree, COVERS.getValue(module), module in KINDS_ANYWHERE, names).also { parseErrors += it.errors }.findings
     }
 
@@ -168,13 +181,15 @@ class Scan(val root: File, val names: Names = Names(root)) {
     fun problems(exceptions: List<Excused> = names.exceptions): List<String> {
         val open = exceptions.toMutableList()
         val unexcused = findings.filter { finding ->
-            val at = open.indexOfFirst { it.path == finding.path && it.shape == finding.shape.id && it.inside == finding.inside && it.code == finding.code }
+            val at = open.indexOfFirst {
+                it.path == finding.path && it.shape == finding.shape.id && it.inside == finding.inside && it.code == finding.code && it.line == finding.stands
+            }
             if (at >= 0) open.removeAt(at)
             at < 0
         }
         val module = { e: Excused -> e.path.substringBefore('/') }
         return parseErrors.map { "a parse error: $it" } +
-            unexcused.map { "not on the allow-list: $it" } +
+            unexcused.map { "not on the allow-list: $it\n    its line: ${it.stands}" } +
             exceptions.filter { it.reason.isEmpty() }.map { "an exception with no reason: $it" } +
             exceptions.filter { Shape.of(it.shape) == null }.map { "an exception of no shape the check knows: $it" } +
             exceptions.filter { it.shape == Shape.NUMBER.id && module(it) in CAP_REFUSED && number(it.code) == names.stopGateCap }
@@ -217,13 +232,14 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
     }
 
     private fun found(shape: Shape, element: PsiElement, code: String = element.text) {
-        if (shape in shapes) raw += element to Finding(path, line(element), shape, inside(element), collapse(code))
+        if (shape in shapes) raw += element to Finding(path, line(element), shape, inside(element), collapse(code), wholeLines(statement(element), element))
     }
 
     private fun look(element: PsiElement) {
         when (element) {
             is KtBinaryExpression -> binary(element)
             is KtWhenConditionWithExpression -> whenCondition(element)
+            is KtWhenConditionInRange -> whenInRange(element)
             is KtNameReferenceExpression -> reference(element)
             is KtProperty -> if (LIMIT_NAME.matches(element.name.orEmpty())) found(Shape.TIMER, element, undocumented(element))
             is KtConstantExpression -> if (element.node.elementType in NUMBERS && number(element.text)?.let { it != 0L } != false) found(Shape.NUMBER, element)
@@ -245,7 +261,13 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
 
     private fun whenCondition(e: KtWhenConditionWithExpression) {
         val subject = (e.parent?.parent as? KtWhenExpression)?.subjectExpression ?: return
-        if (sum(subject) || nonZero(e.expression)) found(Shape.COMPARISON, e, "when (${subject.text}) ${e.text}")
+        if (sum(valueOf(subject)) || nonZero(e.expression)) found(Shape.COMPARISON, e, "when (${subject.text}) ${e.text}")
+    }
+
+    /** `in a..b ->`, `in limits ->` of a `when` over arithmetic: where the difference falls is an ordering. */
+    private fun whenInRange(e: KtWhenConditionInRange) {
+        val subject = (e.parent?.parent as? KtWhenExpression)?.subjectExpression ?: return
+        if (sum(valueOf(subject))) found(Shape.COMPARISON, e, "when (${subject.text}) ${e.text}")
     }
 
     private fun reference(e: KtNameReferenceExpression) {
@@ -256,14 +278,18 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
         // What is shown and excused: a call as written, its receiver left out; a member with its receiver; a reference; a type.
         val owner: PsiElement? = call ?: selected ?: (parent as? KtCallableReferenceExpression) ?: (parent as? KtUserType)
         if (owner != null) {
-            if (name in ORDERING) found(Shape.COMPARISON, owner)
             val arguments = call?.valueArguments?.count { it !is KtLambdaArgument } ?: 0
+            // A range made by a call, which takes its other end, or by a reference — `used.until(cap)`, `1L.rangeTo(max)`,
+            // `::until` — as by `..` (review-026 B2); the walk's own `step()` is none.
+            if (name in ORDERING || (name in RANGE_WORDS && (arguments >= 1 || parent is KtCallableReferenceExpression))) found(Shape.COMPARISON, owner)
             val timer = name in TIMER_CALLS || name in TIME_NAMES || (name in TIMEOUT_CALLS && arguments >= 1) ||
                 (name == "get" && arguments == 2) || (name == "offer" && arguments == 3)
             if (timer) found(Shape.TIMER, owner)
         }
-        // A time unit or a duration by its type: `Duration.ofSeconds(2)`, `TimeUnit.SECONDS`, `ChronoUnit.MINUTES`.
-        val receiverOf = (parent as? KtQualifiedExpression)?.takeIf { it.receiverExpression === e }
+        // A time unit or a duration by its type: `Duration.ofSeconds(2)`, `TimeUnit.SECONDS`, `ChronoUnit.MINUTES` — and by
+        // its qualified name, `java.time.Duration.parse("PT2S")`, `java.util.concurrent.TimeUnit.SECONDS` (review-026 B2).
+        val type: KtExpression = selected ?: e
+        val receiverOf = (type.parent as? KtQualifiedExpression)?.takeIf { it.receiverExpression === type }
         // `Duration.ZERO` waits for nothing, as zero is no number.
         if (receiverOf != null && name in TIME_TYPES && receiverOf.selectorExpression?.text != "ZERO") found(Shape.TIMER, receiverOf)
         if (LIMIT_NAME.matches(name)) found(Shape.TIMER, e)
@@ -288,8 +314,9 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
             val words = wordsOf(line)
             val shown = line.trim().trimStart('/', '*').trim()
             val at = line(e) + i
-            if (words.any { it in names.conclusions } && Shape.CONCLUSION in shapes) raw += e to Finding(path, at, Shape.CONCLUSION, inside(e), collapse(shown))
-            if (kindsAnywhere && LOWER_RUN.findAll(line).any { it.value in names.kinds } && Shape.KIND in shapes) raw += e to Finding(path, at, Shape.KIND, inside(e), collapse(shown))
+            val whole = collapse(fileLines[at - 1])
+            if (words.any { it in names.conclusions } && Shape.CONCLUSION in shapes) raw += e to Finding(path, at, Shape.CONCLUSION, inside(e), collapse(shown), whole)
+            if (kindsAnywhere && LOWER_RUN.findAll(line).any { it.value in names.kinds } && Shape.KIND in shapes) raw += e to Finding(path, at, Shape.KIND, inside(e), collapse(shown), whole)
         }
     }
 
@@ -299,6 +326,43 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
         if (parts.any { it in names.conclusions }) found(Shape.CONCLUSION, at, name)
         if (kindsAnywhere && LOWER_RUN.findAll(name).any { it.value in names.kinds }) found(Shape.KIND, at, name)
     }
+
+    /**
+     * The statement [element] stands in: up through the expression around it and the declaration it initializes, to the
+     * block, body, branch, condition, argument or parameter that holds it — not into a `when`, a function or a class.
+     */
+    private fun statement(element: PsiElement): PsiElement {
+        var at = element
+        while (true) {
+            val up = at.parent ?: return at
+            if (up !is KtExpression || up is KtBlockExpression || up is KtWhenExpression || up is KtNamedFunction || up is KtClassOrObject) return at
+            at = up
+        }
+    }
+
+    /**
+     * The line a finding stands on: every line of its [statement], whole, from the first after a doc comment to its last
+     * (whitespace collapsed). The lines inside a lambda or an object beside the finding, which are statements of their
+     * own, are `…`; the lines it opens and closes on are kept.
+     */
+    private fun wholeLines(statement: PsiElement, finding: PsiElement): String {
+        var first = statement.firstChild
+        while (first != null && (first is PsiComment || first is PsiWhiteSpace)) first = first.nextSibling
+        val inner = mutableSetOf<Int>()
+        fun cut(at: PsiElement) {
+            val apart = at.textRange.endOffset <= finding.textRange.startOffset || finding.textRange.endOffset <= at.textRange.startOffset
+            if ((at is KtLambdaExpression || at is KtObjectLiteralExpression) && apart) inner += (lineAt(at.textRange.startOffset) + 1) until lineAt(at.textRange.endOffset)
+            else generateSequence(at.firstChild) { it.nextSibling }.forEach(::cut)
+        }
+        cut(statement)
+        val shown = (lineAt((first ?: statement).textRange.startOffset)..lineAt(statement.textRange.endOffset)).map { if (it in inner) "…" else fileLines[it - 1] }
+        return collapse(shown.joinToString(" ")).replace(Regex("…( …)+"), "…")
+    }
+
+    private val fileLines = text.lines()
+
+    /** The line of the file [offset] is on, counted from 1. */
+    private fun lineAt(offset: Int): Int = text.substring(0, offset).count { it == '\n' } + 1
 
     private fun inside(element: PsiElement): String {
         val names = mutableListOf<String>()
@@ -334,6 +398,9 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
         else -> false
     }
 
+    /** A `when`'s subject as a value: `when (val d = used - cap)` is over `used - cap`. */
+    private fun valueOf(subject: KtExpression): KtExpression? = (subject as? KtProperty)?.initializer ?: subject
+
     private fun nonZero(e: KtExpression?): Boolean = (unwrap(e) as? KtConstantExpression)?.let { it.node.elementType in NUMBERS && number(it.text) != 0L } == true
 
     private fun unwrap(e: KtExpression?): KtExpression? = when (e) {
@@ -353,7 +420,8 @@ fun number(text: String): Long? {
     }
 }
 
-private fun collapse(text: String) = text.replace(Regex("\\s+"), " ").trim()
+/** [text] with each run of whitespace one space, and none at its ends: a finding's code and its line as listed. */
+fun collapse(text: String) = text.replace(Regex("\\s+"), " ").trim()
 
 private val NUMBERS = setOf(KtNodeTypes.INTEGER_CONSTANT, KtNodeTypes.FLOAT_CONSTANT)
 private val NUMBER_TEXT = Regex("-?(0[xX][0-9a-fA-F_]+|0[bB][01_]+|[0-9][0-9_]*(\\.[0-9]+)?)[lLuUfF]?")
