@@ -6,6 +6,7 @@ import kp.facts.Checkouts
 import kp.facts.Git
 import kp.facts.Observation
 import kp.facts.ProjectFacts
+import kp.facts.StageState
 import kp.facts.WhatTheLogKnows
 import kp.mailroom.FactSource
 import java.nio.file.Path
@@ -27,12 +28,9 @@ class ProjectWorld private constructor(
     @Volatile private var fold: Office? = null
     private val log = object : WhatTheLogKnows {
         private fun folded(): Office = fold ?: error("the fold is not read yet")
-        override fun state(stage: String): String? = folded().state.machine(STAGE, stage)?.state
-        override fun exitedAt(stage: String): String? = folded().state.machine(STAGE, stage)?.takeIf { it.state == EXITED }?.since
-        override fun active(): Set<String> = folded().let { office ->
-            val active = office.rules.ruleSet.lifecycle.activeStates.toSet()
-            office.state.machines[STAGE].orEmpty().filterValues { it.state in active }.keys
-        }
+        override fun state(stage: String): StageState? = folded().state.machine(STAGE, stage)?.let { StageState(it.state, it.since) }
+        override fun stages(): Map<String, StageState> = folded().state.machines[STAGE].orEmpty().mapValues { (_, machine) -> StageState(machine.state, machine.since) }
+        override fun activeStates(): Set<String> = folded().rules.ruleSet.lifecycle.activeStates.toSet()
     }
     private val project = facts(log)
 
@@ -75,7 +73,6 @@ class ProjectWorld private constructor(
 
     companion object {
         private const val STAGE = "stage"
-        private const val EXITED = "exited"
 
         /**
          * The world of [office] — its entry in [rules]' `pool/offices.yaml` — on the project checkout [project] the daemon

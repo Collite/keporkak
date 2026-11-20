@@ -20,20 +20,30 @@ sealed interface Observation {
 }
 
 /**
- * What the log knows, as the daemon hands it over from its fold (Amendment 32): a stage's state or that it has none, the
- * time of its exit, the stages in an active state. `kp-facts` depends on `kp-model` alone, so this is all it reads of the
- * log.
+ * What the log knows, as the daemon hands it over from its fold (Amendment 32): a stage's state or that it has none — and
+ * since when, which is the time of its exit when it is `exited` — and, with the states the rules call active, the stages
+ * in an active state. The daemon hands the values over and compares none; `kp-facts` depends on `kp-model` alone, so this
+ * is all it reads of the log.
  */
 interface WhatTheLogKnows {
-    /** [stage]'s state in the log; null when the log holds no record of it — a stage carried by hand. */
-    fun state(stage: String): String?
+    /** [stage]'s state in the log and since when; null when the log holds no record of it — a stage carried by hand. */
+    fun state(stage: String): StageState?
 
-    /** When [stage] exited, as the log dates it (RFC 3339); null when it has not. */
-    fun exitedAt(stage: String): String?
+    /** Every stage the log knows, with its state. */
+    fun stages(): Map<String, StageState>
 
-    /** The stages in an active state. */
-    fun active(): Set<String>
+    /** The states the rules call active (`active_states`, `rules/stage-lifecycle.yaml`). */
+    fun activeStates(): Set<String>
 }
+
+/** A stage's state in the log, and the time it entered it (RFC 3339), as the log dates it. */
+data class StageState(val state: String, val since: String)
+
+/** When [stage] exited, as the log dates it: the time it entered `exited`; null when it is not exited. */
+fun WhatTheLogKnows.exitedAt(stage: String): String? = state(stage)?.takeIf { it.state == "exited" }?.since
+
+/** The stages in an active state. */
+fun WhatTheLogKnows.active(): Set<String> = activeStates().let { active -> stages().filterValues { it.state in active }.keys }
 
 /**
  * Where the facts are read (contracts.md §9): the office [office]'s project checkout, each effort's folder relative to it,

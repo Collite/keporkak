@@ -70,11 +70,15 @@ fun runGit(dir: Path, args: List<String>, dated: String? = null): String {
     return output
 }
 
-/** What the log knows, as a spec sets it: each stage's state, and the exits it dates. */
-class KnownLog(val states: MutableMap<String, String> = mutableMapOf(), val exits: MutableMap<String, String> = mutableMapOf()) : WhatTheLogKnows {
-    override fun state(stage: String): String? = states[stage]
-    override fun exitedAt(stage: String): String? = exits[stage]
-    override fun active(): Set<String> = emptySet()
+/** What the log knows, as a spec sets it: each stage's state, the exits it dates, the states the rules call active. */
+class KnownLog(
+    val states: MutableMap<String, String> = mutableMapOf(),
+    val exits: MutableMap<String, String> = mutableMapOf(),
+    private val active: Set<String> = setOf("assigned", "building"),
+) : WhatTheLogKnows {
+    override fun state(stage: String): StageState? = states[stage]?.let { StageState(it, exits[stage] ?: "2026-11-01T09:00:00Z") }
+    override fun stages(): Map<String, StageState> = states.keys.associateWith { state(it)!! }
+    override fun activeStates(): Set<String> = active
 
     /** [stage] exited at [at], as the log dates it. */
     fun exited(stage: String, at: String) {

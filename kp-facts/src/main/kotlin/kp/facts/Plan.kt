@@ -106,7 +106,7 @@ internal class Waves(private val reading: Reading) {
 
     fun exited(plan: Plan, row: Row): Judged = exits.getOrPut(plan.id(row)) {
         val stage = plan.id(row)
-        reading.log.state(stage)?.let { return@getOrPut Judged(it == EXITED, "log: $stage $it") }
+        reading.log.state(stage)?.let { return@getOrPut Judged(it.state == EXITED, "log: $stage ${it.state}") }
         val overview = overviews.getOrPut(plan.effort) { Folder.of(reading.where, plan.effort).read("tasks-overview.md") }
         val local = Regex.escape(row.local)
         val tick = Regex("^- \\[x\\] (\\*\\*$local\\*\\*|$local(?![0-9]))")
@@ -117,7 +117,7 @@ internal class Waves(private val reading: Reading) {
     /** Past: exited, or `closed` in the log. */
     fun past(plan: Plan, row: Row): Judged {
         val stage = plan.id(row)
-        if (reading.log.state(stage) == CLOSED) return Judged(true, "log: $stage $CLOSED")
+        if (reading.log.state(stage)?.state == CLOSED) return Judged(true, "log: $stage $CLOSED")
         return exited(plan, row)
     }
 

@@ -4,6 +4,9 @@ import io.kotest.core.spec.style.FreeSpec
 import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import kp.engine.Datum
+import kp.engine.FactRef
+import kp.mailroom.Status
 
 /**
  * KP/P3/S3.1 — the daemon asks `kp-facts` (T1's fifth sentence; T7). The office runs on a copy of master's rules whose
@@ -41,6 +44,17 @@ class ProjectAndGitFactsSpec : FreeSpec({
         FactsOffice().use { office ->
             office.send("coder-1", """{"kind": "started", "stage": "KP/P3/S3.1", "subject": "started"}""")
             office.observedOf("started") shouldBe mapOf("git.branch_exists" to "true")
+        }
+    }
+
+    "the log's word reaches `kp-facts` through the fold: a stage the overview ticks is past until the log holds it in another state" {
+        FactsOffice(beside = TableFacts(Walk.read(checkout.resolve("rules/walks/h1-prime.yaml")).facts)).use { office ->
+            val wave = FactRef("plan.wave_of", mapOf("stage" to Datum.Text("KP/P3/S3.1")))
+
+            office.world.observe(wave, "KP/P3/S3.1") shouldBe Datum.Text("past")
+            office.send("teamlead", proposal("KP/P3/S3.1")).status shouldBe Status.DELIVERED
+            office.office.state.machine("stage", "KP/P3/S3.1")?.state shouldBe "proposed"
+            office.world.observe(wave, "KP/P3/S3.1") shouldBe Datum.Text("current")
         }
     }
 

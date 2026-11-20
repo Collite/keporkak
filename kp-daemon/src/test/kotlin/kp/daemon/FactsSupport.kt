@@ -6,7 +6,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kp.mailroom.Answer
+import kp.facts.ProjectFacts
 import kp.mailroom.Clock
+import kp.mailroom.FactSource
 import kp.mailroom.OperationResult
 import kp.mailroom.Operations
 import kp.mailroom.Sender
@@ -44,13 +46,14 @@ private val JUDGED = setOf("delivered", "refused")
 
 /**
  * An office on a project checkout and two main checkouts the spec builds, with master's rules but for `pool/offices.yaml`,
- * which names them; its world is the service's, [ProjectWorld], with `git` looked up on [path].
+ * which names them; its world is the service's, [ProjectWorld], with `git` looked up on [path]. A fact `kp-facts` does not
+ * hold is [beside]'s to answer — none, unless a spec puts a walk's table there.
  */
-class FactsOffice(path: String? = System.getenv("PATH")) : AutoCloseable {
+class FactsOffice(path: String? = System.getenv("PATH"), private val beside: FactSource = FactSource { _, _ -> null }) : AutoCloseable {
     private val folder: Path = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "facts-")
     val project: Path = repository(folder.resolve("project")).also { project ->
         write(project, "plan.md", "| stage | after | goal |\n|---|---|---|\n| **S3.1 Facts** | — | the facts |\n")
-        write(project, "tasks-overview.md", "- [ ] **P3**\n")
+        write(project, "tasks-overview.md", "- [ ] **P3**\n  - [x] **S3.1** Facts — ticked by hand\n")
         write(project, "tasks-p3-s3.1-facts.md", LIST)
         git(project, "add", "-A")
         git(project, "commit", "--quiet", "-m", "cut S3.1")
@@ -70,7 +73,10 @@ class FactsOffice(path: String? = System.getenv("PATH")) : AutoCloseable {
     }
     val journal = java.util.concurrent.CopyOnWriteArrayList<String>()
     val world = ProjectWorld.of(InForceRules.of(RuleFiles(root).read()).first!!, "panda", project, path) { journal += it }
-    val office: Office = Office.start("panda", project, root, world, Operations { _, done -> done(OperationResult.Ok()) }, NoSeats, Clock { Instant.parse("2026-11-20T09:00:00Z") })
+    private val facts = FactSource { fact, stage ->
+        if (fact.name in ProjectFacts.ANSWERED || fact.name in ProjectFacts.NOT_READ_YET) world.observe(fact, stage) else beside.observe(fact, stage)
+    }
+    val office: Office = Office.start("panda", project, root, facts, Operations { _, done -> done(OperationResult.Ok()) }, NoSeats, Clock { Instant.parse("2026-11-20T09:00:00Z") })
         .also(world::reading)
     private val commands = KpCommands(office, world)
 
@@ -112,6 +118,10 @@ private val LIST = """
     ## Tasks
     - [ ] T1 — Specs
     - [ ] T2 — The shape
+    - [ ] T3 — The plan
+    - [ ] T4 — The list
+    - [ ] T5 — STATUS
+    - [ ] T6 — The checkouts
     ## DONE (observable, all required)
     - the facts are read
     ## Found while doing
