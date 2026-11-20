@@ -125,6 +125,11 @@ class ProjectFacts(private val where: Checkouts, private val log: WhatTheLogKnow
             "stage.live" to { headerValue("live") },
             "stage.touches" to { headerValue("touches") },
             "stage.cut_at" to Reading::cutAt,
+            "status.entry_present" to Reading::statusEntryPresent,
+            "status.entries" to Reading::statusEntries,
+            "register.fresh" to Reading::registerFresh,
+            "project.clean_and_pushed" to Reading::cleanAndPushed,
+            "project.proof_files" to Reading::proofFiles,
         )
     }
 }
