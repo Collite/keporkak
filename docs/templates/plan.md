@@ -9,8 +9,11 @@
 
 ## 2. Stages per phase
 ### P<n> — <title>
-| stage | goal (testable) | ~task titles | rolls · live · touches | pre-flight | DONE |
-|---|---|---|---|---|---|
+| stage | after | goal (testable) | ~task titles | rolls · live · touches | pre-flight | DONE |
+|---|---|---|---|---|---|---|
+
+`after`: the stages and phases of this plan the stage waits for — ids only (`S<n.m>`, `P<n>`), separated by commas, or
+`—` for none; the daemon reads a stage's wave from it (contracts.md §4.4, Amendment 32), so prose belongs in pre-flight.
 
 ## 3. Dependency chart
 ```mermaid
