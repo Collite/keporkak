@@ -29,7 +29,46 @@ class DecidesNothingSpec : StringSpec({
         names.kinds shouldContainAll setOf("assign", "started", "stop", "review-request")
         names.answerer shouldContainAll setOf("file_path", "notebook_path", "Read", "Glob", "Grep", "LS", "NotebookRead",
             "Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "allow_once", "write_inside", "write_outside")
-        names.stopGateCap shouldBe 3L
+        names.stopGateCap shouldBe Regex("""(?m)^\s*stop_gate_blocks:\s*(\d+)""").find(File(root, "rules/engagement.yaml").readText())!!.groupValues[1].toLong()
+    }
+
+    "each shape is found in two modules the check holds to it, in the form a regex scan listed and in one it did not" {
+        // The forms of S3.0 T1's planted lines (tests/test_s3_0_retro_checks.py), each as a main source of its module.
+        val planted = mapOf(
+            Shape.COMPARISON to listOf("kp-driver", "kp-daemon") to listOf(
+                "fun over(heard: Instant, clock: Clock): Boolean = Duration.between(heard, clock.instant()) > Duration.ofMinutes(20)",
+                "fun overToo(heard: Instant, clock: Clock): Boolean = Duration.between(heard, clock.instant()).toMinutes() / 20 != 0L"),
+            Shape.TIMER to listOf("kp-driver", "kp-daemon") to listOf("fun grace() = Thread.sleep(2_000)", "fun graceToo() = java.util.concurrent.locks.LockSupport.parkNanos(2_000_000_000)"),
+            Shape.KIND to listOf("kp-daemon", "kp-seat-api") to listOf("fun assigned(kind: String) = kind == \"assign\"", "fun begun(kind: String) = Regex(\"started|stop\").matches(kind)"),
+            Shape.NUMBER to listOf("kp-engine", "kp-seat-api") to listOf("val most = 7", "val mostToo = 0x7"),
+            Shape.CONCLUSION to listOf("kp-driver", "kp-seat-api") to listOf("val stalled = true", "val isStalled = true"),
+            Shape.ANSWERER to listOf("kp-driver", "kp-daemon") to listOf("fun reads(tool: String) = tool == \"Read\"", "fun readsToo(tool: String) = Regex(\"Read|Glob\").matches(tool)"),
+        )
+        val missed = planted.flatMap { (at, forms) ->
+            val (shape, modules) = at
+            modules.flatMap { module -> forms.filter { form -> scanText("$module/src/main/kotlin/Planted.kt", "package planted\n\n$form\n", names).none { it.shape == shape && it.line == 3 } }.map { "$shape in $module: $it" } }
+        }
+        missed shouldBe emptyList()
+    }
+
+    "the list's own faults fail the check: a finding no entry excuses, an entry with no reason, one for the stop gate's cap, one the sources no longer need" {
+        val listed = names.exceptions
+        val one = listed.first { it.shape == Shape.TIMER.id }
+        val faults = listOf(
+            listed - one,
+            listed.map { if (it === one) it.copy(reason = "") else it },
+            listed + Excused("kp-seat-api/src/main/kotlin/kp/seatapi/StopGate.kt", Shape.NUMBER.id, "StopGate.route", "${names.stopGateCap}", "a reason"),
+            listed + one.copy(code = one.code + " // gone"),
+        ).map { scan.problems(it) }
+        // Each fault beside what the list as written yields — nothing on master — so that the spec reads the faults alone.
+        val baseline = scan.problems(listed).toSet()
+
+        faults.map { problems -> (problems - baseline).map { it.substringBefore(':') } } shouldBe listOf(
+            listOf("not on the allow-list"),
+            listOf("an exception with no reason"),
+            listOf("an exception for the stop gate's cap, ${names.stopGateCap}, which no number in kp-seat-api may be", "an exception the sources no longer need"),
+            listOf("an exception the sources no longer need"),
+        )
     }
 
     "the check finds a comparison in every form review-008 listed, and takes no type argument, arrow, comment or string for one" {
