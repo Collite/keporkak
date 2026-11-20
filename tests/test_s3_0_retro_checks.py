@@ -6,6 +6,7 @@ check is `kp-rules`' `DecidesNothingSpec`, run through `just spec`; it reads the
 kp-seat-api and kp-engine, the rules and the seat's permissions data, and the allow-list
 `build-support/decides-nothing.yaml`.
 """
+import json
 import os
 import pathlib
 import re
@@ -239,30 +240,39 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
         self.assertIn("> Task :kp-model:test FAILED", run.stdout, run.stdout[-4000:])
         self.assertIn("> Task :kp-log:test FAILED", run.stdout, run.stdout[-4000:])
 
-    def test_just_mutant_killed_while_its_specs_run_leaves_nothing_under_build_mutant(self):
+    def test_just_mutant_killed_while_a_spec_of_its_run_is_running_leaves_nothing_under_build_mutant(self):
         copy = copy_of_the_checkout(self)
         subprocess.run(["git", "init", "--quiet"], cwd=copy, check=True)  # mutant.py copies what git lists of its checkout
         patch = copy / "build/a-comment.patch"
         patch.write_text("--- a/kp-model/src/main/kotlin/kp/model/Ids.kt\n+++ b/kp-model/src/main/kotlin/kp/model/Ids.kt\n"
                          "@@ -1,3 +1,4 @@\n package kp.model\n \n+// a comment\n import kotlinx.serialization.Serializable\n")
+        # review-026 B4: a spec of the run says it has begun, then runs on until the run is killed.
+        began = copy / "build/a-spec-began"
+        (copy / "kp-model/src/test/kotlin/kp/model/StillRunningSpec.kt").write_text(
+            "package kp.model\n\nimport io.kotest.core.spec.style.StringSpec\nimport java.io.File\n\n"
+            "class StillRunningSpec : StringSpec({\n"
+            f"    \"a spec still running when its run is killed\" {{ File({json.dumps(str(began))}).writeText(\"began\"); Thread.sleep(600_000) }}\n"
+            "})\n")
         for kill in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
             with self.subTest(kill=kill.name):
-                mutant = subprocess.Popen([sys.executable, str(copy / "build-support/mutant.py"), str(patch), "EngineBoundarySpec"], cwd=copy,
+                began.unlink(missing_ok=True)
+                mutant = subprocess.Popen([sys.executable, str(copy / "build-support/mutant.py"), str(patch), "StillRunningSpec"], cwd=copy,
                                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                 started = time.monotonic()
-                while not list((copy / "build/mutant").glob("copy-*/build/narrowed.gradle")) and mutant.poll() is None:
-                    self.assertLess(time.monotonic() - started, 300, "mutant never began its run")
+                while not began.exists() and mutant.poll() is None:
+                    self.assertLess(time.monotonic() - started, 600, "no spec of the run began")
                     time.sleep(0.2)
-                time.sleep(3)  # Gradle is at work in the copy
-                self.assertIsNone(mutant.poll(), "mutant ended before it could be killed")
+                if mutant.poll() is not None:
+                    self.fail("mutant ended before a spec of its run began:\n" + mutant.communicate()[0][-4000:])
+                running = working_in(copy / "build/mutant")
                 mutant.send_signal(kill)
                 output, _ = mutant.communicate(timeout=120)
 
-                self.assertNotEqual(mutant.returncode, 0, output)
+                self.assertGreater(len(running), 1, running)  # the Gradle build and its test worker were at work in the copy
+                self.assertEqual(mutant.returncode, 128 + kill, output)
                 time.sleep(2)  # anything still writing into the copy would show now
                 self.assertEqual([p.name for p in (copy / "build/mutant").iterdir()] if (copy / "build/mutant").exists() else [], [], output)
                 self.assertEqual(working_in(copy / "build/mutant"), [], output)
-
 
 if __name__ == "__main__":
     unittest.main()
