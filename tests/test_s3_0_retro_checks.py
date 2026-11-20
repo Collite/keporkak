@@ -74,6 +74,18 @@ def plant(copy, module, name, lines):
     return path, [len(head) + i + 1 for i in range(len(lines))]
 
 
+def working_in(folder):
+    """The processes whose working directory is in [folder] — a Gradle client, its daemon, a test worker of its run."""
+    found = []
+    for proc in pathlib.Path("/proc").iterdir():
+        try:
+            if proc.name.isdigit() and os.readlink(proc / "cwd").startswith(str(folder)):
+                found.append(f"{proc.name} {(proc / 'cmdline').read_bytes().replace(bytes(1), b' ')[:120].decode(errors='replace')}")
+        except OSError:
+            continue
+    return found
+
+
 def findings(output):
     return [FINDING.match(line).groups() for line in output.splitlines() if FINDING.match(line)]
 
@@ -168,7 +180,8 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
     def test_just_spec_runs_the_specs_its_filter_names_and_no_other_and_fails_when_it_names_none(self):
         copy = copy_of_the_checkout(self)
 
-        one = just(copy, "spec", "kp.model.SkeletonSpec")
+        # A leading wildcard: Gradle's `--tests` keeps Kotest to a class it names in full, but not to one a pattern names.
+        one = just(copy, "spec", "*SkeletonSpec")
         none = just(copy, "spec", "NoSuchSpecAnywhere")
 
         self.assertEqual(one.returncode, 0, one.stdout[-4000:])
@@ -215,6 +228,7 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
                 self.assertNotEqual(mutant.returncode, 0, output)
                 time.sleep(2)  # anything still writing into the copy would show now
                 self.assertEqual([p.name for p in (copy / "build/mutant").iterdir()] if (copy / "build/mutant").exists() else [], [], output)
+                self.assertEqual(working_in(copy / "build/mutant"), [], output)
 
 
 if __name__ == "__main__":
