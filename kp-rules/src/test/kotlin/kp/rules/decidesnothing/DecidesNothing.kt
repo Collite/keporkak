@@ -1,4 +1,4 @@
-package kp.rules
+package kp.rules.decidesnothing
 
 import com.charleskorn.kaml.Yaml
 import com.charleskorn.kaml.YamlList
@@ -114,7 +114,7 @@ data class Excused(val path: String, val shape: String, val inside: String, val 
 }
 
 /** What the check reads besides the sources: the names from rules/ and the permissions data, and the allow-list. */
-class Names(root: File) {
+class Names(private val root: File) {
     private fun yaml(path: String): YamlMap = Yaml.default.parseToYamlNode(File(root, path).readText()).yamlMap
     private fun YamlMap.map(key: String): YamlMap = get<YamlMap>(key) ?: error("no $key")
     private fun YamlNode.scalars(): List<String> = (this as? YamlList)?.items?.map { it.yamlScalar.content }.orEmpty()

@@ -1,4 +1,4 @@
-package kp.rules
+package kp.rules.decidesnothing
 
 import io.kotest.assertions.fail
 import io.kotest.core.spec.style.StringSpec

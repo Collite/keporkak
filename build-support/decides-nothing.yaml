@@ -1,7 +1,7 @@
 # The check that the daemon decides nothing (S3.0 T3; architecture.md §2) — kp-rules' DecidesNothingSpec, which `just
 # check` runs: on the syntax tree of the main sources of kp-driver, kp-daemon, kp-seat-api and kp-engine, every
 # comparison or ordering, timer, kind's name, number but zero, word for a conclusion and answerer's name is a finding
-# (kp-rules/src/test/kotlin/kp/rules/DecidesNothing.kt says which shape holds which module). A finding not listed here
+# (kp-rules/src/test/kotlin/kp/rules/decidesnothing/DecidesNothing.kt says which shape holds which module). A finding not listed here
 # fails the check with its file and line; so does an entry with no reason, one for a number that is the stop gate's
 # cap in the seat API or the engine, and one the sources no longer need. An entry names the file, the shape, the
 # declaration the finding is in and its code as written (whitespace collapsed); a code found twice there needs two
