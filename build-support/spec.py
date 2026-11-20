@@ -14,6 +14,7 @@ before its specs reported.
 Usage: python3 build-support/spec.py <spec filter>
 """
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -58,6 +59,10 @@ def main(arguments):
     command = ["./gradlew", "--console=plain", "--continue", "--init-script", str(script)]
     for task in tasks:
         command += [task, "--rerun", "--tests", pattern]
+    # A task that does not run — its compile failed — leaves no report of an earlier run behind to be read as this one's.
+    for task in tasks:
+        _, module, name = task.split(":")
+        shutil.rmtree(ROOT / module / "build/test-results" / name, ignore_errors=True)
     say(f"spec: running {' '.join(tasks)} --tests '{pattern}'")
     run = subprocess.run(command, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     ran = cases(tasks)
