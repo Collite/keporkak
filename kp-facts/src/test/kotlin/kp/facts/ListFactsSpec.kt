@@ -121,6 +121,26 @@ class ListFactsSpec : FreeSpec({
         office.project.write(LIST_PATH, "$LIST\nchanged\n").commit("2026-11-20T10:00:00+01:00")
         office.observe("stage.cut_at", "stage" to "KP/P3/S3.1") shouldBe value("2026-11-19T08:26:12+01:00", "project: commit ${first.take(12)}")
     }
+
+    "a list with two sections of one name, or two `rolls:` lines, is unknown to each fact that reads them, the evidence citing both; a fact that reads neither still answers" {
+        val office = listed(Office(tempdir()))
+        fun again(heading: String) = office.project.write(LIST_PATH, "$LIST## $heading\n- [ ] T3 — again · SC-11\n- again\n")
+        fun missing(vararg facts: String) = facts.map { fact -> office.observe(fact, "stage" to "KP/P3/S3.1", "id" to if (fact == "list.done_item_exists") "D1" else "T1").missing }
+
+        again("Scope fence")
+        missing("list.fence_complete", "list.stop_conditions") shouldBe List(2) { "tasks-p3-s3.1-facts.md#L5,L27: two sections 'Scope fence'" }
+        again("Tasks (again)")
+        missing("list.tasks_total", "list.tasks_open", "list.task_exists") shouldBe List(3) { "tasks-p3-s3.1-facts.md#L10,L27: two sections 'Tasks'" }
+        again("DONE")
+        missing("list.done_item_exists") shouldBe listOf("tasks-p3-s3.1-facts.md#L15,L27: two sections 'DONE'")
+        again("Found while doing")
+        missing("list.found_untriaged") shouldBe listOf("tasks-p3-s3.1-facts.md#L20,L27: two sections 'Found while doing'")
+        office.observe("list.tasks_open", "stage" to "KP/P3/S3.1").value shouldBe 1
+
+        office.project.write(LIST_PATH, "${LIST}rolls: live  ·  live: none  ·  touches: kp-facts/\n")
+        missing("stage.rolls", "stage.live", "stage.touches", "list.fence_complete") shouldBe List(4) { "tasks-p3-s3.1-facts.md#L3,L27: two lines that begin 'rolls:'" }
+        office.observe("list.found_untriaged", "stage" to "KP/P3/S3.1").value shouldBe 2
+    }
 })
 
 private const val LIST_PATH = "tasks-p3-s3.1-facts.md"

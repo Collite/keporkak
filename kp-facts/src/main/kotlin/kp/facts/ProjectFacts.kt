@@ -71,6 +71,8 @@ class ProjectFacts(private val where: Checkouts, private val log: WhatTheLogKnow
             Reading(where, log, git, Asked(params)).read()
         } catch (missing: Missing) {
             Observation.Unknown(missing.message)
+        } catch (ambiguous: Ambiguous) {
+            Observation.Unknown(ambiguous.message)
         } catch (error: IOException) {
             Observation.Unknown(error.toString())
         } catch (error: UncheckedIOException) {
@@ -148,6 +150,13 @@ class ProjectFacts(private val where: Checkouts, private val log: WhatTheLogKnow
 
 /** What was missing for a fact to be read: it is then unknown, and this is its evidence. */
 internal class Missing(override val message: String) : Exception(message, null, false, false)
+
+/**
+ * What a fact reads is in the file more than once — two sections of one name, two `rolls:` lines — so which one counts
+ * would be a guess, and nothing is guessed (Amendment 32): the fact is unknown, [message] citing each. Not a [Missing],
+ * so a reader that answers false for a missing part does not answer false for this.
+ */
+internal class Ambiguous(override val message: String) : Exception(message, null, false, false)
 
 /** A fact's parameters as they were given: a text, or a list of texts. */
 internal class Asked(private val params: Map<String, Any>) {

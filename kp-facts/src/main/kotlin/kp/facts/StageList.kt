@@ -6,25 +6,33 @@ package kp.facts
  * tasks, the DONE items and the Found lines of their sections.
  */
 internal class StageList(val text: Text) {
-    /** Each section's lines (from 0), its heading first, by its name; the first of two with one name. */
-    private val sections: Map<String, IntRange> = buildMap {
+    /** By its name, each section's lines (from 0), its heading first: every section of that name, in their order. */
+    private val sections: Map<String, List<IntRange>> = buildMap<String, MutableList<IntRange>> {
         val headings = text.lines.indices.filter { text.lines[it].startsWith("## ") }
         headings.forEachIndexed { at, index ->
             val name = text.lines[index].removePrefix("## ").substringBefore(" (").trim()
             val end = headings.getOrNull(at + 1)?.minus(1) ?: text.lines.lastIndex
-            putIfAbsent(name, index..end)
+            getOrPut(name) { ArrayList() } += index..end
         }
     }
 
-    fun section(name: String): IntRange = sections[name] ?: throw Missing("${text.path} has no section '$name'")
+    /** The one section named [name]: none is missing; two or more of that name are [Ambiguous], each heading cited. */
+    fun section(name: String): IntRange {
+        val named = sections[name] ?: throw Missing("${text.path} has no section '$name'")
+        return named.singleOrNull() ?: throw Ambiguous("${text.cite(named.map { it.first })}: ${times(named.size)} sections '$name'")
+    }
 
     /** The lines of [name]'s section after its heading, each with its index. */
     private fun body(name: String): List<IndexedValue<String>> = section(name).drop(1).map { IndexedValue(it, text.lines[it]) }
 
-    /** The value of [label] on the line that begins `rolls:` — up to the next ` · ` or the line's end, trimmed; null when it has none. */
+    /**
+     * The value of [label] on the one line that begins `rolls:` — up to the next ` · ` or the line's end, trimmed; null
+     * when it has none. Two or more such lines are [Ambiguous], each cited.
+     */
     fun header(label: String): Pair<String?, Int> {
-        val index = text.lines.indexOfFirst { it.startsWith("$ROLLS:") }
-        if (index < 0) throw Missing("${text.path} has no line that begins '$ROLLS:'")
+        val lines = text.lines.indices.filter { text.lines[it].startsWith("$ROLLS:") }
+        if (lines.isEmpty()) throw Missing("${text.path} has no line that begins '$ROLLS:'")
+        val index = lines.singleOrNull() ?: throw Ambiguous("${text.cite(lines)}: ${times(lines.size)} lines that begin '$ROLLS:'")
         val segment = text.lines[index].split(" · ").map { it.trim() }.firstOrNull { it.startsWith("$label:") }
             ?: throw Missing("${text.cite(index)}: no '$label:'")
         return segment.removePrefix("$label:").trim().ifEmpty { null } to index
@@ -67,13 +75,16 @@ internal class StageList(val text: Text) {
     }
 }
 
+/** "two", or the number [n] in digits. */
+private fun times(n: Int): String = if (n == 2) "two" else n.toString()
+
 /** [stage]'s one list; what was missing when it has none, or more than one. */
 internal fun Reading.stageList(stage: StageId = stage()): StageList {
     val (pattern, files) = listFiles(stage)
     return when (files.size) {
         0 -> throw Missing("no file $pattern")
         1 -> StageList(Text(files.single(), where.project.resolve(files.single()).toFile().readText()))
-        else -> throw Missing("${if (files.size == 2) "two" else files.size.toString()} list files for ${stage.local}: ${files.joinToString(", ")}")
+        else -> throw Missing("${times(files.size)} list files for ${stage.local}: ${files.joinToString(", ")}")
     }
 }
 
