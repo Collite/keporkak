@@ -40,6 +40,8 @@ class DaemonProcessSpec : FreeSpec({
         sameSocket.journal() shouldContain "would not start: a daemon already answers on $socket"
         sameSocket.process.exitValue() shouldBe 1
         ended shouldBe true
+        // The exit a stop gives, which office/systemd/keporkak.service counts as clean (S3.0 T6, `SuccessExitStatus=143`).
+        daemon.process.exitValue() shouldBe 143
         daemon.awaitLine("stopped: office panda")
         socket.exists() shouldBe false
         TestOffice(project = project).use { again -> again.office.lines().map { it.entry }.filterIsInstance<Rules>().size shouldBe 2 }
