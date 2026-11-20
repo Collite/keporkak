@@ -24,6 +24,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      # Gradle's downloaded dependencies and its wrapper, keyed by the files that pin them (S3.0 T4; v6.1.0's commit,
+      # verified through GitHub on 2026-11-20). Not the build cache: CI starts with an empty one (gradle.properties).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper/dists
+          key: gradle-deps-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
+          restore-keys: gradle-deps-${{ runner.os }}-
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.14'

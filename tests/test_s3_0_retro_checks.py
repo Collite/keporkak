@@ -24,7 +24,7 @@ from retro_checks_support import copy_of_the_checkout  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ALLOW_LIST = "build-support/decides-nothing.yaml"
-FINDING = re.compile(r"(kp-[\w-]+/src/main/kotlin/\S+\.kt):(\d+): (\w+) in (\S+): (.*)$")
+FINDING = re.compile(r"^\s*not on the allow-list: (kp-[\w-]+/src/main/kotlin/\S+\.kt):(\d+): (\w+) in (\S+): (.*)$")
 
 # Each of T3's shapes, planted in two of the modules the check covers, each in two forms: the one a regex scan listed,
 # then one it did not. A form's line number is its index in PLANTED's lines, counted from 1.
@@ -41,9 +41,9 @@ SHAPES = {
         "fun assigned(kind: String) = kind == \"assign\"",
         "fun begun(kind: String) = Regex(\"started|stop\").matches(kind)",
     ]),
-    "number": (("kp-engine", "kp-seat-api"), [
-        "val most = 3",
-        "val mostToo = 0x3",
+    "number": (("kp-engine", "kp-seat-api"), [  # not the stop gate's cap, which no exception may excuse there
+        "val most = 7",
+        "val mostToo = 0x7",
     ]),
     "conclusion": (("kp-driver", "kp-seat-api"), [
         "val stalled = true",
@@ -75,7 +75,7 @@ def plant(copy, module, name, lines):
 
 
 def findings(output):
-    return [FINDING.search(line).groups() for line in output.splitlines() if FINDING.search(line)]
+    return [FINDING.match(line).groups() for line in output.splitlines() if FINDING.match(line)]
 
 
 class TheChecksP2sRetroAskedFor(unittest.TestCase):
@@ -160,7 +160,10 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
         self.assertEqual(sorted({(module, case, verdict) for module, case, verdict in ran}),
                          sorted({(module, case, "failed") for module in modules for case in
                                  ("a spec that never ends, blocking its thread", "a spec that never ends, suspended")}), run.stdout[-6000:])
-        self.assertEqual(len(re.findall(r"did not complete within 10s", run.stdout)), 2 * len(modules), run.stdout[-6000:])
+        # The suspended spec ends by Kotest's timeout; the blocked one by the interrupt that timeout sends its thread.
+        for module in modules:
+            self.assertRegex(run.stdout, rf"{module} · NeverEndsSpec — a spec that never ends, suspended — failed\n\s+\S*TestTimeoutException: Test '[^']+' did not complete within 10s")
+            self.assertRegex(run.stdout, rf"{module} · NeverEndsSpec — a spec that never ends, blocking its thread — failed\n\s+java.lang.InterruptedException")
 
     def test_just_spec_runs_the_specs_its_filter_names_and_no_other_and_fails_when_it_names_none(self):
         copy = copy_of_the_checkout(self)
@@ -192,9 +195,10 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
 
     def test_just_mutant_killed_while_its_specs_run_leaves_nothing_under_build_mutant(self):
         copy = copy_of_the_checkout(self)
+        subprocess.run(["git", "init", "--quiet"], cwd=copy, check=True)  # mutant.py copies what git lists of its checkout
         patch = copy / "build/a-comment.patch"
         patch.write_text("--- a/kp-model/src/main/kotlin/kp/model/Ids.kt\n+++ b/kp-model/src/main/kotlin/kp/model/Ids.kt\n"
-                         "@@ -1,2 +1,3 @@\n package kp.model\n \n+// a comment\n")
+                         "@@ -1,3 +1,4 @@\n package kp.model\n \n+// a comment\n import kotlinx.serialization.Serializable\n")
         for kill in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
             with self.subTest(kill=kill.name):
                 mutant = subprocess.Popen([sys.executable, str(copy / "build-support/mutant.py"), str(patch), "EngineBoundarySpec"], cwd=copy,
