@@ -5,6 +5,10 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
+import kp.daemon.RuleFiles
+import kp.daemon.checkout
+import kp.rules.Loaded
+import kp.rules.Rules
 
 /**
  * KP/P1/S1.6 — The heroes: the acceptance specs of phase 1, written to be read (D-38). The seam (T1): the daemon as S1.5
@@ -23,7 +27,7 @@ class HeroesSpec : FreeSpec({
 
         "1 · the TeamLead's assignment-proposal → Bora's approval from his CLI → assign wakes coder-1 → started" {
             h1.through(5) shouldBe listOf(
-                "assignment-proposal teamlead→bora: delivered, class B, ticket #7 · S2.1 planned→proposed (proposals 1) · asks notify.bora",
+                "assignment-proposal teamlead→bora: delivered, class B, ticket #${h1.ticket(h1.id("assignment-proposal"))} · S2.1 planned→proposed (proposals 1) · asks notify.bora",
                 "notify.bora ok",
                 "approval bora→teamlead signed: delivered, class B · S2.1 proposed→assigned · asks worktree.create",
                 "worktree.create ok · S2.1 assigned→assigned",
@@ -251,8 +255,13 @@ class HeroesSpec : FreeSpec({
         val sweep = Sweep.ofTheRulesOnMaster().also(HeroReport::sweep)
 
         sweep.failures.shouldBeEmpty()
-        sweep.onMaster shouldBe 280 // D-81: T-80, the twin of T-59, brings its three; D-85: SEAT-14 and SEAT-34 take their one each
-        sweep.swept shouldBe 133
+        // Every requirement of every transition and every kind on master, read from the rules — D-81's T-80 and D-85's
+        // SEAT-14 and SEAT-34 among them: each is swept but those the reasons below name, each with its reason.
+        val rules = (Rules.load(RuleFiles(checkout).read()) as Loaded.Valid).ruleSet
+        val requirements = rules.lifecycle.machines.values.flatMap { machine -> machine.transitions.flatMap { t -> List(t.require.size) { "${t.id}#${it + 1}" } } } +
+            rules.kinds.values.flatMap { kind -> List(kind.require.size) { "${kind.name}#${it + 1}" } }
+        sweep.onMaster shouldBe requirements.size
+        sweep.swept shouldBe (requirements - sweep.exceptions.map { it.requirement }.toSet()).size
         sweep.reasons() shouldBe listOf(
             "70 · written the same way as a requirement of its kind, which is judged first: breaking it breaks the kind's, and the refusal names the kind: " +
                 "T-01#1-6 (assignment-proposal), T-02#1 (approval), T-04#1-3 (queued-approval), T-06#1 (decline), T-08#1 (started), T-09#1 (stop), T-10#1 (stop), " +
