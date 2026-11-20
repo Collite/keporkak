@@ -99,9 +99,11 @@ class ProjectAndGitFactsSpec : FreeSpec({
     "the observers write nothing: after a fact is read, every checkout's status, refs, object count and index are what they were" {
         val office = Office(tempdir())
         office.project.write("tasks-p3-s3.1-facts.md", "# KP-keporkak-P3 · S3.1 — facts (PR: feat/facts)\nrolls: none · live: none · touches: none\n")
-            .commit("2026-11-19T08:26:12+01:00")
+            .write("STATUS.md", "# KP — status\n").commit("2026-11-19T08:26:12+01:00")
         office.project.write("tasks-p3-s3.1-facts.md", "# KP-keporkak-P3 · S3.1 — facts (PR: feat/facts)\nrolls: none · live: none · touches: none\nchanged\n")
         office.keporkak.write("README.md", "changed\n")
+        office.project.touch("STATUS.md")
+        office.toy.touch("README.md")
 
         val before = listOf(office.project, office.keporkak, office.toy).map { it.state() }
         val answers = ProjectFacts.ANSWERED.keys.sorted().map { fact -> office.facts().observe(fact, mapOf("stage" to "KP/P3/S3.1", "phase" to "KP/P3", "effort" to "KP", "office" to "panda", "id" to "T1")) }

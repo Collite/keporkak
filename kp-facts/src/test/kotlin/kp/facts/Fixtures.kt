@@ -3,6 +3,7 @@ package kp.facts
 import io.kotest.matchers.shouldBe
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
@@ -20,6 +21,12 @@ class Checkout(val dir: Path) {
 
     fun delete(path: String): Checkout = apply { dir.resolve(path).deleteIfExists() }
 
+    /** Gives [path] a later modification time and the same bytes: a plain `git status` would then rewrite the index. */
+    fun touch(path: String): Checkout = apply {
+        val file = dir.resolve(path)
+        Files.setLastModifiedTime(file, FileTime.from(Files.getLastModifiedTime(file).toInstant().plusSeconds(10)))
+    }
+
     /** Commits everything in the working tree at [at] — the author's and the committer's time; its sha. */
     fun commit(at: String, message: String = "at $at"): String {
         git("add", "-A")
@@ -31,10 +38,10 @@ class Checkout(val dir: Path) {
 
     /**
      * What an observer must leave as it was: the status — ignored files too — the refs, the object count and the index's
-     * bytes.
+     * bytes. Its own status takes no optional lock, so taking it does not refresh the index the observer is held to.
      */
     fun state(): String = listOf(
-        git("status", "--porcelain=v1", "--ignored", "--untracked-files=all"),
+        git("--no-optional-locks", "status", "--porcelain=v1", "--ignored", "--untracked-files=all"),
         git("for-each-ref", "--format=%(refname) %(objectname)"),
         git("count-objects", "-v"),
         dir.resolve(".git/index").takeIf(Files::exists)?.readBytes()?.contentHashCode()?.toString() ?: "no index",
