@@ -140,10 +140,8 @@ handshake *args:
 
 
 git-it:
-    cd ~/Dev/keporkak/project
-    git add .
-    git commit -am "messages"
-    git pull 
-    git push 
-    cd - 
+    git -C ../project add .
+    git -C ../project  commit -am "messages"
+    git -C ../project  pull 
+    git -C ../project  push 
     
