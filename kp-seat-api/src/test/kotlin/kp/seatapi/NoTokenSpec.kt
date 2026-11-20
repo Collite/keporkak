@@ -3,7 +3,6 @@ package kp.seatapi
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import java.io.ByteArrayOutputStream
-import java.io.File
 import java.io.PrintStream
 
 /**
@@ -50,34 +49,4 @@ class NoTokenSpec : StringSpec({
         office.made.size shouldBe 3
         office.made.filter { token -> seen.any { token in it } } shouldBe emptyList()
     }
-
-    "the API's and the engine's sources hold no cap value: no number in their code is the stop gate's cap, as the rules give it (S2.7 T6, issue #35)" {
-        val cap = Regex("""(?m)^\s*stop_gate_blocks:\s*(\d+)""").find(File(root, "rules/engagement.yaml").readText())!!.groupValues[1]
-        val sources = listOf("kp-seat-api/src/main", "kp-engine/src/main").flatMap { File(root, it).walk().filter { file -> file.extension == "kt" }.toList() }
-
-        val numbers = sources.flatMap { file -> Regex("""(?<![\w.$])\d[\d_]*(\.\d+)?""").findAll(code(file.readText())).map { "${file.name}: ${it.value}" }.toList() }
-
-        sources.isNotEmpty() shouldBe true
-        numbers.filter { it.substringAfter(": ").replace("_", "") == cap } shouldBe emptyList()
-    }
 })
-
-/** [text] with its comments and string literals left out: the code a number in it is part of. */
-private fun code(text: String): String {
-    val out = StringBuilder()
-    fun skip(from: Int, quote: Char): Int {
-        var end = from
-        while (text[end] != quote) end += if (text[end] == '\\') 2 else 1
-        return end + 1
-    }
-    var at = 0
-    while (at < text.length) at = when {
-        text.startsWith("//", at) -> text.indexOf('\n', at).takeIf { it >= 0 } ?: text.length
-        text.startsWith("/*", at) -> text.indexOf("*/", at) + 2
-        text.startsWith("\"\"\"", at) -> text.indexOf("\"\"\"", at + 3) + 3
-        text[at] == '"' -> skip(at + 1, '"')
-        text[at] == '\'' -> skip(at + 1, '\'')
-        else -> { out.append(text[at]); at + 1 }
-    }
-    return out.toString()
-}

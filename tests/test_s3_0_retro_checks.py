@@ -45,7 +45,7 @@ SHAPES = {
         "val most = 3",
         "val mostToo = 0x3",
     ]),
-    "conclusion": (("kp-driver", "kp-daemon"), [
+    "conclusion": (("kp-driver", "kp-seat-api"), [
         "val stalled = true",
         "val isStalled = true",
     ]),

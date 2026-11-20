@@ -10,7 +10,6 @@ import kp.model.Transition
 import kp.model.parseLine
 import kp.model.plain
 import kp.rules.RuleSet
-import java.io.File
 
 private val building = folded(log(move("stage", STAGE, "assigned", "building")))
 private fun review(id: String = "m-panda-000100") = Arrival(message("review-request", from = "coder-1", id = id, args = """{"attest": ["done_lines_hold"]}"""))
@@ -39,56 +38,6 @@ private fun deliveriesBeforeRefusal(rules: RuleSet): Pair<Int, String?> {
         val message = """{"id":"$id","thread":"$id","from":"coder-1","to":"teamlead","kind":"review-request","stage":"$STAGE","subject":"r","created":"$NOW","by":"seat:coder-1","args":{}}"""
         state = folded(after(state, message, deliveredRecord(decision, id, "teamlead"), *transitionRecords(decision, id).toTypedArray(),
             """{"event":"transition","machine":"stage","subject":"$STAGE","from":"ready_for_review","to":"building","cause":"$id"}"""), state)
-    }
-}
-
-/** A Kotlin file's comments, its string and character literals, and its code — a template's code counts as code. */
-private class Source(private val text: String) {
-    val code = StringBuilder()
-    val comments = StringBuilder()
-    val literals = ArrayList<String>()
-
-    init {
-        var at = 0
-        while (at < text.length) at = token(at)
-    }
-
-    /** Reads the token at [at] and returns where the next one begins. */
-    private fun token(at: Int): Int = when {
-        text.startsWith("//", at) -> (text.indexOf('\n', at).takeIf { it >= 0 } ?: text.length).also { comments.append(text, at, it).append('\n') }
-        text.startsWith("/*", at) -> (text.indexOf("*/", at) + "*/".length).also { comments.append(text, at, it).append('\n') }
-        text.startsWith("\"\"\"", at) -> string(at + "\"\"\"".length, "\"\"\"")
-        text[at] == '"' -> string(at + 1, "\"")
-        text[at] == '\'' -> {
-            var end = at + 1
-            while (text[end] != '\'') end += if (text[end] == '\\') 2 else 1
-            literals += text.substring(at + 1, end)
-            end + 1
-        }
-        else -> { code.append(text[at]); at + 1 }
-    }
-
-    private fun string(start: Int, quote: String): Int {
-        val literal = StringBuilder()
-        var at = start
-        while (!text.startsWith(quote, at)) {
-            when {
-                quote == "\"" && text[at] == '\\' -> { literal.append(text, at, at + 2); at += 2 }
-                text.startsWith("\${", at) -> {
-                    at += "\${".length
-                    var depth = 1
-                    while (true) {
-                        val char = text[at]
-                        if (char == '}' && --depth == 0) { at++; break }
-                        if (char == '{') depth++
-                        at = token(at)
-                    }
-                }
-                else -> literal.append(text[at++])
-            }
-        }
-        literals += literal.toString()
-        return at + quote.length
     }
 }
 
@@ -125,19 +74,5 @@ class DecisionRecordsSpec : StringSpec({
         deliveriesBeforeRefusal(master) shouldBe (3 to "review-request")
         deliveriesBeforeRefusal(capped(2)) shouldBe (2 to "T-17")
         deliveriesBeforeRefusal(capped(1)) shouldBe (1 to "T-17")
-    }
-    "the engine's source holds no number but zero, and no kind name" {
-        val kinds = master.kinds.keys
-        val sources = File(root, "kp-engine/src/main").walk().filter { it.name.endsWith(".kt") }.map { it.name to Source(it.readText()) }.toList()
-
-        val numbers = sources.flatMap { (file, source) -> Regex("""(?<![\w.$])\d[\d_]*(\.\d+)?""").findAll(source.code).map { "$file: ${it.value}" }.filter { !it.endsWith(": 0") }.toList() }
-        val kindNames = sources.flatMap { (file, source) ->
-            val words = Regex("""[a-z][a-z-]*""").findAll(source.literals.joinToString(" ") + " " + source.comments + " " + source.code).map { it.value }.toSet()
-            (words intersect kinds).map { "$file: $it" }
-        }
-
-        sources.size shouldBe 11
-        numbers shouldBe emptyList()
-        kindNames shouldBe emptyList()
     }
 })
