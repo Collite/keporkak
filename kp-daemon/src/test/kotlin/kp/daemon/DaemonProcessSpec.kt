@@ -82,6 +82,18 @@ class DaemonProcessSpec : FreeSpec({
         presence shouldBe "present"
     }
 
+    "at start the daemon says which project checkout and which main checkouts it reads (S3.1 T7): through main, its journal names the project it runs on and each repo `pool/offices.yaml` gives the office" {
+        val project = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "service-")
+        val daemon = Launched(project, Files.createTempDirectory("kp-").resolve("kp.sock"))
+        daemon.awaitLine("started: office panda")
+        daemon.process.toHandle().destroy()
+        val repos = InForceRules.of(RuleFiles(checkout).read()).first!!.ruleSet.pool.offices.getValue("panda").repos.toSortedMap()
+
+        val journal = daemon.journal()
+        journal shouldContain "facts: the project checkout $project ("
+        journal shouldContain "; main checkouts " + repos.entries.joinToString(", ") { (name, path) -> "$name ${path.replaceFirst(Regex("^~(?=/|$)"), System.getProperty("user.home"))}" } + "\n"
+    }
+
     "a daemon whose log has a torn line says why and exits 1" {
         val socket = Files.createTempDirectory("kp-").resolve("kp.sock")
         val project = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "torn-")

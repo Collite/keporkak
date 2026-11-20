@@ -13,7 +13,8 @@ import kp.mailroom.Status
  * KP/P3/S3.1 — the daemon asks `kp-facts` (T1's fifth sentence; T7). The office runs on a copy of master's rules whose
  * `pool/offices.yaml` names a project checkout and a main checkout the spec builds with the real `git`; its world is the
  * service's — [ProjectWorld] over the office's `project` and `repos` and the fold. Its seams are the daemon's own
- * entries: a judgement through [Office], and the `kp inbox` view.
+ * entries: a judgement through [Office], and the `kp inbox` view. What the service says at start is `DaemonProcessSpec`'s,
+ * which starts it through `main`.
  */
 class ProjectAndGitFactsSpec : FreeSpec({
     "asked by a judgement and by `kp inbox`, the daemon answers a stage's three lines from a real checkout; a fact `kp-facts` does not hold stays unknown, and the judgement is written whole" {
@@ -85,14 +86,6 @@ class ProjectAndGitFactsSpec : FreeSpec({
             office.send("teamlead", proposal("KP/P3/S3.1")).status shouldBe Status.DELIVERED
             office.office.state.machine("stage", "KP/P3/S3.1")?.state shouldBe "proposed"
             office.world.observe(wave, "KP/P3/S3.1") shouldBe Datum.Text("current")
-        }
-    }
-
-    "at start the daemon says which project checkout and which main checkouts it reads" {
-        FactsOffice().use { office ->
-            office.world.reads shouldContain "project checkout ${office.project}"
-            office.world.reads shouldContain "keporkak ${office.keporkak}"
-            office.world.reads shouldContain "kp-toy ${office.toy}"
         }
     }
 })
