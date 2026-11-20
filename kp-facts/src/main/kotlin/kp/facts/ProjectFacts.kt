@@ -130,6 +130,8 @@ class ProjectFacts(private val where: Checkouts, private val log: WhatTheLogKnow
             "register.fresh" to Reading::registerFresh,
             "project.clean_and_pushed" to Reading::cleanAndPushed,
             "project.proof_files" to Reading::proofFiles,
+            "git.branch_exists" to Reading::branchExists,
+            "git.stray_changes" to Reading::strayChanges,
         )
     }
 }
