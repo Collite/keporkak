@@ -113,6 +113,18 @@ class ProjectFacts(private val where: Checkouts, private val log: WhatTheLogKnow
             "plan.in_current_wave" to Reading::inCurrentWave,
             "plan.wave_of" to Reading::waveOf,
             "plan.chart_fresh" to Reading::chartFresh,
+            "list.fence_complete" to Reading::fenceComplete,
+            "list.stop_conditions" to Reading::stopConditions,
+            "list.tasks_open" to Reading::tasksOpen,
+            "list.tasks_total" to Reading::tasksTotal,
+            "list.task_exists" to Reading::taskExists,
+            "list.done_item_exists" to Reading::doneItemExists,
+            "list.found_untriaged" to Reading::foundUntriaged,
+            "list.lines" to Reading::listLines,
+            "stage.rolls" to { headerValue("rolls") },
+            "stage.live" to { headerValue("live") },
+            "stage.touches" to { headerValue("touches") },
+            "stage.cut_at" to Reading::cutAt,
         )
     }
 }
