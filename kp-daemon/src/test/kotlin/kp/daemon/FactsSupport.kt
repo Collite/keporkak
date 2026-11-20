@@ -2,11 +2,13 @@ package kp.daemon
 
 import io.kotest.matchers.Matcher
 import io.kotest.matchers.MatcherResult
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kp.mailroom.Answer
 import kp.facts.ProjectFacts
+import kp.log.LogWriter
+import kp.mailroom.Answer
 import kp.mailroom.Clock
 import kp.mailroom.FactSource
 import kp.mailroom.OperationResult
@@ -14,7 +16,9 @@ import kp.mailroom.Operations
 import kp.mailroom.Sender
 import kp.mailroom.Status
 import kp.model.Judged
+import kp.model.OfficeId
 import kp.model.Record
+import kp.model.StageId
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -47,16 +51,23 @@ private val JUDGED = setOf("delivered", "refused")
 /**
  * An office on a project checkout and two main checkouts the spec builds, with master's rules but for `pool/offices.yaml`,
  * which names them; its world is the service's, [ProjectWorld], with `git` looked up on [path]. A fact `kp-facts` does not
- * hold is [beside]'s to answer — none, unless a spec puts a walk's table there.
+ * hold is [beside]'s to answer — none, unless a spec puts a walk's table there. Each stage of [states] is on the log in
+ * that state before the office starts, moved there at [SEEDED] as a rehearsal seeds a walk's (`Script.seed`).
  */
-class FactsOffice(path: String? = System.getenv("PATH"), private val beside: FactSource = FactSource { _, _ -> null }) : AutoCloseable {
+class FactsOffice(
+    path: String? = System.getenv("PATH"),
+    private val beside: FactSource = FactSource { _, _ -> null },
+    states: Map<String, String> = emptyMap(),
+) : AutoCloseable {
     private val folder: Path = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "facts-")
     val project: Path = repository(folder.resolve("project")).also { project ->
-        write(project, "plan.md", "| stage | after | goal |\n|---|---|---|\n| **S3.1 Facts** | — | the facts |\n")
+        write(project, "plan.md", PLAN)
         write(project, "tasks-overview.md", "- [ ] **P3**\n  - [x] **S3.1** Facts — ticked by hand\n")
         write(project, "tasks-p3-s3.1-facts.md", LIST)
+        write(project, "STATUS.md", "# KP — status\n\n- **2026-11-19 — S3.0 Build and checks** — exited\n- **2026-11-20 — S3.1 Facts** — exited\n")
         git(project, "add", "-A")
         git(project, "commit", "--quiet", "-m", "cut S3.1")
+        seed(project, states)
     }
     val keporkak: Path = repository(folder.resolve("keporkak")).also { main ->
         write(main, "README.md", "keporkak\n")
@@ -81,6 +92,11 @@ class FactsOffice(path: String? = System.getenv("PATH"), private val beside: Fac
     private val commands = KpCommands(office, world)
 
     fun send(seat: String, input: String): Answer = office.submit(Sender.Seat(seat), json(input)).answered()
+
+    /** Changes the file at [path] in [checkout] with [change], committing nothing. */
+    fun edit(checkout: Path, path: String, change: (String) -> String) {
+        checkout.resolve(path).writeText(change(checkout.resolve(path).readText()))
+    }
 
     fun kp(vararg args: String): String {
         val lines = ArrayList<String>()
@@ -108,6 +124,24 @@ class FactsOffice(path: String? = System.getenv("PATH"), private val beside: Fac
 /** How the mailroom records, in a judgement's `observed`, a fact the world did not supply. */
 const val NOT_SUPPLIED = """{"unknown":"not supplied"}"""
 
+/** When the stages a spec puts in a state ([FactsOffice]'s `states`) moved there: before the office's clock. */
+private const val SEEDED = "2026-11-20T08:00:00Z"
+
+/** KP's plan: one stage, and the chart under `## 3`. */
+private val PLAN = """
+    ## 2 · Stages
+
+    | stage | after | goal |
+    |---|---|---|
+    | **S3.1 Facts** | — | the facts |
+
+    ## 3 · Chart
+    ```mermaid
+    flowchart LR
+      S3.1[S3.1 Facts]
+    ```
+""".trimIndent() + "\n"
+
 /** A stage list of KP's P3, in the shape of the plan's lists: its first line names its branch and its repository. */
 private val LIST = """
     # KP-keporkak-P3 · S3.1 — Facts from the project and git            (PR: feat/kp-keporkak-p3-s3.1-project-and-git-facts)
@@ -127,6 +161,19 @@ private val LIST = """
     ## Found while doing
     -
 """.trimIndent() + "\n"
+
+/** Moves each stage of [states] from `planned` to its state, in one judgement on [project]'s log, at [SEEDED]. */
+private fun seed(project: Path, states: Map<String, String>) {
+    if (states.isEmpty()) return
+    LogWriter.open(project, OfficeId("panda")).use { log ->
+        val judgement = log.judgement()
+        states.forEach { (stage, state) ->
+            val transition = """{"v":1,"at":"$SEEDED","event":"transition","machine":"stage","subject":"$stage","from":"planned","to":"$state","cause":"fixture"}"""
+            judgement.add(Json.parseToJsonElement(transition).jsonObject, StageId(stage))
+        }
+        judgement.close(SEEDED)
+    }
+}
 
 private fun repository(dir: Path): Path = dir.createDirectories().also { git(it, "init", "--quiet", "--initial-branch=main") }
 

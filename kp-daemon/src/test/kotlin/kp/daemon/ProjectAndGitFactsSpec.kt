@@ -1,6 +1,7 @@
 package kp.daemon
 
 import io.kotest.core.spec.style.FreeSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -44,6 +45,35 @@ class ProjectAndGitFactsSpec : FreeSpec({
         FactsOffice().use { office ->
             office.send("coder-1", """{"kind": "started", "stage": "KP/P3/S3.1", "subject": "started"}""")
             office.observedOf("started") shouldBe mapOf("git.branch_exists" to "true")
+        }
+    }
+
+    "a judgement whose rule names no phase, effort or office reads them from the message's stage and the daemon's own office — a merge's stray changes, a stage exit's STATUS entries, a phase exit's last stage, chart and entries: each the fixture's, none unknown" {
+        val walk = TableFacts(Walk.read(checkout.resolve("rules/walks/h1-prime.yaml")).facts)
+        FactsOffice(beside = walk, states = mapOf("KP/P3/S3.1" to "passed")).use { office ->
+            office.edit(office.project, "tasks-p3-s3.1-facts.md") { it.replace(Regex("(?m)^- \\[ \\] (T[0-9]+ .*)$"), "- [x] $1\n      done 1a2b3c4") }
+            office.edit(office.keporkak, "README.md") { "$it changed\n" }
+
+            office.send("teamlead", """{"kind": "merge", "stage": "KP/P3/S3.1", "subject": "merge S3.1"}""").status shouldBe Status.DELIVERED
+            office.observedOf("merge")["git.stray_changes"] shouldBe "1"
+            office.office.state.machine("stage", "KP/P3/S3.1")?.state shouldBe "frozen"
+            office.journal.shouldBeEmpty()
+        }
+        FactsOffice(beside = walk, states = mapOf("KP/P3/S3.1" to "merged")).use { office ->
+            office.edit(office.project, "tasks-p3-s3.1-facts.md") { it.replace("live: Panda", "live: none") }
+
+            office.send("teamlead", """{"kind": "stage-exit", "stage": "KP/P3/S3.1", "subject": "S3.1 exits"}""").status shouldBe Status.DELIVERED
+            office.observedOf("stage-exit").filterKeys { it.startsWith("status.") } shouldBe mapOf("status.entry_present" to "true", "status.entries" to "2")
+            office.journal.shouldBeEmpty()
+        }
+        FactsOffice(beside = walk, states = mapOf("KP/P3/S3.1" to "exited")).use { office ->
+            office.edit(office.project, "plan.md") { it.replace("S3.1[S3.1 Facts]", "S3.1[S3.1 Facts — exited]") }
+
+            office.send("teamlead", """{"kind": "phase-exit-request", "stage": "KP/P3/S3.1", "subject": "P3 exits", "args": {"attest": ["floors_checked"]}}""") should
+                refusedBy("phase-exit-request", """{"fact":"log.count","kind":"retro-report","scope":"phase","where":{"mode":"phase-retro"},"gt":0}""")
+            office.observedOf("phase-exit-request").filterKeys { !it.startsWith("log.") } shouldBe
+                mapOf("plan.last_stage_exited" to "true", "plan.chart_fresh" to "true", "status.entries" to "2")
+            office.journal.shouldBeEmpty()
         }
     }
 
