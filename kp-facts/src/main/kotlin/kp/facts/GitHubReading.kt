@@ -23,7 +23,7 @@ import java.time.format.DateTimeParseException
 internal class GitHubReading(private val reading: Reading, private val github: GitHub, private val access: GitHubAccess, private val http: HttpClient) {
     private val asked: Asked get() = reading.asked
     private val stage: StageId by lazy { reading.stage() }
-    private val heading: Heading by lazy { reading.heading(stage) }
+    private val heading: Heading by lazy { Heading.of(reading.stageList(stage), stage) }
 
     /** `<organization>/<repo>`: the repository of the list's title (Amendment 32), in the organization of §9's block. */
     private val repository: String by lazy {
@@ -293,5 +293,21 @@ internal class GitHubReading(private val reading: Reading, private val github: G
         private fun next(link: String?): String? = link?.let { LINK_NEXT.find(it)?.groupValues?.get(1) }
 
         private fun JsonObject.text(name: String): String? = (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    }
+}
+
+/**
+ * A stage list's first line, as Amendment 32 reads it for `git.branch_exists`: the branch it names — `(PR: <branch>)` —
+ * and the repository of its title `# <EFFORT>-<repo>-P<n>`; each is what was missing when the line names none. [line]
+ * cites it.
+ */
+internal class Heading(private val first: String, val line: String, private val stage: StageId) {
+    fun branch(): String = Regex("\\(PR: ([^)\\s]+)\\)").find(first)?.groupValues?.get(1) ?: throw Missing("$line names no branch '(PR: <branch>)'")
+
+    fun repo(): String = Regex("^# ${Regex.escape(stage.effort)}-(\\S+)-P${stage.n}(?=\\s|$)").find(first)?.groupValues?.get(1)
+        ?: throw Missing("$line names no repository '# ${stage.effort}-<repo>-P${stage.n}'")
+
+    companion object {
+        fun of(list: StageList, stage: StageId): Heading = Heading(list.text.lines.firstOrNull().orEmpty(), list.text.cite(0), stage)
     }
 }

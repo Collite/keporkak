@@ -26,30 +26,17 @@ internal fun Reading.strayChanges(): Observation {
  * list's title `# <EFFORT>-<repo>-P<n>`. A repository the office does not hold: unknown.
  */
 internal fun Reading.branchExists(): Observation {
-    val heading = heading()
-    val branch = heading.branch()
-    val line = heading.line
-    val repo = asked.optionalText("repo") ?: heading.repo()
+    val stage = stage()
+    val list = stageList(stage)
+    val first = list.text.lines.firstOrNull().orEmpty()
+    val line = list.text.cite(0)
+    val branch = Regex("\\(PR: ([^)\\s]+)\\)").find(first)?.groupValues?.get(1) ?: throw Missing("$line names no branch '(PR: <branch>)'")
+    val repo = asked.optionalText("repo")
+        ?: Regex("^# ${Regex.escape(stage.effort)}-(\\S+)-P${stage.n}(?=\\s|$)").find(first)?.groupValues?.get(1)
+        ?: throw Missing("$line names no repository '# ${stage.effort}-<repo>-P${stage.n}'")
     val dir = where.repos[repo] ?: throw Missing("the office holds no repository '$repo'")
     val refs = git.run(git.root(dir), "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes").output.lines()
     val ref = refs.firstOrNull { it == "refs/heads/$branch" }
         ?: refs.firstOrNull { it.startsWith("refs/remotes/") && it.removePrefix("refs/remotes/").substringAfter('/') == branch }
     return Observation.Value(ref != null, "$line; $repo: ${ref ?: "no ref of $branch"}")
-}
-
-/**
- * A stage list's first line (Amendment 32): the branch it names — `(PR: <branch>)` — and the repository of its title
- * `# <EFFORT>-<repo>-P<n>`; each is what was missing when the line names none. [line] cites it.
- */
-internal class Heading(private val first: String, val line: String, private val stage: StageId) {
-    fun branch(): String = Regex("\\(PR: ([^)\\s]+)\\)").find(first)?.groupValues?.get(1) ?: throw Missing("$line names no branch '(PR: <branch>)'")
-
-    fun repo(): String = Regex("^# ${Regex.escape(stage.effort)}-(\\S+)-P${stage.n}(?=\\s|$)").find(first)?.groupValues?.get(1)
-        ?: throw Missing("$line names no repository '# ${stage.effort}-<repo>-P${stage.n}'")
-}
-
-/** [stage]'s list's first line. */
-internal fun Reading.heading(stage: StageId = stage()): Heading {
-    val list = stageList(stage)
-    return Heading(list.text.lines.firstOrNull().orEmpty(), list.text.cite(0), stage)
 }
