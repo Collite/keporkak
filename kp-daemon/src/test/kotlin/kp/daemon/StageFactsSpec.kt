@@ -1,0 +1,52 @@
+package kp.daemon
+
+import io.kotest.core.spec.style.FreeSpec
+import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldStartWith
+import kp.facts.ProjectFacts
+import java.nio.file.Path
+import java.security.MessageDigest
+import kotlin.io.path.isRegularFile
+import kotlin.io.path.readBytes
+import kotlin.io.path.walk
+
+/**
+ * S3.8 T5 — `just facts <stage>` ([StageFacts]; contracts.md §12, Amendment 34), on the checkouts of S3.1's fixture office
+ * ([FactsOffice]): every fact of the project and of git for the stage, its phase and its effort, read by the daemon's own
+ * world with the log's word, and nothing written.
+ */
+class StageFactsSpec : FreeSpec({
+    "`just facts` prints every fact of Amendments 32 and 34 once — each with its value and evidence, or unknown and what is missing — with the log's word for a stage the log knows, and changes no file or ref of the project checkout or a main checkout" {
+        FactsOffice(states = mapOf("KP/P3/S3.1" to "building")).use { office ->
+            val before = bytes(office.project, office.keporkak, office.toy)
+
+            val printed = StageFacts.lines(office.rules, "panda", office.project, "KP/P3/S3.1")
+
+            bytes(office.project, office.keporkak, office.toy) shouldBe before
+            (ProjectFacts.ANSWERED.keys + ProjectFacts.NOT_READ_YET.keys).map { name -> printed.count { it.startsWith("$name(") || it.startsWith("$name ") } }.toSet() shouldBe setOf(1)
+            printed shouldContain "the log: KP/P3/S3.1 is building since 2026-11-20T08:00:00Z — the log's word · ${office.office.lines().size} lines, at seq ${office.office.state.seq}"
+            printed shouldContain "plan.predecessors_exited(stage=KP/P3/S3.1) = true — plan.md#L5 (after —)"
+            printed shouldContain "plan.wave_of(stage=KP/P3/S3.1) = \"current\" — plan.md#L5 (after —); log: KP/P3/S3.1 building"
+            printed shouldContain "stage.touches(stage=KP/P3/S3.1) = \"kp-facts/\" — tasks-p3-s3.1-facts.md#L2"
+            printed shouldContain "list.task_exists(stage=KP/P3/S3.1) unknown — no parameter 'id'"
+            printed.single { it.startsWith("plan.last_stage_exited(") } shouldStartWith "plan.last_stage_exited(phase=KP/P3) = false — "
+            printed.single { it.startsWith("status.entries(") } shouldStartWith "status.entries(effort=KP) = 2 — STATUS.md#L3-L4"
+            printed.single { it.startsWith("git.stray_changes(") } shouldStartWith "git.stray_changes(office=panda) = 0 — keporkak: 0 changed paths"
+        }
+    }
+
+    "`just facts` on a stage the log does not know reads what the project says: the overview's tick" {
+        FactsOffice().use { office ->
+            val printed = StageFacts.lines(office.rules, "panda", office.project, "KP/P3/S3.1")
+
+            printed shouldContain "the log: no record of KP/P3/S3.1 — the project's word · ${office.office.lines().size} lines, at seq ${office.office.state.seq}"
+            printed.single { it.startsWith("plan.wave_of(") } shouldBe "plan.wave_of(stage=KP/P3/S3.1) = \"past\" — plan.md#L5; tasks-overview.md#L2 ticks S3.1"
+        }
+    }
+})
+
+/** Every file under [dirs] — their `.git` too — by path, with a digest of its bytes: what a reader must leave as it was. */
+private fun bytes(vararg dirs: Path): Map<String, String> = dirs.flatMap { dir ->
+    dir.walk().filter { it.isRegularFile() }.map { file -> file.toString() to MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) } }.toList()
+}.toMap()

@@ -134,6 +134,16 @@ rehearse walk *args:
     fi
     exec kp-daemon/build/install/kp-daemon/bin/kp-daemon rehearse "rules/walks/$walk.yaml" --root "$PWD" "$@"
 
+# Every fact of the project and of git for <stage>, its phase and its effort (contracts.md §12, Amendment 34; S3.8 T5): each
+# with its value and evidence, or unknown and what is missing — read by the daemon's own world on the office's project
+# checkout and main checkouts (pool/offices.yaml), with the log's word for a stage the log knows. It writes nothing and
+# needs no running daemon. `--project DIR` reads another checkout of the project; `--office NAME` another office's entry.
+facts stage *args:
+    #!/usr/bin/env sh
+    set -eu
+    ./gradlew --console=plain -q :kp-daemon:installDist
+    exec kp-daemon/build/install/kp-daemon/bin/kp-daemon facts "$@" --root "$PWD"
+
 # Install the Claude adapter the roster pins, from office/adapter/package-lock.json and nothing else (contracts.md §9).
 adapter:
     cd office/adapter && npm ci --ignore-scripts --no-audit --no-fund
