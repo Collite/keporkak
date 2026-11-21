@@ -14,9 +14,6 @@ import java.net.URI
  * key and no claim, changes nothing on GitHub, and spends none of the seats' tokens.
  */
 object Apps {
-    /** What `just apps` reads a repository list with: the least an installation token can be (Amendment 33: narrowed to reading). */
-    val READING = mapOf("metadata" to "read")
-
     /** Asks GitHub at [api] about the Apps of [rules]' block for [office], printing each line through [print]; 0 when every answer is yes. */
     fun run(rules: InForceRules, office: String, api: URI = GitHubApps.GITHUB, print: (String) -> Unit): Int {
         val pool = rules.ruleSet.pool
@@ -32,7 +29,7 @@ object Apps {
                 is Asked.Ok -> asked.value
                 is Asked.Failed -> "(not read: ${asked.reason})".also { failed++ }
             }
-            val reached = when (val minted = apps.mint(app, null, READING)) {
+            val reached = when (val minted = apps.mint(app, null, GitHubApps.METADATA)) {
                 is Minted.Ok -> when (val repositories = apps.repositories(minted.token)) {
                     is Asked.Ok -> repositories.value.joinToString(", ").ifEmpty { "no repository" }
                     is Asked.Failed -> "(not read: ${repositories.reason})".also { failed++ }
@@ -52,7 +49,7 @@ object Apps {
             }
             print("  $role as ${seat.app} — $permissions — $answer")
         }
-        print(if (failed == 0) "apps: every answer is yes" else "apps: $failed ${if (failed == 1) "answer is" else "answers are"} no")
+        print(if (failed == 0) "apps: every answer is yes" else "apps: answers that are no: $failed")
         return if (failed == 0) 0 else 1
     }
 }

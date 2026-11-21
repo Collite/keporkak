@@ -186,6 +186,10 @@ class GitHubApps(
     companion object {
         /** GitHub's REST root. */
         val GITHUB: URI = URI.create("https://api.github.com/")
+        /** What the daemon reads GitHub with: its token's permissions, each to read (contracts.md §4.4, Amendment 33). */
+        val READING: Map<String, String> = mapOf("contents" to "read", "pull_requests" to "read", "checks" to "read")
+        /** The least a token can be — the repositories' metadata, to read: what `just apps` lists an installation's repositories with (§12). */
+        val METADATA: Map<String, String> = mapOf("metadata" to "read")
         /** The REST API's version every request names: GitHub's default, which it still serves. */
         const val API_VERSION = "2022-11-28"
         private val LINK_NEXT = Regex("<([^>]+)>;\\s*rel=\"next\"")

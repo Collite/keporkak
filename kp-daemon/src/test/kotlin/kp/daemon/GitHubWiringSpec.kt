@@ -45,7 +45,7 @@ class GitHubWiringSpec : FreeSpec({
             Apps.run(office.office.rules, "panda", office.api) { lines += it } shouldBe 1
             lines shouldContainAll listOf(
                 "  gardener as kp-gardener — contents read, issues write, pull_requests read — cannot be minted: GitHub answered 422 to POST /app/installations/184048423/access_tokens: The permissions requested are not granted to this installation.",
-                "apps: 1 answer is no",
+                "apps: answers that are no: 1",
             )
         }
     }

@@ -81,7 +81,7 @@ class GitHubWorld private constructor(
     private class Access(private val block: kp.rules.GitHub, private val apps: GitHubApps) : GitHubAccess {
         override fun token(repository: String): Handed {
             val merger = block.apps[MERGER] ?: return Handed.Withheld("github.apps holds no App $MERGER")
-            return when (val minted = apps.mint(App(MERGER, merger.app, merger.installation), listOf(repository.substringAfter('/')), READING)) {
+            return when (val minted = apps.mint(App(MERGER, merger.app, merger.installation), listOf(repository.substringAfter('/')), GitHubApps.READING)) {
                 is Minted.Ok -> Handed.Over(minted.token.authorization())
                 is Minted.Failed -> Handed.Withheld(minted.reason)
             }
@@ -100,8 +100,6 @@ class GitHubWorld private constructor(
     companion object {
         /** The identity the daemon reads GitHub as (Amendment 33). */
         const val MERGER = "kp-merger"
-        /** What the daemon's token may do: read (Amendment 33). */
-        val READING = mapOf("contents" to "read", "pull_requests" to "read", "checks" to "read")
         private const val REVIEWER = "reviewer"
         private const val CI_STATE = "ci.state"
         private const val SHA = "sha"
