@@ -275,7 +275,8 @@ internal class SeatSession(
                 is Item.Update -> {
                     val update = runCatching { ACPJson.decodeFromJsonElement(SessionUpdate.serializer(), item.update) }.getOrNull()
                     if (!item.replay) update?.let { observations.update(it, item.at) }
-                    val line = update?.let(Lines::of) ?: "update not understood: ${item.update}"
+                    // A tool's result is hidden, then cut (S3.6 T6, issue #49): Lines hides the seat's secrets before it shortens.
+                    val line = update?.let { Lines.of(it, transcript::hidden) } ?: "update not understood: ${item.update}"
                     transcript.write(if (item.replay) "replay $line" else line, item.at)
                 }
                 is Item.Line -> transcript.write(item.text, item.at)

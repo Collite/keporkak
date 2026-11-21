@@ -29,6 +29,7 @@ import kp.driver.PermissionRequest
 import kp.driver.SeatFacts
 import kp.driver.SessionSpec
 import kp.driver.SessionToken
+import kp.driver.Usage
 import kp.driver.UsageWindow
 import kp.driver.claude.ClaudeAdapter
 import kp.model.SeatId
@@ -51,9 +52,12 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * `just handshake` (S2.1 T8, architecture.md §5): the driver against the real, pinned Claude adapter, with the
- * roster's cheapest model and effort, through the steps of S2.1's DONE line. It spends tokens; it is no part of
- * `just check`, and CI never runs it. Its evidence — tokens removed, and searched for before it is written — goes to
- * the file it names on its last line. Exit 0 when every step passed.
+ * roster's cheapest model and effort, through the steps of S2.1's DONE line — and then, for each persona `--personas`
+ * names, a seat whose home is built as the daemon builds a seat's, given two prompts that ask for nothing: each turn's
+ * usage by its parts, the first writing the cache and the second reading it (S3.6 T6; D-96 names coder, reviewer,
+ * teamlead and principal). Without `--personas` that step is not run. It spends tokens; it is no part of `just check`, and CI never
+ * runs it. Its evidence — tokens removed, and searched for before it is written — goes to the office's scratch root,
+ * `handshakes/`, in the file it names on its last line (S3.6). Exit 0 when every step passed.
  *
  * The models step runs first, and spends no tokens: every roster model — a full id (contracts.md §9, Amendment 11) —
  * is set on a fresh session and must read back as a value the adapter offers other than `default`, and a made-up
@@ -65,7 +69,8 @@ import kotlin.time.Duration.Companion.seconds
  * in a throwaway project checkout (a write beside it is denied), writes in its scratch, and reads a file outside its
  * worktree. It spends tokens too: one prompt.
  *
- * Usage: HandshakeKt --root <keporkak checkout> [--adapter <dir with package-lock.json and node_modules>] [--office <name>] [models | hooks]
+ * Usage: HandshakeKt --root <keporkak checkout> [--adapter <dir with package-lock.json and node_modules>] [--office <name>]
+ *        [--personas <role>,<role>…] [models | hooks]
  */
 fun main(args: Array<String>) {
     val (flags, words) = args.withIndex().partition { (i, arg) -> arg.startsWith("--") || (i > 0 && args[i - 1].startsWith("--")) }
@@ -79,18 +84,23 @@ fun main(args: Array<String>) {
     val root = Path.of(options["--root"] ?: ".").toAbsolutePath().normalize()
     val adapter = Path.of(options["--adapter"] ?: root.resolve("office/adapter").toString()).toAbsolutePath().normalize()
     val office = options["--office"] ?: InetAddress.getLocalHost().hostName.substringBefore('.')
-    exitProcess(if (runBlocking { Handshake(root, adapter, office, walk).run() }) 0 else 1)
+    val personas = options["--personas"]?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+    exitProcess(if (runBlocking { Handshake(root, adapter, office, walk, personas).run() }) 0 else 1)
 }
 
 /** Which walk: S2.1's whole handshake, its models step alone, or S2.2's hooks walk. */
 private enum class Walk { ALL, MODELS, HOOKS }
 
-private class Handshake(private val root: Path, private val adapter: Path, office: String, private val walk: Walk) {
+private class Handshake(private val root: Path, private val adapter: Path, office: String, private val walk: Walk, private val personas: List<String> = emptyList()) {
     private val modelsOnly = walk == Walk.MODELS
     private val roster = Yaml.default.parseToYamlNode(root.resolve("pool/roster.yaml").readText()).yamlMap
     private val offices = Yaml.default.parseToYamlNode(root.resolve("pool/offices.yaml").readText()).yamlMap
     private val secrets = Path.of(offices.get<YamlMap>("offices")!!.get<YamlMap>(office)!!.get<YamlMap>("roots")!!.getScalar("secrets")!!.content.replaceFirst("~", System.getProperty("user.home")))
     private val tokenFile = secrets.resolve("claude-token")
+    /** The office's scratch root (contracts.md §9): where the evidence goes, outside any checkout's `build/` (S3.6). */
+    private val scratch = Path.of(offices.get<YamlMap>("offices")!!.get<YamlMap>(office)!!.get<YamlMap>("roots")!!.getScalar("scratch")!!.content.replaceFirst("~", System.getProperty("user.home")))
+    /** Every persona's two empty turns (S3.6 T6): the persona, the turn, the usage its end reported. */
+    private val personaTurns: MutableList<Triple<String, Int, Usage?>> = Collections.synchronizedList(mutableListOf())
     private val cheapest = roster.get<YamlList>("order")!!.items.first().yamlMap
     private val model = cheapest.getScalar("model")!!.content
     private val effort = cheapest.getScalar("effort")!!.content
@@ -144,7 +154,10 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             } else if (walk == Walk.HOOKS) {
                 hooksWalk(driver, node, standIn)
             } else {
-                if (models(driver, node) != null && !modelsOnly) walk(driver, spec(node, standIn), standIn)
+                if (models(driver, node) != null && !modelsOnly) {
+                    walk(driver, spec(node, standIn), standIn)
+                    if (personas.isNotEmpty()) personas(driver, node)
+                }
             }
         } finally {
             driver.close()
@@ -194,6 +207,43 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
         }
     }
 
+    /**
+     * A seat of each persona `--personas` names (S3.6 T6): a home the builder makes for the persona — its CLAUDE.md, skills, hooks and
+     * permissions, as the daemon starts a seat — on the roster's cheapest pair, in front of a stand-in messaging server
+     * that offers no tool and a stop hook that lets every turn end. Two prompts that ask for nothing: the first turn
+     * writes the cache, the second reads it. Each turn's usage by its parts goes to the evidence.
+     */
+    private suspend fun personas(driver: Driver, node: Path) = step("a seat of each persona named, two turns that ask for nothing, each turn's usage by its parts") {
+        val known = Files.list(root.resolve("agents")).use { folders -> folders.filter { it.resolve("AGENT.md").exists() }.map { it.fileName.toString() }.toList() }
+        check(personas.all { it in known }) { "no persona ${personas.filterNot { it in known }.joinToString()}: the personas are ${known.sorted().joinToString()}" }
+        val roles = personas.distinct()
+        StandIn().use { standIn ->
+            val place = run.resolve("personas")
+            val places = Places(place.resolve("worktree").createDirectories(), place.resolve("scratch").createDirectories(), place.resolve("project").createDirectories(),
+                place.resolve("project/tasks.md").also { it.writeText("# The handshake's stage list\n") }, listOf(place.resolve("code")), standIn.listen)
+            val defaults = permissionDefaults(root).ok()
+            roles.forEach { role ->
+                val seat = SeatId("$PERSONA_SEAT-$role")
+                val built = ConfigHomes(root, seats).build(seat, role, PROFILE, places, defaults).ok()
+                val spec = SessionSpec(seat, listOf(node.toString(), adapter.resolve("node_modules/$ADAPTER/dist/index.js").toString()), places.worktree, built.path, model, effort,
+                    built.servers, mapOf("PATH" to "${node.parent}:/usr/local/bin:/usr/bin:/bin", "HOME" to home.toString(), "LANG" to "C.UTF-8"), hookUrl = standIn.base)
+                tokens += driver.start(spec).ok().token
+                try {
+                    for (turn in 1..2) personaTurns += Triple(role, turn, driver.prompt(seat, NOTHING_ASKED).ok().usage)
+                } finally {
+                    spent += personaTurns.filter { it.first == role }.sumOf { it.third?.total ?: 0L }
+                    driver.kill(seat, Duration.ofSeconds(5))
+                }
+            }
+            check(personaTurns.size == roles.size * 2) { "${personaTurns.size} turns for ${roles.size} personas" }
+            Unit to "${roles.size} personas, two turns each — the table below; ${personaTurns.count { it.third == null }} turns reported no usage"
+        }
+    }
+
+    /** [usage] by its parts, as a turn's end shows them in a transcript (S3.6 T6). */
+    private fun parts(usage: Usage?): List<String> = if (usage == null) List(6) { NOT_REPORTED } else
+        listOf(usage.input, usage.output, usage.cachedRead, usage.cachedWrite, usage.thought, usage.total).map { it?.toString() ?: NOT_REPORTED }
+
     /** The walk; whatever step it ends on, the tokens it spent are counted. */
     private suspend fun walk(driver: Driver, spec: SessionSpec, standIn: StandIn) =
         try { steps(driver, spec, standIn) } finally { spent = spentBefore + usage(driver) }
@@ -223,7 +273,7 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
         if (step("one prompt ending with a stop reason and its usage") {
                 val end = driver.prompt(seat, "Remember this code word for later: $word. For now, reply with only the word: ok").ok()
                 checkNotNull(end.usage) { "the turn ended ${end.stopReason} with no usage" }
-                Unit to "stop reason ${end.stopReason}; tokens input ${end.usage!!.input}, output ${end.usage!!.output}, total ${end.usage!!.total}"
+                Unit to "stop reason ${end.stopReason}; tokens " + listOf("input", "output", "cache read", "cache write", "thought", "total").zip(parts(end.usage)).joinToString(", ") { "${it.first} ${it.second}" }
             } == null) return
         if (step("one permission request denied and one allowed, each one-time") {
                 val denied = driver.prompt(seat, "Use the Bash tool to run exactly this command, and nothing else: touch kp-denied.txt").ok()
@@ -487,7 +537,7 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
 
     /** Writes the evidence with every token replaced, searches it for them, and names the file. */
     private fun report(header: String): Boolean {
-        val expected = when (walk) { Walk.MODELS -> 1; Walk.HOOKS -> HOOK_STEPS; Walk.ALL -> STEPS }
+        val expected = when (walk) { Walk.MODELS -> 1; Walk.HOOKS -> HOOK_STEPS; Walk.ALL -> STEPS + if (personas.isEmpty()) 0 else 1 }
         val passed = steps.size == expected && steps.all { it.second }
         val at = Instant.now().truncatedTo(ChronoUnit.SECONDS)
         val evidence = buildString {
@@ -501,7 +551,19 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             steps.forEach { (name, ok, detail) -> appendLine("| $name | ${if (ok) "ok" else "FAILED"} | ${detail.replace("|", "\\|")} |") }
             if (steps.size < expected) appendLine("| … | not run | ${expected - steps.size} steps after the first that failed |")
             appendLine()
-            for (name in listOf(MODELS_SEAT, seat.value, HOOKS_SEAT)) {
+            if (personaTurns.isNotEmpty()) {
+                appendLine("## Two empty turns of each persona named, by their parts (S3.6)")
+                appendLine()
+                appendLine("Model $model, effort $effort; each seat's home built for its persona. \"not reported\": the agent left that part out; " +
+                    "the pinned adapter reports no count of a turn's model calls.")
+                appendLine()
+                appendLine("| persona | turn | input | output | cache read | cache write | thought | total |")
+                appendLine("|---|---|---|---|---|---|---|---|")
+                personaTurns.forEach { (role, turn, usage) -> appendLine("| $role | $turn | ${parts(usage).joinToString(" | ")} |") }
+                appendLine()
+            }
+            val personaSeats = personaTurns.map { "$PERSONA_SEAT-${it.first}" }.distinct()
+            for (name in listOf(MODELS_SEAT, seat.value, HOOKS_SEAT) + personaSeats) {
                 val lines = transcript(name)
                 if (lines.isEmpty()) continue
                 appendLine("## The transcript of seat $name")
@@ -511,7 +573,7 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             }
         }
         val hidden = hide(evidence)
-        val file = root.resolve("build/handshake/handshake-${when (walk) { Walk.MODELS -> "models-"; Walk.HOOKS -> "hooks-"; Walk.ALL -> "" }}${installedOrLock()}-${at.toString().replace(":", "")}.md")
+        val file = scratch.resolve("handshakes/handshake-${when (walk) { Walk.MODELS -> "models-"; Walk.HOOKS -> "hooks-"; Walk.ALL -> "" }}${installedOrLock()}-${at.toString().replace(":", "")}.md")
         file.parent.createDirectories()
         file.writeText(hidden)
         val leaked = secretValues().any { file.readText().contains(it) }
@@ -538,11 +600,18 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
 
     companion object {
         const val ADAPTER = "@agentclientprotocol/claude-agent-acp"
+        /** S2.1's steps; the personas' is one more when `--personas` names any (S3.6). */
         const val STEPS = 9
         /** A name shaped like a full id that names no model: the adapter must refuse it. */
         const val MADE_UP = "claude-nosuchmodel-5-5"
         const val MODELS_SEAT = "handshake-models"
         const val HOOKS_SEAT = "handshake-coder"
+        /** Each persona's seat is `handshake-persona-<role>` (S3.6 T6), on the profile of this repository. */
+        const val PERSONA_SEAT = "handshake-persona"
+        const val PROFILE = "keporkak"
+        /** The prompt that asks for nothing: what an empty turn costs is the seat's own context (S3.6 T6). */
+        const val NOTHING_ASKED = "This is the office's handshake. Reply with the single word ok, and call no tool."
+        const val NOT_REPORTED = "not reported"
         const val HOOK_STEPS = 13
         /** The stand-in's answers at /hook/stop in the hooks walk: one block with its reason, then the turn may end. */
         const val STOP_BLOCK = """{"block": true, "reason": "Keporkak holds this turn: before you end it, reply with the single word GATE"}"""

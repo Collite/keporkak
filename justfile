@@ -144,7 +144,9 @@ adapter:
 # `just handshake hooks` (S2.2) runs a seat the builder made for the coder's persona through its hooks and borders,
 # with a poisoned HOME beside it: one prompt. `just handshake tools` (S2.3) runs a seat the builder made for the coder's
 # persona in front of the seat API and a mailroom on a throwaway log, through the five tools and the stop gate: two
-# prompts. None of them is part of `check`, and CI never runs them.
+# prompts. None of them is part of `check`, and CI never runs them. `just handshake --personas coder,reviewer,teamlead,principal`
+# (S3.6, D-96) also gives a seat of each persona named two prompts that ask for nothing, and reports each turn's usage by
+# its parts; the evidence goes to the office's scratch root, `handshakes/`.
 handshake *args:
     #!/usr/bin/env sh
     set -eu

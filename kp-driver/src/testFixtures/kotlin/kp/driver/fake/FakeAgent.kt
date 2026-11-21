@@ -236,10 +236,11 @@ private class FakeAgent(private val script: JsonObject) {
                 // The tool's name, where the adapter puts it beside the protocol's fields (S2.2 probe).
                 step.string("name")?.let { name -> put("name", name); put("_meta", buildJsonObject { put("claudeCode", buildJsonObject { put("toolName", name) }) }) }
             })
-            // A tool's result, when the step gives one (S2.5): `text` as its content, `raw` as its raw output.
+            // A tool's result, when the step gives one (S2.5): `text` as its content — each `${'$'}{NAME}` in it that variable of the
+            // process's environment (S3.6) — `raw` as its raw output.
             "tool_update" -> emit(buildJsonObject {
                 put("sessionUpdate", "tool_call_update"); put("toolCallId", step.string("id")); put("status", step.string("status"))
-                step.string("text")?.let { said -> put("content", JsonArray(listOf(buildJsonObject { put("type", "content"); put("content", text(said)) }))) }
+                step.string("text")?.let { said -> put("content", JsonArray(listOf(buildJsonObject { put("type", "content"); put("content", text(VARIABLE.replace(said) { System.getenv(it.groupValues[1]).orEmpty() })) }))) }
                 step["raw"]?.let { put("rawOutput", it) }
             })
             "usage" -> emit(buildJsonObject {
@@ -389,10 +390,14 @@ private class FakeAgent(private val script: JsonObject) {
         process.waitFor()
     }
 
+    /** The turn's answer; its usage, when the step gives one: `input`, `output`, `total`, and `cache_read`, `cache_write`, `thought` when given (S3.6). */
     private fun stop(reason: String, usage: JsonObject? = null) = buildJsonObject {
         put("stopReason", reason)
         if (usage != null) put("usage", buildJsonObject {
             put("inputTokens", usage.long("input")); put("outputTokens", usage.long("output")); put("totalTokens", usage.long("total"))
+            usage["cache_read"]?.let { put("cachedReadTokens", usage.long("cache_read")) }
+            usage["cache_write"]?.let { put("cachedWriteTokens", usage.long("cache_write")) }
+            usage["thought"]?.let { put("thoughtTokens", usage.long("thought")) }
         })
     }
 

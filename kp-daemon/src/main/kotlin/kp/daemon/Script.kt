@@ -230,6 +230,9 @@ class Player internal constructor(private val script: Script, val office: Office
     private val kept = HashMap<Int, Pair<String?, String?>>()
     /** Steps before this index are caught up — on the log already — and not checked again. */
     private var caughtUp = 0
+    /** The unordered step whose events are being played (S3.6 T3), and the first line its first event wrote. */
+    private var group: String? = null
+    private var groupFirst = 0L
 
     /**
      * Takes up a walk on a daemon started again on a log a player of it wrote: each step in [kept] (by index) already
@@ -251,6 +254,11 @@ class Player internal constructor(private val script: Script, val office: Office
         script.facts.current = stage
         script.facts.table(stage).set(step.facts)
         val first = last() + 1
+        val inGroup = step.text(Walk.UNORDERED_IN)
+        if (inGroup != group) {
+            group = inGroup
+            groupFirst = first
+        }
         val (message, outcome) = when {
             index in kept -> kept.getValue(index)
             step.operation != null -> operation(index + 1, step)
@@ -263,10 +271,26 @@ class Player internal constructor(private val script: Script, val office: Office
         }
         step.id?.let { id -> message?.let { ids[id] = it } }
         office.changes.signal()
+        if (inGroup != null && walk.steps.getOrNull(next)?.text(Walk.UNORDERED_IN) != inGroup) named(inGroup)
         return Played(index + 1, step, script.stageId(stage), message, outcome, first, last()).also { played ->
             this.played += played
             out(describe(played))
-            if (index >= caughtUp) check(played)
+            // An unordered step's events expect nothing: what they do is read at the walk's end (S3.6 T3).
+            if (index >= caughtUp && inGroup == null) check(played)
+        }
+    }
+
+    /**
+     * What an unordered step's events made the robots and the mailroom send, named as the walker names it (S3.6 T3):
+     * `<the step's id>/<kind>`, then `/2`, `/3` for the next of a kind, in the order they reached the log. A later step names
+     * one so — the request of the operation it ends — and no robot step finds it again.
+     */
+    private fun named(group: String) {
+        val counted = HashMap<String, Int>()
+        lines().filterIsInstance<Message>().filter { it.seq.toLong() >= groupFirst && (it.by.startsWith(ROBOT) || it.from.value == MAILROOM) }.forEach { message ->
+            val count = counted.merge(message.kind, 1, Int::plus)!!
+            ids["$group/${message.kind}" + if (count > 1) "/$count" else ""] = message.id.value
+            found += message.id.value
         }
     }
 
@@ -294,8 +318,10 @@ class Player internal constructor(private val script: Script, val office: Office
             finish()
             evidence = own.ended(this, null)
             return played
-        } catch (failure: WalkFailure) {
-            evidence = own.ended(this, failure.message)
+        } catch (failure: Throwable) {
+            // However the play ends, its evidence and its record are written (S3.6 T5): a failed step, the time or the tokens
+            // run out, the rehearsal closed under it.
+            evidence = own.ended(this, failure.message ?: failure.toString())
             throw failure
         }
     }
@@ -335,6 +361,11 @@ class Player internal constructor(private val script: Script, val office: Office
             if (step.operation != request.operation) return@any false
             val asked = step.text(REQUEST) ?: return@any false
             ids[asked]?.let { return@any it == request.cause }
+            // A message an unordered step's events made a robot or the mailroom send (S3.6 T3): by its kind.
+            SENT_IN_A_GROUP.matchEntire(asked)?.let { sent ->
+                if (walk.steps.any { it.text(Walk.UNORDERED_IN) == sent.groupValues[1] })
+                    return@any cause.first == sent.groupValues[2] && (cause.third.startsWith(ROBOT) || cause.second == MAILROOM)
+            }
             val by = walk.steps.firstOrNull { it.id == asked } ?: return@any false
             by.kind == cause.first && (by.text(BY)?.let { it == cause.third } ?: (by.who == cause.second || cause.second.startsWith("${by.who}-")))
         }
@@ -551,6 +582,12 @@ class Player internal constructor(private val script: Script, val office: Office
             val actual: Datum = when (key) {
                 STATE_KEY -> Datum.Text(ownState(played).stage(played.stage) ?: Walk.PLANNED)
                 STATES_KEY -> Datum.Fields((value as Datum.Fields).fields.keys.associateWith { machine -> Datum.Text(machineState(machine, played) ?: "-") })
+                // The transitions the step's own judgement fired, by their rules, as the walker lists them (S3.6 T4): its message's —
+                // a robot's was judged before the step found it — or its operation result's, among the lines the step wrote.
+                TRANSITIONS -> Datum.Items(lines().filterIsInstance<kp.model.Transition>()
+                    .filter { it.cause == played.message && (step.operation == null || it.seq.toLong() in played.first..played.last) }.mapNotNull { it.rule }.map(Datum::Text))
+                // Each seat the step names, its state (S3.6 T2).
+                SEATS_KEY -> Datum.Fields((value as Datum.Fields).fields.keys.associateWith { seat -> Datum.Text(ownState(played).machine(SEAT, seat)?.state ?: PROVISIONED) })
                 SENDS -> Datum.Items(sends(played).map { Datum.Text(it.kind) })
                 WAKES -> Datum.Items(wakes(played).map { Datum.Text(it.second) })
                 RULES -> Datum.Items((sends(played).map { it.by.removePrefix(ROBOT) } + wakes(played).map { it.first }).map(Datum::Text)).let { fired ->
@@ -739,6 +776,10 @@ class Player internal constructor(private val script: Script, val office: Office
         const val REFUSED = "refused"
         const val STATE_KEY = "state"
         const val STATES_KEY = "states"
+        const val SEATS_KEY = "seats"
+        const val TRANSITIONS = "transitions"
+        /** `<an unordered step's id>/<kind>`, or `…/<kind>/<n>`: a message its events made a robot or the mailroom send. */
+        val SENT_IN_A_GROUP = Regex("^(.+)/([a-z][a-z-]*)(?:/[0-9]+)?$")
         const val SENDS = "sends"
         const val WAKES = "wakes"
         const val RULES = "rules"
