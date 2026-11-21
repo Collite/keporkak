@@ -971,7 +971,7 @@ class Walk:
                         sends.append(message)
                     else:
                         wakes.append(action["wake"])
-                        if record:self.history.append({"operation":"seat.wake","mode":action["wake"],"role":robot["role"],"stage":self.stage,"tick":self.index})
+                        if record:self.history.append({"operation":"seat.wake","mode":action["wake"],"role":robot["role"],"rule":rule["id"],"stage":self.stage,"tick":self.index})
         self.robot=None
         self.emissions.extend(sends)
         return {"rules":rules,"sends":[message["kind"] for message in sends],"wakes":wakes}
@@ -1129,9 +1129,9 @@ class Walk:
         raise WalkError("expected refusal, but the message was delivered")
     def run(self):
         """Plays the walk; a walk whose steps mark events as unordered, in every order of them (S3.6 T3). Each order ends with
-        its end — every stage's state, every seat's, the counters, the deliveries and refusals by kind, the operations
-        requested and those still waiting — and the walk fails, naming two orders and their ends, unless every order ends
-        alike. `--trace` prints `ORDER` as an order of a step's events begins and `END` with each order's end."""
+        its end — everything the walker keeps of the world ([ended]) — and the walk fails, naming two orders and their
+        ends, unless every order ends alike. `--trace` prints `ORDER` as an order of a step's events begins and `END` with
+        each order's end."""
         if TRACE:print("WALK "+json.dumps(self.definition,sort_keys=True))
         ends=[]
         self.play(0,[],ends)
@@ -1215,7 +1215,13 @@ class Walk:
         if TRACE:print("TRACE "+json.dumps({"step":self.index,**({"event":event} if event is not None else {}),"refused":bool(step.get("expect",{}).get("refused")),"fired":self.fired,
             "stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()},"seats":self.seat_states()},sort_keys=True))
     def ended(self,order,error):
-        """An order's end, printed as `END` with the order, and the walk's verdict on it: (passed, the line to print)."""
+        """An order's end, printed as `END` with the order, and the walk's verdict on it: (passed, the line to print). The
+        end holds everything the walker keeps of the world (review-027 B1): every stage's state and every seat's; each
+        stage's flag thread (`threads`) and Found lines (`found`); Bora's presence and the phase; the counters; the
+        messages delivered, refused and held, by kind; what a robot or the mailroom sent that no step delivered
+        (`unsent`); the operations requested — a transition's `do:` and a robot's `wake:` (an op `seat.wake`,
+        contracts.md §4.4) — and those still waiting. It leaves out what an order numbers for itself, and nothing else:
+        the request ids and the ticks, which are the steps' places in the order played."""
         counters={stage:{name:value for name,value in sorted(context["counters"].items()) if value} for stage,context in self.contexts.items()}
         counters={stage:values for stage,values in counters.items() if values}
         if any(self.shared_counters.values()):counters["effort"]={name:value for name,value in sorted(self.shared_counters.items()) if value}
@@ -1227,8 +1233,17 @@ class Walk:
         def asked(request_id,operation):
             message=self.messages.get(request_id,{});seat=message.get("args",{}).get("seat")
             return f"{operation} ({message.get('kind')}{' '+seat if isinstance(seat,str) else ''})"
-        end={"stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()},"seats":self.seat_states(),"counters":counters,
-             "delivered":by_kind("delivered"),"refused":by_kind("refused"),"operations":sorted(self.requested),
+        wakes=[f"seat.wake ({record['role']} {record['mode']} {record.get('rule')})" for record in self.history if record.get("operation")=="seat.wake" and "mode" in record]
+        others={stage:{machine:state for machine,state in sorted(context["states"].items()) if machine not in ("stage","seat","flag_thread","found_item")}
+                for stage,context in self.contexts.items()}
+        end={"stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()},"seats":self.seat_states(),
+             "threads":{stage:context["states"]["flag_thread"] for stage,context in self.contexts.items()},
+             "found":{stage:dict(sorted(context["found_items"].items())) for stage,context in self.contexts.items() if context["found_items"]},
+             **({"machines":{stage:states for stage,states in others.items() if states}} if any(others.values()) else {}),
+             "presence":self.shared["presence"],"phase":self.shared["phase"],"counters":counters,
+             "delivered":by_kind("delivered"),"refused":by_kind("refused"),"held":by_kind("held"),
+             "unsent":sorted(f"{sent['kind']} ({sent.get('by',sent.get('from'))})" for sent in self.emissions),
+             "operations":sorted(self.requested+wakes),
              "waiting":sorted(asked(request_id,operation) for request_id,operations in self.pending.items() for operation in operations)}
         if error is not None:end["error"]=error
         if TRACE:print("END "+json.dumps({"orders":order,"end":end},sort_keys=True))

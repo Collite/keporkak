@@ -4,6 +4,11 @@ Seam: `scripts/check-rules.py --trace <walk file>` run in a copy of the rules un
 edit — on a walk written here. Its lines: `ORDER` when an order of a step's unordered events begins, `TRACE` after each
 step or event, `END` with each order's end, `FAIL walk …` and `ok   walk …`. An end is every stage's state, every seat's,
 the counts — counters and deliveries — and the operations requested.
+
+An end holds everything the walker keeps of the world: every stage's state and every seat's, each stage's flag thread
+and Found lines, Bora's presence and the phase, the counters, the messages delivered, refused and held by kind, what a
+robot or the mailroom sent that no step delivered, the operations requested — a transition's and a robot's wake alike —
+and those still waiting. It leaves out only what an order numbers for itself: request ids and ticks (review-027 B1).
 """
 import json
 import pathlib
@@ -184,6 +189,27 @@ class TheWalker(unittest.TestCase):
         self.assertEqual((first_end["operations"], other_end["operations"]), (
             ["seat.retire (retire coder-1)"], ["seat.compact (retire coder-1)", "seat.retire (retire coder-1)"]))
 
+    def test_a_walk_fails_naming_two_orders_and_their_ends_when_one_order_ends_with_another_robots_wake(self):
+        rules = copy_of_the_rules(self, edit="a-wake-before-the-report")
+
+        failure = failures(walker(rules, walk(rules, RETIRED)))
+
+        (first, first_end), (other, other_end) = named(failure[0])
+        self.assertEqual((first, other), (["process-gone", "protocol-closed", "retired"], ["protocol-closed", "retired", "process-gone"]))
+        self.assertEqual(without(first_end, "operations"), without(other_end, "operations"))
+        self.assertEqual((first_end["operations"], other_end["operations"]), (
+            ["seat.retire (retire coder-1)"], ["seat.retire (retire coder-1)", "seat.wake (pool report POOL-90)"]))
+
+    def test_a_walk_fails_naming_two_orders_and_their_ends_when_one_order_ends_with_another_machine_in_another_state(self):
+        rules = copy_of_the_rules(self, edit="a-thread-held-before-the-report")
+
+        failure = failures(walker(rules, walk(rules, RETIRED)))
+
+        (first, first_end), (other, other_end) = named(failure[0])
+        self.assertEqual((first, other), (["process-gone", "protocol-closed", "retired"], ["protocol-closed", "retired", "process-gone"]))
+        self.assertEqual(without(first_end, "threads"), without(other_end, "threads"))
+        self.assertEqual((first_end["threads"], other_end["threads"]), ({"S3.6": "asked"}, {"S3.6": "held"}))
+
     def test_a_walk_that_binds_two_seats_to_a_stage_keeps_a_state_for_each_and_a_robot_hears_each_death_as_that_seats(self):
         rules = copy_of_the_rules(self)
 
@@ -226,6 +252,38 @@ BEFORE_THE_REPORT = """  - from: retired
 """
 
 
+# Review-027 B1's probes: a robot that wakes its own seat, or a flag thread held, on the retire's result only when no end
+# report has come before it.
+A_WAKE = """- id: POOL-90
+  when: a spec's own (S3.6, review-027 B1)
+  'on':
+    op: seat.retire
+    eq: ok
+  if:
+  - fact: seat.process_gone
+    seat:
+      trigger: seat
+    eq: false
+  then:
+  - wake: report
+"""
+A_THREAD_HELD = """  - from: asked
+    to: held
+    kind: retire
+    guard: a spec's own (S3.6, review-027 B1)
+    id: FLAG_THREAD-90
+    'on': op-result
+    require:
+    - op: seat.retire
+      eq: ok
+    - fact: seat.process_gone
+      seat:
+        arg: seat
+      eq: false
+    effects: []
+"""
+
+
 def copy_of_the_rules(test, edit=None):
     """The walker and master's rules, robots and pool in a new folder outside the checkout — git applies a patch there as
     a plain patch tool, not as the checkout's — with one edit, when named."""
@@ -236,6 +294,17 @@ def copy_of_the_rules(test, edit=None):
     if edit == "d85-taken-out":
         subprocess.run(["git", "apply", "-R", str(D85)], cwd=copy, check=True)
         assert "SEAT-14" in (copy / "rules/stage-lifecycle.yaml").read_text()
+    elif edit == "a-wake-before-the-report":
+        pool = copy / "robots/pool.yaml"
+        text = pool.read_text()
+        assert "- id: POOL-2\n" in text
+        pool.write_text(text.replace("- id: POOL-2\n", A_WAKE + "- id: POOL-2\n", 1))
+    elif edit == "a-thread-held-before-the-report":
+        lifecycle = copy / "rules/stage-lifecycle.yaml"
+        text = lifecycle.read_text()
+        anchor = "flag_thread:\n  states:\n  - asked\n  - held\n  - ruled\n  - expired\n  transitions:\n"
+        assert anchor in text
+        lifecycle.write_text(text.replace(anchor, anchor + A_THREAD_HELD, 1))
     elif edit in EDITS:
         lifecycle = copy / "rules/stage-lifecycle.yaml"
         text = lifecycle.read_text()
@@ -243,6 +312,11 @@ def copy_of_the_rules(test, edit=None):
         assert anchor in text
         lifecycle.write_text(text.replace(anchor, BEFORE_THE_REPORT.replace("EFFECT", EDITS[edit]) + anchor, 1))
     return copy
+
+
+def without(end, key):
+    """[end] with [key] left out: what two ends hold besides it."""
+    return {name: value for name, value in end.items() if name != key}
 
 
 def walk(rules, text):
