@@ -51,14 +51,15 @@ import java.io.File
 
 /*
  * The check that the daemon decides nothing (S3.0 T3; the retro of P2, candidate 2; architecture.md §2): one check over
- * the main sources of kp-driver, kp-daemon, kp-seat-api and kp-engine, on their syntax tree — detekt 1.23.8's parser,
+ * the main sources of kp-driver, kp-daemon, kp-seat-api, kp-engine and kp-ops — a performer decides nothing either
+ * (S3.8 T2, D-98) — on their syntax tree: detekt 1.23.8's parser,
  * tests only (the probe: ~/Dev/_scratch/keporkak/S3.0/probe.md). It walks the tree itself and reports through its own
  * list, never through detekt's `Rule.report`, so no `@Suppress` in a source can hide a finding; a file whose tree holds a
  * parse error fails the check, so a syntax newer than its parser cannot hide one either.
  *
- * It holds what nine regex sentences held, per module as they did (DaemonSourceSpec, SeatFactsSpec, AnswererSpec,
- * WhoamiSpec, NoTokenSpec, DecisionRecordsSpec): the names it looks for are read from rules/ and from the seat's
- * permissions data; the words for a conclusion and every exception are in build-support/decides-nothing.yaml, each
+ * It holds what the nine regex sentences of S1.2 to S2.9 held, per module as they did: the names it looks for are read
+ * from rules/ and from the seat's permissions data; the words for a conclusion and every exception are in
+ * build-support/decides-nothing.yaml, each
  * exception with its reason. An exception excuses its finding on the line it stands on, as written — every line of the
  * statement the finding is in, but the inside of a lambda or an object beside it: an edit anywhere on that line leaves a
  * finding no exception excuses (review-026 B1).
@@ -66,9 +67,16 @@ import java.io.File
 
 /** The six shapes of a decision the check looks for. */
 enum class Shape(val id: String) {
-    /** A comparison or ordering of a value: `<`, `>`, a range, a call that compares, bounds or sorts, `==` on arithmetic or a number. */
+    /**
+     * A comparison or ordering of a value: `<`, `>`, a range, a call that compares, bounds or sorts; `==`, `!=` or a `when`'s
+     * branch on arithmetic, a number, or a value of the rules' caps or engagement (S3.8 T2).
+     */
     COMPARISON("comparison"),
-    /** A timer, a delay or a wait for a time: a sleep, a schedule, a wait with a timeout, a duration, a time unit, a constant named for one. */
+    /**
+     * A timer, a delay or a wait for a time: a sleep, a schedule, a wait with a timeout — a condition's `awaitNanos` and
+     * `awaitUntil`, a selector's `select(timeout)`, a socket's timeout among them (S3.8 T2) — a duration, a time unit, a
+     * constant named for one.
+     */
     TIMER("timer"),
     /** A kind's name of rules/message-kinds.yaml in a literal — in kp-engine anywhere: its literals, comments and names. */
     KIND("kind"),
@@ -90,22 +98,26 @@ enum class Shape(val id: String) {
  * module, it now holds two (S3.0 T1: each shape is planted in two modules the check covers): the timer the driver as
  * well as the daemon, the answerer's names the daemon as well as the driver, a word for a conclusion the seat API as well
  * as the driver — the other module that faces a seat. Not the daemon: it names the rules' seat state `idle` and an
- * operation's `done` callback throughout, 69 places that conclude nothing (S3.0's Found lines).
+ * operation's `done` callback throughout, 69 places that conclude nothing (S3.0's Found lines). The performers, kp-ops
+ * (D-98), as the daemon is held but for the answerer's names, which are the seat's: a performer retries, waits and
+ * compares nothing by itself, and names no kind (architecture.md §2). kp-facts stays outside — an observer compares by
+ * nature, and its fence is its classpath.
  */
 val COVERS: Map<String, Set<Shape>> = mapOf(
     "kp-driver" to setOf(Shape.COMPARISON, Shape.TIMER, Shape.CONCLUSION, Shape.ANSWERER),
     "kp-daemon" to setOf(Shape.COMPARISON, Shape.TIMER, Shape.KIND, Shape.ANSWERER),
     "kp-seat-api" to setOf(Shape.KIND, Shape.NUMBER, Shape.CONCLUSION),
     "kp-engine" to setOf(Shape.KIND, Shape.NUMBER),
+    "kp-ops" to setOf(Shape.COMPARISON, Shape.TIMER, Shape.KIND),
 )
 
 /**
- * Where a kind's name is looked for in every word — literals, comments and names — as DecisionRecordsSpec did (S1.2): a
+ * Where a kind's name is looked for in every word — literals, comments and names — as kp-engine's regex sentence did (S1.2): a
  * run of lower-case letters and hyphens, so `hold` and `holdIt` are read and `Trigger.Release`, a robot's trigger, is not.
  */
 val KINDS_ANYWHERE = setOf("kp-engine")
 
-/** Where an exception for a number that is the stop gate's cap is refused, as NoTokenSpec did (S2.7 T6). */
+/** Where an exception for a number that is the stop gate's cap is refused, as the seat API's regex sentence did (S2.7 T6). */
 val CAP_REFUSED = setOf("kp-seat-api", "kp-engine")
 
 const val ALLOW_LIST = "build-support/decides-nothing.yaml"
@@ -131,6 +143,9 @@ class Names(private val root: File) {
 
     val kinds: Set<String> = yaml("rules/message-kinds.yaml").map("kinds").entries.keys.map { it.content }.toSet()
     val stopGateCap: Long = yaml("rules/engagement.yaml").map("caps").get<YamlScalar>("stop_gate_blocks")!!.content.toLong()
+
+    /** The caps' names in `rules/engagement.yaml` (`stop_gate_blocks`): a value read from one, by its name in any case (S3.8 T2). */
+    val caps: Set<String> = yaml("rules/engagement.yaml").map("caps").entries.keys.map { it.content }.toSet()
 
     /** The answerer's names: the request's path fields and read tools, every tool a deny rule names, each default and the option its lifetime makes. */
     val answerer: Set<String> = run {
@@ -254,14 +269,15 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
         val token = e.operationToken
         val name = e.operationReference.getReferencedName()
         val compares = token in ORDER || (token == KtTokens.IDENTIFIER && (name in RANGE_WORDS || name in ORDERING)) ||
-            (token in EQUALITY && (sum(e.left) || sum(e.right) || nonZero(e.left) || nonZero(e.right)))
+            (token in EQUALITY && (sum(e.left) || sum(e.right) || nonZero(e.left) || nonZero(e.right) || capped(e.left) || capped(e.right)))
         if (compares) found(Shape.COMPARISON, e)
         if (token == KtTokens.IDENTIFIER && name in TIMER_CALLS) found(Shape.TIMER, e)
     }
 
+    /** A `when`'s branch over arithmetic, at a number, or where the subject or the branch is a value of the rules' caps or engagement. */
     private fun whenCondition(e: KtWhenConditionWithExpression) {
         val subject = (e.parent?.parent as? KtWhenExpression)?.subjectExpression ?: return
-        if (sum(valueOf(subject)) || nonZero(e.expression)) found(Shape.COMPARISON, e, "when (${subject.text}) ${e.text}")
+        if (sum(valueOf(subject)) || nonZero(e.expression) || capped(valueOf(subject)) || capped(e.expression)) found(Shape.COMPARISON, e, "when (${subject.text}) ${e.text}")
     }
 
     /** `in a..b ->`, `in limits ->` of a `when` over arithmetic: where the difference falls is an ordering. */
@@ -282,6 +298,9 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
             // A range made by a call, which takes its other end, or by a reference — `used.until(cap)`, `1L.rangeTo(max)`,
             // `::until` — as by `..` (review-026 B2); the walk's own `step()` is none.
             if (name in ORDERING || (name in RANGE_WORDS && (arguments >= 1 || parent is KtCallableReferenceExpression))) found(Shape.COMPARISON, owner)
+            // `blocks.equals(cap)`: an equality written as a call (S3.8 T2).
+            val receiver = (call?.parent as? KtQualifiedExpression)?.takeIf { it.selectorExpression === call }?.receiverExpression
+            if (name == "equals" && call != null && (call.valueArguments.any { capped(it.getArgumentExpression()) } || capped(receiver))) found(Shape.COMPARISON, owner)
             val timer = name in TIMER_CALLS || name in TIME_NAMES || (name in TIMEOUT_CALLS && arguments >= 1) ||
                 (name == "get" && arguments == 2) || (name == "offer" && arguments == 3)
             if (timer) found(Shape.TIMER, owner)
@@ -293,6 +312,8 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
         // `Duration.ZERO` waits for nothing, as zero is no number.
         if (receiverOf != null && name in TIME_TYPES && receiverOf.selectorExpression?.text != "ZERO") found(Shape.TIMER, receiverOf)
         if (LIMIT_NAME.matches(name)) found(Shape.TIMER, e)
+        // A connection's timeout, set or read — `socket.soTimeout = millis`, `soTimeout = millis` inside an `apply` (S3.8 T2).
+        if (name in TIMEOUT_PROPERTIES) found(Shape.TIMER, owner ?: e)
     }
 
     private fun template(e: KtStringTemplateExpression) {
@@ -393,9 +414,40 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
         return child?.let { element.text.substring(it.startOffsetInParent) } ?: element.text
     }
 
+    /** Arithmetic: an operator, an infix word, or a call of one — `used.minus(cap)` as `used - cap` (S3.8 T2). */
     private fun sum(e: KtExpression?): Boolean = when (val x = unwrap(e)) {
         is KtBinaryExpression -> x.operationToken in ARITHMETIC || x.operationReference.getReferencedName() in ARITHMETIC_WORDS
+        is KtQualifiedExpression -> (x.selectorExpression as? KtCallExpression)?.calleeExpression?.text in ARITHMETIC_CALLS
         else -> false
+    }
+
+    /**
+     * A value of the rules' caps or engagement, by its name: an expression — outside a lambda or an object in it — that
+     * names `cap`, `caps` or `engagement` in a word of a name (`cap`, `stopGateCap`, `rules.engagement.caps[name]`), or a
+     * cap of `rules/engagement.yaml` by its own name in any case, as a name or a literal (`stopGateBlocks`,
+     * `STOP_GATE_BLOCKS`, `"stop_gate_blocks"`). A syntax tree without types sees a cap by its name only: `val n = cap`
+     * makes `blocks == n` none (S3.8 T2).
+     */
+    private fun capped(e: KtExpression?): Boolean {
+        val x = unwrap(e) ?: return false
+        return namesIn(x).any { name ->
+            val words = name.split('_', '-').flatMap { CAMEL.findAll(it).map { m -> m.value.lowercase() } }
+            words.any { it in CAP_WORDS } || words.joinToString("_") in names.caps
+        }
+    }
+
+    /** The names and the literals of [element], not those inside a lambda or an object in it. */
+    private fun namesIn(element: PsiElement): Sequence<String> = sequence {
+        when (element) {
+            is KtLambdaExpression, is KtObjectLiteralExpression -> return@sequence
+            is KtNameReferenceExpression -> yield(element.getReferencedName())
+            is KtStringTemplateExpression -> if (element.entries.all { it is KtLiteralStringTemplateEntry }) yield(element.entries.joinToString("") { it.text })
+        }
+        var child = element.firstChild
+        while (child != null) {
+            yieldAll(namesIn(child))
+            child = child.nextSibling
+        }
     }
 
     /** A `when`'s subject as a value: `when (val d = used - cap)` is over `used - cap`. */
@@ -430,6 +482,12 @@ private val EQUALITY = setOf(KtTokens.EQEQ, KtTokens.EXCLEQ, KtTokens.EQEQEQ, Kt
 private val ARITHMETIC = setOf(KtTokens.PLUS, KtTokens.MINUS, KtTokens.MUL, KtTokens.DIV, KtTokens.PERC)
 private val ARITHMETIC_WORDS = setOf("rem", "div", "mod", "shr", "ushr", "shl", "and", "or", "xor", "floorDiv")
 private val RANGE_WORDS = setOf("until", "downTo", "rangeTo", "rangeUntil", "step")
+/** Arithmetic written as a call: `used.minus(cap)`, `a.plus(b)`, `BigDecimal.subtract`. */
+private val ARITHMETIC_CALLS = setOf(
+    "plus", "minus", "times", "div", "rem", "mod", "floorDiv", "inc", "dec", "unaryMinus", "add", "subtract", "multiply", "divide", "remainder", "negate",
+)
+/** The words of a name that make it a value of the rules' caps or engagement. */
+private val CAP_WORDS = setOf("cap", "caps", "engagement")
 
 /** What compares, bounds or sorts without `<` or `>`, as a call, a member, a reference or a type. */
 private val ORDERING = setOf(
@@ -447,10 +505,18 @@ private val TIMER_CALLS = setOf(
     "sleep", "delay", "parkNanos", "parkUntil", "schedule", "scheduleAtFixedRate", "scheduleWithFixedDelay", "awaitTermination",
     "withTimeout", "withTimeoutOrNull", "orTimeout", "completeOnTimeout", "delayedExecutor", "timer", "fixedRateTimer", "ticker",
     "nanoTime", "currentTimeMillis", "Timer", "newScheduledThreadPool", "newSingleThreadScheduledExecutor", "onTimeout",
+    // A condition's timed waits (S3.8 T2, issue #53).
+    "awaitNanos", "awaitUntil",
 )
 
-/** Calls that wait with a timeout when they are given an argument: `join(5_000)`, `await(version, millis)`, `lock.wait(2000)`. */
-private val TIMEOUT_CALLS = setOf("wait", "join", "await", "waitFor", "poll", "tryAcquire", "tryLock")
+/**
+ * Calls that wait with a timeout when they are given an argument: `join(5_000)`, `await(version, millis)`, `lock.wait(2000)`,
+ * a selector's `select(millis)` (S3.8 T2) — its `select()` waits for a key, not a time.
+ */
+private val TIMEOUT_CALLS = setOf("wait", "join", "await", "waitFor", "poll", "tryAcquire", "tryLock", "select")
+
+/** A connection's timeout, as a property or its setter: a socket's `soTimeout` (S3.8 T2, issue #53), a URL connection's two. */
+private val TIMEOUT_PROPERTIES = setOf("soTimeout", "setSoTimeout", "connectTimeout", "setConnectTimeout", "readTimeout", "setReadTimeout")
 
 /** What makes or reads a duration, or moves a time by one. */
 private val TIME_NAMES = setOf(

@@ -9,20 +9,22 @@ import io.kotest.matchers.string.shouldContain
 import java.io.File
 
 /**
- * S3.0 T3 — the daemon decides nothing, held on the syntax tree of the main sources of kp-driver, kp-daemon, kp-seat-api
- * and kp-engine ([Scan], DecidesNothing.kt): the daemon reports and performs, the rules compare (contracts.md §4.4;
+ * S3.0 T3 — the daemon decides nothing, held on the syntax tree of the main sources of kp-driver, kp-daemon, kp-seat-api,
+ * kp-engine and, from S3.8 (D-98), kp-ops ([Scan], DecidesNothing.kt): the daemon reports and performs, the rules compare (contracts.md §4.4;
  * architecture.md §2). Each finding is listed in build-support/decides-nothing.yaml with its reason, or the check fails
  * with its file and line — an entry excuses its finding on the line it stands on, as written, and no edit of that line;
- * the list holds no entry without a reason, and none the sources no longer need. It replaces
- * nine regex sentences (DaemonSourceSpec, SeatFactsSpec, AnswererSpec, WhoamiSpec, NoTokenSpec, DecisionRecordsSpec).
+ * the list holds no entry without a reason, and none the sources no longer need. It replaces the nine regex sentences of
+ * S1.2 to S2.9.
  */
 class DecidesNothingSpec : StringSpec({
     val root = File(System.getProperty("kp.root"))
     val scan = Scan(root)
     val names = scan.names
 
-    "the main sources of kp-driver, kp-daemon, kp-seat-api and kp-engine decide nothing: every comparison, timer, kind's name, number, word for a conclusion and answerer's name in them is on the allow-list with its reason" {
-        coveredSources(root).map { it.relativeTo(root).invariantSeparatorsPath.substringBefore('/') }.toSet() shouldBe COVERS.keys
+    "the main sources of kp-driver, kp-daemon, kp-seat-api, kp-engine and kp-ops decide nothing: every comparison, timer, kind's name, number, word for a conclusion and answerer's name in them is on the allow-list with its reason" {
+        // Every module the check covers that has a main source is read — kp-ops has none until S3.2's performers land.
+        coveredSources(root).map { it.relativeTo(root).invariantSeparatorsPath.substringBefore('/') }.toSet() shouldBe
+            COVERS.keys.filter { module -> File(root, "$module/src/main/kotlin").walk().any { it.isFile && it.extension == "kt" } }.toSet()
         val problems = scan.problems()
         if (problems.isNotEmpty()) fail("the check that the daemon decides nothing (build-support/decides-nothing.yaml):\n" + problems.joinToString("\n"))
     }
@@ -88,6 +90,23 @@ class DecidesNothingSpec : StringSpec({
         }
 
         missed shouldBe emptyList()
+    }
+
+    "an equality is a comparison only with a value of the caps or engagement on a side — not with another name, a word that only begins like one, or a cap inside a lambda beside it; a `select` with no timeout is no timed wait (S3.8 T2)" {
+        fun found(body: String) = scanText("kp-daemon/src/main/kotlin/kp/daemon/Probe.kt", "fun probe() {\n$body\n}\n", names)
+            .filter { it.shape == Shape.COMPARISON || it.shape == Shape.TIMER }.map { it.code }
+
+        found(
+            listOf(
+                "val same = blocks == seen",
+                "val other = name != expected",
+                "val full = capacity == used",
+                "val inside = run { cap } == seen",
+                "val key = selector.select()",
+            ).joinToString("\n"),
+        ) shouldBe emptyList()
+        found("val at = blocks.equals(stopGateCap)\nval over = when (blocks) { cap -> true; else -> false }") shouldBe
+            listOf("equals(stopGateCap)", "when (blocks) cap")
     }
 
     "the list's own faults fail the check: a finding no entry excuses, an entry with no reason, one for the stop gate's cap, one the sources no longer need" {
