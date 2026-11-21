@@ -1,7 +1,8 @@
 """S3.0 — the checks P2's retro asked for: T1's specs on the syntax-tree check, `just owed`, `just spec`, the default spec
 timeout, `just build` past a failing module and `just mutant`'s clean exit (Bora reads these).
 
-Seam: the recipes and the check themselves, run on a throwaway copy of the checkout under build/, as S2.8's are. The
+Seam: the recipes and the check themselves, run on the throwaway copy of the checkout under build/ that the specs of
+S2.8, S3.0 and S3.8 share (S3.8 T6). The
 check is `kp-rules`' `DecidesNothingSpec`, run through `just spec`; it reads the main sources of kp-driver, kp-daemon,
 kp-seat-api and kp-engine, the rules and the seat's permissions data, and the allow-list
 `build-support/decides-nothing.yaml`.
@@ -17,11 +18,12 @@ import sys
 import tempfile
 import time
 import unittest
+import xml.etree.ElementTree as ElementTree
 
 import yaml
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from retro_checks_support import copy_of_the_checkout, findings, just, plant, working_in  # noqa: E402
+from retro_checks_support import findings, gradle, just, keep, plant, shared_copy, working_in  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ALLOW_LIST = "build-support/decides-nothing.yaml"
@@ -62,12 +64,43 @@ SHAPES = {
         "fun readsToo(tool: String) = Regex(\"Read|Glob\").matches(tool)",
     ]),
 }
-def grace_on_an_excused_line(copy, module):
+# Runs, in every module's own test task, the spec planted in kp-log: its test classes join each task's, and each task
+# keeps to that spec (S3.8 T6). A module's own ProjectConfig stands first on its test classpath, so it is the one in force.
+EVERY_MODULE = """gradle.projectsEvaluated {
+    def planted = rootProject.file("kp-log/build/classes/kotlin/test")
+    allprojects { p ->
+        p.tasks.withType(Test).matching { it.name == "test" }.configureEach { t ->
+            if (p.path != ":kp-log") {
+                t.dependsOn(":kp-log:testClasses")
+                t.testClassesDirs = t.testClassesDirs + p.files(planted)
+                t.classpath = t.classpath + p.files(planted)
+            }
+            t.setIncludes(["kp/planted/NeverEndsSpec.class"])
+        }
+    }
+}
+"""
+
+
+def reported(copy, modules):
+    """Each spec case the test tasks of [modules] reported in [copy]: its module, its name and its failure's message, or None."""
+    found = []
+    for module in modules:
+        for report in sorted((copy / module / "build/test-results/test").glob("TEST-*.xml")):
+            for case in ElementTree.parse(report).getroot().iter("testcase"):
+                broke = case.find("failure") if case.find("failure") is not None else case.find("error")
+                found.append((module, case.get("name"), None if broke is None else (broke.get("message") or broke.text or "").strip()))
+    return found
+
+
+def grace_on_an_excused_line(test, copy, module):
     """review-026 B1: a grace added to the first line of [module] the list excuses for a timer that declares a value by a
-    call on a line of its own, as S2.4's was; returns its path, line number, the entry, and the file as it was."""
+    call on a line of its own, as S2.4's was; returns its path, line number, the entry, and the file as it was. The file is
+    put back when [test] ends."""
     listed = yaml.safe_load((copy / ALLOW_LIST).read_text())["exceptions"]
     path, entry = next((path, entry) for path, entries in listed.items() if path.startswith(module + "/") for entry in entries
                        if entry["shape"] == "timer" and re.fullmatch(r"val \w+ = .*\)", entry["line"]))
+    keep(test, copy, path)
     was = (copy / path).read_text()
     lines = was.split("\n")
     at = next(i for i, line in enumerate(lines) if " ".join(line.split()) == entry["line"])
@@ -78,14 +111,15 @@ def grace_on_an_excused_line(copy, module):
 
 class TheChecksP2sRetroAskedFor(unittest.TestCase):
     def test_the_check_fails_on_each_shape_planted_in_two_modules_in_two_forms_and_on_an_edit_to_an_excused_line_and_passes_once_each_line_is_listed_with_a_reason(self):
-        copy = copy_of_the_checkout(self)
+        copy = shared_copy()
+        keep(self, copy, ALLOW_LIST)
         planted = {}
         for shape, (modules, forms) in SHAPES.items():
             for module in modules:
-                path, numbers = plant(copy, module, "Planted" + shape.capitalize(), forms)
+                path, numbers = plant(copy, module, "Planted" + shape.capitalize(), forms, test=self)
                 labels = ["listed", "unlisted"] + [f"review-026 B2, form {n}" for n in range(1, len(forms) - 1)]
                 planted.update({(shape, module, form): (path, number) for form, number in zip(labels, numbers)})
-        graced = [grace_on_an_excused_line(copy, module) for module in ("kp-daemon", "kp-driver")]
+        graced = [grace_on_an_excused_line(self, copy, module) for module in ("kp-daemon", "kp-driver")]
 
         red = just(copy, "spec", "DecidesNothingSpec")
         found = findings(red.stdout)
@@ -146,33 +180,41 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
         self.assertEqual(re.findall(r"\bD-\d+\b", paid.stdout), [], paid.stdout)
 
     def test_a_spec_that_never_ends_fails_by_the_default_timeout_in_every_module_that_has_specs(self):
-        copy = copy_of_the_checkout(self)
+        copy = shared_copy()
         modules = sorted(path.parent.parent.parent.name for path in copy.glob("kp-*/src/test/kotlin"))
+        # The spec is compiled once, in kp-log, and run in every module's own test task, under that module's ProjectConfig
+        # (S3.8 T6): one planted in each module recompiled every module's test sources in the copy.
+        keep(self, copy, "kp-log/src/test/kotlin/kp/planted", "build/every-module.gradle")
+        spec = copy / "kp-log/src/test/kotlin/kp/planted/NeverEndsSpec.kt"
+        spec.parent.mkdir(parents=True)
+        spec.write_text(
+            "package kp.planted\n\nimport io.kotest.core.spec.style.StringSpec\n\n"
+            "class NeverEndsSpec : StringSpec({\n"
+            "    \"a spec that never ends, blocking its thread\" { Thread.sleep(Long.MAX_VALUE) }\n"
+            "    \"a spec that never ends, suspended\" { kotlinx.coroutines.awaitCancellation() }\n"
+            "})\n")
+        (copy / "build/every-module.gradle").write_text(EVERY_MODULE)
         for module in modules:
-            spec = copy / module / "src/test/kotlin/kp/planted/NeverEndsSpec.kt"
-            spec.parent.mkdir(parents=True, exist_ok=True)
-            spec.write_text(
-                "package kp.planted\n\nimport io.kotest.core.spec.style.StringSpec\n\n"
-                "class NeverEndsSpec : StringSpec({\n"
-                "    \"a spec that never ends, blocking its thread\" { Thread.sleep(Long.MAX_VALUE) }\n"
-                "    \"a spec that never ends, suspended\" { kotlinx.coroutines.awaitCancellation() }\n"
-                "})\n")
+            shutil.rmtree(copy / module / "build/test-results/test", ignore_errors=True)
 
-        run = just(copy, "spec", "NeverEndsSpec", environment={"KP_SPEC_TIMEOUT": "10s"})
+        run = gradle(copy, "--continue", "--init-script", "build/every-module.gradle", *[word for module in modules for word in (f":{module}:test", "--rerun")],
+                     environment={"KP_SPEC_TIMEOUT": "10s"})
+        ran = reported(copy, modules)
 
         self.assertGreaterEqual(len(modules), 8)
         self.assertNotEqual(run.returncode, 0)
-        ran = re.findall(r"^(kp-[\w-]+) · NeverEndsSpec — (.+) — (\w+)", run.stdout, re.MULTILINE)
-        self.assertEqual(sorted({(module, case, verdict) for module, case, verdict in ran}),
-                         sorted({(module, case, "failed") for module in modules for case in
-                                 ("a spec that never ends, blocking its thread", "a spec that never ends, suspended")}), run.stdout[-6000:])
+        self.assertEqual(sorted((module, case) for module, case, _ in ran),
+                         sorted((module, case) for module in modules for case in
+                                ("a spec that never ends, blocking its thread", "a spec that never ends, suspended")), run.stdout[-6000:])
         # The suspended spec ends by Kotest's timeout; the blocked one by the interrupt that timeout sends its thread.
-        for module in modules:
-            self.assertRegex(run.stdout, rf"{module} · NeverEndsSpec — a spec that never ends, suspended — failed\n\s+\S*TestTimeoutException: Test '[^']+' did not complete within 10s")
-            self.assertRegex(run.stdout, rf"{module} · NeverEndsSpec — a spec that never ends, blocking its thread — failed\n\s+java.lang.InterruptedException")
+        for module, case, failure in ran:
+            if case.endswith("suspended"):
+                self.assertRegex(failure or "", r"\S*TestTimeoutException: Test '[^']+' did not complete within 10s", module)
+            else:
+                self.assertRegex(failure or "", r"^java.lang.InterruptedException", module)
 
     def test_just_spec_runs_the_specs_its_filter_names_and_no_other_and_fails_when_it_names_none(self):
-        copy = copy_of_the_checkout(self)
+        copy = shared_copy()
 
         # A leading wildcard: Gradle's `--tests` keeps Kotest to a class it names in full, but not to one a pattern names.
         one = just(copy, "spec", "*SkeletonSpec")
@@ -187,9 +229,10 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
         self.assertIn("names no spec", none.stdout)
 
     def test_just_build_goes_on_past_the_first_module_whose_specs_fail_and_with_two_failing_names_both(self):
-        copy = copy_of_the_checkout(self)
+        copy = shared_copy()
         for module, package in (("kp-model", "kp.model"), ("kp-log", "kp.log")):
             spec = copy / module / "src/test/kotlin" / package.replace(".", "/") / "PlantedFailingSpec.kt"
+            keep(self, copy, spec.relative_to(copy))
             spec.write_text(
                 f"package {package}\n\nimport io.kotest.core.spec.style.StringSpec\nimport io.kotest.matchers.shouldBe\n\n"
                 "class PlantedFailingSpec : StringSpec({\n    \"a planted spec that fails\" { 1 shouldBe 2 }\n})\n")
@@ -201,7 +244,8 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
         self.assertIn("> Task :kp-log:test FAILED", run.stdout, run.stdout[-4000:])
 
     def test_just_mutant_killed_while_a_spec_of_its_run_is_running_leaves_nothing_under_build_mutant(self):
-        copy = copy_of_the_checkout(self)
+        copy = shared_copy()
+        keep(self, copy, ".git", "build/a-comment.patch", "build/a-spec-began", "kp-model/src/test/kotlin/kp/model/StillRunningSpec.kt")
         subprocess.run(["git", "init", "--quiet"], cwd=copy, check=True)  # mutant.py copies what git lists of its checkout
         patch = copy / "build/a-comment.patch"
         patch.write_text("--- a/kp-model/src/main/kotlin/kp/model/Ids.kt\n+++ b/kp-model/src/main/kotlin/kp/model/Ids.kt\n"

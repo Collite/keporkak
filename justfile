@@ -78,9 +78,10 @@ owed log *args: _python-env
 
 # Runs the specs <filter> names and no other, in the working tree (S3.0 T4): `just mutant`'s narrowing without a patch.
 # Prints each case that ran, passed or failed with its whole message; exit 0 every case passed · 1 one failed · 3 the
-# filter names no spec · 4 the build failed first. KP_SPEC_TIMEOUT sets a spec's default timeout (5m).
+# filter names no spec · 4 the build failed first. KP_SPEC_TIMEOUT sets a spec's default timeout (5m). Stopped, or with
+# `just` gone, it stops its Gradle run and waits for the run's test workers to end (S3.8 T6).
 spec filter: _python-env
-    build/python/bin/python build-support/spec.py "$1"
+    exec build/python/bin/python build-support/spec.py "$1"
 
 # Applies <patch> to a throwaway copy of the working tree, runs the specs <filter> names there with a forced rerun, and
 # prints `red` and the specs that failed, or `green`; the working tree stays as it was (S2.8; architecture.md §7).

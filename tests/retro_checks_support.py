@@ -2,6 +2,7 @@
 source planted there and what the check that the daemon decides nothing reports of it, the inputs of its test tasks, the
 processes at work in a folder, and a throwaway repository for the changelog check. Every folder is made under build/ and
 removed when the test ends."""
+import atexit
 import os
 from pathlib import Path
 import re
@@ -32,9 +33,47 @@ allprojects {
 
 def copy_of_the_checkout(test):
     """The working tree as git lists it — tracked files and the untracked ones it does not ignore — in a new folder under
-    build/, with the Python tool set of `just _python-env` linked in."""
-    copy = Path(tempfile.mkdtemp(prefix="s2.8-copy-", dir=ROOT / "build"))
+    build/, with the Python tool set of `just _python-env` linked in; removed when [test] ends."""
+    copy = new_copy()
     test.addCleanup(shutil.rmtree, copy, ignore_errors=True)
+    return copy
+
+
+_SHARED = []
+
+
+def shared_copy():
+    """The one copy of the checkout that the specs of S2.8, S3.0 and S3.8 that build in a copy share (S3.8 T6): made at the
+    first spec that asks for it and removed when the suite ends. Gradle's state stays in it from one spec to the next, so
+    a later run there is incremental where a fresh copy's would start over. A spec that plants or edits in it takes that
+    back when it ends, passed or not ([keep])."""
+    if not _SHARED:
+        _SHARED.append(new_copy("shared-copy-"))
+        atexit.register(shutil.rmtree, _SHARED[0], ignore_errors=True)
+    return _SHARED[0]
+
+
+def keep(test, copy, *paths):
+    """Each of [paths] in [copy] as it is now, put back when [test] ends: a file or folder that was not there is removed, a
+    file that was is written back."""
+    for path in paths:
+        target = copy / path
+        was = target.read_bytes() if target.is_file() else None
+        test.addCleanup(_put_back, target, was)
+
+
+def _put_back(target, was):
+    if was is not None:
+        target.write_bytes(was)
+    elif target.is_dir():
+        shutil.rmtree(target, ignore_errors=True)
+    else:
+        target.unlink(missing_ok=True)
+
+
+def new_copy(prefix="s2.8-copy-"):
+    """A copy of the working tree under build/ that its maker removes."""
+    copy = Path(tempfile.mkdtemp(prefix=prefix, dir=ROOT / "build"))
     listed = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd=ROOT, capture_output=True, check=True)
     for name in filter(None, listed.stdout.decode().split("\0")):
         source, target = ROOT / name, copy / name
@@ -145,9 +184,12 @@ FINDING = re.compile(r"^\s*not on the allow-list: (kp-[\w-]+/src/main/kotlin/\S+
 ITS_LINE = re.compile(r"^\s*its line: (.*)$")
 
 
-def plant(copy, module, name, lines):
-    """A main source of [module] in [copy] holding [lines] after its head; returns its path and each line's number."""
+def plant(copy, module, name, lines, test=None):
+    """A main source of [module] in [copy] holding [lines] after its head; returns its path and each line's number. With
+    [test], the folder it is planted in goes when the test ends ([keep])."""
     path = f"{module}/src/main/kotlin/{PACKAGES[module].replace('.', '/')}/planted/{name}.kt"
+    if test is not None:
+        keep(test, copy, Path(path).parent)
     head = [line.format(package=PACKAGES[module]) for line in HEAD]
     (copy / path).parent.mkdir(parents=True, exist_ok=True)
     (copy / path).write_text("\n".join(head + lines) + "\n")
