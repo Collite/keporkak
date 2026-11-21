@@ -1,5 +1,9 @@
 package kp.daemon
 
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kp.engine.Datum
 import kp.engine.FactRef
 import kp.facts.Checkouts
@@ -9,6 +13,7 @@ import kp.facts.ProjectFacts
 import kp.facts.StageState
 import kp.facts.WhatTheLogKnows
 import kp.mailroom.FactSource
+import kp.model.Record
 import java.nio.file.Path
 
 /**
@@ -25,27 +30,19 @@ class ProjectWorld private constructor(
     /** What it reads, as the daemon says at start: the project checkout, its efforts' folders, the main checkouts. */
     val reads: String,
 ) : FactSource {
-    @Volatile private var fold: Office? = null
-    private val log = object : WhatTheLogKnows {
-        private fun folded(): Office = fold ?: error("the fold is not read yet")
-        override fun state(stage: String): StageState? = folded().state.machine(STAGE, stage)?.let { StageState(it.state, it.since) }
-        override fun stages(): Map<String, StageState> = folded().state.machines[STAGE].orEmpty().mapValues { (_, machine) -> StageState(machine.state, machine.since) }
-        override fun activeStates(): Set<String> = folded().rules.ruleSet.lifecycle.activeStates.toSet()
-        override fun observedHead(message: String): String? = null
-        override fun lastDelivered(stage: String, kinds: Set<String>): String? = null
-    }
+    private val log = OfficeLog()
     private val project = facts(log)
 
     /** Reads [office]'s fold from now on: until then, a fact that reads the log is unknown. */
     fun reading(office: Office) {
-        fold = office
+        log.office = office
     }
 
     override fun observe(fact: FactRef, stage: String?): Datum? {
         val known = ProjectFacts.ANSWERED[fact.name]
         if (known == null && fact.name !in ProjectFacts.NOT_READ_YET) return null
         val about = "$fact for ${stage ?: "no stage"}"
-        if (known?.readsTheLog == true && fold == null) return unknown(about, "the daemon has not folded its log yet")
+        if (known?.readsTheLog == true && log.office == null) return unknown(about, "the daemon has not folded its log yet")
         val params = fact.params.mapValues { (_, value) -> plain(value) }.toMutableMap()
         known?.params?.filterNot { it in params }?.forEach { name -> left(name, stage)?.let { params[name] = it } }
         val answer = try {
@@ -74,8 +71,6 @@ class ProjectWorld private constructor(
     }
 
     companion object {
-        private const val STAGE = "stage"
-
         /**
          * The world of [office] — its entry in [rules]' `pool/offices.yaml` — on the project checkout [project] the daemon
          * runs on, with `git` looked up on [path]; [say] is the journal.
@@ -99,5 +94,41 @@ class ProjectWorld private constructor(
             is Datum.Number -> value.value.toPlainString()
             else -> value.json()
         }
+    }
+}
+
+/**
+ * What the log knows, as the daemon hands it to `kp-facts` (contracts.md §4.4, Amendments 32 and 33): from [office]'s
+ * fold, a stage's state and since when, the stages, the states the rules call active, and when a stage's last message of
+ * some kinds was delivered; from the log read back — the fold keeps no `observed` — the `pr.head` a message's judgement
+ * observed. It hands values over and compares none.
+ */
+class OfficeLog : WhatTheLogKnows {
+    /** The office whose fold and log are read; until it is set, nothing is. */
+    @Volatile var office: Office? = null
+
+    private fun folded(): Office = office ?: error("the fold is not read yet")
+
+    override fun state(stage: String): StageState? = folded().state.machine(STAGE, stage)?.let { StageState(it.state, it.since) }
+
+    override fun stages(): Map<String, StageState> = folded().state.machines[STAGE].orEmpty().mapValues { (_, machine) -> StageState(machine.state, machine.since) }
+
+    override fun activeStates(): Set<String> = folded().rules.ruleSet.lifecycle.activeStates.toSet()
+
+    /** The `pr.head` in the `observed` of the record that judged [message] — `delivered` or `refused` — as the log holds it. */
+    override fun observedHead(message: String): String? {
+        val judged = folded().counted().filterIsInstance<Record>().lastOrNull { record ->
+            record.json["id"]?.jsonPrimitive?.contentOrNull == message && record.json["event"]?.jsonPrimitive?.contentOrNull in JUDGED
+        } ?: return null
+        return ((judged.json["observed"] as? JsonObject)?.get(HEAD) as? JsonPrimitive)?.takeIf { it.isString }?.content
+    }
+
+    override fun lastDelivered(stage: String, kinds: Set<String>): String? =
+        folded().state.delivered.values.lastOrNull { it.stage == stage && it.kind in kinds }?.at
+
+    private companion object {
+        const val STAGE = "stage"
+        const val HEAD = "pr.head"
+        val JUDGED = setOf("delivered", "refused")
     }
 }

@@ -14,6 +14,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Instant
+import java.time.format.DateTimeParseException
 
 /**
  * One observation of GitHub (Amendment 33): the stage's repository and pull request, read with the token handed over
@@ -34,7 +35,7 @@ internal class GitHubReading(private val reading: Reading, private val github: G
     private val authorization: String by lazy {
         when (val handed = access.token(repository)) {
             is Handed.Over -> handed.text
-            is Handed.Refused -> throw Missing("no token to read $repository: ${handed.reason}")
+            is Handed.Withheld -> throw Missing("no token to read $repository: ${handed.reason}")
         }
     }
 
@@ -81,6 +82,89 @@ internal class GitHubReading(private val reading: Reading, private val github: G
         }
         val listed = runs.joinToString("; ") { "${it.name}: ${it.status}${it.conclusion?.let { c -> " $c" }.orEmpty()}" }
         return Observation.Value(value, "$repository ${sha.take(SHORT)}: ${runs.size} check ${if (runs.size == 1) "run" else "runs"}${if (runs.isEmpty()) "" else " — $listed"}")
+    }
+
+    /**
+     * `pr.review_on` a sha: the state of the last review submitted on that commit by the App that §9 gives the reviewer's
+     * role, under the name GitHub shows for it; none when it left none there. A review by anyone else is not read.
+     */
+    fun reviewOn(): Observation {
+        val sha = sha("sha")
+        val pull = pullRequest()
+        val name = when (val handed = access.reviewer()) {
+            is Handed.Over -> handed.text
+            is Handed.Withheld -> throw Missing("the name GitHub shows for the reviewer's App is not known: ${handed.reason}")
+        }
+        val login = "$name[bot]"
+        val path = "repos/$repository/pulls/${pull.number}/reviews"
+        val reviews = pages(path, emptyMap()).filter { review ->
+            (review["user"] as? JsonObject)?.text("login") == login && review.text("commit_id") == sha && review.text("submitted_at") != null
+        }
+        val last = reviews.maxByOrNull { Instant.parse(it.text("submitted_at")) }
+            ?: return Observation.Value("none", "$repository#${pull.number}: no review by $login on ${sha.take(SHORT)}")
+        val state = last.text("state")
+        val value = REVIEW_STATES[state]
+            ?: throw Missing("$repository#${pull.number}: $login's last review on ${sha.take(SHORT)} is '$state', a state Amendment 33 does not give")
+        return Observation.Value(value, "$repository#${pull.number}: $login's last review on ${sha.take(SHORT)}, submitted ${last.text("submitted_at")}, of ${reviews.size}")
+    }
+
+    /**
+     * `pr.commits_since` a message: the commits the head now holds that the head its judgement observed did not — GitHub's
+     * comparison of the two, `ahead_by`. A message whose judgement observed no head, or a head GitHub no longer knows: unknown.
+     */
+    fun commitsSince(): Observation {
+        val message = asked.text("message")
+        val then = reading.log.observedHead(message) ?: throw Missing("the judgement of $message observed no pr.head")
+        if (!SHA.matches(then)) throw Missing("the judgement of $message observed '$then', which is no sha")
+        val pull = pullRequest()
+        val path = "repos/$repository/compare/$then...${pull.head}"
+        val compared = try {
+            single(path, emptyMap())
+        } catch (missing: Missing) {
+            throw Missing("GitHub does not compare the head $message observed, ${then.take(SHORT)}, with ${pull.head.take(SHORT)} — ${missing.message}")
+        }
+        val ahead = (compared["ahead_by"] as? JsonPrimitive)?.intOrNull ?: throw Missing("GitHub's answer to GET $path holds no ahead_by")
+        return Observation.Value(ahead, "$repository ${then.take(SHORT)}...${pull.head.take(SHORT)}: ahead by $ahead (observed by the judgement of $message)")
+    }
+
+    /**
+     * `pr.blocker_responses` for ids: those for which a comment on the pull request, written by its author after the stage's
+     * last `verdict` or `re-verdict` was delivered, holds a line that begins with the id and is followed by something that
+     * is neither a letter nor a digit.
+     */
+    fun blockerResponses(): Observation {
+        val ids = asked.texts("ids")
+        val since = reading.log.lastDelivered(stage.id, VERDICTS) ?: throw Missing("no verdict or re-verdict of ${stage.id} is delivered on the log")
+        val after = try {
+            Instant.parse(since)
+        } catch (_: DateTimeParseException) {
+            throw Missing("the log dates ${stage.id}'s last verdict '$since', which is no time")
+        }
+        val pull = pullRequest()
+        val path = "repos/$repository/issues/${pull.number}/comments"
+        val comments = pages(path, emptyMap()).filter { comment ->
+            (comment["user"] as? JsonObject)?.text("login") == pull.author &&
+                comment.text("created_at")?.let { Instant.parse(it).isAfter(after) } == true
+        }
+        val lines = comments.flatMap { (it.text("body") ?: "").lines() }
+        val answered = ids.filter { id -> lines.any { it.length > id.length && it.startsWith(id) && !it[id.length].isLetterOrDigit() } }
+        return Observation.Value(answered, "$repository#${pull.number}: ${comments.size} ${if (comments.size == 1) "comment" else "comments"} by ${pull.author} after $since")
+    }
+
+    /** `pr.evidence_present`: the description holds the six headings of the hand-off (EV-1), and text under `## Verified`. */
+    fun evidencePresent(): Observation {
+        val pull = pullRequest()
+        val lines = pull.body.lines()
+        val missing = HEADINGS.filter { heading -> lines.none { it.startsWith(heading) } }
+        val verified = lines.indexOfFirst { it.startsWith(VERIFIED) }
+        val under = if (verified < 0) emptyList() else lines.drop(verified + 1).takeWhile { !it.startsWith("## ") }
+        val present = missing.isEmpty() && under.any { it.isNotBlank() }
+        val evidence = when {
+            missing.isNotEmpty() -> "the description of $repository#${pull.number} has no ${missing.joinToString(", ")}"
+            !present -> "the description of $repository#${pull.number} has no text under $VERIFIED"
+            else -> "the description of $repository#${pull.number}: the six headings, and ${under.count { it.isNotBlank() }} lines under $VERIFIED"
+        }
+        return Observation.Value(present, evidence)
     }
 
     private fun sha(name: String): String = asked.text(name).also { if (!SHA.matches(it)) throw Missing("the parameter '$name' is '$it', which is no sha") }
@@ -200,6 +284,10 @@ internal class GitHubReading(private val reading: Reading, private val github: G
         private val NAME = Regex("[A-Za-z0-9._-]+")
         private val SHA = Regex("[0-9a-fA-F]{7,40}")
         private val PASSING = setOf("success", "neutral", "skipped")
+        private val REVIEW_STATES = mapOf("APPROVED" to "approved", "CHANGES_REQUESTED" to "changes_requested", "COMMENTED" to "commented")
+        private val VERDICTS = setOf("verdict", "re-verdict")
+        private const val VERIFIED = "## Verified"
+        private val HEADINGS = listOf("## Stage", "## What landed", "## DONE line", VERIFIED, "## Not in this stage", "## Found while doing")
         private val LINK_NEXT = Regex("<([^>]+)>;\\s*rel=\"next\"")
 
         private fun next(link: String?): String? = link?.let { LINK_NEXT.find(it)?.groupValues?.get(1) }

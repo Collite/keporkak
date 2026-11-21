@@ -49,7 +49,7 @@ class PullRequestReadingSpec : FreeSpec({
 
     "no token, a list that names no branch or repository, a sha that is none, a next page off GitHub, an answer not in GitHub's shape: each is unknown and says so" {
         Toy(tempdir()).use { toy ->
-            toy.token = Handed.Refused("GitHub answered 422 to POST /app/installations/184045472/access_tokens: The permissions requested are not granted to this installation.")
+            toy.token = Handed.Withheld("GitHub answered 422 to POST /app/installations/184045472/access_tokens: The permissions requested are not granted to this installation.")
             toy.observe("pr.ready").missing shouldBe "no token to read Collite/kp-toy: GitHub answered 422 to POST /app/installations/184045472/access_tokens: The permissions requested are not granted to this installation."
             toy.token = Handed.Over("Bearer $TEST_TOKEN")
 

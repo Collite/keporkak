@@ -31,7 +31,7 @@ sealed interface Handed {
         override fun toString(): String = "Handed.Over(…)"
     }
 
-    data class Refused(val reason: String) : Handed
+    data class Withheld(val reason: String) : Handed
 }
 
 /**
@@ -54,7 +54,7 @@ class GitHubFacts(
      */
     fun observe(fact: String, params: Map<String, Any> = emptyMap()): Observation {
         if (fact !in ANSWERED) return Observation.Unknown("kp-facts does not read '$fact' from GitHub")
-        val read = READERS[fact] ?: return Observation.Unknown("kp-facts reads '$fact' from GitHub from T5 on")
+        val read = READERS.getValue(fact)
         return try {
             GitHubReading(Reading(where, log, Git(null), Asked(params)), github, access, http).read()
         } catch (missing: Missing) {
@@ -87,6 +87,10 @@ class GitHubFacts(
             "pr.closed" to GitHubReading::closed,
             "pr.merged" to GitHubReading::merged,
             "pr.head" to GitHubReading::head,
+            "pr.commits_since" to GitHubReading::commitsSince,
+            "pr.review_on" to GitHubReading::reviewOn,
+            "pr.blocker_responses" to GitHubReading::blockerResponses,
+            "pr.evidence_present" to GitHubReading::evidencePresent,
             "ci.state" to GitHubReading::ciState,
         )
 
