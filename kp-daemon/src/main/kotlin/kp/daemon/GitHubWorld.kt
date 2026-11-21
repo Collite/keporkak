@@ -40,33 +40,40 @@ class GitHubWorld private constructor(
     private val api: URI,
     private val say: (String) -> Unit,
 ) : FactSource {
-    private val log = OfficeLog()
+    @Volatile private var rules: () -> InForceRules? = { null }
+    @Volatile private var log: WhatTheLogKnows = OfficeLog()
 
     /** Reads [office]'s fold and its rules in force from now on: until then, every GitHub fact is unknown. */
-    fun reading(office: Office) {
-        log.office = office
+    fun reading(office: Office) = reading({ office.rules }, OfficeLog().also { it.office = office })
+
+    /** Reads with the rules [rules] hands over and what [log] knows, from now on: the daemon's office's, or a reading of its log. */
+    fun reading(rules: () -> InForceRules?, log: WhatTheLogKnows) {
+        this.rules = rules
+        this.log = log
     }
 
-    override fun observe(fact: FactRef, stage: String?): Datum? {
+    override fun observe(fact: FactRef, stage: String?): Datum? = when (val answer = observation(fact, stage)) {
+        null -> null
+        is Observation.Value -> Datum.of(answer.value)
+        is Observation.Unknown -> null.also { say("facts: $fact for ${stage ?: "no stage"} is unknown — ${answer.missing}") }
+    }
+
+    /** [fact]'s answer for a judgement about [stage], with its evidence: a value, or unknown and why; null when the fact is not GitHub's. */
+    fun observation(fact: FactRef, stage: String?): Observation? {
         val known = GitHubFacts.ANSWERED[fact.name] ?: return null
-        val about = "$fact for ${stage ?: "no stage"}"
-        val rules = log.office?.rules?.ruleSet?.pool ?: return unknown(about, "the daemon has not read its rules yet")
-        val block = rules.github ?: return unknown(about, "pool/offices.yaml has no block github:")
-        val entry = rules.offices[office] ?: return unknown(about, "pool/offices.yaml names no office '$office'")
+        val rules = rules()?.ruleSet?.pool ?: return Observation.Unknown("the daemon has not read its rules yet")
+        val block = rules.github ?: return Observation.Unknown("pool/offices.yaml has no block github:")
+        val entry = rules.offices[office] ?: return Observation.Unknown("pool/offices.yaml names no office '$office'")
         val apps = GitHubApps(Roots.of(entry.roots).secrets.resolve("apps"), api)
         val access = Access(block, apps)
         val checkouts = Checkouts(office, project, entry.project.efforts, entry.repos.toSortedMap().mapValues { (_, checkout) -> Seats.home(checkout) })
         val params = fact.params.mapValues { (_, value) -> plain(value) }.toMutableMap()
         if (fact.name == CI_STATE && SHA !in params) params.remove(OF)?.let { params[SHA] = it }
         known.params.filterNot { it in params }.forEach { name -> if (name == STAGE && stage != null) params[STAGE] = stage }
-        val answer = try {
+        return try {
             GitHubFacts(checkouts, log, GitHub(block.organization, api), access).observe(fact.name, params)
         } catch (error: Exception) {
-            return unknown(about, error.toString())
-        }
-        return when (answer) {
-            is Observation.Value -> Datum.of(answer.value)
-            is Observation.Unknown -> unknown(about, answer.missing)
+            Observation.Unknown(error.toString())
         }
     }
 
@@ -88,11 +95,6 @@ class GitHubWorld private constructor(
                 is Asked.Failed -> Handed.Withheld(name.reason)
             }
         }
-    }
-
-    private fun unknown(about: String, missing: String): Datum? {
-        say("facts: $about is unknown — $missing")
-        return null
     }
 
     companion object {
