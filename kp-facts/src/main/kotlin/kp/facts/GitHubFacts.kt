@@ -1,5 +1,7 @@
 package kp.facts
 
+import java.io.IOException
+import java.io.UncheckedIOException
 import java.net.URI
 import java.net.http.HttpClient
 import java.time.Duration
@@ -52,7 +54,18 @@ class GitHubFacts(
      */
     fun observe(fact: String, params: Map<String, Any> = emptyMap()): Observation {
         if (fact !in ANSWERED) return Observation.Unknown("kp-facts does not read '$fact' from GitHub")
-        return Observation.Unknown("kp-facts reads no fact from GitHub yet")
+        val read = READERS[fact] ?: return Observation.Unknown("kp-facts reads '$fact' from GitHub from T5 on")
+        return try {
+            GitHubReading(Reading(where, log, Git(null), Asked(params)), github, access, http).read()
+        } catch (missing: Missing) {
+            Observation.Unknown(missing.message)
+        } catch (ambiguous: Ambiguous) {
+            Observation.Unknown(ambiguous.message)
+        } catch (error: IOException) {
+            Observation.Unknown(error.toString())
+        } catch (error: UncheckedIOException) {
+            Observation.Unknown(error.cause.toString())
+        }
     }
 
     companion object {
@@ -68,6 +81,14 @@ class GitHubFacts(
             Fact("pr.evidence_present", listOf("stage")),
             Fact("ci.state", listOf("sha", "stage")),
         ).associateBy { it.name }
+
+        private val READERS: Map<String, GitHubReading.() -> Observation> = mapOf(
+            "pr.ready" to GitHubReading::ready,
+            "pr.closed" to GitHubReading::closed,
+            "pr.merged" to GitHubReading::merged,
+            "pr.head" to GitHubReading::head,
+            "ci.state" to GitHubReading::ciState,
+        )
 
         /** How long one request may take: a judgement that reads GitHub holds the mailroom's lock meanwhile (Amendment 33). */
         val TIMEOUT: Duration = Duration.ofSeconds(30)
