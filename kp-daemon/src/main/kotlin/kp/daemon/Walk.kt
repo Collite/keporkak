@@ -57,6 +57,12 @@ class Walk(
         fun with(key: String, value: Datum): Step = Step(fields + (key to value))
     }
 
+    /** One order of the events the walk's steps mark as unordered (S3.6 T3): their labels, in order, and the walk played so. */
+    class Order(val labels: List<String>, val walk: Walk)
+
+    /** Every order of the events the walk's steps mark as unordered: the walk itself, when it marks none (S3.6 T3). */
+    fun orders(): List<Order> = TODO("S3.6 T3")
+
     /** This walk with its steps replaced by [steps]. */
     fun withSteps(steps: List<Step>): Walk = Walk(name, stage, seats, facts, steps, initial, stages, final, expectedCounts, claudeSeats, fixtures, file)
 
