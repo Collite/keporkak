@@ -1,7 +1,7 @@
 """S2.8 — the checks P1's retro asked for: T1's specs on the build, the filter and the changelog (Bora reads these).
 
-Seam: the recipes and the Gradle tasks themselves, run on a throwaway copy of the checkout under build/; the changelog
-check on a throwaway repository. The refusals by their rule and the projections of the state are kp-engine's
+Seam: the recipes and the Gradle tasks themselves, run on the throwaway copy of the checkout under build/ that the specs
+of S2.8, S3.0 and S3.8 share (S3.8 T6); the changelog check on a throwaway repository. The refusals by their rule and the projections of the state are kp-engine's
 `RetroChecksSpec`.
 """
 import pathlib
@@ -12,12 +12,12 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from retro_checks_support import copy_of_the_checkout, gradle, test_task_inputs, ThrowawayRepository  # noqa: E402
+from retro_checks_support import gradle, shared_copy, test_task_inputs, ThrowawayRepository  # noqa: E402
 
 
 class TheChecksP1sRetroAskedFor(unittest.TestCase):
     def test_a_modules_tests_run_again_after_a_file_under_rules_robots_pool_or_agents_changed(self):
-        inputs = test_task_inputs(copy_of_the_checkout(self))
+        inputs = test_task_inputs(shared_copy())
         one_of_each = {"rules/stage-lifecycle.yaml", "robots/pool.yaml", "pool/roster.yaml", "agents/coder/AGENT.md"}
 
         self.assertEqual(sorted(inputs), [
@@ -26,7 +26,7 @@ class TheChecksP1sRetroAskedFor(unittest.TestCase):
         self.assertEqual({task: one_of_each - files for task, files in inputs.items()}, {task: set() for task in inputs})
 
     def test_a_test_run_that_its_filter_left_with_no_test_fails(self):
-        copy = copy_of_the_checkout(self)
+        copy = shared_copy()
 
         by_gradle = gradle(copy, ":kp-model:test", "--tests", "NoSuchSpec*")
         by_kotest = gradle(copy, ":kp-model:test", environment={"kotest_filter_tests": "no such test"})

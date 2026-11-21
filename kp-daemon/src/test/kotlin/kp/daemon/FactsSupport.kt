@@ -83,13 +83,15 @@ class FactsOffice(
             .replace(Regex("(?m)^    repos: .*$"), "    repos: {keporkak: \"$keporkak\", kp-toy: \"$toy\"}"))
     }
     val journal = java.util.concurrent.CopyOnWriteArrayList<String>()
-    val world = ProjectWorld.of(InForceRules.of(RuleFiles(root).read()).first!!, "panda", project, path) { journal += it }
+    /** The rules the office runs on: master's, its `pool/offices.yaml` naming the spec's checkouts. */
+    val rules: InForceRules = InForceRules.of(RuleFiles(root).read()).first!!
+    val world = ProjectWorld.of(rules, "panda", project, path) { journal += it }
     private val facts = FactSource { fact, stage ->
         if (fact.name in ProjectFacts.ANSWERED || fact.name in ProjectFacts.NOT_READ_YET) world.observe(fact, stage) else beside.observe(fact, stage)
     }
-    val office: Office = Office.start("panda", project, root, facts, Operations { _, done -> done(OperationResult.Ok()) }, NoSeats, Clock { Instant.parse("2026-11-20T09:00:00Z") })
-        .also(world::reading)
-    private val commands = KpCommands(office, world)
+    val office: Office = Office.start("panda", project, root, facts, Operations { _, done -> done(OperationResult.Ok()) }, NoSeats,
+        Clock { Instant.parse("2026-11-20T09:00:00Z") }, folded = world::reading)
+    private val commands = KpCommands(office, world.view)
 
     fun send(seat: String, input: String): Answer = office.submit(Sender.Seat(seat), json(input)).answered()
 
@@ -163,7 +165,7 @@ private val LIST = """
 """.trimIndent() + "\n"
 
 /** Moves each stage of [states] from `planned` to its state, in one judgement on [project]'s log, at [SEEDED]. */
-private fun seed(project: Path, states: Map<String, String>) {
+fun seed(project: Path, states: Map<String, String>) {
     if (states.isEmpty()) return
     LogWriter.open(project, OfficeId("panda")).use { log ->
         val judgement = log.judgement()
@@ -175,14 +177,15 @@ private fun seed(project: Path, states: Map<String, String>) {
     }
 }
 
-private fun repository(dir: Path): Path = dir.createDirectories().also { git(it, "init", "--quiet", "--initial-branch=main") }
+/** A new git repository at [dir], on the branch `main`, with no commit. */
+fun repository(dir: Path): Path = dir.createDirectories().also { git(it, "init", "--quiet", "--initial-branch=main") }
 
 private fun write(dir: Path, path: String, text: String) {
     dir.resolve(path).also { it.parent.createDirectories() }.writeText(text)
 }
 
 /** The spec's own `git`, reading no user or system configuration. */
-private fun git(dir: Path, vararg args: String) {
+fun git(dir: Path, vararg args: String) {
     val process = ProcessBuilder(listOf("git", "-C", dir.toString()) + args).redirectErrorStream(true).apply {
         environment().apply {
             keys.removeAll { it.startsWith("GIT_") }

@@ -3,15 +3,17 @@ package kp.facts
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
  * The office's `git`, its command line, looked up on [path] — a `PATH`; null or empty: there is none. It reads and never
  * writes: no optional lock is taken, so a status does not refresh the index; no fsmonitor is started; nothing is fetched.
- * A command that cannot run or fails is what was missing for the fact that asked it ([Missing]).
+ * A command that cannot run or fails is what was missing for the fact that asked it ([Missing]); one that has not ended
+ * within [limit] is too.
  */
-class Git(val path: String?) {
+class Git(val path: String?, private val limit: Duration = LIMIT) {
     private val executable: Path? = path.orEmpty().split(File.pathSeparator).filter { it.isNotEmpty() }
         .map { Path.of(it, "git") }.firstOrNull { Files.isRegularFile(it) && Files.isExecutable(it) }
 
@@ -26,17 +28,30 @@ class Git(val path: String?) {
             environment()["GIT_TERMINAL_PROMPT"] = "0"
             environment()["LC_ALL"] = "C"
         }.start()
+        // Both streams are read beside the wait, so the limit holds while `git` — or a child it left — keeps its output
+        // open (review-025's follow-up, Collite/keporkak#52).
+        var output = ""
         var errors = ""
-        val reader = thread(isDaemon = true, name = "kp-facts-git") { errors = process.errorStream.bufferedReader().readText() }
-        val output = process.inputStream.bufferedReader().readText()
-        if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-            process.destroyForcibly()
-            throw Missing("git ${args.first()} in $dir did not end within $TIMEOUT_SECONDS s")
+        val readers = listOf(
+            thread(isDaemon = true, name = "kp-facts-git") { output = process.inputStream.bufferedReader().readText() },
+            thread(isDaemon = true, name = "kp-facts-git") { errors = process.errorStream.bufferedReader().readText() },
+        )
+        if (!process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
+            end(process)
+            throw Missing("git ${args.first()} in $dir did not end within ${limit.toSeconds()} s; it was ended")
         }
-        reader.join()
+        // `git` has ended; what it wrote is read to its end, unless a process it left holds its output open.
+        readers.forEach { it.join(limit.toMillis()) }
+        if (readers.any { it.isAlive }) throw Missing("git ${args.first()} in $dir ended, but its output stayed open past ${limit.toSeconds()} s")
         val code = process.exitValue()
         if (code !in ok) throw Missing("git ${args.joinToString(" ")} in $dir failed: " + (errors.lines().firstOrNull { it.isNotBlank() }?.trim() ?: "exit $code"))
         return Ran(code, output)
+    }
+
+    /** Ends [process] and every process it started, which may hold its output open. */
+    private fun end(process: Process) {
+        process.descendants().forEach { it.destroyForcibly() }
+        process.destroyForcibly()
     }
 
     /** [dir], when it is the root of a git checkout: what `git` there reads is that checkout's, not one around it. */
@@ -46,8 +61,9 @@ class Git(val path: String?) {
         return dir
     }
 
-    private companion object {
-        const val TIMEOUT_SECONDS = 30L
+    companion object {
+        /** How long a `git` command may take: 30 s. */
+        val LIMIT: Duration = Duration.ofSeconds(30)
     }
 }
 

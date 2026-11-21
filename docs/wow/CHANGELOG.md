@@ -2,6 +2,7 @@
 
 One line per change: date · rule ids · what · the decision. Newest first.
 
+- 2026-11-21 · RW-15 · Moved to stand after RW-14, as its number orders it; its text is unchanged (review-026's follow-up, Collite/keporkak#53). · KP D-98
 - 2026-11-20 · — · The `handoff-pr` skill: a mutant is a wrong implementation at the edge of the class a DONE item names — the last or the second case dropped, the other order, a timer, a join or a literal added; removing one's own line does not count. · KP D-90 (retro of P2, candidate 1)
 - 2026-11-20 · — · The `planning` skill: a list cites what it names from master or says "to be confirmed in T1"; a sentence about a class names the class and its edges, and a certification walk runs each plural with two or more members; who decides what, in four tiers, and "→ rulebook" with `just owed`. · KP D-83, D-90
 - 2026-11-20 · PL-23 · Who decides what, in four tiers: tier 0 the coder's `choice:` line; A the Principal decides and logs a D-n; B the Principal applies it and it stands unless Bora objects; C Bora's yes before any work. Each D-n names its tier; one that changes a seat's instructions says "→ rulebook", `just owed` lists each that no changelog line names, and from P3's exit a phase does not exit while it lists one. · KP D-83, D-90

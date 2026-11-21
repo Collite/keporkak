@@ -73,6 +73,8 @@ class ProjectFacts(private val where: Checkouts, private val log: WhatTheLogKnow
             Observation.Unknown(missing.message)
         } catch (ambiguous: Ambiguous) {
             Observation.Unknown(ambiguous.message)
+        } catch (large: TooLarge) {
+            Observation.Unknown(large.message)
         } catch (error: IOException) {
             Observation.Unknown(error.toString())
         } catch (error: UncheckedIOException) {
@@ -152,6 +154,19 @@ class ProjectFacts(private val where: Checkouts, private val log: WhatTheLogKnow
 internal class Missing(override val message: String) : Exception(message, null, false, false)
 
 /**
+ * The [digits] of [id] as a number, when it is small enough to hold — at most 2147483647; one larger is not in the shape a
+ * fact reads, which is then unknown, [where] it stands and the number named (review-025's follow-up, Collite/keporkak#52).
+ */
+internal fun held(digits: String, id: String, where: String): Int =
+    digits.toIntOrNull() ?: throw TooLarge("$where: the number $digits of $id is too large to hold")
+
+/**
+ * A number of an id in what a fact reads is too large to hold ([held]): the fact is unknown, [message] naming it. Not a
+ * [Missing], so a reader that answers false for a missing part does not answer false for this.
+ */
+internal class TooLarge(override val message: String) : Exception(message, null, false, false)
+
+/**
  * What a fact reads is in the file more than once — two sections of one name, two `rolls:` lines — so which one counts
  * would be a guess, and nothing is guessed (Amendment 32): the fact is unknown, [message] citing each. Not a [Missing],
  * so a reader that answers false for a missing part does not answer false for this.
@@ -189,6 +204,7 @@ internal data class StageId(val effort: String, val n: String, val m: String) {
 
         fun of(text: String): StageId {
             val (effort, phase, n, m) = FORM.matchEntire(text)?.destructured ?: throw Missing("'$text' is no stage id <EFFORT>/P<n>/S<n.m>")
+            listOf(phase, n, m).forEach { held(it, text, "the stage") }
             if (phase.toInt() != n.toInt()) throw Missing("'$text' names the phase P$phase for a stage S$n.$m")
             return StageId(effort, n, m)
         }
@@ -204,6 +220,7 @@ internal data class PhaseId(val effort: String, val n: String) {
 
         fun of(text: String): PhaseId {
             val (effort, n) = FORM.matchEntire(text)?.destructured ?: throw Missing("'$text' is no phase id <EFFORT>/P<n>")
+            held(n, text, "the phase")
             return PhaseId(effort, n)
         }
     }

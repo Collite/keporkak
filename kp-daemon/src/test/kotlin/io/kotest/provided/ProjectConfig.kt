@@ -13,11 +13,12 @@ import kotlin.time.Duration
  * daemons wrote is in a judgement, as after each of `kp-mailroom`'s (S1.10's DONE; S2.7 T7, issue #39 item 5).
  *
  * A spec that never ends fails by the default timeout (S3.0 T4; the retro of P2, candidate 8): `kp.spec.timeout`, which
- * the build gives every test task — 5m, or what KP_SPEC_TIMEOUT says. Each spec runs on a thread of its own, so the
- * timeout ends one blocked in a sleep, a wait or a read as it ends a suspended one; a spec that says otherwise keeps it.
+ * the build gives every test task — 5m, or what KP_SPEC_TIMEOUT says. The default is the build's alone (S3.8 T6): a
+ * run outside the build has Kotest's own. Each spec runs on a thread of its own, so the timeout ends one blocked in a
+ * sleep, a wait or a read as it ends a suspended one; a spec that says otherwise keeps it.
  */
 object ProjectConfig : AbstractProjectConfig() {
-    override val timeout: Duration = Duration.parse(System.getProperty("kp.spec.timeout") ?: "5m")
+    override val timeout: Duration? = System.getProperty("kp.spec.timeout")?.let(Duration::parse)
     override val extensions: List<Extension> = listOf(
         object : PostInstantiationExtension {
             override suspend fun instantiated(spec: Spec): Spec = spec.also { if (it.blockingTest == null) it.blockingTest = true }

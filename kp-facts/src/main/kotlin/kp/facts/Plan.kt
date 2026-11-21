@@ -26,7 +26,7 @@ internal class Plan(val effort: String, val text: Text) {
         }
     }
 
-    /** The rows of the phase `P<n>`. */
+    /** The rows of the phase `P<n>` — a number [held] already, as every row's is. */
     fun phase(n: String): List<Row> = rows.filter { it.n.toInt() == n.toInt() }.ifEmpty { throw Missing("${text.path} has no row of phase P$n") }
 
     /** The ids in [row]'s cell under `after`; none for `—`. */
@@ -37,6 +37,7 @@ internal class Plan(val effort: String, val text: Text) {
         if (cell == NONE) return emptyList()
         val ids = cell.split(",").map { it.trim() }
         if (ids.any { !ID.matches(it) }) throw Missing("${text.cite(row.index)}: the cell '$AFTER' of ${row.local} holds '$cell', not stage and phase ids")
+        ids.forEach { id -> NUMBER.findAll(id).forEach { held(it.value, id, text.cite(row.index)) } }
         return ids
     }
 
@@ -58,6 +59,7 @@ internal class Plan(val effort: String, val text: Text) {
         const val AFTER = "after"
         const val NONE = "—"
         val ID = Regex("^(S[0-9]+\\.[0-9]+|P[0-9]+)$")
+        val NUMBER = Regex("[0-9]+")
         val STAGE_ROW = Regex("^\\*\\*S([0-9]+)\\.([0-9]+) ")
         val SEPARATOR = Regex("^:?-+:?$")
 
@@ -72,7 +74,10 @@ internal class Plan(val effort: String, val text: Text) {
                     current == null -> table = Table(cells(trimmed), index)
                     index == current.index + 1 && cells(trimmed).all { SEPARATOR.matches(it) } -> Unit
                     else -> cells(trimmed).let { cells ->
-                        STAGE_ROW.find(cells.first())?.destructured?.let { (n, m) -> rows += Row("S$n.$m", n, index, cells, current) }
+                        STAGE_ROW.find(cells.first())?.destructured?.let { (n, m) ->
+                            listOf(n, m).forEach { held(it, "S$n.$m", text.cite(index)) }
+                            rows += Row("S$n.$m", n, index, cells, current)
+                        }
                     }
                 }
             }

@@ -62,7 +62,8 @@ subprojects {
         val kotestFilters = listOf("kotest_filter_specs", "kotest_filter_tests")
         kotestFilters.forEach { name -> inputs.property(name, providers.environmentVariable(name).orElse("")) }
         // A spec that never ends fails by the default timeout (S3.0 T4): every module's ProjectConfig reads it from here —
-        // 5m, or what KP_SPEC_TIMEOUT says; as a system property it is an input of the task, like the filter.
+        // 5m, or what KP_SPEC_TIMEOUT says; as a system property it is an input of the task, like the filter. The default
+        // is written here alone (S3.8 T6): no ProjectConfig holds one of its own.
         systemProperty("kp.spec.timeout", providers.environmentVariable("KP_SPEC_TIMEOUT").orElse("5m").get())
         // The specs' temp folders (S3.0 T4): each run of a test task makes them in a folder of its own under the system's
         // temp — its JVM's `java.io.tmpdir`, and TMPDIR for the processes it starts — removed when the run ends, failed or
