@@ -4,14 +4,14 @@ set positional-arguments
 _python-env:
     python3 build-support/bootstrap_python.py
 
-# Build every JVM module (including its checks).
+# Build every JVM module (including its checks). It goes on past a module whose specs fail and names each (S3.0 T4).
 build: _python-env
-    ./gradlew --console=plain build
+    ./gradlew --console=plain --continue build
 
 # Unit/component specs; all collaborators are fixtures. A suite that executes no test fails.
 test: _python-env
     build/python/bin/python scripts/run-python-tests.py
-    ./gradlew --console=plain test
+    ./gradlew --console=plain --continue test
 
 # S0.1 owns these scripts and generated personas. A spec asserts a refusal by its rule, or the list says why not (S2.8).
 rules: _python-env
@@ -42,32 +42,50 @@ hero:
     exit $status
 
 # Engine fences are part of Gradle's check/build. Each step ends with the time it took, and the last line with the
-# whole (S2.8): a slowdown shows in the hand-off.
+# whole (S2.8) — beside the machine's load and the Gradle daemons at work on another build (S3.0 T4): a slowdown shows
+# in the hand-off, and so does whether the machine was busy.
 # The front door used by CI.
 check:
     #!/usr/bin/env sh
     set -u
     began=$(date +%s)
+    busy() {
+        load=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || uptime | sed 's/.*average[s]*: //')
+        daemons=$(./gradlew --status --console=plain 2>/dev/null | grep -cE '^ *[0-9]+ +BUSY')
+        echo "load $load · Gradle daemons busy on another build: $daemons"
+    }
     for step in rules changelog build test schema-check hero; do
         start=$(date +%s)
         "{{just_executable()}}" --justfile "{{justfile()}}" "$step"
         status=$?
         if [ "$status" -ne 0 ]; then
-            echo "== just $step failed after $(( $(date +%s) - start )) s"
+            echo "== just $step failed after $(( $(date +%s) - start )) s · $(busy)"
             exit "$status"
         fi
-        echo "== just $step: $(( $(date +%s) - start )) s"
+        echo "== just $step: $(( $(date +%s) - start )) s · $(busy)"
     done
-    echo "== just check: $(( $(date +%s) - began )) s"
+    echo "== just check: $(( $(date +%s) - began )) s · $(busy)"
 
 # S2.8, the retro of P1's candidate 8: rules/walks/ and fixtures are exempt; CI's checkout reaches the merge base.
 # A change to rules/*.yaml, robots/, pool/ or docs/wow/ since the merge base with master names its decision in docs/wow/CHANGELOG.md.
 changelog: _python-env
     build/python/bin/python build-support/check_changelog.py
 
+# What the rulebook is owed (D-90 (4), S3.0 T2): each decision of <log> marked "→ rulebook" that no line of
+# docs/wow/CHANGELOG.md names, with its line; exits 1 when it lists one. From P3's exit a phase does not exit while it does.
+owed log *args: _python-env
+    build/python/bin/python build-support/owed.py --from "{{invocation_directory()}}" "$@"
+
+# Runs the specs <filter> names and no other, in the working tree (S3.0 T4): `just mutant`'s narrowing without a patch.
+# Prints each case that ran, passed or failed with its whole message; exit 0 every case passed · 1 one failed · 3 the
+# filter names no spec · 4 the build failed first. KP_SPEC_TIMEOUT sets a spec's default timeout (5m).
+spec filter: _python-env
+    build/python/bin/python build-support/spec.py "$1"
+
 # Applies <patch> to a throwaway copy of the working tree, runs the specs <filter> names there with a forced rerun, and
 # prints `red` and the specs that failed, or `green`; the working tree stays as it was (S2.8; architecture.md §7).
 # Exit 0 red · 1 green · 2 the patch does not apply · 3 the filter runs no spec · 4 the patched copy does not build.
+# Killed, it stops its run and removes its copy (S3.0 T4).
 # Can a spec fail? `just mutant <patch> <spec filter>` — red or green, on a throwaway copy.
 mutant patch filter: _python-env
     build/python/bin/python build-support/mutant.py --from "{{invocation_directory()}}" "$1" "$2"

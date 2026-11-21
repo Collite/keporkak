@@ -6,6 +6,8 @@ import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
+import kp.model.Delivered
+import kp.model.Transition
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
@@ -17,11 +19,12 @@ class ReadingSpec : FreeSpec({
             val first = office.kp("inbox").text
             office.restart()
             office.send("teamlead", proposal("KP/P2/S2.2"))
+            val (one, two) = listOf(0, 1).map { office.ticket(office.id("assignment-proposal", it)) }
 
-            first.lines().first() shouldStartWith "#4 · B · assignment-proposal · KP/P2/S2.1"
+            first.lines().first() shouldStartWith "#$one · B · assignment-proposal · KP/P2/S2.1"
             office.kp("inbox").text.lines().filter { it.startsWith("#") } shouldBe listOf(
-                "#4 · B · assignment-proposal · KP/P2/S2.1 · from teamlead",
-                "#13 · B · assignment-proposal · KP/P2/S2.2 · from teamlead",
+                "#$one · B · assignment-proposal · KP/P2/S2.1 · from teamlead",
+                "#$two · B · assignment-proposal · KP/P2/S2.2 · from teamlead",
             )
         }
     }
@@ -30,15 +33,17 @@ class ReadingSpec : FreeSpec({
         TestOffice().use { office ->
             office.send("teamlead", proposal())
             office.send("principal", """{"kind": "ruling-request", "stage": "KP/P2/S2.1", "subject": "which stage owns it", "args": {"default": "cut the owning stage", "citation": "contracts.md §4.5"}}""")
-            office.office.submit(kp.mailroom.Sender.Bora(signed = true), json("""{"kind": "approval", "re": "m-panda-000003", "stage": "KP/P2/S2.1"}"""))
+            val proposal = office.id("assignment-proposal")
+            office.office.submit(kp.mailroom.Sender.Bora(signed = true), json("""{"kind": "approval", "re": "$proposal", "stage": "KP/P2/S2.1"}"""))
 
             office.kp("inbox").text shouldBe """
-                #11 · B · ruling-request · KP/P2/S2.1 · from principal
+                #${office.ticket(office.id("ruling-request"))} · B · ruling-request · KP/P2/S2.1 · from principal
                    rolls: none · live: none · touches: unknown
                    default: cut the owning stage
 
             """.trimIndent()
-            office.kp("inbox", "--all").text.lines() shouldContain "#4 · B · assignment-proposal · KP/P2/S2.1 · from teamlead — answered by m-panda-000016"
+            office.kp("inbox", "--all").text.lines() shouldContain
+                "#${office.ticket(proposal)} · B · assignment-proposal · KP/P2/S2.1 · from teamlead — answered by ${office.id("approval")}"
         }
     }
 
@@ -56,20 +61,25 @@ class ReadingSpec : FreeSpec({
             printed.poll(10, java.util.concurrent.TimeUnit.SECONDS)
             office.send("teamlead", proposal("KP/P2/S2.2"))
             val next = printed.poll(10, java.util.concurrent.TimeUnit.SECONDS)
+            val (one, two) = listOf(0, 1).map { office.ticket(office.id("assignment-proposal", it)) }
             office.close()
             follower.join(5_000)
 
-            first shouldBe "#4 · B · assignment-proposal · KP/P2/S2.1 · from teamlead"
-            next shouldBe "#11 · B · assignment-proposal · KP/P2/S2.2 · from teamlead"
+            first shouldBe "#$one · B · assignment-proposal · KP/P2/S2.1 · from teamlead"
+            next shouldBe "#$two · B · assignment-proposal · KP/P2/S2.2 · from teamlead"
             follower.isAlive shouldBe false
         }
     }
 
     "kp status is unchanged by a voided judgement's lines: it says what the log without them says" {
-        // Killed after the proposal's transition (5): the start voids its delivered record (4) and the transition.
-        val project = killedAfter(cut = 5) { it.send("teamlead", proposal()) }
+        // Killed after the proposal's transition: the start voids its delivered record and the transition — their lines
+        // read from an uncut run, not pinned (S3.0 T5).
+        val lines = TestOffice().use { office -> office.send("teamlead", proposal()); office.office.lines().map { it.entry } }
+        val delivered = lines.single { it is Delivered && it.id == idOf(lines, "assignment-proposal") }.seq.toLong()
+        val transition = lines.first { it is Transition && it.seq.toLong() > delivered }.seq.toLong()
+        val project = killedAfter(cut = transition) { it.send("teamlead", proposal()) }
         TestOffice(project = project).close()
-        val withoutTheVoided = copyWithout(project, seqs = setOf(4L, 5L))
+        val withoutTheVoided = copyWithout(project, seqs = setOf(delivered, transition))
 
         val status = TestOffice(project = project).use { it.kp("status").text }
 
@@ -89,7 +99,8 @@ class ReadingSpec : FreeSpec({
             val all = office.kp("status").text.lines()
             val one = office.kp("status", "KP/P2/S2.2").text.lines()
 
-            all shouldContainAll listOf("Bora: present", "stage KP/P2/S2.1: proposed · proposals 1", "stage KP/P2/S2.2: proposed · proposals 1", "open tickets: #4, #11")
+            val (first, second) = listOf(0, 1).map { office.ticket(office.id("assignment-proposal", it)) }
+            all shouldContainAll listOf("Bora: present", "stage KP/P2/S2.1: proposed · proposals 1", "stage KP/P2/S2.2: proposed · proposals 1", "open tickets: #$first, #$second")
             all.first() shouldStartWith "office panda · rules "
             all.single { it.startsWith("budgets: ") } shouldBe "budgets: 4 slots · per subscription claude 4 · per office panda 4 · 2 stages in flight per effort"
             one.filter { it.startsWith("stage ") } shouldBe listOf("stage KP/P2/S2.2: proposed · proposals 1")

@@ -29,6 +29,13 @@ class OfficeTemplateTests(unittest.TestCase):
         self.assertIn('"@DAEMON_LAUNCHER@"', install)
         self.assertIn('"@DAEMON_WORKING_DIRECTORY@"', install)
 
+    def test_the_unit_takes_the_daemons_exit_on_a_stop_for_a_clean_one(self):
+        # `systemctl --user stop` sends SIGTERM; the daemon's JVM ends its shutdown hook and exits 143 (DaemonProcessSpec),
+        # which systemd counts as a failure unless the unit names it (S3.0 T6): `just stop` leaves the unit inactive.
+        unit = (ROOT / "office/systemd/keporkak.service").read_text()
+        self.assertIn("\nSuccessExitStatus=143\n", unit)
+        self.assertIn("\nRestart=on-failure\n", unit)
+
 
 if __name__ == "__main__":
     unittest.main()

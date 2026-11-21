@@ -5,6 +5,7 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import java.io.File
 
 /** S1.0 — The rules load. One spec per behaviour the stage list names; the seam is [Rules.load]. */
 class RulesLoadSpec : StringSpec({
@@ -48,7 +49,9 @@ class RulesLoadSpec : StringSpec({
     "what the Kotlin loader accepts and what it rejects, the Python validator accepts and rejects, on the shared fixtures under rules/fixtures/" {
         val scenarios = sharedFixtureScenarios()
 
-        scenarios.size shouldBe 49
+        // By content, not by a count another stage's fixture moves (S3.0 T5): every fixture file gives its scenarios, each named once.
+        scenarios.map { it.fixture.name }.toSet() shouldBe File(root, "rules/fixtures").walk().filter { it.isFile && it.name.endsWith(".yaml") }.map { it.name }.toSet()
+        scenarios.map { it.name }.distinct() shouldBe scenarios.map { it.name }
         scenarios.associate { it.name to loaderFailures(it) } shouldBe scenarios.associate { it.name to pythonFailures(it) }
     }
 

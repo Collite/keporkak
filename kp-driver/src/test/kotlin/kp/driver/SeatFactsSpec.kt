@@ -8,18 +8,14 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
 import kotlinx.coroutines.async
 import kotlinx.serialization.json.JsonPrimitive
 import kp.model.SeatId
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
-import kotlin.io.path.extension
 import kotlin.io.path.readText
-import kotlin.streams.toList
 import kotlin.time.Duration.Companion.seconds
-import kp.driver.scan.comparisons
 
 /**
  * S2.1 T6 — the facts the driver observes: one spec named after each `seat.*` fact whose source is O in
@@ -147,92 +143,6 @@ class SeatFactsSpec : StringSpec({
         }
     }
 
-    "the driver's source holds no word for a conclusion" {
-        val words = Regex("(?i)\\b(stall|stalled|stalling|done|idle|hung|stuck)\\b")
-        val found = Files.walk(root("kp-driver/src/main")).use { files -> files.filter { it.extension == "kt" }.toList() }
-            .flatMap { file -> file.readText().lines().mapIndexedNotNull { i, line -> words.find(line)?.let { "${root("").relativize(file)}:${i + 1}: ${it.value}" } } }
-
-        found shouldBe emptyList()
-    }
-
-    "the driver's source compares no observation with a limit" {
-        // Every line of the driver's source that compares, in any form, is listed as written with what it compares: a
-        // new one — an observation against a limit among them — or a listed one changed turns this red until it is
-        // listed again, and a reviewer reads why.
-        val found = Files.walk(root("kp-driver/src/main")).use { files -> files.filter { it.extension == "kt" }.toList() }
-            .flatMap { file -> comparisons(file.readText()).map { "${file.fileName}: $it" } }
-
-        found.sorted() shouldBe NOT_A_LIMIT.keys.sorted()
-    }
-
-    "the scan sees the watchdog threshold review-008 wrote into Observations.silentFor" {
-        // review-008, re-review of B1: this line, after `val heard = …`, left the spec above green.
-        val source = root("kp-driver/src/main/kotlin/kp/driver/acp/Observations.kt").readText()
-        val threshold = "        if (Duration.between(heard, clock.instant()) > Duration.ofMinutes(20)) " +
-            "return fact(SeatFacts.SILENT_FOR, duration(Duration.ZERO), \"over the watchdog limit\")"
-        val written = source.replaceFirst(Regex("""(?m)^[ \t]*val heard = .*\n"""), "\$0$threshold\n")
-
-        written shouldNotBe source
-        comparisons(written) - comparisons(source).toSet() shouldBe listOf(threshold.trim())
-    }
-
-    "the source scan finds a comparison in any form, and takes no type argument, arrow, comment or string for one" {
-        // review-008, B1: a Duration threshold and a comparison with a lowercase name went unseen. Its re-review: a
-        // side that ends in a call with a call inside, a bracket, an index or `!!`, or a right side in brackets.
-        val compares = listOf(
-            "if (silent > Duration.ofMinutes(20)) return fact(SeatFacts.SILENT_FOR, duration(silent), \"over the watchdog's limit\")",
-            "if (silent >= limit) return null",
-            "if (Duration.between(heard, clock.instant()) > Duration.ofMinutes(20)) return fact(SeatFacts.SILENT_FOR, duration(Duration.ZERO), \"over the watchdog limit\")",
-            "Duration.between(heard, clock.instant()) >= limit",
-            "f(g()) > 5",
-            "(now - heard) > limit",
-            "samples[0] > limit",
-            "lastHeard!! < since",
-            "silent > (limit)",
-            "if (silent<limit || used>=cap) w",
-            "x = listOf(silent<limit, used>cap)",
-            "if (silent-->limit) w",
-            "val over = used.compareTo(limit) > 0",
-            "when (Long.compare(used, cap)) { 1 -> w }",
-            "if (Duration.between(heard, now).isAfter(limit)) x",
-            "if ((limit - silent).isNegative) x",
-            "val capped = silent.coerceAtMost(limit)",
-            "val most = maxOf(used, limit)",
-            "val most = max(used, limit)",
-            "val most = listOf(used, limit).max()",
-            "val first = listOf(used, limit).sorted().first()",
-            "if (silent in Duration.ZERO..limit) y",
-            "for (i in 0 until n) z",
-            "val c = '\"'; if (a > b) x",
-            "val s = \"\\\"}\"; if (a > b) x",
-            "val s = \"\${if (silent > limit) \"over\" else \"\"}\"",
-        )
-        compares.filter { comparisons(it) != listOf(it) } shouldBe emptyList()
-        comparisons("if (Duration.between(heard, now)\n    > limit) x") shouldBe listOf("> limit) x")
-
-        comparisons(
-            listOf(
-                "private val open: MutableMap<String, Pair<Instant, List<Long>>> = mutableMapOf()",
-                "fun observe(fact: String): Outcome<ObservedFact> = when (fact) { else -> Outcome.Failed(\"x\") }",
-                "open.forEach { (id, at) -> note(id, at) }",
-                "val until = System.nanoTime() + grace.toNanos()",
-                "fun <T : Enum<T>> wire(value: T, serializer: KSerializer<T>): String = x",
-                "private val asking = ConcurrentHashMap.newKeySet<Deferred<Answer>>()",
-                "val written: CompletableDeferred<Unit>? get() = null",
-                "data class Ok<out T>(val value: T) : Outcome<T>",
-                "val onNote: (String) -> Unit = { }",
-                "val line = \"silent > limit, 0..9, x.max()\" // used >= limit, in a comment",
-                "val c = '>'",
-                "/** silent > limit, in a comment */",
-                "/* a block comment /* nested */ silent > limit",
-                "   silent > limit */",
-                "val raw = \"\"\"",
-                "    silent > limit \${'\$'}",
-                "\"\"\"",
-            ).joinToString("\n"),
-        ) shouldBe emptyList()
-    }
-
     "the transcript is <roots.seats>/_transcripts/<seat>.log, appended across the seat's sessions" {
         Office().use { office ->
             office.driver().use { it.start(office.session("coder-1", office.agent("{}"))).ok() }
@@ -248,24 +158,3 @@ class SeatFactsSpec : StringSpec({
 })
 
 private fun root(path: String): Path = Path.of(System.getProperty("kp.root")).resolve(path)
-
-/** Every line of the driver's source that compares, by file and as written, and why none is an observation against a limit. */
-private val NOT_A_LIMIT = mapOf(
-    "AgentProcess.kt: while (process.isAlive && System.nanoTime() < until) {" to "kill's grace period, which the caller gives (T7)",
-    "AgentBinding.kt: override fun toString() = \"Environment(\${variables.keys.sorted()})\"" to
-        "the environment's variable names, sorted to be shown — never their values",
-    "ClaudeAdapter.kt: if (lines > 1) return Outcome.Failed(\"the Claude token file \$tokenFile holds \$lines lines; the token stands alone on one line (office/README.md)\")" to
-        "the token file's lines — an input, not an observation",
-    "Observations.kt: val heard = listOfNotNull(since, lastHeard).max()" to
-        "the later of two instants: when the turn began, when the agent was last heard",
-    "Observations.kt: val (id, since) = open.entries.minByOrNull { it.value }?.toPair() ?: return fact(SeatFacts.TOOL_CALL_OPEN_FOR, duration(Duration.ZERO), \"no tool call is open\")" to
-        "the oldest open tool call, whose age is reported",
-    "Observations.kt: if (size <= 0) return Outcome.Failed(\"the agent reported a context size of \$size\")" to
-        "a context size the fraction cannot be computed from — an input",
-    "ConfigHomes.kt: fun <T> read(path: String, missing: String, parse: (String) -> Outcome<T>): T? =" to
-        "a generic helper's type parameter and function type (S2.2) — no comparison",
-    "Packaging.kt: return problems.distinct().sorted()" to "the packaging check's problem lines, sorted to be reported (S2.2)",
-    "Packaging.kt: while (i < glob.length) {" to "a glob's characters, read one by one into an expression (S2.2)",
-    "Lines.kt: return \" → \" + if (text.length <= OUTPUT_LIMIT) text else text.take(OUTPUT_LIMIT) + \" … (\${text.length - OUTPUT_LIMIT} more characters)\"" to
-        "a tool's result in the transcript (S2.5): how much of it a line carries — the transcript's length, no observation of a seat",
-)

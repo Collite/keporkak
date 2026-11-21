@@ -7,11 +7,12 @@
   nothing else: no new tasks, no sub-tasks, no renumbering. A box is ticked only when the whole task is done and
   verified; a partly done task stays unticked. Tick right after landing, not at the end of the stage. `R4.1, AGENTS`
 - **EX-2 The fence.** Every stage has *in scope*, *out of scope* (neighbouring stages by name) and **stop conditions
-  with ids**: `SC-1` another repo must change · `SC-2` `contracts.md` must change · `SC-3` a pin must move · `SC-4` a
+  with ids**: `SC-1` another repo must change · `SC-2` the contract must change what is built — where it is only
+  silent, EX-6 applies · `SC-3` a pin must move · `SC-4` a
   table or endpoint not in contracts is needed · `SC-5` a fix round the ladder has not granted · `SC-6` the list
   exceeds 150 lines / ~10 KB · `SC-7` twice the planned days, at most day 16 · `SC-8` a border beyond the `touches:` line
   (DS-14) · `SC-9` the live target is unavailable · `SC-10+` stage-specific. On a stop: send `stop SC-n`, write the
-  need under Found while doing, push what compiles, end the turn. Do not solve it in the stage. `R4.2, D-23, D-27 l`
+  need under Found while doing, push what compiles, end the turn. Do not solve it in the stage. `R4.2, D-23, D-27 l, D-83`
 - **EX-3 One PR per stage,** from a branch off master, opened as *ready* when the DONE line holds, merged at PASS. No
   phase PRs; no "continue on the same PR" into the next stage. `R4.3`
 - **EX-4 A stage builds on what master pins when it branches and never edits a pin.** Master having moved because
@@ -19,8 +20,12 @@
   pin inside a stage. Using a producer feature the contract does not name is the planner's call, not the executor's. `R4.7`
 - **EX-5 No pauses.** Bora approved the stage at its start; the executor does not pause between tasks for approval — it
   finishes the list or hits a stop condition. "Continue" means the next task of the list. `R4.10 as rewritten by D-22`
-- **EX-6 Take the default.** The executor does not ask questions. Where the list leaves a choice, it takes the
-  conservative default, writes one Found line, and continues. If the answer would be a stop condition, it stops. `D-27 i`
+- **EX-6 Take the default.** The executor does not ask questions. Where the list leaves a choice that stays inside the
+  stage's fence and can be undone within its pull request — and where the contract is only silent — the choice is the
+  executor's (tier 0, `20` PL-23): it takes the conservative option, writes one Found line that begins `choice:`, and
+  continues; the Principal ratifies or reverses it at triage. A choice that would put a decision into the daemon,
+  touch `rules/`, `robots/` or `pool/`, or change what the contract promises is a stop. If the answer would be a stop
+  condition, it stops. `D-27 i, D-83`
 - **EX-7 Found while doing.** One line per discovery, under the list's section. The executor never acts on a Found line
   in that stage. The Principal triages each (resume · issue · stage · drop); the stage does not exit while a line has
   no outcome. `R4.1, D-20, RV-29`

@@ -29,6 +29,11 @@ ticks boxes, appends `done <sha>`, writes Found lines and Retro notes, and stops
   a copy of the rules with the edit applied.
 - **A DONE item states the property; the report gives the number** ("every cut after a waking judgement", not "the
   seven cuts"): never a number taken from data that changes.
+- **Cite what you name from master (PL-21).** Every file, recipe and rule id the list names is cited as it is on
+  master, or the list says "to be confirmed in T1".
+- **A sentence about a class names the class and its edges (PL-22).** A DONE item or a T1 sentence about a class
+  names the class and the edges its spec must reach — two or more members, the last one, each order, a non-empty
+  inbox. A certification walk runs each plural of its phase's DONE line with two or more members.
 - **The Pre-flight's paths are the files its tasks name.** A list built from triaged Found lines names their
   `_closed/` file, which its executor may then read.
 - **Specific about the result and its test — not the implementation.** Name interfaces, behaviours and acceptance;
@@ -61,5 +66,12 @@ until both fields are set. Rebuild the register.
 - At runtime you may add, delete, split and merge tasks within the size rules, and cut pin stages. You may not change
   a contract, the architecture, the UX or a library choice — that is a flag for Bora and the design squad.
 - At every phase exit: refresh the chart, check the profile's floors, roll STATUS over.
+- **Who decides what (PL-23).** Tier A — the Principal decides and logs it as a D-n; Bora hears of it in the status
+  report: an as-built clarification of the contract, a triage outcome, placing a follow-up in a stage already cut.
+  Tier B — the Principal applies it, and it stands unless Bora objects: a contract line that changes behaviour, a new
+  repair stage, the order of stages. Tier C — Bora's yes before any work: an edit to `rules/`, `robots/` or `pool/`,
+  anything that spends his tokens or needs `sudo`, a phase's exit, a retro's triage, a change to the plan. Below
+  them, tier 0 is the coder's `choice:` line. Each D-n names its tier; one that changes a seat's instructions says
+  "→ rulebook", and `just owed` lists each such D-n that no changelog line names.
 
 Rules behind this skill: rulebook chapters 20 (planning) and 30 (execution).

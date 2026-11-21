@@ -3,6 +3,9 @@ dependencies {
     implementation(libs.kaml)
     testImplementation(libs.kotest)
     testImplementation(libs.kotest.assertions)
+    // The syntax-tree check that the daemon decides nothing (S3.0 T3): detekt's parser reads the main sources of
+    // kp-driver, kp-daemon, kp-seat-api and kp-engine; tests only.
+    testImplementation(libs.detekt.test)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

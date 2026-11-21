@@ -1,6 +1,7 @@
 package kp.driver.home
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -84,9 +85,10 @@ class PermissionsSecondPassSpec : StringSpec({
             val homes = sources.roles().flatMap { role -> sources.profiles().map { profile -> sources.home("$role-$profile", role, profile) } }
             val settings = homes.map { Json.parseToJsonElement(it.resolve("settings.json").readText()).jsonObject }
 
-            homes.size shouldBe 27
-            settings.map { it.keys } shouldBe List(27) { setOf("hooks") }
-            settings.map { it.getValue("hooks").jsonObject.keys } shouldBe List(27) { setOf("SessionStart", "PreToolUse", "Stop") }
+            // Every persona's home on every profile, by content — not by a count another stage's persona moves (S3.0 T5).
+            sources.roles() shouldContainAll listOf("coder", "reviewer", "principal", "teamlead")
+            settings.map { it.keys } shouldBe List(homes.size) { setOf("hooks") }
+            settings.map { it.getValue("hooks").jsonObject.keys } shouldBe List(homes.size) { setOf("SessionStart", "PreToolUse", "Stop") }
         }
     }
 })

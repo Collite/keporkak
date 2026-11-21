@@ -1,15 +1,10 @@
 package kp.seatapi
 
-import com.charleskorn.kaml.Yaml
-import com.charleskorn.kaml.YamlMap
-import com.charleskorn.kaml.yamlMap
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.io.File
 
 /** S2.3 T5 — `whoami` (contracts.md §5): `open`, `left`, and no kind's name in the API's or the engine's source. */
 class WhoamiSpec : StringSpec({
@@ -40,16 +35,6 @@ class WhoamiSpec : StringSpec({
 
             listOf(before, after) shouldBe listOf("2", "1")
         }
-    }
-
-    "the API's and the engine's sources hold no kind's name" {
-        val kinds = Yaml.default.parseToYamlNode(File(root, "rules/message-kinds.yaml").readText()).yamlMap.get<YamlMap>("kinds")!!.entries.keys.map { it.content }
-        val sources = listOf("kp-seat-api/src/main", "kp-engine/src/main").flatMap { File(root, it).walk().filter { file -> file.extension == "kt" }.toList() }
-
-        val named = sources.flatMap { source -> kinds.filter { "\"$it\"" in source.readText() }.map { "${source.name}: $it" } }
-
-        kinds shouldContain "started"
-        named shouldBe emptyList()
     }
 })
 

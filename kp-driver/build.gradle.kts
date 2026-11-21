@@ -1,5 +1,5 @@
 plugins {
-    // The scripted fake agent and the source scan are test fixtures (S2.4): the daemon's specs and `just rehearse
+    // The scripted fake agent is a test fixture (S2.4): the daemon's specs and `just rehearse
     // <walk> --seats fake` start the same fake agent the driver's specs do.
     `java-test-fixtures`
 }

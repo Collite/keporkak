@@ -224,7 +224,7 @@ class Seats(
 
     /** A message as the prompt that wakes a seat with it (contracts.md §4.4: the prompt is that message). */
     private fun mail(message: Message): String = "Mail ${message.id.value}: ${message.kind} from ${message.from.value}" +
-        (message.stage?.let { " about $it" } ?: "") + ".\n" + message.json
+        (message.stage?.let { " about ${it.value}" } ?: "") + ".\n" + message.json
 
     // ---- the operations (contracts.md §4.4)
 

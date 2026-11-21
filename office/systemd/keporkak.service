@@ -15,6 +15,9 @@ Environment=PATH=%h/.local/share/mise/shims:%h/.local/bin:/usr/local/bin:/usr/bi
 ExecStart=@DAEMON_LAUNCHER@
 # A restart ends the daemon's seats; they are re-seated after its replay (architecture.md §4).
 Restart=on-failure
+# `just stop` sends SIGTERM: the daemon closes in its shutdown hook and the JVM exits 143, which is a clean stop, not a
+# failure — the unit is left inactive, and is not restarted (S3.0 T6).
+SuccessExitStatus=143
 
 [Install]
 WantedBy=default.target

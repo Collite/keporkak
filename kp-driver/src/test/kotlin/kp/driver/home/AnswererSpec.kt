@@ -141,18 +141,6 @@ class AnswererSpec : StringSpec({
         }
     }
 
-    "the answerer's source names no tool, path field or default: each comes from permissions.json" {
-        val source = root("kp-driver/src/main/kotlin/kp/driver/home/CompiledAnswerer.kt").readText()
-        val data = root("agents/packaging/claude.yaml").readText()
-        // `path` is left out: it is also the key of a rule's path expression in permissions.json, which the answerer reads.
-        val names = Regex("""(?m)^  (paths|read): \[(.*)]$""").findAll(data).flatMap { it.groupValues[2].split(", ") }.toList().minus("path") +
-            listOf("Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "allow_once", "write_inside", "write_outside")
-
-        names shouldBe listOf("file_path", "notebook_path", "Read", "Glob", "Grep", "LS", "NotebookRead",
-            "Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "allow_once", "write_inside", "write_outside")
-        names.filter { "\"$it\"" in source } shouldBe emptyList()
-    }
-
     "the driver hands the answerer the tool's name the agent gave on the wire" {
         Office().use { office ->
             val agent = office.agent("""{"turns": [[

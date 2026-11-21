@@ -57,6 +57,20 @@ class TheSeatsSpec : StringSpec({
         }
     }
 
+    "a wake's prompt names its stage by the stage's id, and no line of what a seat is told or its transcript holds `StageId(` (S3.0 T6)" {
+        SeatsOffice().use { office ->
+            val stop = office.send("coder-1", "stop", """{"sc": "SC-3"}""").id
+            val triage = office.send("principal", "triage", """{"outcome": "resume", "found": "1", "since": "$stop"}""", re = stop).id
+            office.until("coder-1 woken with the triage") { office.prompts("coder-1").any { triage in it } }
+
+            office.prompts("coder-1").single { triage in it }.lines().first() shouldBe "Mail $triage: triage from principal about ${office.stage()}."
+            val transcripts = Files.list(office.project.resolve("office/seats/_transcripts")).use { it.toList() }
+            transcripts.map { it.fileName.toString() } shouldContain "coder-1.log"
+            val lines = office.received("coder-1").map { it.toString() } + transcripts.flatMap { it.readText().lines() }
+            lines.filter { "StageId(" in it } shouldBe emptyList()
+        }
+    }
+
     "a seat is started with the home, the model and the effort its role and the roster give it, and its token is live before its process is" {
         SeatsOffice().use { office ->
             // The coder is seated at the level its request names — junior M: the cheapest model, medium.

@@ -61,16 +61,33 @@ subprojects {
         // filter from the environment, which is no input of a task: it is made one, so a new filter runs the task again.
         val kotestFilters = listOf("kotest_filter_specs", "kotest_filter_tests")
         kotestFilters.forEach { name -> inputs.property(name, providers.environmentVariable(name).orElse("")) }
+        // A spec that never ends fails by the default timeout (S3.0 T4): every module's ProjectConfig reads it from here —
+        // 5m, or what KP_SPEC_TIMEOUT says; as a system property it is an input of the task, like the filter.
+        systemProperty("kp.spec.timeout", providers.environmentVariable("KP_SPEC_TIMEOUT").orElse("5m").get())
+        // The specs' temp folders (S3.0 T4): each run of a test task makes them in a folder of its own under the system's
+        // temp — its JVM's `java.io.tmpdir`, and TMPDIR for the processes it starts — removed when the run ends, failed or
+        // not. A path of the run is in no key of the task: it is set when the run begins.
+        val specsTemp = java.util.concurrent.atomic.AtomicReference<File?>()
+        doFirst {
+            val folder = java.nio.file.Files.createTempDirectory("kp-specs-").toFile()
+            specsTemp.set(folder)
+            systemProperty("java.io.tmpdir", folder.absolutePath)
+            environment("TMPDIR", folder.absolutePath)
+        }
         val executed = java.util.concurrent.atomic.AtomicLong()
         addTestListener(object : TestListener {
             override fun beforeSuite(suite: TestDescriptor) {}
             override fun afterSuite(suite: TestDescriptor, result: TestResult) {
-                if (suite.parent == null) executed.set(result.testCount - result.skippedTestCount)
+                if (suite.parent == null) {
+                    executed.set(result.testCount - result.skippedTestCount)
+                    specsTemp.getAndSet(null)?.deleteRecursively()
+                }
             }
             override fun beforeTest(test: TestDescriptor) {}
             override fun afterTest(test: TestDescriptor, result: TestResult) {}
         })
         doLast {
+            specsTemp.getAndSet(null)?.deleteRecursively()
             if (executed.get() == 0L) {
                 val filters = kotestFilters.mapNotNull { name -> System.getenv(name)?.let { "$name=$it" } }
                 throw GradleException("$path executed no test" + filters.joinToString(", ", " (", ")").takeIf { filters.isNotEmpty() }.orEmpty())

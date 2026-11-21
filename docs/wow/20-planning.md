@@ -57,3 +57,18 @@
   command, a file another program reads). The executor writes the specs there and nowhere further in. `D-54`
 - **PL-20 DONE is checkable at the hand-off.** Every DONE item can be seen on the PR's head before the merge; what
   only the merge can show (CI on master, a released artefact, a deploy) is an Exit line. `D-54`
+- **PL-21 A list cites what it names from master.** Every file, recipe and rule id a list names is cited as it is on
+  master when the list is cut, or the list says "to be confirmed in T1". It extends D-54 and D-78. `D-83`
+- **PL-22 A sentence about a class names the class and its edges.** A DONE item or a T1 sentence about a class names
+  the class and the edges its spec must reach: two or more members, the last one, each order, a non-empty inbox. A
+  certification walk runs each plural of its phase's DONE line with two or more members. `D-90`
+- **PL-23 Who decides what — four tiers, from the coder to Bora.** **Tier 0 — the coder decides inside its fence:** a
+  choice the list leaves, which stays inside the stage and can be undone within its pull request (EX-6, a `choice:`
+  Found line); the Principal ratifies it at triage or reverses it. **Tier A — the Principal decides** and logs it as a
+  D-n; Bora hears of it in the status report: an as-built clarification of the contract, a triage outcome, placing a
+  follow-up in a stage already cut. **Tier B — the Principal applies it, and it stands unless Bora objects:** a
+  contract line that changes behaviour, a new repair stage, the order of stages. **Tier C — Bora's yes before any
+  work:** an edit to `rules/`, `robots/` or `pool/`, anything that spends his tokens or needs `sudo`, a phase's exit, a
+  retro's triage, a change to the plan. Each D-n names its tier. A D-n that changes a seat's instructions says
+  "→ rulebook"; `just owed <decision log>` lists each one no line of `CHANGELOG.md` names, and from P3's exit a
+  phase does not exit while it lists one. `D-83, D-90`

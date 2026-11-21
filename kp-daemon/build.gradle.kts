@@ -22,7 +22,7 @@ dependencies {
     testImplementation(libs.kotest.assertions)
     // The logging spec asks SLF4J — the ACP SDK's logging — what it would write.
     testImplementation(libs.slf4j.api)
-    // The seats' specs (S2.4): S2.1's fake agent as every seat's process, and the source scan S2.1's spec uses.
+    // The seats' specs (S2.4): S2.1's fake agent as every seat's process.
     testImplementation(testFixtures(project(":kp-driver")))
     testRuntimeOnly(libs.junit.platform.launcher)
 }

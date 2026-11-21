@@ -17,7 +17,8 @@ class CatchUpRulesSpec : StringSpec({
         master.kinds.getValue("assignment-proposal").reply shouldBe "approval | decline | queued-approval"
         master.kinds.getValue("verdict").reply shouldBe "repair-done (if FIX FIRST)"
         master.kinds.getValue("verdict").replies shouldBe listOf("repair-done")
-        master.kinds.values.count { it.replies.isNotEmpty() } shouldBe 18
+        // The kinds that answer another are the rules' own: each whose reply prose names a kind, and no other.
+        master.kinds.values.filter { it.replies.isNotEmpty() }.map { it.name }.toSet() shouldBe named.filterValues { it.isNotEmpty() }.keys
     }
     "a replies that names an unknown kind, or is not a list of kinds, is reported with the kind's name" {
         problemsAfter("rules/message-kinds.yaml", "    replies:\n    - review-bind\n", "    replies:\n    - review-bnd\n") shouldContain

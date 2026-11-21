@@ -11,7 +11,9 @@ specs run in its `test` task, and the hero's (`kp-daemon`'s `kp/daemon/hero/`) i
 to one module.
 
 Exit: 0 red · 1 green · 2 the patch does not apply · 3 the filter runs no spec · 4 the patched copy does not build, or
-its run stops before its specs report. Neither 2, 3 nor 4 says red or green.
+its run stops before its specs report. Neither 2, 3 nor 4 says red or green. Killed — SIGTERM, SIGINT, SIGHUP — it
+stops its Gradle run and removes its copy before it exits, 128 and the signal's number (S3.0 T4); a copy whose run
+was killed outright, its owner gone, the next run removes.
 Usage: python3 build-support/mutant.py [--from DIR] <patch> <spec filter>
 """
 from fnmatch import fnmatchcase
@@ -19,9 +21,11 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import xml.etree.ElementTree as ElementTree
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -86,6 +90,51 @@ def copy_of_the_working_tree(into):
     (into / "build/python").symlink_to(ROOT / "build/python")
 
 
+class Killed(Exception):
+    """The run was told to stop by a signal."""
+
+    def __init__(self, number):
+        super().__init__(f"killed by signal {number}")
+        self.number = number
+
+
+def on_signal(number, _frame):
+    raise Killed(number)
+
+
+def owner_alive(copy):
+    """Whether the run that made [copy] is still running: its `.owner` names its process."""
+    try:
+        os.kill(int((copy / ".owner").read_text().strip()), 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def remove(copy, gradle):
+    """[copy] gone, with nothing left writing into it: its Gradle run stopped first — the run's process group ended: the
+    client, the single-use daemon it forked and that daemon's workers, Kotlin compiled inside it — then the folder
+    removed until it has stayed gone for three seconds."""
+    if gradle is not None and gradle.poll() is None:
+        for sent, wait in ((signal.SIGTERM, 30), (signal.SIGKILL, 10)):
+            try:
+                os.killpg(gradle.pid, sent)
+            except ProcessLookupError:
+                break
+            try:
+                gradle.wait(timeout=wait)
+                break
+            except subprocess.TimeoutExpired:
+                continue
+    gone = 0
+    for _ in range(120):
+        shutil.rmtree(copy, ignore_errors=True)
+        time.sleep(1)
+        gone = gone + 1 if not copy.exists() else 0
+        if gone >= 3:
+            return
+
+
 def reports(copy, tasks):
     """Every spec case the tasks ran, from their JUnit reports: (spec, case, the first line of its failure or None)."""
     cases = []
@@ -95,7 +144,7 @@ def reports(copy, tasks):
             for case in ElementTree.parse(report).getroot().iter("testcase"):
                 if case.find("skipped") is None:
                     broke = case.find("failure") if case.find("failure") is not None else case.find("error")
-                    why = None if broke is None else ((broke.get("message") or broke.text or "").strip().splitlines() or ["(no message)"])[0][:240]
+                    why = None if broke is None else (broke.get("message") or broke.text or "(no message)").strip()
                     cases.append((case.get("classname"), case.get("name"), why))
     return cases
 
@@ -115,8 +164,15 @@ def main(arguments):
         say(f"error: the filter '{wanted}' names no spec of any module — nothing was run (exit {RUNS_NOTHING})")
         return RUNS_NOTHING
     (ROOT / "build/mutant").mkdir(parents=True, exist_ok=True)
+    for stale in (ROOT / "build/mutant").glob("copy-*"):
+        if not owner_alive(stale):
+            shutil.rmtree(stale, ignore_errors=True)
+    for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(number, on_signal)
     copy = Path(tempfile.mkdtemp(prefix="copy-", dir=ROOT / "build/mutant"))
+    gradle = None
     try:
+        (copy / ".owner").write_text(f"{os.getpid()}\n")
         copy_of_the_working_tree(copy)
         # A repository of its own: git applies the patch here, never to the working tree around it.
         subprocess.run(["git", "init", "--quiet"], cwd=copy, check=True)
@@ -126,11 +182,16 @@ def main(arguments):
             return DOES_NOT_APPLY
         subprocess.run(["git", "apply", str(patch)], cwd=copy, check=True)
         (copy / "build/narrowed.gradle").write_text(NARROWED % (", ".join(map(repr, includes("hero", pattern))), ", ".join(map(repr, includes("test", pattern)))))
-        command = ["./gradlew", "--console=plain", "--continue", "--init-script", "build/narrowed.gradle"]
+        # A daemon of its own and Kotlin compiled inside it, not the shared Gradle and compiler daemons: a run killed
+        # takes all of its build with it, and nothing writes into the copy after it is removed (S3.0 T4).
+        command = ["./gradlew", "--console=plain", "--no-daemon", "--continue", "--init-script", "build/narrowed.gradle",
+                   "-Pkotlin.compiler.execution.strategy=in-process"]
         for task in tasks:
             command += [task, "--rerun", "--tests", pattern]
         say(f"mutant: {patch.name} on a copy of the working tree; running {' '.join(tasks)} --tests '{pattern}'")
-        run = subprocess.run(command, cwd=copy, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        gradle = subprocess.Popen(command, cwd=copy, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+        output, _ = gradle.communicate()
+        run = subprocess.CompletedProcess(command, gradle.returncode, output)
         cases = reports(copy, tasks)
         if not cases:
             say(run.stdout[-4000:])
@@ -147,7 +208,7 @@ def main(arguments):
         if failed:
             say("red — the specs that failed:")
             for line in failed:
-                say("  " + line)
+                say("  " + line.replace("\n", "\n      "))
             if others:
                 say("  (and these tasks failed before their specs could run: " + ", ".join(others) + ")")
             return RED
@@ -157,8 +218,15 @@ def main(arguments):
             return DOES_NOT_BUILD
         say(f"green — {len(cases)} spec cases ran and passed")
         return GREEN
+    except Killed as killed:
+        say(f"mutant: {killed}; its run stopped and its copy removed — neither red nor green")
+        return 128 + killed.number
     finally:
-        shutil.rmtree(copy, ignore_errors=True)
+        for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            signal.signal(number, signal.SIG_IGN)
+        remove(copy, gradle)
+        if (ROOT / "build/mutant").is_dir() and not any((ROOT / "build/mutant").iterdir()):
+            (ROOT / "build/mutant").rmdir()
 
 
 if __name__ == "__main__":

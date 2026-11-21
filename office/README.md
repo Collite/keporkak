@@ -162,7 +162,8 @@ the office's checkout once it has merged. The daemon reads the rules of the chec
    tokens, P2's DONE line by its log lines) and exits, 0 when the thread passed. `just run` starts the service again.
 
    What it costs: S2.5's run (2026-11-19) used 388 861 tokens — the coder 232 471 in two turns, the reviewer 156 390
-   in one — and took 28 seconds after the approval; `just handshake` before it, about 158 000.
+   in one — and took 28 seconds after the approval; `just handshake` before it, 140 576 (its evidence). The log and the
+   seats' transcripts of a run on tokens are kept until its phase's retro is triaged: they are what that retro reads.
 
 `kp` without `sudo` reads (`kp inbox`, `kp status`, `kp check`); with `sudo` it answers (`approve`, `decline`,
 `rule`, `reverse`, `queue`, `away`) — and any command run with `sudo` counts as you acting. `kp help` lists them.

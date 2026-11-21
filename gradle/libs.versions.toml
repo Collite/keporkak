@@ -22,6 +22,11 @@ slf4j = "2.0.18"
 # Checked 2026-11-17: the MCP SDK 0.16.0's server and client POMs name Ktor 3.5.2, and Maven Central has ktor-server-cio-jvm and
 # ktor-client-cio-jvm at 3.5.2 (their POMs: ktor 3.5.2, kotlinx-coroutines 1.11.0, slf4j-api 2.0.18). The seat API's HTTP engine (S2.3).
 ktor = "3.5.2"
+# Checked 2026-11-20: Maven Central detekt-test 1.23.8 POM (detekt-api, detekt-test-utils 1.23.8; kotlin-compiler-embeddable 2.0.21,
+# kotlin-stdlib 2.0.21, resolved up to this catalog's Kotlin) and its sources jar. Tests only: the syntax-tree check of S3.0 T3
+# parses the main sources with its parser (~/Dev/_scratch/keporkak/S3.0/probe.md: Konsist 0.18.1 has no expression model;
+# detekt 2.0.0-alpha.6 is an alpha).
+detekt = "1.23.8"
 
 [libraries]
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
@@ -36,6 +41,7 @@ kotest = { module = "io.kotest:kotest-runner-junit5", version.ref = "kotest" }
 kotest-assertions = { module = "io.kotest:kotest-assertions-core", version.ref = "kotest" }
 kaml = { module = "com.charleskorn.kaml:kaml", version.ref = "kaml" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+detekt-test = { module = "io.gitlab.arturbosch.detekt:detekt-test", version.ref = "detekt" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform" }
 
 [plugins]
