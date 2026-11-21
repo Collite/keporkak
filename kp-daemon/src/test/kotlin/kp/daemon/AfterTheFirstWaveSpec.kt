@@ -20,6 +20,7 @@ import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
+import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
 /**
@@ -69,7 +70,7 @@ class AfterTheFirstWaveSpec : FreeSpec({
         )
         project.cutAfter("qa-request")
         val socket = Files.createTempDirectory("kp-").resolve("kp.sock")
-        val daemon = Launched(project.dir, socket)
+        val daemon = Launched(project.dir, socket, project.root)
         daemon.awaitLine("started: office panda")
 
         val inboxes = List(3) { kp(socket, "inbox").text }
@@ -88,9 +89,11 @@ private fun Iterable<String>.unknown(): List<String> = filter { " is unknown —
 private fun String.unknown(): List<String> = lines().unknown()
 
 /**
- * A project of KP's P3 with three stages, a git checkout of its own: S3.0 and S3.1 side by side, S3.8 after both. The stages of [log] are in their
- * state on its log before anything is carried (as a rehearsal seeds a walk's); those of [ticked] are ticked in its
- * overview. S3.8's list has a `rolls:` line unless [rolls] is false.
+ * A project of KP's P3 with three stages, a git checkout of its own: S3.0 and S3.1 side by side, S3.8 after both. The
+ * stages of [log] are in their state on its log before anything is carried (as a rehearsal seeds a walk's); those of
+ * [ticked] are ticked in its overview. S3.8's list has a `rolls:` line unless [rolls] is false. It runs on [root], a copy
+ * of master's rules whose `pool/offices.yaml` names it as the office's project checkout and two main checkouts of its
+ * own, each with one commit — so no fact reads a checkout of the machine the spec runs on.
  */
 private class Project(log: Map<String, String>, ticked: List<String>, rolls: Boolean = true) {
     val dir: Path = repository(Files.createTempDirectory(checkout.resolve("build").createDirectories(), "restart-")).also { dir ->
@@ -101,15 +104,28 @@ private class Project(log: Map<String, String>, ticked: List<String>, rolls: Boo
         git(dir, "commit", "--quiet", "-m", "cut S3.8")
         seed(dir, log)
     }
+    private val mains: Map<String, Path> = listOf("keporkak", "kp-toy").associateWith { name ->
+        repository(dir.resolveSibling("${dir.fileName}-$name")).also { main ->
+            main.resolve("README.md").writeText("$name\n")
+            git(main, "add", "-A")
+            git(main, "commit", "--quiet", "-m", "one")
+        }
+    }
+    val root: Path = TestOffice.copyOfTheRules().also { root ->
+        val offices = root.resolve("pool/offices.yaml")
+        offices.writeText(offices.readText()
+            .replace(Regex("(?m)^    project: \\{checkout: [^,]+,"), "    project: {checkout: \"$dir\",")
+            .replace(Regex("(?m)^    repos: .*$"), "    repos: {" + mains.entries.joinToString(", ") { (name, path) -> "$name: \"$path\"" } + "}"))
+    }
 
     /**
      * Carries each message, from its seat, through an office in this process whose world is the service's on this
-     * project and master's rules; what its journal said.
+     * project and [root]'s rules; what its journal said.
      */
     fun carry(vararg messages: Pair<String, String>): List<String> {
         val journal = CopyOnWriteArrayList<String>()
-        val world = ProjectWorld.of(InForceRules.of(RuleFiles(checkout).read()).first!!, "panda", dir) { journal += it }
-        Office.start("panda", dir, checkout, world, Operations { _, done -> done(OperationResult.Ok()) }, NoSeats, Clock { Instant.parse("2026-11-21T09:00:00Z") })
+        val world = ProjectWorld.of(InForceRules.of(RuleFiles(root).read()).first!!, "panda", dir) { journal += it }
+        Office.start("panda", dir, root, world, Operations { _, done -> done(OperationResult.Ok()) }, NoSeats, Clock { Instant.parse("2026-11-21T09:00:00Z") })
             .also(world::reading)
             .use { office -> messages.forEach { (seat, input) -> office.submit(Sender.Seat(seat), json(input)).answered() } }
         return journal
@@ -138,7 +154,7 @@ private class Restarted(log: Map<String, String>, ticked: List<String>) {
         project.carry("teamlead" to proposal("KP/P3/S3.8"))
         before = project.lines()
         project.cutAfter("assignment-proposal")
-        val daemon = Launched(project.dir, Files.createTempDirectory("kp-").resolve("kp.sock"))
+        val daemon = Launched(project.dir, Files.createTempDirectory("kp-").resolve("kp.sock"), project.root)
         daemon.awaitLine("started: office panda")
         daemon.process.toHandle().destroy()
         daemon.process.waitFor(60, TimeUnit.SECONDS)
