@@ -60,8 +60,28 @@ class Walk(
     /** One order of the events the walk's steps mark as unordered (S3.6 T3): their labels, in order, and the walk played so. */
     class Order(val labels: List<String>, val walk: Walk)
 
-    /** Every order of the events the walk's steps mark as unordered: the walk itself, when it marks none (S3.6 T3). */
-    fun orders(): List<Order> = TODO("S3.6 T3")
+    /**
+     * Every order of the events the walk's steps mark as unordered (`unordered:`, S3.6 T3), as `check-rules.py` plays them:
+     * each step's events in each of their orders — the first as written — and the steps after it in each. In an order's walk
+     * an unordered step is its events, one after another, each labelled by its `id` (else `<the step's id>.<n>`) and marked
+     * with the step's id ([UNORDERED_IN]). A walk that marks none has one order: itself, with no labels.
+     */
+    fun orders(): List<Order> {
+        var orders = listOf(emptyList<String>() to emptyList<Step>())
+        steps.forEachIndexed { at, step ->
+            val events = (step.fields[UNORDERED] as? Datum.Items)?.items
+            orders = if (events == null) orders.map { (labels, played) -> labels to played + step } else {
+                val group = step.id ?: "step-${at + 1}"
+                val labelled = events.mapIndexed { number, event ->
+                    val each = Step((event as Datum.Fields).fields)
+                    val label = each.id ?: "$group.${number + 1}"
+                    label to each.with("id", Datum.Text(label)).with(UNORDERED_IN, Datum.Text(group))
+                }
+                orders.flatMap { (labels, played) -> permutations(labelled.indices.toList()).map { order -> labels + order.map { labelled[it].first } to played + order.map { labelled[it].second } } }
+            }
+        }
+        return orders.map { (labels, played) -> Order(labels, withSteps(played)) }
+    }
 
     /** This walk with its steps replaced by [steps]. */
     fun withSteps(steps: List<Step>): Walk = Walk(name, stage, seats, facts, steps, initial, stages, final, expectedCounts, claudeSeats, fixtures, file)
@@ -87,6 +107,14 @@ class Walk(
 
     companion object {
         const val PLANNED = "planned"
+        /** A step whose events the world does not fix the order of (S3.6 T3). */
+        const val UNORDERED = "unordered"
+        /** On a step of an order's walk: the id of the unordered step it is an event of. */
+        const val UNORDERED_IN = "unordered_in"
+
+        /** Every order of [items], lexicographic by their places — the first as given — as Python's `itertools.permutations`. */
+        fun <T> permutations(items: List<T>): List<List<T>> =
+            if (items.size <= 1) listOf(items) else items.indices.flatMap { at -> permutations(items.take(at) + items.drop(at + 1)).map { listOf(items[at]) + it } }
 
         fun read(path: Path): Walk {
             val walk = (datum(Yaml.default.parseToYamlNode(path.readText())) as Datum.Fields).fields

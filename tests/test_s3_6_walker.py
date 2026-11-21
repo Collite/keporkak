@@ -227,13 +227,15 @@ BEFORE_THE_REPORT = """  - from: retired
 
 
 def copy_of_the_rules(test, edit=None):
-    """The walker and master's rules, robots and pool in a new folder under build/ — with one edit, when named."""
-    copy = pathlib.Path(tempfile.mkdtemp(prefix="s3.6-rules-", dir=ROOT / "build"))
+    """The walker and master's rules, robots and pool in a new folder outside the checkout — git applies a patch there as
+    a plain patch tool, not as the checkout's — with one edit, when named."""
+    copy = pathlib.Path(tempfile.mkdtemp(prefix="kp-s3.6-rules-"))
     test.addCleanup(shutil.rmtree, copy, ignore_errors=True)
-    for folder in ("scripts", "rules", "robots", "pool"):
+    for folder in ("scripts", "rules", "robots", "pool", "agents"):
         shutil.copytree(ROOT / folder, copy / folder)
     if edit == "d85-taken-out":
         subprocess.run(["git", "apply", "-R", str(D85)], cwd=copy, check=True)
+        assert "SEAT-14" in (copy / "rules/stage-lifecycle.yaml").read_text()
     elif edit in EDITS:
         lifecycle = copy / "rules/stage-lifecycle.yaml"
         text = lifecycle.read_text()
@@ -244,8 +246,8 @@ def copy_of_the_rules(test, edit=None):
 
 
 def walk(rules, text):
-    """[text] as a walk file in [rules]: its path."""
-    path = rules / "walk.yaml"
+    """[text] as a walk file of its own in [rules]: its path."""
+    path = pathlib.Path(tempfile.mkstemp(prefix="walk-", suffix=".yaml", dir=rules)[1])
     path.write_text(text)
     return path
 

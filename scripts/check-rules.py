@@ -751,6 +751,10 @@ class Walk:
         self.subject=None
         # Every operation requested, as `<operation> (<kind of the message that asked> <its seat>)`: part of a walk's end (T3).
         self.requested=[]
+        # While an unordered step's events are played (T3): what the robots and the mailroom send is judged as it is sent,
+        # as the daemon judges it, each named `<the step's id>/<kind>` (then `/2`, `/3`); `in_group` says so.
+        self.in_group=False
+        self.group_sent={}
         self.set_stage(self.stage)
     def set_stage(self, stage):
         self.stage=stage
@@ -1006,7 +1010,8 @@ class Walk:
                 finally:self.shared["presence"]=current_presence
                 actual={key:actual[key]+edge[key] for key in ("rules","sends","wakes")}
             self.fired=fired
-            if not actual["rules"] and not fired:raise WalkError("observation has no robot or lifecycle arrow")
+            # An event whose order the world does not fix may find nothing to do: the order before it did it (T3).
+            if not actual["rules"] and not fired and not self.in_group:raise WalkError("observation has no robot or lifecycle arrow")
             self.check_expectation(step,{**actual,"transitions":fired})
             return
         operation=step.get("operation")
@@ -1123,31 +1128,123 @@ class Walk:
             return
         raise WalkError("expected refusal, but the message was delivered")
     def run(self):
+        """Plays the walk; a walk whose steps mark events as unordered, in every order of them (S3.6 T3). Each order ends with
+        its end — every stage's state, every seat's, the counters, the deliveries and refusals by kind, the operations
+        requested and those still waiting — and the walk fails, naming two orders and their ends, unless every order ends
+        alike. `--trace` prints `ORDER` as an order of a step's events begins and `END` with each order's end."""
         if TRACE:print("WALK "+json.dumps(self.definition,sort_keys=True))
-        for self.index,step in enumerate(self.definition["steps"],1):
+        ends=[]
+        self.play(0,[],ends)
+        first=ends[0]
+        other=next((each for each in ends if each[1]!=first[1]),None)
+        if other is not None:
+            fail(f"walk {self.name}: its orders end apart — in the order {self.shown(first[0])} it ends {json.dumps(first[1],sort_keys=True)}; "
+                 f"in the order {self.shown(other[0])} it ends {json.dumps(other[1],sort_keys=True)}")
+            return
+        passed,text=first[2]
+        (ok if passed else fail)(text)
+    def play(self,start,order,ends):
+        """The steps from [start] to the walk's end, in [order]; an unordered step plays each order of its events, and the
+        steps after it in each. Each end reached goes to [ends], with the order and the walk's verdict on it."""
+        steps=self.definition["steps"]
+        for at in range(start,len(steps)):
+            self.index=at+1;step=steps[at]
+            if "unordered" in step:
+                self.unordered(at,step,order,ends)
+                return
             self.fired=[]
             try:
                 self.step(step)
                 self.let_go()
             except WalkError as error:
-                fail(f"walk {self.name} step {self.index}: {error}")
+                ends.append(self.ended(order,f"step {self.index}: {error}"))
                 return
-            if TRACE:print("TRACE "+json.dumps({"step":self.index,"refused":bool(step.get("expect",{}).get("refused")),"fired":self.fired,
-                "stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()},"seats":self.seat_states()},sort_keys=True))
+            self.trace(step)
+        ends.append(self.ended(order,None))
+    def unordered(self,at,step,order,ends):
+        """An unordered step (T3): its events in every order, each order played from the state before the step to the walk's end."""
+        events=step["unordered"]
+        group=step.get("id",f"step-{at+1}")
+        if not isinstance(events,list) or len(events)<2 or any(not isinstance(event,dict) or "unordered" in event or "expect" in event for event in events):
+            ends.append(self.ended(order,f"step {at+1}: an unordered step holds two events or more, none of them unordered itself and none with an expect — what they do is read at the walk's end"))
+            return
+        labels=[str(event.get("id",f"{group}.{number}")) for number,event in enumerate(events,1)]
+        snapshot=copy.deepcopy(self.__dict__)
+        for permutation in itertools.permutations(range(len(events))):
+            self.__dict__.clear();self.__dict__.update(copy.deepcopy(snapshot))
+            names=[labels[number] for number in permutation]
+            if TRACE:print("ORDER "+json.dumps({"step":at+1,"events":names}))
+            self.group_sent={}
+            error=None
+            for number in permutation:
+                self.index=at+1
+                try:
+                    self.happen({**events[number],"id":labels[number]},group)
+                    self.let_go()
+                except WalkError as failure:
+                    error=f"step {at+1} ({labels[number]}): {failure}"
+                    break
+                self.trace(events[number],labels[number])
+            if error is not None:ends.append(self.ended(order+[[at+1,names]],error))
+            else:self.play(at+1,order+[[at+1,names]],ends)
+    def happen(self,event,group):
+        """One unordered event, then what it made the robots and the mailroom send, each judged as it is sent — and what
+        that sends in turn. A message refused here is an outcome of the order, counted at its end, not a failure."""
+        start=len(self.emissions);fired=[]
+        self.in_group=True
+        try:
+            self.fired=[]
+            try:self.execute_step(event)
+            except Refusal:self.history.append({"kind":event.get("kind"),"status":"refused","stage":self.stage,"tick":self.index})
+            fired+=self.fired
+            while len(self.emissions)>start:
+                sent=self.emissions[start]
+                count=self.group_sent[sent["kind"]]=self.group_sent.get(sent["kind"],0)+1
+                message={"id":f"{group}/{sent['kind']}"+(f"/{count}" if count>1 else ""),"who":sent["from"],"kind":sent["kind"],"args":sent["args"],"to":sent["to"]}
+                if str(sent.get("by","")).startswith("robot:"):message["by"]=sent["by"]
+                else:self.emissions.pop(start)
+                self.fired=[]
+                try:self.execute_step(message)
+                except Refusal:self.history.append({"kind":sent["kind"],"status":"refused","stage":self.stage,"tick":self.index})
+                if len(self.emissions)>start and self.emissions[start] is sent:self.emissions.pop(start)
+                fired+=self.fired
+        finally:
+            self.in_group=False
+        self.fired=fired
+    def trace(self,step,event=None):
+        if TRACE:print("TRACE "+json.dumps({"step":self.index,**({"event":event} if event is not None else {}),"refused":bool(step.get("expect",{}).get("refused")),"fired":self.fired,
+            "stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()},"seats":self.seat_states()},sort_keys=True))
+    def ended(self,order,error):
+        """An order's end, printed as `END` with the order, and the walk's verdict on it: (passed, the line to print)."""
+        counters={stage:{name:value for name,value in sorted(context["counters"].items()) if value} for stage,context in self.contexts.items()}
+        counters={stage:values for stage,values in counters.items() if values}
+        if any(self.shared_counters.values()):counters["effort"]={name:value for name,value in sorted(self.shared_counters.items()) if value}
+        def by_kind(status):
+            counted={}
+            for record in self.history:
+                if record.get("status")==status and record.get("kind"):counted[record["kind"]]=counted.get(record["kind"],0)+1
+            return dict(sorted(counted.items()))
+        def asked(request_id,operation):
+            message=self.messages.get(request_id,{});seat=message.get("args",{}).get("seat")
+            return f"{operation} ({message.get('kind')}{' '+seat if isinstance(seat,str) else ''})"
+        end={"stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()},"seats":self.seat_states(),"counters":counters,
+             "delivered":by_kind("delivered"),"refused":by_kind("refused"),"operations":sorted(self.requested),
+             "waiting":sorted(asked(request_id,operation) for request_id,operations in self.pending.items() for operation in operations)}
+        if error is not None:end["error"]=error
+        if TRACE:print("END "+json.dumps({"orders":order,"end":end},sort_keys=True))
+        return order,end,((False,f"walk {self.name} {error}") if error is not None else self.verdict())
+    def verdict(self):
         expected=self.definition["final"]
         actual={stage:context["states"]["stage"] for stage,context in self.contexts.items()} if isinstance(expected,dict) else self.state("stage")
-        if actual!=expected:
-            fail(f"walk {self.name}: expected final {expected!r}, observed {actual!r}")
-            return
-        if any(self.pending.values()):
-            fail(f"walk {self.name}: operation results are missing")
-            return
+        if actual!=expected:return False,f"walk {self.name}: expected final {expected!r}, observed {actual!r}"
+        if any(self.pending.values()):return False,f"walk {self.name}: operation results are missing"
         for kind,expected_count in self.definition.get("expected_counts",{}).items():
             actual_count=sum(record.get("kind")==kind and record.get("status")=="delivered" for record in self.history)
-            if actual_count!=expected_count:
-                fail(f"walk {self.name}: expected {expected_count} {kind} deliveries, observed {actual_count}")
-                return
-        ok(f"walk {self.name} reached {expected}")
+            if actual_count!=expected_count:return False,f"walk {self.name}: expected {expected_count} {kind} deliveries, observed {actual_count}"
+        return True,f"walk {self.name} reached {expected}"
+    @staticmethod
+    def shown(order):
+        return ", ".join(label for _,labels in order for label in labels) or "of its steps"
 
 # The rules data reads clean (issues #5, #6): no counter that nothing reads, no anchor, the comments a round trip loses.
 def counter_reads(value):
