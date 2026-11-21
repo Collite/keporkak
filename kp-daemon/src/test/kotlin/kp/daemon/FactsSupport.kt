@@ -163,7 +163,7 @@ private val LIST = """
 """.trimIndent() + "\n"
 
 /** Moves each stage of [states] from `planned` to its state, in one judgement on [project]'s log, at [SEEDED]. */
-private fun seed(project: Path, states: Map<String, String>) {
+fun seed(project: Path, states: Map<String, String>) {
     if (states.isEmpty()) return
     LogWriter.open(project, OfficeId("panda")).use { log ->
         val judgement = log.judgement()

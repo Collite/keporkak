@@ -21,12 +21,10 @@ import unittest
 import yaml
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from retro_checks_support import copy_of_the_checkout  # noqa: E402
+from retro_checks_support import copy_of_the_checkout, findings, just, plant, working_in  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ALLOW_LIST = "build-support/decides-nothing.yaml"
-FINDING = re.compile(r"^\s*not on the allow-list: (kp-[\w-]+/src/main/kotlin/\S+\.kt):(\d+): (\w+) in (\S+): (.*)$")
-ITS_LINE = re.compile(r"^\s*its line: (.*)$")
 
 # Each of T3's shapes, planted in two of the modules the check covers, each in two forms: the one a regex scan listed,
 # then one it did not — and, for a comparison and a timer, each form review-026 (B2) found the check missed.
@@ -64,44 +62,6 @@ SHAPES = {
         "fun readsToo(tool: String) = Regex(\"Read|Glob\").matches(tool)",
     ]),
 }
-PACKAGES = {"kp-driver": "kp.driver", "kp-daemon": "kp.daemon", "kp-seat-api": "kp.seatapi", "kp-engine": "kp.engine"}
-HEAD = ["package {package}.planted", "", "import java.time.Clock", "import java.time.Duration", "import java.time.Instant", ""]
-
-
-def just(folder, *arguments, environment=None, timeout=1800):
-    """`just` in [folder], its output and errors as one text."""
-    return subprocess.run([shutil.which("just") or "just", "--justfile", str(folder / "justfile"), "--working-directory", str(folder), *arguments],
-                          cwd=folder, env={**os.environ, **(environment or {})}, text=True, stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT, timeout=timeout)
-
-
-def plant(copy, module, name, lines):
-    """A main source of [module] in [copy] holding [lines] after its head; returns its path and each line's number."""
-    path = f"{module}/src/main/kotlin/{PACKAGES[module].replace('.', '/')}/planted/{name}.kt"
-    head = [line.format(package=PACKAGES[module]) for line in HEAD]
-    (copy / path).parent.mkdir(parents=True, exist_ok=True)
-    (copy / path).write_text("\n".join(head + lines) + "\n")
-    return path, [len(head) + i + 1 for i in range(len(lines))]
-
-
-def working_in(folder):
-    """The processes whose working directory is in [folder] — a Gradle client, its daemon, a test worker of its run."""
-    found = []
-    for proc in pathlib.Path("/proc").iterdir():
-        try:
-            if proc.name.isdigit() and os.readlink(proc / "cwd").startswith(str(folder)):
-                found.append(f"{proc.name} {(proc / 'cmdline').read_bytes().replace(bytes(1), b' ')[:120].decode(errors='replace')}")
-        except OSError:
-            continue
-    return found
-
-
-def findings(output):
-    """Each finding the check reports no entry excuses: its path, line number, shape, declaration, code and line."""
-    lines = output.splitlines()
-    return [FINDING.match(line).groups() + (ITS_LINE.match(after).group(1),) for line, after in zip(lines, lines[1:] + [""]) if FINDING.match(line)]
-
-
 def grace_on_an_excused_line(copy, module):
     """review-026 B1: a grace added to the first line of [module] the list excuses for a timer that declares a value by a
     call on a line of its own, as S2.4's was; returns its path, line number, the entry, and the file as it was."""

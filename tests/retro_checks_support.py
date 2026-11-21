@@ -1,9 +1,12 @@
-"""Support for S2.8's specs: a throwaway copy of the checkout, Gradle run in it, the inputs of its test tasks, and a
-throwaway repository for the changelog check. Every folder is made under build/ and removed when the test ends."""
+"""Support for the specs of S2.8, S3.0 and S3.8: a throwaway copy of the checkout, `just` and Gradle run in it, a main
+source planted there and what the check that the daemon decides nothing reports of it, the inputs of its test tasks, the
+processes at work in a folder, and a throwaway repository for the changelog check. Every folder is made under build/ and
+removed when the test ends."""
 import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -95,3 +98,87 @@ class ThrowawayRepository:
 
     def check(self):
         return subprocess.run([sys.executable, str(ROOT / "build-support/check_changelog.py")], cwd=self.path, text=True, capture_output=True)
+
+
+def just(folder, *arguments, environment=None, timeout=1800):
+    """`just` in [folder], its output and errors as one text. [environment] adds to the process's own; a name given None is
+    taken out of it. Past [timeout] seconds the run is ended — its whole process group, `just` and what it started: told
+    to stop, then killed (S3.8 T6) — and `subprocess.TimeoutExpired` is raised with what it printed."""
+    run = start_just(folder, *arguments, environment=environment)
+    try:
+        output, _ = run.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        output = end_group(run)
+        raise subprocess.TimeoutExpired(run.args, timeout, output=output)
+    return subprocess.CompletedProcess(run.args, run.returncode, output)
+
+
+def start_just(folder, *arguments, environment=None):
+    """`just` in [folder] started in a process group of its own, its output and errors piped as one text; [environment] as
+    for [just]."""
+    env = {**os.environ, **{name: value for name, value in (environment or {}).items() if value is not None}}
+    for name, value in (environment or {}).items():
+        if value is None:
+            env.pop(name, None)
+    return subprocess.Popen([shutil.which("just") or "just", "--justfile", str(folder / "justfile"), "--working-directory", str(folder), *arguments],
+                            cwd=folder, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+
+
+def end_group(run, grace=60):
+    """[run]'s process group told to stop (SIGTERM), then killed if it has not ended within [grace] seconds; what it printed."""
+    for sent in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(run.pid, sent)
+        except ProcessLookupError:
+            break
+        try:
+            return run.communicate(timeout=grace)[0]
+        except subprocess.TimeoutExpired:
+            continue
+    return run.communicate()[0]
+
+
+# The packages of the modules the check covers, where a spec plants a main source.
+PACKAGES = {"kp-driver": "kp.driver", "kp-daemon": "kp.daemon", "kp-seat-api": "kp.seatapi", "kp-engine": "kp.engine", "kp-ops": "kp.ops"}
+HEAD = ["package {package}.planted", "", "import java.time.Clock", "import java.time.Duration", "import java.time.Instant", ""]
+FINDING = re.compile(r"^\s*not on the allow-list: (kp-[\w-]+/src/main/kotlin/\S+\.kt):(\d+): (\w+) in (\S+): (.*)$")
+ITS_LINE = re.compile(r"^\s*its line: (.*)$")
+
+
+def plant(copy, module, name, lines):
+    """A main source of [module] in [copy] holding [lines] after its head; returns its path and each line's number."""
+    path = f"{module}/src/main/kotlin/{PACKAGES[module].replace('.', '/')}/planted/{name}.kt"
+    head = [line.format(package=PACKAGES[module]) for line in HEAD]
+    (copy / path).parent.mkdir(parents=True, exist_ok=True)
+    (copy / path).write_text("\n".join(head + lines) + "\n")
+    return path, [len(head) + i + 1 for i in range(len(lines))]
+
+
+def findings(output):
+    """Each finding the check reports no entry excuses: its path, line number, shape, declaration, code and line."""
+    lines = output.splitlines()
+    return [FINDING.match(line).groups() + (ITS_LINE.match(after).group(1),) for line, after in zip(lines, lines[1:] + [""]) if FINDING.match(line)]
+
+
+def working_in(folder):
+    """The processes whose working directory is in [folder] — a Gradle client, its daemon, a test worker of its run."""
+    found = []
+    for proc in Path("/proc").iterdir():
+        try:
+            if proc.name.isdigit() and os.readlink(proc / "cwd").startswith(str(folder)):
+                found.append(f"{proc.name} {(proc / 'cmdline').read_bytes().replace(bytes(1), b' ')[:120].decode(errors='replace')}")
+        except OSError:
+            continue
+    return found
+
+
+def run_of(folder):
+    """The processes of a run in [folder]: those at work there but a Gradle daemon that is idle — a daemon is shared
+    between builds and outlives each, but one still busy with the run's build is of it."""
+    idle = set()
+    status = subprocess.run(["./gradlew", "--status", "--console=plain"], cwd=folder, text=True, capture_output=True)
+    for line in status.stdout.splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[0].isdigit() and fields[1] == "IDLE":
+            idle.add(fields[0])
+    return [process for process in working_in(folder) if not ("GradleDaemon" in process and process.split()[0] in idle)]

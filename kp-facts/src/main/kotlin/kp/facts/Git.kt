@@ -3,15 +3,17 @@ package kp.facts
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
  * The office's `git`, its command line, looked up on [path] — a `PATH`; null or empty: there is none. It reads and never
  * writes: no optional lock is taken, so a status does not refresh the index; no fsmonitor is started; nothing is fetched.
- * A command that cannot run or fails is what was missing for the fact that asked it ([Missing]).
+ * A command that cannot run or fails is what was missing for the fact that asked it ([Missing]); one that has not ended
+ * within [limit] is too.
  */
-class Git(val path: String?) {
+class Git(val path: String?, private val limit: Duration = LIMIT) {
     private val executable: Path? = path.orEmpty().split(File.pathSeparator).filter { it.isNotEmpty() }
         .map { Path.of(it, "git") }.firstOrNull { Files.isRegularFile(it) && Files.isExecutable(it) }
 
@@ -29,9 +31,9 @@ class Git(val path: String?) {
         var errors = ""
         val reader = thread(isDaemon = true, name = "kp-facts-git") { errors = process.errorStream.bufferedReader().readText() }
         val output = process.inputStream.bufferedReader().readText()
-        if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        if (!process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
             process.destroyForcibly()
-            throw Missing("git ${args.first()} in $dir did not end within $TIMEOUT_SECONDS s")
+            throw Missing("git ${args.first()} in $dir did not end within ${limit.toSeconds()} s")
         }
         reader.join()
         val code = process.exitValue()
@@ -46,8 +48,9 @@ class Git(val path: String?) {
         return dir
     }
 
-    private companion object {
-        const val TIMEOUT_SECONDS = 30L
+    companion object {
+        /** How long a `git` command may take: 30 s. */
+        val LIMIT: Duration = Duration.ofSeconds(30)
     }
 }
 

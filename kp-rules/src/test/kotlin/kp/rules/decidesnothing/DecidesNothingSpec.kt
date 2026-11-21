@@ -64,6 +64,32 @@ class DecidesNothingSpec : StringSpec({
         missed shouldBe emptyList()
     }
 
+    "the check lists each timed wait of issue #53 — a condition's two, a selector's, a socket's — and an observation equal to a value of the rules' caps or engagement, written as `==`, as `!=` and as a `when` over a difference; each planted in two modules it covers, kp-ops among them" {
+        // S3.8 T1 (review-026's follow-ups, Collite/keporkak#53; D-98): the forms tests/test_s3_8_after_the_first_wave.py
+        // plants in a copy of the checkout, each as a main source of its module.
+        val planted = mapOf(
+            Shape.TIMER to listOf(
+                "fun graceNanos(lock: java.util.concurrent.locks.Lock) = lock.newCondition().awaitNanos(2_000_000_000)",
+                "fun graceUntil(condition: java.util.concurrent.locks.Condition, until: java.util.Date) = condition.awaitUntil(until)",
+                "fun graceSelect(selector: java.nio.channels.Selector, millis: Long) = selector.select(millis)",
+                "fun graceSocket(socket: java.net.Socket, millis: Int) { socket.soTimeout = millis }",
+            ),
+            Shape.COMPARISON to listOf(
+                "fun atTheCap(blocks: Long, cap: Long) = blocks == cap",
+                "fun belowTheGate(blocks: Long, rules: RuleSet) = blocks != rules.engagement.caps[\"stop_gate_blocks\"]",
+                "fun atTheGate(used: Long, stopGateBlocks: Long) = when (used.minus(stopGateBlocks)) { 0L -> true; else -> false }",
+            ),
+        )
+        val missed = listOf("kp-daemon", "kp-ops").flatMap { module ->
+            planted.flatMap { (shape, forms) ->
+                forms.filter { form -> scanText("$module/src/main/kotlin/Planted.kt", "package planted\n\n$form\n", names).none { it.shape == shape && it.line == 3 } }
+                    .map { "$shape in $module: $it" }
+            }
+        }
+
+        missed shouldBe emptyList()
+    }
+
     "the list's own faults fail the check: a finding no entry excuses, an entry with no reason, one for the stop gate's cap, one the sources no longer need" {
         val listed = names.exceptions
         val one = listed.first { it.shape == Shape.TIMER.id }

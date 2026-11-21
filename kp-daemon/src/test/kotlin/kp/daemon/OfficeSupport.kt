@@ -104,7 +104,8 @@ fun copyWithout(project: Path, seqs: Set<Long>): Path = Files.createTempDirector
     keepLines(copy) { it !in seqs }
 }
 
-private fun keepLines(project: Path, keep: (Long) -> Boolean) = project.resolve("mail").toFile().walk().filter { it.isFile && it.name.endsWith(".jsonl") }.forEach { file ->
+/** Keeps, in [project]'s log files, only the lines whose `seq` [keep] holds: what a kill leaves when it keeps those before a cut. */
+fun keepLines(project: Path, keep: (Long) -> Boolean) = project.resolve("mail").toFile().walk().filter { it.isFile && it.name.endsWith(".jsonl") }.forEach { file ->
     file.writeText(file.readLines().filter { keep(Json.parseToJsonElement(it).jsonObject.getValue("seq").toString().toLong()) }.joinToString("") { "$it\n" })
 }
 
