@@ -52,7 +52,10 @@ interface OwnSteps {
 /**
  * [OwnSteps] of the seats the daemon drives ([Seats]): it hears each turn's end ([Seats.Turns]) and counts what it used
  * — the turn's `seat.usage`, as the driver observes it when the turn ends: a turn that never ended reported none. The
- * evidence goes to [folder] ([Evidence]); [tokenFile] is the seats' Claude token, read only to keep it out of it.
+ * evidence goes to [folder] ([Evidence]) as `<walk>-<time>.md`, and the play's record beside it, in `<walk>-<time>/`: the
+ * log (`mail/`) and each Claude seat's transcript (`transcripts/<seat>.log`), copied when the play ends, however it ends
+ * (S3.6 T5). The evidence points there, not into the throwaway project. [tokenFile] is the seats' Claude token, read only
+ * to keep it out of the evidence.
  */
 class SeatsAtPlay(
     private val claude: Walk.ClaudeSeats,
@@ -110,10 +113,27 @@ class SeatsAtPlay(
 
     override fun ended(player: Player, failure: String?): Path {
         seats.forEach(::sessionOf)
+        val name = "${player.walkName}-${STAMP.format(clock.now())}"
+        val record = folder.createDirectories().resolve(name)
+        // The play's record (S3.6 T5): the log and the transcripts, copied beside the evidence, which names the copies.
+        val log = player.office.project.resolve(MAIL)
+        val kept = listOf(log to record.resolve(MAIL)) + seats.sorted().map { seat -> transcript(seat) to record.resolve(TRANSCRIPTS).resolve("$seat.log") }
+        kept.forEach { (from, to) -> copied(from, to) }
         val written = Evidence(player, this, failure).text()
-        val file = folder.createDirectories().resolve("${player.walkName}-${STAMP.format(clock.now())}.md")
-        file.writeText(hidden(written))
+        val file = folder.resolve("$name.md")
+        file.writeText(hidden(kept.fold(written) { text, (from, to) -> text.replace(from.toString(), to.toString()) }))
         return file
+    }
+
+    /** [from] — a file, or a folder and all it holds — as it is now, at [to]; nothing when it does not exist. */
+    private fun copied(from: Path, to: Path) {
+        if (!from.exists()) return
+        Files.walk(from).use { paths ->
+            paths.forEach { path ->
+                val target = to.resolve(from.relativize(path).toString())
+                if (Files.isDirectory(path)) target.createDirectories() else Files.copy(path, target.also { it.parent.createDirectories() }, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+        }
     }
 
     /** [text] with the seats' Claude token and every session token minted for them replaced: neither is ever written. */
@@ -242,6 +262,8 @@ class SeatsAtPlay(
         const val REQUESTED = "requested"
         const val RESEAT = "seat.reseat"
         const val SEAT_KEY = "seat"
+        const val MAIL = "mail"
+        const val TRANSCRIPTS = "transcripts"
         /** A word that may be a session token (base64url, as the driver mints one): what is hashed and compared. */
         val WORD = Regex("[A-Za-z0-9_-]{20,}")
         val STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)

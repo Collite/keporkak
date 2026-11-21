@@ -129,8 +129,13 @@ private class Rehearsed(coder: String? = null, reviewer: String? = null, claude:
     /** The folder beside the evidence, named as it is. */
     fun folder(): Path = evidence().resolveSibling(evidence().name.removeSuffix(".md"))
 
-    /** Every absolute path the evidence names: a `/` that no name, dot or tilde comes before. */
-    fun pointers(): List<Path> = Regex("""(?<![\w.~-])(/[^\s|`)]+)""").findAll(evidence().readText()).map { Path.of(it.value.trimEnd('.', ',', ';', ':')) }.toList()
+    /**
+     * Every absolute path the evidence's prose names — a `/` that no name, dot or tilde comes before. The log lines and
+     * transcript lines it quotes, in fences, are quotes: they keep the paths the run wrote.
+     */
+    fun pointers(): List<Path> = evidence().readText().split("```").filterIndexed { at, _ -> at % 2 == 0 }.joinToString("\n").let { prose ->
+        Regex("""(?<![\w.~-])(/[^\s|`)]+)""").findAll(prose).map { Path.of(it.value.trimEnd('.', ',', ';', ':')) }.toList()
+    }
 
     /** The rows of the evidence's usage table for [seat]: each turn, and the seat's sums. */
     fun usage(seat: String): List<String> = evidence().readLines().filter { it.startsWith("| $seat | ") && it.split(" | ").size == 8 }

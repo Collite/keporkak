@@ -159,7 +159,9 @@ the office's checkout once it has merged. The daemon reads the rules of the chec
    tokens together. It ends when the turns the last message woke have ended — or at the first step that does not
    come as the walk says, and names it — stops the seats, prints where its evidence is
    (`~/Dev/_scratch/rehearsals/thin-thread-<time>.md`: the log, each seat's sessions, transcript, model, effort and
-   tokens, P2's DONE line by its log lines) and exits, 0 when the thread passed. `just run` starts the service again.
+   tokens, P2's DONE line by its log lines) and exits, 0 when the thread passed. Beside the evidence, in
+   `thin-thread-<time>/`, are the log (`mail/`) and the seats' transcripts (`transcripts/`), copied however the run ended;
+   the evidence points there, not into the checkout's `build/` (S3.6). `just run` starts the service again.
 
    What it costs: S2.5's run (2026-11-19) used 388 861 tokens — the coder 232 471 in two turns, the reviewer 156 390
    in one — and took 28 seconds after the approval; `just handshake` before it, 140 576 (its evidence). The log and the

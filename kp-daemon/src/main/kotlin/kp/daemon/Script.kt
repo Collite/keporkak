@@ -318,8 +318,10 @@ class Player internal constructor(private val script: Script, val office: Office
             finish()
             evidence = own.ended(this, null)
             return played
-        } catch (failure: WalkFailure) {
-            evidence = own.ended(this, failure.message)
+        } catch (failure: Throwable) {
+            // However the play ends, its evidence and its record are written (S3.6 T5): a failed step, the time or the tokens
+            // run out, the rehearsal closed under it.
+            evidence = own.ended(this, failure.message ?: failure.toString())
             throw failure
         }
     }
