@@ -118,7 +118,7 @@ class SeatsAtPlay(
         val record = folder.createDirectories().resolve(name)
         // The play's record (S3.6 T5): the log and the transcripts, copied beside the evidence, which names the copies.
         val log = player.office.project.resolve(MAIL)
-        val kept = listOf(log to record.resolve(MAIL)) + seats.sorted().map { seat -> transcript(seat) to record.resolve(TRANSCRIPTS).resolve("$seat.log") }
+        val kept = listOf(log to record.resolve(MAIL)) + seats.map { seat -> transcript(seat) to record.resolve(TRANSCRIPTS).resolve("$seat.log") }
         kept.forEach { (from, to) -> copied(from, to) }
         val written = Evidence(player, this, failure).text()
         val file = folder.resolve("$name.md")
