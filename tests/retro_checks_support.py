@@ -89,10 +89,16 @@ def new_copy(prefix="s2.8-copy-"):
     return copy
 
 
-def gradle(folder, *arguments, environment=None):
-    """`./gradlew` in [folder], its output and errors as one text."""
-    return subprocess.run(["./gradlew", "--console=plain", *arguments], cwd=folder, env={**os.environ, **(environment or {})},
-                          text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+def gradle(folder, *arguments, environment=None, timeout=1800):
+    """`./gradlew` in [folder], its output and errors as one text. Past [timeout] seconds its process group is ended, as
+    [just] ends one, and `subprocess.TimeoutExpired` is raised with what it printed."""
+    run = subprocess.Popen(["./gradlew", "--console=plain", *arguments], cwd=folder, env={**os.environ, **(environment or {})},
+                           text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+    try:
+        output, _ = run.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise subprocess.TimeoutExpired(run.args, timeout, output=end_group(run))
+    return subprocess.CompletedProcess(run.args, run.returncode, output)
 
 
 def test_task_inputs(copy):

@@ -197,9 +197,9 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
         for module in modules:
             shutil.rmtree(copy / module / "build/test-results/test", ignore_errors=True)
 
-        # Four test tasks at a time, not the build's two: each waits out its two timeouts and holds little (S3.8 T6).
-        run = gradle(copy, "--continue", "--max-workers=4", "--init-script", "build/every-module.gradle", *[word for module in modules for word in (f":{module}:test", "--rerun")],
-                     environment={"KP_SPEC_TIMEOUT": "10s"})
+        # A spec its timeout does not end holds the run: past 15 minutes it is ended, and this spec fails.
+        run = gradle(copy, "--continue", "--init-script", "build/every-module.gradle", *[word for module in modules for word in (f":{module}:test", "--rerun")],
+                     environment={"KP_SPEC_TIMEOUT": "10s"}, timeout=900)
         ran = reported(copy, modules)
 
         self.assertGreaterEqual(len(modules), 8)
