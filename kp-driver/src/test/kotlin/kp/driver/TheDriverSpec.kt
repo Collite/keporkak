@@ -69,10 +69,10 @@ class TheDriverSpec : StringSpec({
                 "2026-11-15T10:00:00Z coder-1 tool t1 pending: Read STAGE.md",
                 "2026-11-15T10:00:00Z coder-1 tool t1 completed",
                 "2026-11-15T10:00:00Z coder-1 context: 1200 of 200000",
-                "2026-11-15T10:00:00Z coder-1 turn ended: end_turn; tokens input 100, output 20, total 120",
+                "2026-11-15T10:00:00Z coder-1 turn ended: end_turn; tokens input 100, output 20, cache read not reported, cache write not reported, thought not reported, total 120; model calls not reported",
                 "2026-11-15T10:00:00Z coder-1 prompt: how many tasks?",
                 "2026-11-15T10:00:00Z coder-1 agent: three tasks",
-                "2026-11-15T10:00:00Z coder-1 turn ended: end_turn; tokens input 50, output 5, total 55",
+                "2026-11-15T10:00:00Z coder-1 turn ended: end_turn; tokens input 50, output 5, cache read not reported, cache write not reported, thought not reported, total 55; model calls not reported",
             )
         }
     }

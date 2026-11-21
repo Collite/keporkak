@@ -69,7 +69,8 @@ class SeatsAtPlay(
     @Volatile lateinit var driven: Seats
     @Volatile private var office: Office? = null
     private val began: Instant = clock.now()
-    private val turns = ConcurrentHashMap<String, MutableList<Long?>>()
+    /** Each seat's turns, in the order they ended: the turn's `seat.usage`, and its usage by its parts (S3.6 T6). */
+    private val turns = ConcurrentHashMap<String, MutableList<Pair<Long?, kp.driver.Usage?>>>()
     private val woken: MutableSet<Pair<String, String>> = ConcurrentHashMap.newKeySet()
     private val sessions = ConcurrentHashMap<String, MutableSet<String>>()
     @Volatile private var over: String? = null
@@ -91,9 +92,9 @@ class SeatsAtPlay(
 
     override fun failure(): String? = over
 
-    override fun ended(seat: String, cause: String?, usage: Long?) {
+    override fun ended(seat: String, cause: String?, usage: Long?, parts: kp.driver.Usage?) {
         sessionOf(seat)
-        synchronized(turns) { turns.getOrPut(seat) { ArrayList() } += usage }
+        synchronized(turns) { turns.getOrPut(seat) { ArrayList() } += usage to parts }
         val total = used().values.sum()
         if (total > claude.tokens && over == null) {
             over = "the seats have used $total tokens, more than the walk's ${claude.tokens} (" +
@@ -105,7 +106,7 @@ class SeatsAtPlay(
     }
 
     /** What each seat has used, by its turns' `seat.usage`. */
-    fun used(): Map<String, Long> = synchronized(turns) { turns.toSortedMap().mapValues { (_, each) -> each.sumOf { it ?: 0L } } }
+    fun used(): Map<String, Long> = synchronized(turns) { turns.toSortedMap().mapValues { (_, each) -> each.sumOf { it.first ?: 0L } } }
 
     private fun sessionOf(seat: String) {
         driven.session(seat)?.let { session -> sessions.getOrPut(seat) { java.util.Collections.synchronizedSet(LinkedHashSet()) } += session }
@@ -167,9 +168,25 @@ class SeatsAtPlay(
             at.seats.sorted().forEach { seat ->
                 val bound = at.driven.binding(seat)
                 val turns = synchronized(at.turns) { at.turns[seat].orEmpty().toList() }
-                val silent = turns.count { it == null }
+                val silent = turns.count { it.first == null }
                 appendLine("| $seat | ${bound?.role ?: "-"} | ${bound?.model ?: "-"} | ${bound?.effort ?: "-"} | ${at.sessions[seat].orEmpty().joinToString(" · ").ifEmpty { "-" }} | " +
                     "${at.transcript(seat)} | ${used[seat] ?: 0} in ${turns.size} turn${if (turns.size == 1) "" else "s"}${if (silent > 0) ", $silent with no usage reported" else ""} |")
+            }
+            appendLine()
+            appendLine("## What each turn used, by its parts")
+            appendLine()
+            appendLine("Each turn as its end in the seat's transcript shows it, and each seat's sums; `seat.usage` counts a turn's total. " +
+                "\"not reported\": the agent left that part out. The pinned adapter reports no count of a turn's model calls.")
+            appendLine()
+            appendLine("| seat | turn | input | output | cache read | cache write | thought | total |")
+            appendLine("|---|---|---|---|---|---|---|---|")
+            at.seats.sorted().forEach { seat ->
+                val turns = synchronized(at.turns) { at.turns[seat].orEmpty().map { it.second } }
+                turns.forEachIndexed { at, usage -> appendLine("| $seat | ${at + 1} | ${PARTS.joinToString(" | ") { part -> usage?.let(part)?.toString() ?: NOT_REPORTED }} |") }
+                if (turns.isNotEmpty()) appendLine("| $seat | ${turns.size} turn${if (turns.size == 1) "" else "s"} | " + PARTS.joinToString(" | ") { part ->
+                    val reported = turns.mapNotNull { usage -> usage?.let(part) }
+                    "${reported.sum()}" + if (reported.size < turns.size) " ($NOT_REPORTED in ${turns.size - reported.size})" else ""
+                } + " |")
             }
             appendLine()
             appendLine("## The steps")
@@ -263,6 +280,9 @@ class SeatsAtPlay(
         const val RESEAT = "seat.reseat"
         const val SEAT_KEY = "seat"
         const val MAIL = "mail"
+        const val NOT_REPORTED = "not reported"
+        /** A turn's usage by its parts, in the order its end shows them (S3.6 T6). */
+        val PARTS: List<(kp.driver.Usage) -> Long?> = listOf({ it.input }, { it.output }, { it.cachedRead }, { it.cachedWrite }, { it.thought }, { it.total })
         const val TRANSCRIPTS = "transcripts"
         /** A word that may be a session token (base64url, as the driver mints one): what is hashed and compared. */
         val WORD = Regex("[A-Za-z0-9_-]{20,}")

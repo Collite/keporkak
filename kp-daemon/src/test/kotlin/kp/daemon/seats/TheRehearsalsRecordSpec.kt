@@ -94,7 +94,7 @@ class TheRehearsalsRecordSpec : StringSpec({
             "| coder-1 | 2 | 4 | 100 | 69000 | 300 | not reported | 69404 |",
             "| coder-1 | 3 | 1 | 1 | not reported | not reported | not reported | 2 |",
             "| coder-1 | 4 | 1 | 1 | not reported | not reported | not reported | 2 |",
-            "| coder-1 | 4 turns | 12 | 307 | 129000 | 9300 | 40 (not reported in 3) | 138619 |",
+            "| coder-1 | 4 turns | 12 | 307 | 129000 (not reported in 2) | 9300 (not reported in 2) | 40 (not reported in 3) | 138619 |",
         )
         parts.usage("reviewer-1") shouldBe listOf(
             "| reviewer-1 | 1 | 3 | 30 | 50000 | 7000 | 10 | 57033 |",
