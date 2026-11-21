@@ -82,21 +82,23 @@ class AfterTheFirstWaveSpec : FreeSpec({
     }
 })
 
-/** The lines of a journal that say a fact is unknown. */
-private fun Iterable<String>.unknown(): List<String> = filter { " is unknown — " in it }
+/** The lines of a journal that say a fact is unknown — as the daemon wrote them, after its time and its name. */
+private fun Iterable<String>.unknown(): List<String> = filter { " is unknown — " in it }.map { it.substringAfter(" kp-daemon: ") }
 
 private fun String.unknown(): List<String> = lines().unknown()
 
 /**
- * A project of KP's P3 with three stages: S3.0 and S3.1 side by side, S3.8 after both. The stages of [log] are in their
+ * A project of KP's P3 with three stages, a git checkout of its own: S3.0 and S3.1 side by side, S3.8 after both. The stages of [log] are in their
  * state on its log before anything is carried (as a rehearsal seeds a walk's); those of [ticked] are ticked in its
  * overview. S3.8's list has a `rolls:` line unless [rolls] is false.
  */
 private class Project(log: Map<String, String>, ticked: List<String>, rolls: Boolean = true) {
-    val dir: Path = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "restart-").also { dir ->
+    val dir: Path = repository(Files.createTempDirectory(checkout.resolve("build").createDirectories(), "restart-")).also { dir ->
         dir.resolve("plan.md").writeText(PLAN)
         dir.resolve("tasks-overview.md").writeText("- [ ] **P3 · Eyes and hands**\n" + ticked.joinToString("") { "  - [x] $it\n" })
         dir.resolve("tasks-p3-s3.8-after-the-first-wave.md").writeText(if (rolls) LIST else LIST.lines().filterNot { it.startsWith("rolls:") }.joinToString("\n"))
+        git(dir, "add", "-A")
+        git(dir, "commit", "--quiet", "-m", "cut S3.8")
         seed(dir, log)
     }
 

@@ -142,16 +142,27 @@ class Office private constructor(
          * §4): it folds every file, puts the rules in force and records them, and hosts the robots (contracts.md §8).
          * [world] is every fact the daemon does not observe itself. Throws [MailroomRefusal] when the log or the rules are
          * not fit to work from.
+         *
+         * The office is made once the log is folded and the rules are in force, before the start carries any judgement
+         * again (contracts.md §4.4, Amendment 34): Bora's presence is read from the fold then, and [folded] is told the
+         * office — the world reads the fold from there — so a fact that reads the log is never unknown only because the
+         * daemon has just started.
          */
-        fun start(name: String, project: Path, root: Path, world: FactSource, operations: Operations, deliveries: Deliveries, clock: Clock): Office {
+        fun start(
+            name: String, project: Path, root: Path, world: FactSource, operations: Operations, deliveries: Deliveries, clock: Clock,
+            folded: (Office) -> Unit = {},
+        ): Office {
             val files = RuleFiles(root)
             val presence = Presence(clock)
             val facts = FactSource { fact, stage -> presence.observe(fact) ?: world.observe(fact, stage) }
-            val mailroom = Mailroom.start(project, OfficeId(name), files, facts, operations, deliveries, clock, robots = true, journal = Journal::say)
-            val rules = InForceRules.of(files.lastRead).first ?: error("the mailroom started on rules kp-rules refuses")
-            presence.seed(mailroom.state)
-            presence.state = { mailroom.state }
-            return Office(name, project, mailroom, files, rules, presence, clock)
+            var office: Office? = null
+            Mailroom.start(project, OfficeId(name), files, facts, operations, deliveries, clock, robots = true, journal = Journal::say) { mailroom ->
+                val rules = InForceRules.of(files.lastRead).first ?: error("the mailroom started on rules kp-rules refuses")
+                presence.seed(mailroom.state)
+                presence.state = { mailroom.state }
+                office = Office(name, project, mailroom, files, rules, presence, clock).also(folded)
+            }
+            return checkNotNull(office) { "the mailroom started without folding its log" }
         }
     }
 }

@@ -2,6 +2,7 @@ package kp.daemon
 
 import kp.engine.Datum
 import kp.engine.FactRef
+import kp.engine.State
 import kp.facts.Checkouts
 import kp.facts.Git
 import kp.facts.Observation
@@ -9,14 +10,16 @@ import kp.facts.ProjectFacts
 import kp.facts.StageState
 import kp.facts.WhatTheLogKnows
 import kp.mailroom.FactSource
+import kp.rules.RuleSet
 import java.nio.file.Path
 
 /**
  * The service's world (contracts.md §4.4, Amendment 32; S3.1 T7): `kp-facts` over the office's project checkout and its
  * main checkouts (§9: `project`, `repos`), and what the log knows, from the office's fold. A parameter the rules leave
  * out is taken from the message's stage — the stage, its phase, its effort — and `office` is the daemon's own. A fact
- * that is unknown is answered null, and what was missing goes to the journal. It hands values over and compares none;
- * a fact `kp-facts` does not hold is not its to answer.
+ * that is unknown is answered null. What was missing goes to the journal when a judgement asked; a view — `kp inbox` —
+ * asks through [view] and writes none (Amendment 34). It hands values over and compares none; a fact `kp-facts` does
+ * not hold is not its to answer.
  */
 class ProjectWorld private constructor(
     private val office: String,
@@ -25,41 +28,58 @@ class ProjectWorld private constructor(
     /** What it reads, as the daemon says at start: the project checkout, its efforts' folders, the main checkouts. */
     val reads: String,
 ) : FactSource {
-    @Volatile private var fold: Office? = null
+    /** The fold it reads what the log knows from — the state and the rules in force — once it has one. */
+    @Volatile private var fold: Pair<() -> State, () -> RuleSet>? = null
     private val log = object : WhatTheLogKnows {
-        private fun folded(): Office = fold ?: error("the fold is not read yet")
-        override fun state(stage: String): StageState? = folded().state.machine(STAGE, stage)?.let { StageState(it.state, it.since) }
-        override fun stages(): Map<String, StageState> = folded().state.machines[STAGE].orEmpty().mapValues { (_, machine) -> StageState(machine.state, machine.since) }
-        override fun activeStates(): Set<String> = folded().rules.ruleSet.lifecycle.activeStates.toSet()
+        private fun folded() = fold ?: error("the fold is not read yet")
+        private fun state(): State = folded().first()
+        override fun state(stage: String): StageState? = state().machine(STAGE, stage)?.let { StageState(it.state, it.since) }
+        override fun stages(): Map<String, StageState> = state().machines[STAGE].orEmpty().mapValues { (_, machine) -> StageState(machine.state, machine.since) }
+        override fun activeStates(): Set<String> = folded().second().lifecycle.activeStates.toSet()
     }
     private val project = facts(log)
 
-    /** Reads [office]'s fold from now on: until then, a fact that reads the log is unknown. */
-    fun reading(office: Office) {
-        fold = office
+    /**
+     * Reads [office]'s fold from now on: until then, a fact that reads the log is unknown. The daemon hands it over as
+     * the office is made, before its start carries any judgement again ([Office.start], Amendment 34).
+     */
+    fun reading(office: Office) = reading({ office.state }, { office.rules.ruleSet })
+
+    /** Reads what the log knows from [state], under the rules [rules] — each read anew at every ask. */
+    fun reading(state: () -> State, rules: () -> RuleSet) {
+        fold = state to rules
     }
 
-    override fun observe(fact: FactRef, stage: String?): Datum? {
+    /** A judgement's ask: what is unknown goes to the journal, each time. */
+    override fun observe(fact: FactRef, stage: String?): Datum? = answer(fact, stage, journal = true)
+
+    /** A view's ask — `kp inbox`'s three lines of a stage list: the same answer, and no journal line (Amendment 34). */
+    val view: FactSource = FactSource { fact, stage -> answer(fact, stage, journal = false) }
+
+    /**
+     * [fact] for [stage] as `kp-facts` answers it, with its evidence, and the fact with the parameters it was asked with —
+     * what `just facts` prints; null when `kp-facts` does not hold it. It writes no journal line.
+     */
+    fun observation(fact: FactRef, stage: String?): Pair<FactRef, Observation>? {
         val known = ProjectFacts.ANSWERED[fact.name]
         if (known == null && fact.name !in ProjectFacts.NOT_READ_YET) return null
-        val about = "$fact for ${stage ?: "no stage"}"
-        if (known?.readsTheLog == true && fold == null) return unknown(about, "the daemon has not folded its log yet")
-        val params = fact.params.mapValues { (_, value) -> plain(value) }.toMutableMap()
-        known?.params?.filterNot { it in params }?.forEach { name -> left(name, stage)?.let { params[name] = it } }
+        val asked = FactRef(fact.name, fact.params + known?.params.orEmpty().filterNot { it in fact.params }.mapNotNull { name -> left(name, stage)?.let { name to Datum.Text(it) } })
+        if (known?.readsTheLog == true && fold == null) return asked to Observation.Unknown("the daemon has not folded its log yet")
         val answer = try {
-            project.observe(fact.name, params)
+            project.observe(fact.name, asked.params.mapValues { (_, value) -> plain(value) })
         } catch (error: Exception) {
-            return unknown(about, error.toString())
+            Observation.Unknown(error.toString())
         }
-        return when (answer) {
-            is Observation.Value -> Datum.of(answer.value)
-            is Observation.Unknown -> unknown(about, answer.missing)
-        }
+        return asked to answer
     }
 
-    private fun unknown(about: String, missing: String): Datum? {
-        say("facts: $about is unknown — $missing")
-        return null
+    private fun answer(fact: FactRef, stage: String?, journal: Boolean): Datum? = when (val answer = observation(fact, stage)?.second) {
+        null -> null
+        is Observation.Value -> Datum.of(answer.value)
+        is Observation.Unknown -> {
+            if (journal) say("facts: $fact for ${stage ?: "no stage"} is unknown — ${answer.missing}")
+            null
+        }
     }
 
     /** A parameter the rules left out, from the message's [stage] (Amendment 32); null when there is none to take it from. */

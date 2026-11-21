@@ -113,7 +113,8 @@ internal fun projectOf(root: Path, office: String): Path {
  * The office's daemon (S2.4 T8): the mailroom on the project's log, the seats in front of the driver — the Claude
  * adapter `just adapter` installed under the checkout's `office/adapter` — the seat API on `listen.mcp`, the watch every
  * `watch.every`, and the panes. Its world is `kp-facts` over the project checkout it runs on and the office's main
- * checkouts, with the fold (S3.1, [ProjectWorld]); beside it, Bora's presence. Until the performers exist (P3), it ends
+ * checkouts, with the fold (S3.1, [ProjectWorld]) — handed over before the start carries any judgement again, and a
+ * view's ask writing no journal line (S3.8, Amendment 34); beside it, Bora's presence. Until the performers exist (P3), it ends
  * `notify.bora` at once — the inbox is the notification, and `kp inbox --follow` raises it — and ends every other
  * operation that is not a seat's `failed`, saying no performer exists yet.
  */
@@ -128,12 +129,11 @@ private fun service(root: Path, office: String, project: Path, socket: Path, lis
     val listen = listening ?: entry.listen["mcp"] ?: fail("pool/offices.yaml gives office '$office' no listen.mcp")
     val clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }
     val world = ProjectWorld.of(checkNotNull(rules), office, project)
-    val seated = Seated.start(office, project, root, world, operations, clock, listen) { starting ->
+    val seated = Seated.start(office, project, root, world, operations, clock, listen, folded = world::reading) { starting ->
         Seats(root, office, project, roots, ClaudeAgent(root.resolve("office/adapter")), clock, Panes(say = Journal::say), Journal::say, starting) { listener, time ->
             ClaudeAdapter.driver(roots.secrets.resolve("claude-token"), roots.seats, time, CompiledAnswerer(roots.seats), listener)
         }
     }
-    world.reading(seated.office)
     Journal.say(world.reads)
     try {
         seated.start()
@@ -143,5 +143,5 @@ private fun service(root: Path, office: String, project: Path, socket: Path, lis
         throw error
     }
     Journal.say("seats: the seat API listens on ${seated.listen}; seats' homes under ${roots.seats}")
-    return Daemon.start(seated.office, world, socket, SoPeerCred, beside = listOf(seated))
+    return Daemon.start(seated.office, world.view, socket, SoPeerCred, beside = listOf(seated))
 }

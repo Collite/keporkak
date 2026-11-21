@@ -954,11 +954,14 @@ class Mailroom private constructor(
     companion object {
         /**
          * Opens the log, folds it, puts the rules in force and records what start-up records (contracts.md §2.2, §4.4).
-         * The writer reaches the disk through [disk].
+         * The writer reaches the disk through [disk]. [whenFolded] is told the mailroom once the log is folded and the rules
+         * are in force, before the start carries anything again: what reads the fold reads it from then on (contracts.md
+         * §4.4, Amendment 34).
          */
         fun start(
             project: Path, office: OfficeId, rules: RuleTexts, facts: FactSource, operations: Operations, deliveries: Deliveries, clock: Clock,
             robots: Boolean = false, disk: Channels = Channels.files, journal: (String) -> Unit = { System.err.println(it) },
+            whenFolded: (Mailroom) -> Unit = {},
         ): Mailroom {
             val writer = LogWriter.open(project, office, disk)
             try {
@@ -978,6 +981,7 @@ class Mailroom private constructor(
                         val first = entries.filterIsInstance<Voided>().lastOrNull { it.seq.longValueExact() > lastJudged }?.seq?.longValueExact() ?: (lastJudged + 1)
                         val voided = entries.filterIsInstance<Voided>().map { (it.first + 1)..it.last } + listOf((first + 1)..writer.last)
                         take(entries, asWritten = false) { line -> voided.none { line.seq.longValueExact() in it } }
+                        whenFolded(this)
                         val flights = unfinished(read.lines, first)
                         interrupted(flights.filter { flight -> folded.operations.any { it === flight } })
                         drain()
