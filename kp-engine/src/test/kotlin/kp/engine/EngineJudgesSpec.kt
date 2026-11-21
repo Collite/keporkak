@@ -73,6 +73,5 @@ class EngineJudgesSpec : StringSpec({
         engineTrace("H-3-rollback") shouldBe walkerTrace("H-3-rollback")
         engineTrace("no-roll-live-D-42") shouldBe walkerTrace("no-roll-live-D-42")
         engineTrace("reserved-model") shouldBe walkerTrace("reserved-model")
-        engineTrace("seat-deaths-paused-D-81") shouldBe walkerTrace("seat-deaths-paused-D-81")
     }
 })

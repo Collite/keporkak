@@ -1,8 +1,8 @@
 # D-81: a seat that dies while its stage is paused is counted and re-seated too — T-80, the twin of T-59 — and the
 # stage's first re-seat returns it to the state it was first paused from. Two seats of one stage die, the reviewer's while
-# the stage is paused for the coder's. The Pool Manager's messages are given by the walk, not heard by its robot: the
-# walker keeps one seat per stage, so its robot would hear the second death as the first's. The walker cannot play the
-# second `re-seated` either (one seat per stage): the engine can, and S2.9's restart spec does.
+# the stage is paused for the coder's. The Pool Manager's robot hears each death as that seat's (S3.6 T4): the walker keeps
+# a state for each seat a walk binds. Both seats are re-seated; the second `re-seated` finds the stage active again and
+# moves its seat only (SEAT-07).
 # Supplied observations and fake operation results; this walk never runs external actions.
 name: seat-deaths-paused-D-81
 stage: S2.9
@@ -12,13 +12,26 @@ seats:
   coder-1: coder
   reviewer-1: reviewer
 facts:
-  seat.process_gone: true
+  seat.process_gone: false
   seat.protocol_closed: false
   seat.tool_call_open_for: 0
   seat.inbox_replayed: true
 steps:
+- who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: coder-1
+  facts:
+    seat.process_gone: true
+  expect:
+    rules:
+    - POOL-1
+    sends:
+    - seat-gone
 - id: coder-gone
   who: pool
+  by: robot:POOL-1
   kind: seat-gone
   args:
     seat: coder-1
@@ -27,8 +40,22 @@ steps:
     transitions:
     - T-59
     - SEAT-06
+    seats:
+      coder-1: gone
+      reviewer-1: ready
+- who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: reviewer-1
+  expect:
+    rules:
+    - POOL-1
+    sends:
+    - seat-gone
 - id: reviewer-gone
   who: pool
+  by: robot:POOL-1
   kind: seat-gone
   args:
     seat: reviewer-1
@@ -37,13 +64,17 @@ steps:
     transitions:
     - T-80
     - SEAT-06
+    seats:
+      coder-1: gone
+      reviewer-1: gone
 - operation: seat.reseat
   request: coder-gone
   result: ok
-- operation: seat.reseat
-  request: reviewer-gone
-  result: ok
+  expect:
+    sends:
+    - re-seated
 - who: pool
+  by: robot:POOL-14
   kind: re-seated
   args:
     seat: coder-1
@@ -52,3 +83,24 @@ steps:
     transitions:
     - T-60
     - SEAT-07
+    seats:
+      coder-1: ready
+      reviewer-1: gone
+- operation: seat.reseat
+  request: reviewer-gone
+  result: ok
+  expect:
+    sends:
+    - re-seated
+- who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: reviewer-1
+  expect:
+    state: building
+    transitions:
+    - SEAT-07
+    seats:
+      coder-1: ready
+      reviewer-1: ready
