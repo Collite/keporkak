@@ -78,7 +78,7 @@ class GitHubApps(
             put("permissions", JsonObject(permissions.toSortedMap().mapValues { JsonPrimitive(it.value) }))
         }
         val path = "/app/installations/${app.installation}/access_tokens"
-        val answer = when (val sent = send("POST", path, claim, body.toString())) {
+        val answer = when (val sent = send("POST", path, "Bearer $claim", body.toString())) {
             is Asked.Ok -> sent.value
             is Asked.Failed -> return Minted.Failed(sent.reason)
         }
@@ -99,7 +99,7 @@ class GitHubApps(
             is Asked.Ok -> signed.value
             is Asked.Failed -> return signed
         }
-        val answer = when (val sent = send("GET", "/app", claim, null)) {
+        val answer = when (val sent = send("GET", "/app", "Bearer $claim", null)) {
             is Asked.Ok -> sent.value
             is Asked.Failed -> return sent
         }
@@ -127,19 +127,40 @@ class GitHubApps(
         return Asked.Ok(Keys.signed(header, payload, key))
     }
 
-    /** One request with [authorization]'s bearer, made once; `failed` when GitHub could not be reached. */
-    private fun send(method: String, path: String, bearer: String, body: String?): Asked<Answer> {
-        val request = HttpRequest.newBuilder(api.resolve(path.removePrefix("/")))
+    /**
+     * The repositories [token]'s installation reaches, `<owner>/<name>`: every page of `GET /installation/repositories`,
+     * a next page followed on GitHub's own root only.
+     */
+    fun repositories(token: Token): Asked<List<String>> {
+        val path = "/installation/repositories"
+        val names = ArrayList<String>()
+        var next: URI? = api.resolve(path.removePrefix("/") + "?per_page=100")
+        while (next != null) {
+            val answer = when (val sent = send("GET", path, token.authorization(), null, next)) {
+                is Asked.Ok -> sent.value
+                is Asked.Failed -> return sent
+            }
+            if (answer.status != OK) return Asked.Failed(refused("GET", path, answer))
+            val listed = ((answer.json() as? JsonObject)?.get("repositories") as? JsonArray) ?: return Asked.Failed("GitHub's answer to GET $path lists no repositories")
+            names += listed.map { (it as? JsonObject)?.text("full_name") ?: return Asked.Failed("a repository in GitHub's answer to GET $path has no full_name") }
+            next = answer.next?.let(URI::create)?.also { if (!it.toString().startsWith(api.toString())) return Asked.Failed("GitHub's next page of GET $path is not under $api") }
+        }
+        return Asked.Ok(names)
+    }
+
+    /** One request with [authorization], made once; `failed` when GitHub could not be reached. */
+    private fun send(method: String, path: String, authorization: String, body: String?, url: URI = api.resolve(path.removePrefix("/"))): Asked<Answer> {
+        val request = HttpRequest.newBuilder(url)
             .timeout(TIMEOUT)
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", API_VERSION)
-            .header("Authorization", "Bearer $bearer")
+            .header("Authorization", authorization)
             .method(method, if (body == null) HttpRequest.BodyPublishers.noBody() else HttpRequest.BodyPublishers.ofString(body))
             .apply { if (body != null) header("Content-Type", "application/json") }
             .build()
         return try {
             val response = http.send(request, HttpResponse.BodyHandlers.ofString())
-            Asked.Ok(Answer(response.statusCode(), response.body()))
+            Asked.Ok(Answer(response.statusCode(), response.body(), response.headers().firstValue("link").orElse(null)?.let { LINK_NEXT.find(it)?.groupValues?.get(1) }))
         } catch (error: IOException) {
             Asked.Failed("GitHub did not answer $method $path: ${error.javaClass.simpleName}${error.message?.let { ": $it" }.orEmpty()}")
         } catch (_: InterruptedException) {
@@ -148,7 +169,7 @@ class GitHubApps(
         }
     }
 
-    private class Answer(val status: Int, val body: String) {
+    private class Answer(val status: Int, val body: String, val next: String? = null) {
         fun json(): JsonElement? = try {
             Json.parseToJsonElement(body)
         } catch (_: IllegalArgumentException) {
@@ -167,6 +188,7 @@ class GitHubApps(
         val GITHUB: URI = URI.create("https://api.github.com/")
         /** The REST API's version every request names: GitHub's default, which it still serves. */
         const val API_VERSION = "2022-11-28"
+        private val LINK_NEXT = Regex("<([^>]+)>;\\s*rel=\"next\"")
         private const val OK = 200
         private const val CREATED = 201
         private const val SKEW = 60L

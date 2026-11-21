@@ -123,7 +123,8 @@ class FakeApps(val server: HttpServer, private val keys: Path, private val clock
         val asked = Json.parseToJsonElement(request.body.ifEmpty { "{}" }).jsonObject
         val permissions = asked["permissions"]?.jsonObject?.mapValues { it.value.jsonPrimitive.content } ?: app.holds
         val repositories = asked["repositories"]?.jsonArray?.map { it.jsonPrimitive.content }
-        if (permissions.any { (name, level) -> !covers(app.holds[name], level) }) return 422 to message("The permissions requested are not granted to this installation.")
+        // Every App holds `metadata: read`, as GitHub's own do.
+        if (permissions.any { (name, level) -> !covers((app.holds + ("metadata" to "read"))[name], level) }) return 422 to message("The permissions requested are not granted to this installation.")
         if (repositories != null && !app.reaches.containsAll(repositories)) {
             return 422 to message("There is at least one repository that does not exist or is not accessible to the parent installation.")
         }

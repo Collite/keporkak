@@ -6,20 +6,33 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kp.engine.Datum
 import kp.engine.FactRef
+import kp.daemon.seats.Roots
+import kp.daemon.seats.Seats
+import kp.facts.Checkouts
+import kp.facts.GitHub
+import kp.facts.GitHubAccess
 import kp.facts.GitHubFacts
+import kp.facts.Handed
+import kp.facts.Observation
 import kp.facts.StageState
 import kp.facts.WhatTheLogKnows
 import kp.mailroom.FactSource
 import kp.model.Record
+import kp.ops.App
+import kp.ops.Asked
 import kp.ops.GitHubApps
+import kp.ops.Minted
 import java.net.URI
 import java.nio.file.Path
 
 /**
  * GitHub's facts for the service (contracts.md §4.4, Amendment 33; S3.2): `kp-facts` reads the stage's pull request and
- * the check runs of a sha with a token `kp-ops` mints as `kp-merger`, narrowed to the stage's repository and to reading.
- * The block `github:` and the secrets folder are those of the rules in force. An unknown's reason goes to the journal,
- * never a token. [api] is GitHub's REST root.
+ * the check runs of a sha with a token `kp-ops` mints as `kp-merger`, narrowed to the stage's repository and to reading
+ * (`contents`, `pull_requests`, `checks`: read), and with the name GitHub shows for the reviewer's App. The block
+ * `github:`, the office's checkouts and its secrets folder are those of the rules in force, read at each ask; nothing is
+ * kept from one ask for the next. A parameter the rules leave out is the message's stage's; the rules write `ci.state`'s
+ * sha as `of:`. An unknown fact is answered null and its reason goes to the journal — never a token. [api] is GitHub's
+ * REST root.
  */
 class GitHubWorld private constructor(
     private val office: String,
@@ -27,18 +40,82 @@ class GitHubWorld private constructor(
     private val api: URI,
     private val say: (String) -> Unit,
 ) : FactSource {
-    @Volatile private var fold: Office? = null
+    private val log = OfficeLog()
 
     /** Reads [office]'s fold and its rules in force from now on: until then, every GitHub fact is unknown. */
     fun reading(office: Office) {
-        fold = office
+        log.office = office
     }
 
-    override fun observe(fact: FactRef, stage: String?): Datum? = null
+    override fun observe(fact: FactRef, stage: String?): Datum? {
+        val known = GitHubFacts.ANSWERED[fact.name] ?: return null
+        val about = "$fact for ${stage ?: "no stage"}"
+        val rules = log.office?.rules?.ruleSet?.pool ?: return unknown(about, "the daemon has not read its rules yet")
+        val block = rules.github ?: return unknown(about, "pool/offices.yaml has no block github:")
+        val entry = rules.offices[office] ?: return unknown(about, "pool/offices.yaml names no office '$office'")
+        val apps = GitHubApps(Roots.of(entry.roots).secrets.resolve("apps"), api)
+        val access = Access(block, apps)
+        val checkouts = Checkouts(office, project, entry.project.efforts, entry.repos.toSortedMap().mapValues { (_, checkout) -> Seats.home(checkout) })
+        val params = fact.params.mapValues { (_, value) -> plain(value) }.toMutableMap()
+        if (fact.name == CI_STATE && SHA !in params) params.remove(OF)?.let { params[SHA] = it }
+        known.params.filterNot { it in params }.forEach { name -> if (name == STAGE && stage != null) params[STAGE] = stage }
+        val answer = try {
+            GitHubFacts(checkouts, log, GitHub(block.organization, api), access).observe(fact.name, params)
+        } catch (error: Exception) {
+            return unknown(about, error.toString())
+        }
+        return when (answer) {
+            is Observation.Value -> Datum.of(answer.value)
+            is Observation.Unknown -> unknown(about, answer.missing)
+        }
+    }
+
+    /** What `kp-facts` is handed: a token minted as `kp-merger` for one repository and reading; the reviewer's App's name. */
+    private class Access(private val block: kp.rules.GitHub, private val apps: GitHubApps) : GitHubAccess {
+        override fun token(repository: String): Handed {
+            val merger = block.apps[MERGER] ?: return Handed.Withheld("github.apps holds no App $MERGER")
+            return when (val minted = apps.mint(App(MERGER, merger.app, merger.installation), listOf(repository.substringAfter('/')), READING)) {
+                is Minted.Ok -> Handed.Over(minted.token.authorization())
+                is Minted.Failed -> Handed.Withheld(minted.reason)
+            }
+        }
+
+        override fun reviewer(): Handed {
+            val seat = block.seats[REVIEWER] ?: return Handed.Withheld("github.seats gives the role $REVIEWER no App")
+            val ids = block.apps[seat.app] ?: return Handed.Withheld("github.apps holds no App ${seat.app}")
+            return when (val name = apps.name(App(seat.app, ids.app, ids.installation))) {
+                is Asked.Ok -> Handed.Over(name.value)
+                is Asked.Failed -> Handed.Withheld(name.reason)
+            }
+        }
+    }
+
+    private fun unknown(about: String, missing: String): Datum? {
+        say("facts: $about is unknown — $missing")
+        return null
+    }
 
     companion object {
+        /** The identity the daemon reads GitHub as (Amendment 33). */
+        const val MERGER = "kp-merger"
+        /** What the daemon's token may do: read (Amendment 33). */
+        val READING = mapOf("contents" to "read", "pull_requests" to "read", "checks" to "read")
+        private const val REVIEWER = "reviewer"
+        private const val CI_STATE = "ci.state"
+        private const val SHA = "sha"
+        private const val OF = "of"
+        private const val STAGE = "stage"
+
         /** The GitHub world of [office], on the project checkout [project] the daemon runs on; [say] is the journal. */
         fun of(office: String, project: Path, api: URI = GitHubApps.GITHUB, say: (String) -> Unit = Journal::say): GitHubWorld = GitHubWorld(office, project, api, say)
+
+        /** A parameter's value as `kp-facts` takes it: a text, or a list of texts. */
+        private fun plain(value: Datum): Any = when (value) {
+            is Datum.Text -> value.value
+            is Datum.Items -> value.items.map { (it as? Datum.Text)?.value ?: it.json() }
+            is Datum.Number -> value.value.toPlainString()
+            else -> value.json()
+        }
     }
 }
 
