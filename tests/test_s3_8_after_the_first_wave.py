@@ -63,7 +63,9 @@ class DefaultTimeoutRun:
         spec.write_text(NEVER_ENDS)
         output = (copy / "build/default-timeout.log").open("w+")
         run = subprocess.Popen([shutil.which("just") or "just", "--justfile", str(copy / "justfile"), "--working-directory", str(copy), "spec", "kp-log:NeverEndsSpec"],
-                               cwd=copy, env={name: value for name, value in os.environ.items() if name != "KP_SPEC_TIMEOUT"},
+                               # A Gradle of its own for its six minutes, so the specs beside it keep the warm daemon.
+                               cwd=copy, env={**{name: value for name, value in os.environ.items() if name != "KP_SPEC_TIMEOUT"},
+                                              "GRADLE_OPTS": "-Dorg.gradle.daemon=false"},
                                stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
         cls.started = (copy, run, output, time.monotonic())
         atexit.register(cls.close)
