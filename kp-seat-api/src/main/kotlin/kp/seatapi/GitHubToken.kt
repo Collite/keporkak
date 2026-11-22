@@ -22,18 +22,18 @@ fun interface GitHubTokens {
 
     companion object {
         /** A daemon that hands out no GitHub token — a rehearsal's: every ask is refused. */
-        val NONE = GitHubTokens { TokenAnswer.Refused("this daemon hands out no GitHub token") }
+        val NONE = GitHubTokens { TokenAnswer.Withheld("this daemon hands out no GitHub token") }
     }
 }
 
-/** The answer to one ask: a token and when it expires; refused — the role has no entry —; or failed, with the reason. */
+/** The answer to one ask: a token and when it expires; withheld — the role has no entry — or failed, with the reason. */
 sealed interface TokenAnswer {
     /** A token minted for the ask. It is not shown: [toString] hides it. */
     class Handed(val token: String, val expires: String) : TokenAnswer {
         override fun toString(): String = "Handed(a token until $expires)"
     }
 
-    data class Refused(val reason: String) : TokenAnswer
+    data class Withheld(val reason: String) : TokenAnswer
 
     data class Failed(val reason: String) : TokenAnswer
 }
@@ -41,7 +41,7 @@ sealed interface TokenAnswer {
 /**
  * `POST /hook/github-token` (contracts.md §4.4, Amendment 35) on the seat API's listener: the session token as bearer, no
  * body. A dead or unknown token never gets here — the token gate answers it 401, before anything is minted. The answer
- * is `{"token": …, "expires": …}`; a refusal is 403 and a failed mint 502, each `{"error": <the reason>}`.
+ * is `{"token": …, "expires": …}`; a token withheld is 403 and a failed mint 502, each `{"error": <the reason>}`.
  */
 internal class GitHubTokenRoute(private val github: GitHubTokens) {
     fun route(application: Application) = application.routing {
@@ -49,7 +49,7 @@ internal class GitHubTokenRoute(private val github: GitHubTokens) {
             val bound = call.attributes[BOUND]
             val (status, body) = when (val answer = withContext(Dispatchers.IO) { github.ask(bound.binding) }) {
                 is TokenAnswer.Handed -> HttpStatusCode.OK to buildJsonObject { put(TOKEN, answer.token); put(EXPIRES, answer.expires) }
-                is TokenAnswer.Refused -> HttpStatusCode.Forbidden to buildJsonObject { put(ERROR, answer.reason) }
+                is TokenAnswer.Withheld -> HttpStatusCode.Forbidden to buildJsonObject { put(ERROR, answer.reason) }
                 is TokenAnswer.Failed -> HttpStatusCode.BadGateway to buildJsonObject { put(ERROR, answer.reason) }
             }
             call.respondText(body.toString(), ContentType.Application.Json, status)

@@ -21,8 +21,8 @@ class GitHubTokenSpec : StringSpec({
         }
     }
 
-    "a refusal is 403 and a failed mint 502, each with its reason; neither writes to the log" {
-        val answers = ArrayDeque(listOf<TokenAnswer>(TokenAnswer.Refused("github.seats gives the role qa no App"), TokenAnswer.Failed("GitHub answered 422")))
+    "a token withheld is 403 and a failed mint 502, each with its reason; neither writes to the log" {
+        val answers = ArrayDeque(listOf<TokenAnswer>(TokenAnswer.Withheld("github.seats gives the role qa no App"), TokenAnswer.Failed("GitHub answered 422")))
         SeatOffice(github = { answers.removeFirst() }).use { office ->
             val qa = office.seat("qa-1", role = "qa")
             val lines = office.lines()

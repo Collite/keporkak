@@ -41,7 +41,7 @@ class GitHubIdentity(
     override fun ask(binding: Binding): TokenAnswer {
         val who = "github-token: ${binding.seat} (${binding.role})"
         return when (val minted = minted(binding)) {
-            is Mint.NoEntry -> TokenAnswer.Refused(minted.reason).also { say("$who refused: ${minted.reason}") }
+            is Mint.NoEntry -> TokenAnswer.Withheld(minted.reason).also { say("$who refused: ${minted.reason}") }
             is Mint.Failed -> TokenAnswer.Failed(minted.reason).also { say("$who${minted.asked} failed: ${minted.reason}") }
             is Mint.Ok -> {
                 val token = minted.token.authorization().removePrefix(BEARER)
