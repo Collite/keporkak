@@ -64,14 +64,21 @@ SHAPES = {
         "fun readsToo(tool: String) = Regex(\"Read|Glob\").matches(tool)",
     ]),
 }
-# Runs, in every module's own test task, the spec planted in kp-log: its test classes join each task's, and each task
-# keeps to that spec (S3.8 T6). A module's own ProjectConfig stands first on its test classpath, so it is the one in force.
+# Runs, in every module's own test task, the spec planted in kp-log: its classes — `kp/planted/**` and nothing else of
+# kp-log's tests — join each task's, and each task keeps to that spec (S3.8 T6). kp-log's ProjectConfig never joins
+# another module's task, so a module without its own runs the spec with none (review-029 B2).
 EVERY_MODULE = """gradle.projectsEvaluated {
-    def planted = rootProject.file("kp-log/build/classes/kotlin/test")
+    def log = rootProject.project(":kp-log")
+    def planted = log.layout.buildDirectory.dir("planted")
+    def copied = log.tasks.register("plantedClasses", Sync) {
+        dependsOn(log.tasks.named("testClasses"))
+        from(log.file("build/classes/kotlin/test")) { include("kp/planted/**") }
+        into(planted)
+    }
     allprojects { p ->
         p.tasks.withType(Test).matching { it.name == "test" }.configureEach { t ->
             if (p.path != ":kp-log") {
-                t.dependsOn(":kp-log:testClasses")
+                t.dependsOn(copied)
                 t.testClassesDirs = t.testClassesDirs + p.files(planted)
                 t.classpath = t.classpath + p.files(planted)
             }
@@ -190,6 +197,11 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
         spec.write_text(
             "package kp.planted\n\nimport io.kotest.core.spec.style.StringSpec\n\n"
             "class NeverEndsSpec : StringSpec({\n"
+            "    \"the ProjectConfig in force is the module's own\" {\n"
+            "        val module = java.io.File(System.getProperty(\"user.dir\")).name\n"
+            "        val config = Class.forName(\"io.kotest.provided.ProjectConfig\").protectionDomain.codeSource.location.path\n"
+            "        check(\"/$module/build/\" in config) { \"the ProjectConfig in force is $config, not $module's own\" }\n"
+            "    }\n"
             "    \"a spec that never ends, suspended\" { kotlinx.coroutines.awaitCancellation() }\n"
             "    \"a spec that never ends, blocking its thread\" { Thread.sleep(Long.MAX_VALUE) }\n"
             "})\n")
@@ -209,10 +221,14 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
         self.assertNotEqual(run.returncode, 0)
         self.assertEqual(sorted((module, case) for module, case, _ in ran),
                          sorted((module, case) for module in modules for case in
-                                ("a spec that never ends, blocking its thread", "a spec that never ends, suspended")), run.stdout[-6000:])
-        # The suspended spec ends by Kotest's timeout; the blocked one by the interrupt that timeout sends its thread.
+                                ("the ProjectConfig in force is the module's own", "a spec that never ends, blocking its thread",
+                                 "a spec that never ends, suspended")), run.stdout[-6000:])
+        # Each module's own ProjectConfig is the one in force; under it, the suspended spec ends by Kotest's timeout, the
+        # blocked one by the interrupt that timeout sends its thread.
         for module, case, failure in ran:
-            if case.endswith("suspended"):
+            if case.endswith("own"):
+                self.assertIsNone(failure, module)
+            elif case.endswith("suspended"):
                 self.assertRegex(failure or "", r"\S*TestTimeoutException: Test '[^']+' did not complete within 2s", module)
             else:
                 self.assertRegex(failure or "", r"^java.lang.InterruptedException", module)
