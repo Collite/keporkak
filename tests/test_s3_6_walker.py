@@ -6,14 +6,15 @@ step or event, `END` with each order's end, `LEAVES` with what an end leaves out
 
 An end holds everything the walker keeps but what it leaves out (review-027 B1, B2). Of each stage: its state, the state
 it returns to from a pause, its flag thread, Found lines, other machines, facts and counters. Of each seat: its state and
-the stage it is bound to. Bora's presence and the phase; how often each kind fired; every message, refusal and
-operation's result kept, and each message's present status; what a robot or the mailroom sent that no step delivered;
-the operations requested — a transition's and a robot's wake alike — and those still waiting.
+the stage it is bound to. Bora's presence and the phase; how often each kind fired; every message, refusal, operation's
+result and robot's wake kept, and each message's present status; what a robot or the mailroom sent that no step
+delivered; the operations a transition requested, and those still waiting, each with the message that asked it. A
+record is held whole but for the fields named below.
 
 It leaves out, each with its reason in the walker (`LEAVES`): of the walk, `definition`, `name`, `index`, `stage`,
 `current`, `ctx`, `robot`, `subject`, `fired`, `first_candidate`, `in_group`, `group_sent`, `first_moved`,
 `used_operations`, `thread_hops` and `history's order`; of a stage's machines, `seat` and `found_item`; of a record,
-`id`, `re`, `trigger`, `role`, `by` and `rule`.
+`id`, `re`, `by` and `rule`.
 """
 import json
 import pathlib
@@ -201,9 +202,21 @@ class TheWalker(unittest.TestCase):
 
         (first, first_end), (other, other_end) = named(failure[0])
         self.assertEqual((first, other), (["process-gone", "protocol-closed", "retired"], ["protocol-closed", "retired", "process-gone"]))
-        self.assertEqual(without(first_end, "operations"), without(other_end, "operations"))
-        self.assertEqual((first_end["operations"], other_end["operations"]), (
-            ["seat.retire (retire coder-1)"], ["seat.retire (retire coder-1)", "seat.wake (pool report)"]))
+        self.assertEqual(without(first_end, "log"), without(other_end, "log"))
+        self.assertEqual(wakes(first_end), [])
+        self.assertEqual(wakes(other_end), [{"operation": "seat.wake", "role": "pool", "mode": "report", "stage": "S3.6", "tick": 2}])
+
+    def test_a_walk_fails_naming_two_orders_and_their_ends_when_one_order_ends_with_a_wake_in_another_stage(self):
+        rules = copy_of_the_rules(self)
+
+        failure = failures(walker(rules, walk(rules, A_WAKE_IN_EITHER_STAGE)))
+
+        (first, first_end), (other, other_end) = named(failure[0])
+        self.assertEqual((first, other), (["other-stage", "long-call"], ["long-call", "other-stage"]))
+        self.assertEqual(without(first_end, "log"), without(other_end, "log"))
+        self.assertEqual((wakes(first_end), wakes(other_end)), (
+            [{"operation": "seat.wake", "role": "pool", "mode": "report", "stage": "S3.7", "tick": 1}],
+            [{"operation": "seat.wake", "role": "pool", "mode": "report", "stage": "S3.6", "tick": 1}]))
 
     def test_a_walk_fails_naming_two_orders_and_their_ends_when_one_order_ends_with_another_machine_in_another_state(self):
         rules = copy_of_the_rules(self, edit="a-thread-held-before-the-report")
@@ -243,6 +256,17 @@ class TheWalker(unittest.TestCase):
 
         self.assertNotEqual(ran.returncode, 0)
         self.assertIn("RuntimeError: walk a-retired-seats-ends: its end neither holds nor leaves out kept_more", ran.stderr)
+
+    def test_a_walker_that_keeps_a_field_more_on_a_wake_or_a_message_holds_it_in_each_end(self):
+        rules = copy_of_the_rules(self, edit="a-walker-that-keeps-a-field-more")
+
+        two_seats = [json.loads(line[4:])["end"] for line in walker(rules, walk(rules, TWO_SEATS)) if line.startswith("END ")]
+        either = [json.loads(line[4:])["end"] for line in walker(rules, walk(rules, A_WAKE_IN_EITHER_STAGE)) if line.startswith("END ")]
+
+        held = [json.loads(record) for end in two_seats for key in ("log", "messages") for record in end[key] if "kind" in json.loads(record) and "status" in json.loads(record)]
+        self.assertTrue(held)
+        self.assertEqual([record for record in held if record.get("kept_more") != "yes"], [])
+        self.assertEqual([wake.get("kept_more") for end in either for wake in wakes(end)], ["yes", "yes"])
 
     def test_a_walk_that_binds_two_seats_to_a_stage_keeps_a_state_for_each_and_a_robot_hears_each_death_as_that_seats(self):
         rules = copy_of_the_rules(self)
@@ -299,6 +323,41 @@ steps:
 - operation: seat.reseat
   request: gone/seat-gone
   result: ok
+"""
+
+
+# Master's rules, nothing planted: a seat's tool call is open past POOL-9's watch, and its event names no stage — it is
+# played in the stage of the event before it, so the robot's wake lands in either stage (review-027 B2, round 2).
+A_WAKE_IN_EITHER_STAGE = """
+name: a-wake-in-either-stage
+stage: S3.6
+initial: building
+final:
+  S3.6: building
+  S3.7: building
+seats:
+  coder-1: coder
+facts:
+  seat.name:
+    coder: coder-1
+  seat.tool_call_open_for: 90m
+  list.fence_complete: false
+steps:
+- id: either
+  unordered:
+  - id: other-stage
+    who: daemon
+    stage: S3.7
+    event:
+      fact: list.fence_complete
+    facts:
+      list.fence_complete: true
+  - id: long-call
+    who: daemon
+    event:
+      fact: seat.tool_call_open_for
+    trigger:
+      seat: coder-1
 """
 
 
@@ -396,6 +455,13 @@ def copy_of_the_rules(test, edit=None):
         anchor = "- from: '*active'\n  to: paused\n  kind: seat-gone\n"
         assert anchor in text
         lifecycle.write_text(text.replace(anchor, A_FACT_MOVES_THE_STAGE + anchor, 1))
+    elif edit == "a-walker-that-keeps-a-field-more":
+        script = copy / "scripts/check-rules.py"
+        text = script.read_text()
+        for anchor in ('self.history.append({"operation":"seat.wake","mode":action["wake"],', 'self.ctx={"kind":kind_name,"from":who,'):
+            assert text.count(anchor) == 1
+            text = text.replace(anchor, anchor.replace("({", "({\"kept_more\":\"yes\",").replace("={", "={\"kept_more\":\"yes\","), 1)
+        script.write_text(text)
     elif edit == "a-walker-that-keeps-more":
         script = copy / "scripts/check-rules.py"
         text = script.read_text()
@@ -409,6 +475,11 @@ def copy_of_the_rules(test, edit=None):
         assert anchor in text
         lifecycle.write_text(text.replace(anchor, BEFORE_THE_REPORT.replace("EFFECT", EDITS[edit]) + anchor, 1))
     return copy
+
+
+def wakes(end):
+    """The robots' wakes an end's log holds, each as the walker keeps it but for what an end leaves out of a record."""
+    return [record for record in map(json.loads, end["log"]) if record.get("operation") == "seat.wake" and "mode" in record]
 
 
 def without(end, key):
