@@ -32,7 +32,7 @@ const val OFFICE_WORKTREE = "kp-p3-s3.3"
 /**
  * An office on disk for S3.3's daemon specs, nothing of it on GitHub: two remotes the spec builds — the project's,
  * `project.git`, and keporkak's — the project checkout and keporkak's main checkout cloned from them, keporkak's remote
- * moved since; the office's roots; and master's rules but for `pool/offices.yaml`, which names all of them, its efforts
+ * moved since; the office's four roots, of its own; and master's rules but for `pool/offices.yaml`, which names all of them, its efforts
  * in the order TOY, KP, and a secrets folder where the fake GitHub's Apps ([apps]) keep their keys. The stages of
  * [states] are on the log in their state; with [worktree], the stage's worktree is there, clean, on its branch. Not
  * [performs], it performs nothing: each request stays in flight.
@@ -57,6 +57,7 @@ class OfficeOnDisk(states: Map<String, String> = emptyMap(), worktree: Boolean =
     val worktrees: Path = folder.resolve("worktrees").createDirectories()
     val scratch: Path = folder.resolve("scratch").createDirectories()
     val secrets: Path = folder.resolve("secrets").createDirectories()
+    val seats: Path = folder.resolve("seats").createDirectories()
     val apps = FakeApps.start(secrets.resolve("apps")).also { apps -> THE_APPS.forEach(apps::add) }
     val root: Path = rulesFor(this)
     private val traced = folder.resolve("git.trace")
@@ -118,6 +119,7 @@ class OfficeOnDisk(states: Map<String, String> = emptyMap(), worktree: Boolean =
             offices.writeText(offices.readText()
                 .replace(Regex("(?m)^      worktrees: .*$"), "      worktrees: \"${office.worktrees}\"")
                 .replace(Regex("(?m)^      scratch: .*$"), "      scratch: \"${office.scratch}\"")
+                .replace(Regex("(?m)^      seats: .*$"), "      seats: \"${office.seats}\"")
                 .replace(Regex("(?m)^      secrets: .*$"), "      secrets: \"${office.secrets}\"")
                 .replace(Regex("(?m)^    project: .*$"), "    project: {checkout: \"${office.project}\", efforts: {TOY: toy, KP: \".\"}}")
                 .replace(Regex("(?m)^    repos: .*$"), "    repos: {keporkak: \"${office.keporkak}\"}"))
