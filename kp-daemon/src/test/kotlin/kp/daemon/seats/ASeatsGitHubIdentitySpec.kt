@@ -176,10 +176,11 @@ class ASeatsGitHubIdentitySpec : StringSpec({
         office.received("coder-1").single { it.text("event") == "shell" }.text("exit") shouldBe "0"
         val transcript = office.project.resolve("office/seats/_transcripts/coder-1.log").readText()
         transcript.lines().single { " tool print " in it && "→" in it } shouldContain "‹hidden›"
-        // No token, nor its first dozen characters, in any file of the office — transcript, log, homes — in the journal, or in what the spec printed.
-        val files = office.project.walk().filter { it.isRegularFile() }.map { it.readText() }.toList()
+        // No token, nor any dozen characters of one, in a transcript, the log, the journal or what the spec printed — nor in
+        // what the fake agents recorded. (The agent's own sessions, in its home, keep what it printed: that is the agent's.)
+        val files = listOf("office/seats/_transcripts", "mail", "office/fake").flatMap { folder -> office.project.resolve(folder).walk().filter { it.isRegularFile() }.map { it.readText() } }
         val seen = files + office.said + printed
-        minted.flatMap { listOf(it, it.take(12)) }.filter { piece -> seen.any { piece in it } } shouldBe emptyList()
+        minted.flatMap { it.windowed(12) }.filter { piece -> seen.any { piece in it } } shouldBe emptyList()
         // The seat's environment holds no GitHub token: its variables, every one.
         office.received("coder-1").first { it.text("event") == "start" }["env"].toString() shouldBe
             """["CLAUDE_CODE_OAUTH_TOKEN","CLAUDE_CONFIG_DIR","GIT_ASKPASS","GIT_CONFIG_COUNT","GIT_CONFIG_KEY_0","GIT_CONFIG_KEY_1","GIT_CONFIG_KEY_2",""" +

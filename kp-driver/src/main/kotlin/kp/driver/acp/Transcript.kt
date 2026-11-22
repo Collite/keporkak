@@ -12,7 +12,8 @@ import java.util.concurrent.CopyOnWriteArraySet
 /**
  * A seat's readable transcript, `<roots.seats>/_transcripts/<seat>.log` (contracts.md §10): one line per event,
  * `<time> <seat> <event>`, appended across the seat's sessions. Every secret the seat's sessions held — the agent's
- * token, each session token — is replaced before a line is written, and in every reason the driver returns.
+ * token, each session token, each GitHub token handed to the seat (Amendment 35) — is replaced before a line is written,
+ * and in every reason the driver returns.
  */
 internal class Transcript(private val file: Path, private val seat: SeatId, private val clock: Clock) {
     private val secrets = CopyOnWriteArraySet<String>()

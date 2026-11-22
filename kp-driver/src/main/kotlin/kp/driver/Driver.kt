@@ -36,6 +36,13 @@ interface Driver : AutoCloseable {
     /** What the agent said it offers for the seat's session (T3). */
     fun offers(seat: SeatId): Outcome<Offers>
 
+    /**
+     * [secret] is hidden in [seat]'s transcript from now on, and in every reason the driver returns for it, as every
+     * secret its sessions held: a GitHub token handed to the seat (contracts.md §4.4, Amendment 35), told before it is
+     * handed over.
+     */
+    fun hide(seat: SeatId, secret: String)
+
     /** One of [SeatFacts], computed now from the injected clock (T6). `seat.usage` needs a [window]. */
     fun observe(seat: SeatId, fact: String, window: UsageWindow? = null): Outcome<ObservedFact>
 

@@ -201,6 +201,8 @@ internal class AcpDriver(
         session.launched.connection.close()
         return Outcome.Ok(Unit)
     }
+    override fun hide(seat: SeatId, secret: String) = transcript(seat).hide(secret)
+
     override fun offers(seat: SeatId): Outcome<Offers> =
         seats[seat]?.let { Outcome.Ok(it.offers()) } ?: Outcome.Failed("seat ${seat.value} has no session")
     override fun observe(seat: SeatId, fact: String, window: UsageWindow?): Outcome<ObservedFact> {

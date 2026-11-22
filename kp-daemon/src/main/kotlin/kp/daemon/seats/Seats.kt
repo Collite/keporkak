@@ -135,10 +135,11 @@ class Seats(
 
     /**
      * A seat's GitHub identity (contracts.md §4.4, Amendment 35), when the seats have [github]: `token.mint` performed for a
-     * seat, and the seat API's answer to its ask — with the Apps' keys in the office's secrets folder.
+     * seat, and the seat API's answer to its ask — with the Apps' keys in the office's secrets folder. A token handed to a
+     * seat is hidden in its transcript before it is handed over.
      */
     val identity: GitHubIdentity? = github?.let { api ->
-        GitHubIdentity(officeName, project, ::inForce, roots.secrets.resolve("apps"), api, say) { _, _ -> }
+        GitHubIdentity(officeName, project, ::inForce, roots.secrets.resolve("apps"), api, say) { seat, token -> this.driver.hide(SeatId(seat), token) }
     }
 
     /** What hears how a turn ended. */
