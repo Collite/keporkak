@@ -1,5 +1,11 @@
 package kp.ops
 
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kp.ops.Rest.Companion.text
 import java.net.URI
 import java.net.http.HttpClient
 
@@ -27,12 +33,63 @@ data class StageOnGitHub(val stage: String, val repository: String, val branch: 
  * stands; `failed(refused)` — anything else, with GitHub's reason. The reason begins with the failure's name.
  */
 class GitMerge(private val apps: GitHubApps, private val merger: App, api: URI = GitHubApps.GITHUB, http: HttpClient = GitHubApps.client()) {
-    /** Merges [where]'s pull request on [head] — the `pr.head` the judgement of [cause] observed; null when it observed none. */
-    fun perform(where: StageOnGitHub, cause: String, head: String?): Performed = Performed.Failed("no performer for git.merge yet")
+    private val rest = Rest(api, http)
+
+    /**
+     * Merges [where]'s pull request on [head] — the `pr.head` the judgement of [cause] observed; null when it observed
+     * none, and then GitHub is asked nothing. The pull request is the stage's (Amendment 33): one that is not open is not
+     * asked to merge — GitHub would call it unmergeable, which is no conflict.
+     */
+    fun perform(where: StageOnGitHub, cause: String, head: String?): Performed {
+        if (head == null) return refused("the judgement of $cause observed no pr.head: there is no head to merge on")
+        val token = when (val minted = apps.mint(merger, listOf(where.repository.substringAfter('/')), PERMISSIONS)) {
+            is Minted.Ok -> minted.token
+            is Minted.Failed -> return refused(minted.reason)
+        }
+        val pull = when (val looked = rest.stagePull(where, token)) {
+            is Looked.Found -> looked.pull
+            is Looked.None -> return refused(looked.why)
+            is Looked.Failed -> return refused(looked.reason)
+        }
+        if (pull.state != Rest.OPEN) return refused("${pull.name} is ${if (pull.merged) "merged" else "closed"}: only an open pull request is merged")
+        val path = "/repos/${where.repository}/pulls/${pull.number}/merge"
+        val body = buildJsonObject {
+            put("sha", head)
+            put("merge_method", "merge")
+        }
+        val reply = when (val sent = rest.send("PUT", path, token, body)) {
+            is Rest.Sent.Answered -> sent.reply
+            is Rest.Sent.NotReached -> return refused(sent.reason)
+        }
+        return when {
+            reply.status == Rest.OK -> (reply.json as? JsonObject)?.takeIf { (it["merged"] as? JsonPrimitive)?.booleanOrNull == true }?.text("sha")
+                ?.let { Performed.Ok(mapOf(SHA to it)) } ?: refused("GitHub's answer to PUT $path names no merge commit")
+            reply.status == HEAD_MOVED -> Performed.Failed("$STALE_CI: ${rest.refused("PUT", path, reply)}")
+            reply.status == NOT_ALLOWED && reply.message in UNMERGEABLE -> Performed.Failed("$CONFLICT: ${rest.refused("PUT", path, reply)}")
+            else -> refused(rest.refused("PUT", path, reply))
+        }
+    }
+
+    private fun refused(reason: String) = Performed.Failed("$REFUSED: $reason")
 
     companion object {
         /** What merging asks of a token: GitHub's `X-Accepted-GitHub-Permissions` for the merge and for the list of pull requests (S3.9 T1). */
         val PERMISSIONS: Map<String, String> = mapOf("contents" to "write", "pull_requests" to "read")
+        /** The three failures of a merge (Amendment 37), each the first word of a reason. */
+        const val STALE_CI = "stale-ci"
+        const val CONFLICT = "conflict"
+        const val REFUSED = "refused"
+        private const val SHA = "sha"
+        /** GitHub's answer when the head is not the sha the merge names (409, recorded from the toy). */
+        private const val HEAD_MOVED = 409
+        /** GitHub's answer when a merge cannot be performed (405): a conflict, or a rule of the repository. */
+        private const val NOT_ALLOWED = 405
+        /**
+         * GitHub's messages that say the pull request cannot be merged as it stands: the first recorded from the toy, the
+         * second what GitHub answers a pull request whose mergeability says no for another cause. Any other 405 — a rule
+         * of the repository among them ("Repository rule violations found …") — is `refused`.
+         */
+        private val UNMERGEABLE = setOf("Pull Request has merge conflicts", "Pull Request is not mergeable")
     }
 }
 
