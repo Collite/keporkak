@@ -194,6 +194,8 @@ data class World(
                     is Trigger.Changed -> null.also { office.changed(kp.engine.FactRef(trigger.fact), trigger.value) }
                     Trigger.Acted -> null.also { office.acted() }
                 }
+                // The operations it requested end at once, outside the lock: their results are judged before the outcome is read (Amendment 36).
+                office.settle()
                 val written = office.lines().map { it.entry }
                 val record = id?.let { written.lastOrNull { line -> (line is Delivered && line.id == id) || (line is Refused && line.id == id) || (line is Held && line.id == id) } }
                 Outcome(id ?: "", record, written.filterIsInstance<Transition>().filter { if (id != null) it.cause == id else it.seq.toLong() > before }.mapNotNull { it.rule })

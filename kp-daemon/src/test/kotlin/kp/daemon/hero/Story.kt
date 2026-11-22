@@ -6,6 +6,7 @@ import kp.model.Envelope
 import kp.model.Expired
 import kp.model.Fact
 import kp.model.Held
+import kp.model.Judged
 import kp.model.Message
 import kp.model.Op
 import kp.model.Refused
@@ -17,6 +18,10 @@ import kp.model.Transition
  * operations it asked for. A stage is named as the walk names it. A seat woken with a message it was sent is told by
  * its delivery's "woke" (S2.4: a wake is an operation of its own): its wake's request and `ok` are not told again — a
  * wake that fails is.
+ *
+ * Operations are performed side by side, outside the mailroom's lock (contracts.md §7, Amendment 36): the results of two
+ * that end at once reach the log in either order. Consecutive judgements of results are told in the order their
+ * operations were requested — the order the log held while every operation was performed under the lock.
  */
 class Story(private val hero: Hero) {
     private val lines: List<Envelope> = hero.office.lines().map { it.entry }
@@ -27,7 +32,7 @@ class Story(private val hero: Hero) {
     /** What the lines with `seq` in [first]..[last] tell. */
     fun told(first: Long, last: Long): List<String> {
         val told = ArrayList<StringBuilder>()
-        lines.filter { it.seq.toLong() in first..last }.filterNot(::aSeatsWake).forEach { line ->
+        inRequestOrder(lines.filter { it.seq.toLong() in first..last }).filterNot(::aSeatsWake).forEach { line ->
             when (line) {
                 is Message -> told += StringBuilder(head(line))
                 is Delivered -> told.after(line.id, "delivered" + listOfNotNull(line.deliveryClass.takeIf { it != "A" }?.let { "class $it" }, line.ticket?.let { "ticket #$it" },
@@ -72,19 +77,46 @@ class Story(private val hero: Hero) {
     private fun mode(op: Op): String = (op.with?.get("mode") as? JsonPrimitive)?.content?.let { " ($it)" } ?: ""
 
     /**
-     * A seat's wake with a message, asked or done: told by the delivery's "woke" (S2.4). A result is paired with its
-     * request as the fold pairs them — the first in flight of its operation and cause.
+     * A seat's wake with a message, asked or done: told by the delivery's "woke" (S2.4). Its result names its seat as its
+     * request does (contracts.md §4.4, Amendment 28) — a robot's own seat woken in a mode names none.
      */
-    private val seatsWakes: Set<Long> = HashSet<Long>().also { hidden ->
-        val inFlight = HashMap<String, ArrayDeque<Boolean>>()
-        lines.filterIsInstance<Op>().filter { it.op == SEAT_WAKE }.forEach { op ->
-            if (op.phase == "requested") {
-                val seats = op.with?.containsKey("seat") == true
-                inFlight.getOrPut(op.cause, ::ArrayDeque).addLast(seats)
-                if (seats) hidden += op.seq.toLong()
-            } else if (inFlight[op.cause]?.removeFirstOrNull() == true && op.phase == "ok") hidden += op.seq.toLong()
+    private val seatsWakes: Set<Long> = lines.filterIsInstance<Op>()
+        .filter { it.op == SEAT_WAKE && it.with?.containsKey("seat") == true && it.phase != "failed" }.map { it.seq.toLong() }.toSet()
+
+    /**
+     * [range] with each run of consecutive judgements that begin with an operation's result in the order those operations
+     * were requested: a judgement is its lines up to its `judged` record.
+     */
+    private fun inRequestOrder(range: List<Envelope>): List<Envelope> {
+        val judgements = ArrayList<List<Envelope>>()
+        var open = ArrayList<Envelope>()
+        range.forEach { line ->
+            open += line
+            if (line is Judged) open = ArrayList<Envelope>().also { judgements += open }
         }
+        if (open.isNotEmpty()) judgements += open
+        val ordered = ArrayList<Envelope>()
+        var run = ArrayList<Pair<Long, List<Envelope>>>()
+        fun flush() {
+            run.sortedBy { it.first }.forEach { ordered += it.second }
+            run = ArrayList()
+        }
+        judgements.forEach { judgement ->
+            val result = (judgement.first() as? Op)?.takeIf { it.phase != "requested" }
+            if (result == null) {
+                flush()
+                ordered += judgement
+            } else run += requestOf(result) to judgement
+        }
+        flush()
+        return ordered
     }
+
+    /** The `seq` of the request [result] answers: the last before it of its operation and cause — and of its seat, when it names one. */
+    private fun requestOf(result: Op): Long = lines.filterIsInstance<Op>().lastOrNull { request ->
+        request.phase == "requested" && request.seq < result.seq && request.op == result.op && request.cause == result.cause &&
+            (result.with?.get("seat") == null || request.with?.get("seat") == result.with?.get("seat"))
+    }?.seq?.toLong() ?: result.seq.toLong()
 
     private fun aSeatsWake(line: Envelope): Boolean = line.seq.toLong() in seatsWakes
 
