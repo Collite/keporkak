@@ -99,11 +99,39 @@ class GitMerge(private val apps: GitHubApps, private val merger: App, api: URI =
  * nothing to close, and the result says so. A merged one is `failed`.
  */
 class PrClose(private val apps: GitHubApps, private val merger: App, api: URI = GitHubApps.GITHUB, http: HttpClient = GitHubApps.client()) {
-    fun perform(where: StageOnGitHub): Performed = Performed.Failed("no performer for pr.close yet")
+    private val rest = Rest(api, http)
+
+    /** Closes [where]'s pull request: `ok` names it, or says why there was nothing to close. */
+    fun perform(where: StageOnGitHub): Performed {
+        val token = when (val minted = apps.mint(merger, listOf(where.repository.substringAfter('/')), PERMISSIONS)) {
+            is Minted.Ok -> minted.token
+            is Minted.Failed -> return Performed.Failed(minted.reason)
+        }
+        val pull = when (val looked = rest.stagePull(where, token)) {
+            is Looked.Found -> looked.pull
+            is Looked.None -> return Performed.Ok(mapOf(CLOSED to "$NOTHING: ${looked.why}"))
+            is Looked.Failed -> return Performed.Failed(looked.reason)
+        }
+        if (pull.merged) return Performed.Failed("${pull.name} is merged: a merged pull request is not closed")
+        if (pull.state != Rest.OPEN) return Performed.Ok(mapOf(CLOSED to "$NOTHING: ${pull.name} was closed already"))
+        val path = "/repos/${where.repository}/pulls/${pull.number}"
+        val reply = when (val sent = rest.send("PATCH", path, token, buildJsonObject { put("state", "closed") })) {
+            is Rest.Sent.Answered -> sent.reply
+            is Rest.Sent.NotReached -> return Performed.Failed(sent.reason)
+        }
+        val state = (reply.json as? JsonObject)?.text("state")
+        return when {
+            reply.status != Rest.OK -> Performed.Failed(rest.refused("PATCH", path, reply))
+            state != "closed" -> Performed.Failed("GitHub's answer to PATCH $path leaves ${pull.name} ${state ?: "in no state"}")
+            else -> Performed.Ok(mapOf(CLOSED to pull.name))
+        }
+    }
 
     companion object {
         /** What closing asks of a token: GitHub's `X-Accepted-GitHub-Permissions` for updating a pull request (S3.9 T1). */
         val PERMISSIONS: Map<String, String> = mapOf("pull_requests" to "write")
+        private const val CLOSED = "closed"
+        private const val NOTHING = "nothing to close"
     }
 }
 
