@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 import kp.ops.Rest.Companion.text
 import java.net.URI
@@ -153,10 +154,56 @@ data class Issue(val title: String, val body: String) {
  * the operation is `failed`, names the numbers already filed, and files no further one.
  */
 class IssueFile(private val apps: GitHubApps, private val merger: App, api: URI = GitHubApps.GITHUB, http: HttpClient = GitHubApps.client()) {
-    fun perform(where: StageOnGitHub, cause: String, issues: List<Issue>): Performed = Performed.Failed("no performer for issue.file yet")
+    private val rest = Rest(api, http)
+
+    /**
+     * Files [issues] in [where]'s repository, in order, for the message [cause]: with none, GitHub is asked nothing. The
+     * pull request the last line names is the stage's — `none` when the stage has none; a list GitHub could not give
+     * files nothing.
+     */
+    fun perform(where: StageOnGitHub, cause: String, issues: List<Issue>): Performed {
+        if (issues.isEmpty()) return Performed.Ok(mapOf(NUMBERS to emptyList<Int>()))
+        val token = when (val minted = apps.mint(merger, listOf(where.repository.substringAfter('/')), PERMISSIONS)) {
+            is Minted.Ok -> minted.token
+            is Minted.Failed -> return Performed.Failed(minted.reason)
+        }
+        val pull = when (val looked = rest.stagePull(where, token)) {
+            is Looked.Found -> looked.pull.name
+            is Looked.None -> "none"
+            is Looked.Failed -> return Performed.Failed("no issue was filed: ${looked.reason}")
+        }
+        val last = "Filed for ${where.stage} · asked by $cause · pull request $pull"
+        val path = "/repos/${where.repository}/issues"
+        val filed = ArrayList<Int>()
+        for ((index, issue) in issues.withIndex()) {
+            val body = buildJsonObject {
+                put("title", issue.title)
+                put("body", if (issue.body.isEmpty()) last else "${issue.body}\n\n$last")
+            }
+            val number = when (val sent = rest.send("POST", path, token, body)) {
+                is Rest.Sent.NotReached -> null to sent.reason
+                is Rest.Sent.Answered -> sent.reply.let { reply ->
+                    val number = ((reply.json as? JsonObject)?.get("number") as? JsonPrimitive)?.intOrNull
+                    when {
+                        reply.status != Rest.CREATED -> null to rest.refused("POST", path, reply)
+                        number == null -> null to "GitHub's answer to POST $path names no issue number"
+                        else -> number to null
+                    }
+                }
+            }
+            val (issued, why) = number
+            if (issued == null) {
+                val before = if (filed.isEmpty()) "none" else filed.joinToString(", ") { "#$it" }
+                return Performed.Failed("issue ${index + 1} of ${issues.size} was not filed, nor any after it: $why — filed: $before")
+            }
+            filed += issued
+        }
+        return Performed.Ok(mapOf(NUMBERS to filed.toList()))
+    }
 
     companion object {
         /** What filing asks of a token: creating an issue, and reading the stage's pull request its last line names (S3.9 T1). */
         val PERMISSIONS: Map<String, String> = mapOf("issues" to "write", "pull_requests" to "read")
+        private const val NUMBERS = "numbers"
     }
 }
