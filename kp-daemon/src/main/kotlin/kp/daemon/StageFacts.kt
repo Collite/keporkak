@@ -4,7 +4,10 @@ import kp.engine.FactRef
 import kp.engine.fold
 import kp.facts.Observation
 import kp.facts.ProjectFacts
+import kp.facts.StageState
+import kp.facts.WhatTheLogKnows
 import kp.log.LogReader
+import kp.log.counted
 import kp.model.OfficeId
 import java.nio.file.Path
 
@@ -22,7 +25,14 @@ object StageFacts {
         val world = ProjectWorld.of(rules, office, project, path) { }
         val read = LogReader(project, OfficeId(office)).read()
         val state = fold(read.lines.map { it.entry })
-        world.reading({ state }, { rules.ruleSet })
+        val counted = read.lines.counted().map { it.entry }
+        world.reading(object : WhatTheLogKnows {
+            override fun state(stage: String): StageState? = state.machine(STAGE, stage)?.let { StageState(it.state, it.since) }
+            override fun stages(): Map<String, StageState> = state.machines[STAGE].orEmpty().mapValues { (_, machine) -> StageState(machine.state, machine.since) }
+            override fun activeStates(): Set<String> = rules.ruleSet.lifecycle.activeStates.toSet()
+            override fun observedHead(message: String): String? = observedHead(counted, message)
+            override fun lastDelivered(stage: String, kinds: Set<String>): String? = state.lastDelivered(stage, kinds)
+        })
         val known = state.machine(STAGE, stage)
         val facts = (ProjectFacts.ANSWERED.keys + ProjectFacts.NOT_READ_YET.keys).map { name -> world.observation(FactRef(name, emptyMap()), stage)!! }
         return buildList {

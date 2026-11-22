@@ -24,6 +24,9 @@ dependencies {
     testImplementation(libs.slf4j.api)
     // The seats' specs (S2.4): S2.1's fake agent as every seat's process.
     testImplementation(testFixtures(project(":kp-driver")))
+    // GitHub's facts (S3.2): the responses recorded from Collite/kp-toy and GitHub's App endpoints, on one local server.
+    testImplementation(testFixtures(project(":kp-facts")))
+    testImplementation(testFixtures(project(":kp-ops")))
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

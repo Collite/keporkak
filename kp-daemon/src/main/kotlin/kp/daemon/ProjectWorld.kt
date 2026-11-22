@@ -2,7 +2,6 @@ package kp.daemon
 
 import kp.engine.Datum
 import kp.engine.FactRef
-import kp.engine.State
 import kp.facts.Checkouts
 import kp.facts.Git
 import kp.facts.Observation
@@ -10,7 +9,6 @@ import kp.facts.ProjectFacts
 import kp.facts.StageState
 import kp.facts.WhatTheLogKnows
 import kp.mailroom.FactSource
-import kp.rules.RuleSet
 import java.nio.file.Path
 
 /**
@@ -28,14 +26,15 @@ class ProjectWorld private constructor(
     /** What it reads, as the daemon says at start: the project checkout, its efforts' folders, the main checkouts. */
     val reads: String,
 ) : FactSource {
-    /** The fold it reads what the log knows from — the state and the rules in force — once it has one. */
-    @Volatile private var fold: Pair<() -> State, () -> RuleSet>? = null
+    /** What the log knows — the office's fold, or a reading of its log — once it has one. */
+    @Volatile private var fold: WhatTheLogKnows? = null
     private val log = object : WhatTheLogKnows {
-        private fun folded() = fold ?: error("the fold is not read yet")
-        private fun state(): State = folded().first()
-        override fun state(stage: String): StageState? = state().machine(STAGE, stage)?.let { StageState(it.state, it.since) }
-        override fun stages(): Map<String, StageState> = state().machines[STAGE].orEmpty().mapValues { (_, machine) -> StageState(machine.state, machine.since) }
-        override fun activeStates(): Set<String> = folded().second().lifecycle.activeStates.toSet()
+        private fun folded(): WhatTheLogKnows = fold ?: error("the fold is not read yet")
+        override fun state(stage: String): StageState? = folded().state(stage)
+        override fun stages(): Map<String, StageState> = folded().stages()
+        override fun activeStates(): Set<String> = folded().activeStates()
+        override fun observedHead(message: String): String? = folded().observedHead(message)
+        override fun lastDelivered(stage: String, kinds: Set<String>): String? = folded().lastDelivered(stage, kinds)
     }
     private val project = facts(log)
 
@@ -43,11 +42,11 @@ class ProjectWorld private constructor(
      * Reads [office]'s fold from now on: until then, a fact that reads the log is unknown. The daemon hands it over as
      * the office is made, before its start carries any judgement again ([Office.start], Amendment 34).
      */
-    fun reading(office: Office) = reading({ office.state }, { office.rules.ruleSet })
+    fun reading(office: Office) = reading(OfficeLog().also { it.office = office })
 
-    /** Reads what the log knows from [state], under the rules [rules] — each read anew at every ask. */
-    fun reading(state: () -> State, rules: () -> RuleSet) {
-        fold = state to rules
+    /** Reads what [log] knows from now on: the daemon's office's, or a reading of its log (`just facts`). */
+    fun reading(log: WhatTheLogKnows) {
+        fold = log
     }
 
     /** A judgement's ask: what is unknown goes to the journal, each time. */
@@ -92,8 +91,6 @@ class ProjectWorld private constructor(
     }
 
     companion object {
-        private const val STAGE = "stage"
-
         /**
          * The world of [office] — its entry in [rules]' `pool/offices.yaml` — on the project checkout [project] the daemon
          * runs on, with `git` looked up on [path]; [say] is the journal.

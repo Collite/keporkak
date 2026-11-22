@@ -23,3 +23,20 @@ offices:
     listen: {mcp: "127.0.0.1:7711", board: "127.0.0.1:7712"}
     # How often the daemon reports the facts of its seats with a turn in flight (contracts.md §9, Amendment 22).
     watch: {every: 30s}
+# GitHub (contracts.md §9, Amendment 33): the organization, each App's id and its installation's id, and which App a
+# role acts as with which permissions (D-38). None of it is a secret; the keys are, and they are only on the office.
+github:
+  organization: Collite
+  apps:
+    kp-merger: {app: 5849229, installation: 184045472}
+    kp-coder: {app: 5849303, installation: 184046595}
+    kp-reviewer: {app: 5849353, installation: 184047637}
+    kp-gardener: {app: 5849393, installation: 184048423}
+  seats:
+    coder: {app: kp-coder, permissions: {contents: write, pull_requests: write}}
+    reviewer: {app: kp-reviewer, permissions: {contents: read, pull_requests: write, checks: read}}
+    gardener: {app: kp-gardener, permissions: {issues: write, pull_requests: read, contents: read}}
+    principal: {app: kp-reviewer, permissions: {contents: read, pull_requests: read}}
+    teamlead: {app: kp-reviewer, permissions: {contents: read, pull_requests: read}}
+    deputy: {app: kp-reviewer, permissions: {contents: read, pull_requests: read}}
+    retro: {app: kp-reviewer, permissions: {contents: read, pull_requests: read}}

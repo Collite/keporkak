@@ -105,6 +105,13 @@ office-check *args: _python-env
 install: _python-env
     build/python/bin/python scripts/install.py
 
+# What GitHub says of each App of pool/offices.yaml's block `github:` (contracts.md §12, Amendment 33): the name it shows,
+# the repositories its installation reaches, and for each role whether its permissions can be minted. Run on the office,
+# where the Apps' keys are; it prints no token, no key and no claim, and changes nothing on GitHub.
+apps:
+    ./gradlew --console=plain -q :kp-daemon:installDist
+    kp-daemon/build/install/kp-daemon/bin/kp-daemon apps --root "$PWD"
+
 # The daemon as the systemd user service: start, stop, and follow its journal.
 run:
     systemctl --user start keporkak.service
