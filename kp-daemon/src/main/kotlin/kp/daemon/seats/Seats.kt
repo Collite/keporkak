@@ -83,6 +83,8 @@ class Seats(
     private val moreEfforts: Map<String, String> = emptyMap(),
     /** What hears each turn's end: a rehearsal whose seats play their own steps (S2.5). */
     private val turns: Turns? = null,
+    /** GitHub's REST root, when the seats perform `token.mint` and answer a seat's ask for a GitHub token (S3.7): null, they do neither. */
+    private val github: java.net.URI? = null,
     driver: (Listener, java.time.Clock) -> Driver,
 ) : Deliveries, AutoCloseable {
     /** A seat a rehearsal starts outside the rules, as an earlier part of the log would have left it: its role, stage and level. */

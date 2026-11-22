@@ -93,9 +93,10 @@ class Office private constructor(
 
     /**
      * The seat API on [listen] (`host:port`; contracts.md §5, §11), in front of this office's mailroom, with [tokens] as
-     * its registry.
+     * its registry and [github] answering a seat's ask for a GitHub token (§4.4, Amendment 35).
      */
-    fun seatApi(tokens: kp.seatapi.Tokens, listen: String): kp.seatapi.SeatApi = kp.seatapi.SeatApi.start(mailroom, tokens, listen)
+    fun seatApi(tokens: kp.seatapi.Tokens, listen: String, github: kp.seatapi.GitHubTokens = kp.seatapi.GitHubTokens.NONE): kp.seatapi.SeatApi =
+        kp.seatapi.SeatApi.start(mailroom, tokens, listen, github)
 
     /** Fires the deadlines that have passed. */
     fun tick() {

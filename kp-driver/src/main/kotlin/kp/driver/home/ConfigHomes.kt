@@ -63,7 +63,10 @@ data class PermissionDefaults(val writeInside: Answer, val writeOutside: Answer,
 }
 
 /** A built config home, and the MCP servers its persona names, by address, for the caller to inject per session. */
-data class Home(val path: Path, val servers: List<McpServer>)
+data class Home(val path: Path, val servers: List<McpServer>) {
+    /** The folder of the home's two programs (contracts.md §4.4, Amendment 35): first on the seat's path. */
+    val programs: Path get() = path.resolve(ConfigHomes.PROGRAMS)
+}
 
 /**
  * Builds a seat's config home, `<seatsRoot>/<seat>/`, at every start (contracts.md §10, T3), from the keporkak
@@ -195,6 +198,9 @@ class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
 
     companion object {
         const val PACKAGING = "agents/packaging/claude.yaml"
+        /** The home's folder of programs, and the credential helper's name in it (contracts.md §4.4, Amendment 35). */
+        const val PROGRAMS = "bin"
+        const val HELPER = "git-credential-keporkak"
         /** What every `deny:` word that leaves one project file writable has in its name (contracts.md §10). */
         private const val OWN_FILE_WORD = "-beyond-own-"
         private val FOLDER = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------"))

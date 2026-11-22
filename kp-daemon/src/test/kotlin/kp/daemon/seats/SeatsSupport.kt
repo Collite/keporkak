@@ -49,8 +49,14 @@ class SeatsOffice(
     scripts: Map<String, String> = emptyMap(),
     tmux: String? = null,
     startsAt: String = "2026-11-18T09:00:00Z",
+    /**
+     * S3.7: the seats perform `token.mint` and answer a seat's ask for a GitHub token, against S3.2's local GitHub — the
+     * four Apps, with keys of the spec's in the seats' secrets folder (`office/secrets/apps`) — which is [apps].
+     */
+    github: Boolean = false,
 ) : AutoCloseable {
     val project: Path = prepared ?: Files.createTempDirectory(checkout.resolve("build").createDirectories(), "seats-")
+    val apps: kp.ops.FakeApps? = if (github) kp.ops.FakeApps.start(project.resolve("office/secrets/apps")).also { apps -> kp.daemon.THE_APPS.forEach(apps::add) } else null
     private val sockets: Path = Files.createTempDirectory("kp-")
     val clock = SetClock(Instant.parse(startsAt))
     val script = Script(Walk.read(Hero.walkFile(walk)), EFFORT)
@@ -69,7 +75,7 @@ class SeatsOffice(
             val defaults = mapOf("probe" to JsonPrimitive(true), "efforts" to kotlinx.serialization.json.Json.parseToJsonElement("""["low", "medium", "high", "xhigh", "max"]"""))
             fake.resolve("$seat.json").writeText(JsonObject(defaults + given + ("record" to JsonPrimitive(fake.resolve("$seat.jsonl").toString()))).toString())
         }
-        val seating = FakeSeating(System.getProperty("kp.driver.fake.classpath"), tmux = tmux ?: fakeTmux.toString(), panes = PANES)
+        val seating = FakeSeating(System.getProperty("kp.driver.fake.classpath"), tmux = tmux ?: fakeTmux.toString(), panes = PANES, github = apps?.api)
         val (seated, agents) = seating.seat(root, script, project, OFFICE, clock, { said += it }, seeding = prepared == null)
         this.seated = seated
         this.agents = agents
@@ -124,6 +130,7 @@ class SeatsOffice(
     /** The daemon stops — its seats die with it — and the project stays: [again] starts it on what was written. */
     override fun close() {
         daemon.close()
+        apps?.close()
         sockets.deleteRecursively()
     }
 
@@ -194,7 +201,7 @@ class SeatsOffice(
  */
 fun fixtureRoot(roster: (String) -> String): Path {
     val root = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "root-")
-    for (folder in listOf("rules", "robots", "agents", "renders", "skills", "docs", "hooks", "office")) Files.createSymbolicLink(root.resolve(folder), checkout.resolve(folder))
+    for (folder in listOf("rules", "robots", "agents", "renders", "skills", "docs", "hooks", "seat", "office")) Files.createSymbolicLink(root.resolve(folder), checkout.resolve(folder))
     val pool = root.resolve("pool").createDirectories()
     for (file in listOf("offices.yaml", "budgets.yaml")) Files.copy(checkout.resolve("pool/$file"), pool.resolve(file))
     pool.resolve("roster.yaml").writeText(roster(Files.readString(checkout.resolve("pool/roster.yaml"))))

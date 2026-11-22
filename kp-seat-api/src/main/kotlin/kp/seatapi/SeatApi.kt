@@ -37,10 +37,11 @@ class SeatApi private constructor(private val server: EmbeddedServer<CIOApplicat
     companion object {
         /**
          * Starts the listener on [listen] (`listen.mcp` of `pool/offices.yaml`, `host:port`; port 0 picks one), in front of
-         * [mailroom], with [tokens] as its registry. A host that is not a loopback address is refused: the API is
-         * bound to the loopback address and nothing else (contracts.md §5).
+         * [mailroom], with [tokens] as its registry; [github] answers a seat's ask for a GitHub token (Amendment 35). A
+         * host that is not a loopback address is refused: the API is bound to the loopback address and nothing else
+         * (contracts.md §5).
          */
-        fun start(mailroom: Mailroom, tokens: Tokens, listen: String): SeatApi {
+        fun start(mailroom: Mailroom, tokens: Tokens, listen: String, github: GitHubTokens = GitHubTokens.NONE): SeatApi {
             val host = listen.substringBeforeLast(':', "")
             val port = requireNotNull(listen.substringAfterLast(':').toIntOrNull()) { "listen.mcp '$listen' names no port" }
             require(host.isNotEmpty() && InetAddress.getByName(host.removeSurrounding("[", "]")).isLoopbackAddress) {

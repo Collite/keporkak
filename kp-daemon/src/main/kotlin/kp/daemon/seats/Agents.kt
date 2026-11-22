@@ -14,6 +14,11 @@ import kotlin.io.path.isExecutable
 import kotlin.io.path.readLines
 import kotlin.io.path.writeText
 
+/** A seat's environment for GitHub (contracts.md §4.4, Amendment 35) — S3.7 T1: not built yet. */
+object SeatEnvironment {
+    fun of(base: Map<String, String>, programs: Path): Map<String, String> = base
+}
+
 /**
  * The Claude adapter as a seat's agent (contracts.md §9, §10; architecture.md §5): `node` running the pinned adapter
  * installed in [adapter] by `just adapter`. Its environment is built, not inherited: `PATH` with node's folder, the office

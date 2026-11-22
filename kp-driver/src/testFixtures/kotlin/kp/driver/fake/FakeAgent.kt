@@ -36,7 +36,7 @@ import kotlin.system.exitProcess
  * is read back as, before the adapter's own rule — see [resolveModel]), `probe` (S2.4: before anything else, call the
  * daemon's stop hook with the session token the process was given, and record the answer's status). Steps: `say`,
  * `tool`, `tool_update`, `ask` (each tool step with an optional `name`, sent as the adapter sends the tool's name),
- * `usage`, `run`, `hold`, `hangup`, `leave`, `leak`, `recall`, `mcp`, `end` — see [perform]; any of them `once`. Steps after `end` are sent after the
+ * `usage`, `run`, `shell`, `hold`, `hangup`, `leave`, `leak`, `recall`, `mcp`, `end` — see [perform]; any of them `once`. Steps after `end` are sent after the
  * turn's answer. The prompt `/compact` is answered as the pinned adapter answers it (S2.4's probe): the context it
  * reports drops to a fifth.
  */
@@ -273,6 +273,7 @@ private class FakeAgent(private val script: JsonObject) {
                 exitProcess(0)
             }
             "run" -> runCommand(step)
+            "shell" -> shell(step)
             "mcp" -> mcp(step)
             "recall" -> {
                 val first = historyFile(session!!)!!.readLines().map { Json.parseToJsonElement(it).jsonObject }
@@ -380,6 +381,29 @@ private class FakeAgent(private val script: JsonObject) {
         is JsonArray -> JsonArray(value.map(::expanded))
         is JsonPrimitive -> if (value.isString) JsonPrimitive(VARIABLE.replace(value.content) { System.getenv(it.groupValues[1]).orEmpty() }) else value
         else -> value
+    }
+
+    /**
+     * A command run as a seat's shell tool runs it (S3.7): `/bin/sh -c <command>` in the process's own environment and
+     * working directory, its standard input closed; its output — standard output, then standard error — goes out as the
+     * tool's result, as the adapter reports a tool's. The record notes its exit code only, never what it printed.
+     */
+    private fun shell(step: JsonObject) {
+        val callId = step.string("id") ?: "shell-${requestIds.incrementAndGet()}"
+        val command = step.string("command")!!
+        emit(buildJsonObject {
+            put("sessionUpdate", "tool_call"); put("toolCallId", callId); put("title", "Bash"); put("kind", "execute")
+            put("status", "pending"); put("rawInput", buildJsonObject { put("command", command) }); put("name", "Bash")
+        })
+        val process = ProcessBuilder("/bin/sh", "-c", command).redirectInput(ProcessBuilder.Redirect.from(File("/dev/null"))).start()
+        val err = CompletableFuture.supplyAsync { process.errorStream.bufferedReader().readText() }
+        val out = process.inputStream.bufferedReader().readText()
+        val exit = process.waitFor()
+        note("shell", "id" to JsonPrimitive(callId), "exit" to JsonPrimitive(exit))
+        emit(buildJsonObject {
+            put("sessionUpdate", "tool_call_update"); put("toolCallId", callId); put("status", if (exit == 0) "completed" else "failed")
+            put("content", JsonArray(listOf(buildJsonObject { put("type", "content"); put("content", text(out + err.get())) })))
+        })
     }
 
     /** A command that runs until it ends or the turn is cancelled; its pid is recorded. */
