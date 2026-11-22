@@ -1129,10 +1129,12 @@ class Walk:
         raise WalkError("expected refusal, but the message was delivered")
     def run(self):
         """Plays the walk; a walk whose steps mark events as unordered, in every order of them (S3.6 T3). Each order ends with
-        its end — everything the walker keeps of the world ([ended]) — and the walk fails, naming two orders and their
-        ends, unless every order ends alike. `--trace` prints `ORDER` as an order of a step's events begins and `END` with
-        each order's end."""
-        if TRACE:print("WALK "+json.dumps(self.definition,sort_keys=True))
+        its end — everything the walk keeps but what [LEFT_OUT] names ([ended]) — and the walk fails, naming two orders
+        and their ends, unless every order ends alike. `--trace` prints `LEAVES` with what an end leaves out, `ORDER` as
+        an order of a step's events begins and `END` with each order's end."""
+        if TRACE:
+            print("WALK "+json.dumps(self.definition,sort_keys=True))
+            print("LEAVES "+json.dumps({"walk":self.LEFT_OUT,"stage":self.LEFT_OUT_OF_A_STAGE,"record":self.LEFT_OUT_OF_A_RECORD},sort_keys=True))
         ends=[]
         self.play(0,[],ends)
         first=ends[0]
@@ -1214,35 +1216,84 @@ class Walk:
     def trace(self,step,event=None):
         if TRACE:print("TRACE "+json.dumps({"step":self.index,**({"event":event} if event is not None else {}),"refused":bool(step.get("expect",{}).get("refused")),"fired":self.fired,
             "stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()},"seats":self.seat_states()},sort_keys=True))
+    # What an order's end leaves out of what the walk keeps, each with its reason (architecture.md §8; review-027 B2).
+    # `ended` holds the rest, and refuses to end a walk that keeps anything it neither holds nor names here.
+    LEFT_OUT={
+        "definition":"the walk as written: the same in every order",
+        "name":"the walk's name: the same in every order",
+        "index":"the tick, a step's place in the walk: the same in every order, as an unordered step's events all take the step's own",
+        "stage":"the stage of the last step or event played, which a step that names none is played in: where the walk's text has got to",
+        "current":"the stage being played's own part of `contexts`, which the end holds with the rest of it",
+        "ctx":"the message read while one step is played",
+        "robot":"the robot read while one step is played",
+        "subject":"the seat a seat transition is read for while it is read",
+        "fired":"the rules the last step fired, which `TRACE` prints after each step; what they did is held",
+        "first_candidate":"the first candidate of the last transitions read, which names a refusal",
+        "in_group":"whether an unordered step's events are being played: never, at an end",
+        "group_sent":"how many of each kind the robots and the mailroom sent in the last unordered step, which numbers those messages' ids",
+        "first_moved":"the order the seats were first moved, in which a seat transition that names no seat moves them: the order played, "
+                      "which the orders vary on purpose; where each seat ends, and the stage it is bound to, are held",
+        "used_operations":"the operations each request asked for, by its id: `operations` holds each, named by the kind and seat of the message that asked",
+        "thread_hops":"never written: the walker counts no thread's hops",
+        "history's order":"the order the walk kept its messages, results and wakes in: the order played, which the orders vary on "
+                          "purpose; `log` holds them as a set, though what a later step reads as the last of a kind "
+                          "(`log.count … since:`, `review.open_blockers`) follows that order",
+    }
+    # Of a stage's machines: the two the walk keeps elsewhere.
+    LEFT_OUT_OF_A_STAGE={
+        "seat":"its entry is set once from the walk and never read: `seats` holds each seat's state",
+        "found_item":"its entry is set once from the walk and never read: `found` holds each Found line's state",
+    }
+    # Of a message, refusal, operation's result or wake the walk keeps.
+    LEFT_OUT_OF_A_RECORD={
+        "id":"a message's request id: what the robots and the mailroom send in an unordered step is numbered in the order sent",
+        "re":"a copy of the message a reply answers, which `reply_id` names",
+        "trigger":"a message's args, sender and stage again, which are held beside it",
+        "role":"a message's sender's role, which the walk's seats give for `from`; a wake's role is held, among the operations",
+        "by":"which robot rule sent a message — the robot is `from`: two rules may send one message for one cause, as POOL-1 and "
+             "POOL-12 each send a seat's one seat-gone when its first end report comes (D-85; the walk a-killed-seats-ends); "
+             "no rule reads it, though a requirement `msg: by` could",
+        "rule":"which robot rule woke a seat, as `by` — the robot is the wake's role",
+    }
+    HELD={"contexts","shared","shared_counters","seats","bound","history","messages","pending","requested","kind_fires","emissions"}
     def ended(self,order,error):
         """An order's end, printed as `END` with the order, and the walk's verdict on it: (passed, the line to print). The
-        end holds everything the walker keeps of the world (review-027 B1): every stage's state and every seat's; each
-        stage's flag thread (`threads`) and Found lines (`found`); Bora's presence and the phase; the counters; the
-        messages delivered, refused and held, by kind; what a robot or the mailroom sent that no step delivered
-        (`unsent`); the operations requested — a transition's `do:` and a robot's `wake:` (an op `seat.wake`,
-        contracts.md §4.4) — and those still waiting. It leaves out what an order numbers for itself, and nothing else:
-        the request ids and the ticks, which are the steps' places in the order played."""
+        end holds everything the walk keeps but what LEFT_OUT and the two lists after it name, each with its reason
+        (review-027 B1, B2): of each stage, its state (`stages`), the state it returns to from a pause (`returns`), its
+        flag thread (`threads`), Found lines (`found`), other machines (`machines`), facts (`facts`) and counters
+        (`counters`, with the effort's); each seat's state (`seats`) and the stage it is bound to (`bound`); Bora's
+        presence and the phase; how often each kind fired in its window (`fires`); every message, refusal and operation's
+        result the walk keeps (`log`) and each message's present status (`messages`); what a robot or the mailroom sent
+        that no step delivered (`unsent`); the operations requested — a transition's `do:` and a robot's `wake:` (an op
+        `seat.wake`, contracts.md §4.4) — and those still waiting."""
+        unnamed=sorted(set(self.__dict__)-self.HELD-set(self.LEFT_OUT))
+        unnamed+=sorted({f"contexts.{key}" for context in self.contexts.values() for key in context if key not in ("states","previous","found_items","counters","facts")})
+        unnamed+=sorted(f"shared.{key}" for key in self.shared if key not in ("presence","phase"))
+        if unnamed:raise RuntimeError(f"walk {self.name}: its end neither holds nor leaves out {', '.join(unnamed)}")
         counters={stage:{name:value for name,value in sorted(context["counters"].items()) if value} for stage,context in self.contexts.items()}
         counters={stage:values for stage,values in counters.items() if values}
         if any(self.shared_counters.values()):counters["effort"]={name:value for name,value in sorted(self.shared_counters.items()) if value}
-        def by_kind(status):
-            counted={}
-            for record in self.history:
-                if record.get("status")==status and record.get("kind"):counted[record["kind"]]=counted.get(record["kind"],0)+1
-            return dict(sorted(counted.items()))
+        def described(record):
+            return json.dumps({key:value for key,value in record.items() if key not in self.LEFT_OUT_OF_A_RECORD},sort_keys=True)
         def asked(request_id,operation):
             message=self.messages.get(request_id,{});seat=message.get("args",{}).get("seat")
             return f"{operation} ({message.get('kind')}{' '+seat if isinstance(seat,str) else ''})"
-        wakes=[f"seat.wake ({record['role']} {record['mode']} {record.get('rule')})" for record in self.history if record.get("operation")=="seat.wake" and "mode" in record]
-        others={stage:{machine:state for machine,state in sorted(context["states"].items()) if machine not in ("stage","seat","flag_thread","found_item")}
+        wakes=[f"seat.wake ({record['role']} {record['mode']})" for record in self.history if record.get("operation")=="seat.wake" and "mode" in record]
+        others={stage:{machine:state for machine,state in sorted(context["states"].items()) if machine not in ("stage","flag_thread",*self.LEFT_OUT_OF_A_STAGE)}
                 for stage,context in self.contexts.items()}
-        end={"stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()},"seats":self.seat_states(),
+        end={"stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()},
+             "returns":{stage:context["previous"] for stage,context in self.contexts.items()},
+             "seats":self.seat_states(),"bound":dict(sorted(self.bound.items())),
              "threads":{stage:context["states"]["flag_thread"] for stage,context in self.contexts.items()},
              "found":{stage:dict(sorted(context["found_items"].items())) for stage,context in self.contexts.items() if context["found_items"]},
              **({"machines":{stage:states for stage,states in others.items() if states}} if any(others.values()) else {}),
+             "facts":{stage:context["facts"] for stage,context in self.contexts.items()},
              "presence":self.shared["presence"],"phase":self.shared["phase"],"counters":counters,
-             "delivered":by_kind("delivered"),"refused":by_kind("refused"),"held":by_kind("held"),
-             "unsent":sorted(f"{sent['kind']} ({sent.get('by',sent.get('from'))})" for sent in self.emissions),
+             "fires":{json.dumps(key):count for key,count in sorted(self.kind_fires.items(),key=lambda item:json.dumps(item[0]))},
+             # A robot's wake is among the operations, below.
+             "log":sorted(described(record) for record in self.history if not (record.get("operation")=="seat.wake" and "mode" in record)),
+             "messages":sorted(described(message) for message in self.messages.values()),
+             "unsent":sorted(described(sent) for sent in self.emissions),
              "operations":sorted(self.requested+wakes),
              "waiting":sorted(asked(request_id,operation) for request_id,operations in self.pending.items() for operation in operations)}
         if error is not None:end["error"]=error
