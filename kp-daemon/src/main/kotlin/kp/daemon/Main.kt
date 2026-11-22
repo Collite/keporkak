@@ -25,8 +25,9 @@ import kotlin.system.exitProcess
 private const val USAGE = """kp-daemon run [--root DIR] [--office NAME] [--project DIR] [--socket PATH] [--listen HOST:PORT]
 kp-daemon rehearse <walk.yaml> [--root DIR] [--office NAME] [--socket PATH] [--seats scripted|fake --fake-classpath CP|real]
 kp-daemon facts <stage> [--root DIR] [--office NAME] [--project DIR]
-kp-daemon apps [--root DIR] [--office NAME]
+kp-daemon apps [prove] [--root DIR] [--office NAME]
   apps: what GitHub says of each App of pool/offices.yaml's block github: (`just apps`); it prints no token
+  apps prove: the live proof of a seat's GitHub identity on the toy repository (`just apps prove`); it prints no token
   --root: the keporkak checkout whose rules are in force (default: the working folder)
   --seats: the walk's seats scripted (default), S2.1's fake agent run from --fake-classpath (`just rehearse <walk> --seats fake`),
            or Claude seats on the pinned adapter and the office's token (`just rehearse <walk> --seats real`: it spends tokens)
@@ -59,9 +60,11 @@ fun main(args: Array<String>) {
         return
     }
     if (command == "apps") {
-        if (words.isNotEmpty()) fail("unknown words: $words")
+        val prove = words.firstOrNull() == "prove"
+        if (words.size > (if (prove) 1 else 0)) fail("unknown words: $words")
         val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
-        exitProcess(Apps.run(rules ?: fail("the rules are not valid:\n" + loaded.problems.joinToString("\n")), office) { println(it) })
+        val inForce = rules ?: fail("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
+        exitProcess(if (prove) AppsProve.run(root, inForce, office) { println(it) } else Apps.run(inForce, office) { println(it) })
     }
     try {
         val running: AutoCloseable = when (command) {
