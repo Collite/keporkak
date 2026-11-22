@@ -34,6 +34,15 @@ interface WhatTheLogKnows {
 
     /** The states the rules call active (`active_states`, `rules/stage-lifecycle.yaml`). */
     fun activeStates(): Set<String>
+
+    /**
+     * The `pr.head` the judgement of [message] observed (contracts.md §2.2: its `observed`), which `pr.commits_since` counts
+     * from (Amendment 33); null when that judgement observed none, or the log holds no judgement of [message].
+     */
+    fun observedHead(message: String): String?
+
+    /** When the last message of [stage] whose kind is one of [kinds] was delivered (RFC 3339), as the log dates it; null when none was. */
+    fun lastDelivered(stage: String, kinds: Set<String>): String?
 }
 
 /** A stage's state in the log, and the time it entered it (RFC 3339), as the log dates it. */

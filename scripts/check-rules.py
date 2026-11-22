@@ -1285,6 +1285,65 @@ def check_offices(offices, vendors):
     ok(f"{label}: {len(entries)} office(s) ({', '.join(entries)}) with roots, computer use, listeners and the watch period checked")
     return entries
 
+# The block `github:` (contracts.md §9, Amendment 33; S3.2): the organization, each App's id and its installation's id, and
+# for each role the App it acts as and what its token may do — `read` or `write`. Each failure names its line.
+PERMISSION_LEVELS = ("read", "write")
+
+def yaml_lines(path):
+    """Each node of the YAML file at [path] by its path of keys, with the line it starts on (from 1)."""
+    lines = {}
+    def walk(node, at):
+        lines[at] = node.start_mark.line + 1
+        if isinstance(node, yaml.MappingNode):
+            for key, value in node.value:
+                walk(value, at + (key.value,))
+    root = yaml.compose(path.read_text(), Loader=RulesLoader)
+    if root is not None:
+        walk(root, ())
+    return lines
+
+def check_github(offices):
+    if offices is None or "github" not in offices:
+        return
+    label = "pool/offices.yaml: github"
+    lines = yaml_lines(POOL / "offices.yaml")
+    def at(*path):
+        while path not in lines and path:
+            path = path[:-1]
+        return f"(line {lines.get(path, 1)})"
+    block = offices.get("github")
+    if not isinstance(block, dict):
+        fail(f"{label} must be a map {at('github')}")
+        return
+    for key in sorted(set(block) - {"organization", "apps", "seats"}): fail(f"{label}: unknown field '{key}' {at('github', key)}")
+    if not text(block.get("organization")): fail(f"{label}: organization must be a name {at('github', 'organization')}")
+    apps = block.get("apps") if isinstance(block.get("apps"), dict) else {}
+    if not apps: fail(f"{label}: apps must name each App's id and its installation's id {at('github', 'apps')}")
+    for identity, app in apps.items():
+        where = at("github", "apps", identity)
+        if not isinstance(app, dict):
+            fail(f"{label}: apps.{identity} must be {{app: <id>, installation: <id>}} {where}")
+            continue
+        if not positive(app.get("app")): fail(f"{label}: apps.{identity} has no app id {where}")
+        if not positive(app.get("installation")): fail(f"{label}: apps.{identity} has no installation id {where}")
+        for key in sorted(set(app) - {"app", "installation"}): fail(f"{label}: apps.{identity}: unknown field '{key}' {where}")
+    seats = block.get("seats") if isinstance(block.get("seats"), dict) else {}
+    if "seats" in block and not isinstance(block.get("seats"), dict): fail(f"{label}: seats must map roles to an App and its permissions {at('github', 'seats')}")
+    for role, seat in seats.items():
+        where = at("github", "seats", role)
+        if not isinstance(seat, dict):
+            fail(f"{label}: seats.{role} must be {{app: <identity>, permissions: {{…}}}} {where}")
+            continue
+        if seat.get("app") not in apps: fail(f"{label}: seats.{role} names the App '{seat.get('app')}', which github.apps does not hold {at('github', 'seats', role, 'app')}")
+        permissions = seat.get("permissions")
+        if not isinstance(permissions, dict) or not permissions:
+            fail(f"{label}: seats.{role} must give its permissions, each read or write {at('github', 'seats', role, 'permissions')}")
+            permissions = {}
+        for name, level in permissions.items():
+            if level not in PERMISSION_LEVELS: fail(f"{label}: seats.{role} gives {name} '{level}', which is neither read nor write {at('github', 'seats', role, 'permissions', name)}")
+        for key in sorted(set(seat) - {"app", "permissions"}): fail(f"{label}: seats.{role}: unknown field '{key}' {where}")
+    ok(f"{label}: organization {block.get('organization')}; {len(apps)} App(s); {len(seats)} role(s), each with an App of the block and permissions read or write")
+
 def check_budgets(budgets, vendors, entries):
     if budgets is None:
         return
@@ -1317,6 +1376,7 @@ if not FIXTURE:
     roster_data, offices_data, budgets_data = pool_file("roster.yaml"), pool_file("offices.yaml"), pool_file("budgets.yaml")
     pool_vendors = check_roster(roster_data)
     pool_offices = check_offices(offices_data, pool_vendors)
+    check_github(offices_data)
     check_budgets(budgets_data, pool_vendors, pool_offices)
     used = pool_values([L, K, E] + [robot for _, robot in ROBOTS], [])
     for value in used:

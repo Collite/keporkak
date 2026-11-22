@@ -163,7 +163,7 @@ private val LIST = """
 """.trimIndent() + "\n"
 
 /** Moves each stage of [states] from `planned` to its state, in one judgement on [project]'s log, at [SEEDED]. */
-private fun seed(project: Path, states: Map<String, String>) {
+internal fun seed(project: Path, states: Map<String, String>) {
     if (states.isEmpty()) return
     LogWriter.open(project, OfficeId("panda")).use { log ->
         val judgement = log.judgement()
@@ -175,14 +175,14 @@ private fun seed(project: Path, states: Map<String, String>) {
     }
 }
 
-private fun repository(dir: Path): Path = dir.createDirectories().also { git(it, "init", "--quiet", "--initial-branch=main") }
+internal fun repository(dir: Path): Path = dir.createDirectories().also { git(it, "init", "--quiet", "--initial-branch=main") }
 
-private fun write(dir: Path, path: String, text: String) {
+internal fun write(dir: Path, path: String, text: String) {
     dir.resolve(path).also { it.parent.createDirectories() }.writeText(text)
 }
 
 /** The spec's own `git`, reading no user or system configuration. */
-private fun git(dir: Path, vararg args: String) {
+internal fun git(dir: Path, vararg args: String) {
     val process = ProcessBuilder(listOf("git", "-C", dir.toString()) + args).redirectErrorStream(true).apply {
         environment().apply {
             keys.removeAll { it.startsWith("GIT_") }

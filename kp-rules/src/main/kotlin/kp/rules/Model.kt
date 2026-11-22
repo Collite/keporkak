@@ -265,4 +265,19 @@ data class Pool(
     val budgets: Budgets,
     /** Every scalar of a pool file by its dotted path — what `{roster: …}`, `{budget: …}` and (per office) `{office: …}` read. */
     val values: Map<PoolFile, List<Map<String, Literal>>>,
+    /** `pool/offices.yaml`'s block `github:` (Amendment 33); null when the file has none. */
+    val github: GitHub? = null,
 )
+
+/**
+ * The block `github:` of `pool/offices.yaml` (contracts.md §9, Amendment 33): the [organization]; each App by its identity
+ * — a name of the rules and of its key's file — with its id and its installation's id; and for each role the App it acts
+ * as and what its token may do (D-38). A role with no entry gets no token. None of it is a secret.
+ */
+data class GitHub(val organization: String, val apps: Map<String, GitHubApp>, val seats: Map<String, GitHubSeat>)
+
+/** An App's id and its installation's id in the organization. */
+data class GitHubApp(val app: Long, val installation: Long)
+
+/** The App a role acts as — an identity of [GitHub.apps] — and its token's [permissions]: a permission's name → `read` or `write`. */
+data class GitHubSeat(val app: String, val permissions: Map<String, String>)

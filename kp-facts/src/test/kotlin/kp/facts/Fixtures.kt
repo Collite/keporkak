@@ -77,15 +77,27 @@ fun runGit(dir: Path, args: List<String>, dated: String? = null): String {
     return output
 }
 
-/** What the log knows, as a spec sets it: each stage's state, the exits it dates, the states the rules call active. */
+/**
+ * What the log knows, as a spec sets it: each stage's state, the exits it dates, the states the rules call active; the
+ * head each message's judgement observed (S3.2), and when each stage's messages of a kind were delivered.
+ */
 class KnownLog(
     val states: MutableMap<String, String> = mutableMapOf(),
     val exits: MutableMap<String, String> = mutableMapOf(),
     private val active: Set<String> = setOf("assigned", "building"),
+    val heads: MutableMap<String, String> = mutableMapOf(),
+    val delivered: MutableList<Triple<String, String, String>> = mutableListOf(),
 ) : WhatTheLogKnows {
     override fun state(stage: String): StageState? = states[stage]?.let { StageState(it, exits[stage] ?: "2026-11-01T09:00:00Z") }
     override fun stages(): Map<String, StageState> = states.keys.associateWith { state(it)!! }
     override fun activeStates(): Set<String> = active
+    override fun observedHead(message: String): String? = heads[message]
+    override fun lastDelivered(stage: String, kinds: Set<String>): String? = delivered.lastOrNull { it.first == stage && it.second in kinds }?.third
+
+    /** A message of [kind] about [stage] was delivered [at]. */
+    fun delivered(stage: String, kind: String, at: String) {
+        delivered += Triple(stage, kind, at)
+    }
 
     /** [stage] exited at [at], as the log dates it. */
     fun exited(stage: String, at: String) {

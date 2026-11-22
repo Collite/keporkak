@@ -23,6 +23,8 @@ import kotlin.system.exitProcess
 
 private const val USAGE = """kp-daemon run [--root DIR] [--office NAME] [--project DIR] [--socket PATH] [--listen HOST:PORT]
 kp-daemon rehearse <walk.yaml> [--root DIR] [--office NAME] [--socket PATH] [--seats scripted|fake --fake-classpath CP|real]
+kp-daemon apps [--root DIR] [--office NAME]
+  apps: what GitHub says of each App of pool/offices.yaml's block github: (`just apps`); it prints no token
   --root: the keporkak checkout whose rules are in force (default: the working folder)
   --seats: the walk's seats scripted (default), S2.1's fake agent run from --fake-classpath (`just rehearse <walk> --seats fake`),
            or Claude seats on the pinned adapter and the office's token (`just rehearse <walk> --seats real`: it spends tokens)
@@ -45,6 +47,11 @@ fun main(args: Array<String>) {
     val seats = option("--seats") ?: "scripted"
     val fakeClasspath = option("--fake-classpath")
     val listen = option("--listen")
+    if (command == "apps") {
+        if (words.isNotEmpty()) fail("unknown words: $words")
+        val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
+        exitProcess(Apps.run(rules ?: fail("the rules are not valid:\n" + loaded.problems.joinToString("\n")), office) { println(it) })
+    }
     try {
         val running: AutoCloseable = when (command) {
             "run" -> {
@@ -113,7 +120,8 @@ internal fun projectOf(root: Path, office: String): Path {
  * The office's daemon (S2.4 T8): the mailroom on the project's log, the seats in front of the driver — the Claude
  * adapter `just adapter` installed under the checkout's `office/adapter` — the seat API on `listen.mcp`, the watch every
  * `watch.every`, and the panes. Its world is `kp-facts` over the project checkout it runs on and the office's main
- * checkouts, with the fold (S3.1, [ProjectWorld]); beside it, Bora's presence. Until the performers exist (P3), it ends
+ * checkouts, with the fold (S3.1, [ProjectWorld]), and GitHub read as `kp-merger` (S3.2, [GitHubWorld]); beside it, Bora's
+ * presence. Until the performers exist (P3), it ends
  * `notify.bora` at once — the inbox is the notification, and `kp inbox --follow` raises it — and ends every other
  * operation that is not a seat's `failed`, saying no performer exists yet.
  */
@@ -127,14 +135,14 @@ private fun service(root: Path, office: String, project: Path, socket: Path, lis
     val roots = Roots.of(entry.roots)
     val listen = listening ?: entry.listen["mcp"] ?: fail("pool/offices.yaml gives office '$office' no listen.mcp")
     val clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }
-    val world = ProjectWorld.of(checkNotNull(rules), office, project)
+    val world = ServiceWorld(ProjectWorld.of(checkNotNull(rules), office, project), GitHubWorld.of(office, project))
     val seated = Seated.start(office, project, root, world, operations, clock, listen) { starting ->
         Seats(root, office, project, roots, ClaudeAgent(root.resolve("office/adapter")), clock, Panes(say = Journal::say), Journal::say, starting) { listener, time ->
             ClaudeAdapter.driver(roots.secrets.resolve("claude-token"), roots.seats, time, CompiledAnswerer(roots.seats), listener)
         }
     }
     world.reading(seated.office)
-    Journal.say(world.reads)
+    Journal.say(world.project.reads)
     try {
         seated.start()
     } catch (error: Exception) {

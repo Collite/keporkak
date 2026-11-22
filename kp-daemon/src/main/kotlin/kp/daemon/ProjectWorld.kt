@@ -31,6 +31,8 @@ class ProjectWorld private constructor(
         override fun state(stage: String): StageState? = folded().state.machine(STAGE, stage)?.let { StageState(it.state, it.since) }
         override fun stages(): Map<String, StageState> = folded().state.machines[STAGE].orEmpty().mapValues { (_, machine) -> StageState(machine.state, machine.since) }
         override fun activeStates(): Set<String> = folded().rules.ruleSet.lifecycle.activeStates.toSet()
+        override fun observedHead(message: String): String? = folded().observedHead(message)
+        override fun lastDelivered(stage: String, kinds: Set<String>): String? = folded().lastDelivered(stage, kinds)
     }
     private val project = facts(log)
 

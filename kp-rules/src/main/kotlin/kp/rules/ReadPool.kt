@@ -5,6 +5,7 @@ import java.math.BigDecimal
 internal const val ROSTER = "pool/roster.yaml"
 internal const val OFFICES = "pool/offices.yaml"
 internal const val BUDGETS = "pool/budgets.yaml"
+private const val GITHUB = "github"
 
 private val sizes = listOf("S", "M", "L", "XL")
 private val roots = listOf("worktrees", "scratch", "seats", "secrets")
@@ -107,6 +108,7 @@ internal fun readOffices(doc: Doc, node: Node, vendors: Set<String>?): Map<Strin
     doc.version(fields)
     val entries = (fields["offices"] as? Node.Mapping)?.entries.orEmpty()
     if (entries.isEmpty()) doc.problem(null, "offices must name at least one office")
+    fields["github"] // read by readGitHub
     fields.close()
     return entries.map { (name, node) ->
         if (!officeName.matches(name) || name == "hand") doc.problem(null, "'$name' is not an office name (lower-case; 'hand' is reserved)")
@@ -150,6 +152,55 @@ internal fun readOffices(doc: Doc, node: Node, vendors: Set<String>?): Map<Strin
         Office(name, text["os"] ?: "", text["user"] ?: "", rootsMap.mapValues { it.value ?: "" }, Project(checkout ?: "", efforts.mapValues { it.value ?: "" }),
             repos.mapValues { it.value ?: "" }, targets.orEmpty().filterNotNull(), use ?: "", qaVendor ?: "", listen.mapValues { it.value ?: "" }, every ?: "")
     }.associateBy { it.name }
+}
+
+private val permissionLevels = setOf("read", "write")
+
+/**
+ * The block `github:` of pool/offices.yaml (contracts.md §9, Amendment 33): the organization, each App's id and its
+ * installation's id, and for each role the App it acts as and its permissions, each `read` or `write`. Each problem names
+ * its line. A role is not checked against the engagement's: the shared fixtures load this file beside an engagement of
+ * three roles (S3.2). Null with no block.
+ */
+internal fun readGitHub(doc: Doc, node: Node): GitHub? {
+    val block = (node as? Node.Mapping)?.entries?.get("github") ?: return null
+    fun problem(message: String, at: Node) = doc.problem(GITHUB, "$message (line ${at.line})")
+    val fields = (block as? Node.Mapping)?.entries ?: return null.also { problem("must be a map", block) }
+    (fields.keys - setOf("organization", "apps", "seats")).sorted().forEach { problem("unknown field '$it'", fields.getValue(it)) }
+    val organization = doc.textOrNull(fields["organization"])
+    if (organization == null) problem("organization must be a name", fields["organization"] ?: block)
+    val appNodes = (fields["apps"] as? Node.Mapping)?.entries.orEmpty()
+    if (appNodes.isEmpty()) problem("apps must name each App's id and its installation's id", fields["apps"] ?: block)
+    val apps = appNodes.mapNotNull { (identity, app) ->
+        val ids = (app as? Node.Mapping)?.entries ?: return@mapNotNull null.also { problem("apps.$identity must be {app: <id>, installation: <id>}", app) }
+        val id = doc.id(ids["app"]).also { if (it == null) problem("apps.$identity has no app id", app) }
+        val installation = doc.id(ids["installation"]).also { if (it == null) problem("apps.$identity has no installation id", app) }
+        (ids.keys - setOf("app", "installation")).sorted().forEach { problem("apps.$identity: unknown field '$it'", app) }
+        if (id == null || installation == null) null else identity to GitHubApp(id, installation)
+    }.toMap()
+    val seatsNode = fields["seats"]
+    if (seatsNode != null && seatsNode !is Node.Mapping) problem("seats must map roles to an App and its permissions", seatsNode)
+    val seats = (seatsNode as? Node.Mapping)?.entries.orEmpty().mapNotNull { (role, seat) ->
+        val read = (seat as? Node.Mapping)?.entries ?: return@mapNotNull null.also { problem("seats.$role must be {app: <identity>, permissions: {…}}", seat) }
+        val app = doc.textOrNull(read["app"])
+        if (app == null || app !in appNodes) problem("seats.$role names the App '${app ?: (read["app"] as? Node.Scalar)?.literal?.let(::show)}', which github.apps does not hold", read["app"] ?: seat)
+        val permissionNodes = (read["permissions"] as? Node.Mapping)?.entries.orEmpty()
+        if (permissionNodes.isEmpty()) problem("seats.$role must give its permissions, each read or write", read["permissions"] ?: seat)
+        val permissions = permissionNodes.mapNotNull { (name, level) ->
+            val value = doc.textOrNull(level)
+            if (value !in permissionLevels) null.also { problem("seats.$role gives $name '${(level as? Node.Scalar)?.literal?.let(::show)}', which is neither read nor write", level) }
+            else name to value!!
+        }.toMap()
+        (read.keys - setOf("app", "permissions")).sorted().forEach { problem("seats.$role: unknown field '$it'", seat) }
+        if (app == null) null else role to GitHubSeat(app, permissions)
+    }.toMap()
+    return GitHub(organization ?: "", apps, seats)
+}
+
+/** A positive whole number, as an App's or an installation's id is. */
+private fun Doc.id(node: Node?): Long? {
+    val number = ((node as? Node.Scalar)?.literal as? Literal.Number)?.value
+    return number?.takeIf { it.signum() > 0 && it.stripTrailingZeros().scale() <= 0 }?.toLong()
 }
 
 /** pool/budgets.yaml (contracts.md §9): slot limits per dimension and warning thresholds. */
