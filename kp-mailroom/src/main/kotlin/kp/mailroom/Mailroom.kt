@@ -783,7 +783,10 @@ class Mailroom private constructor(
             when (standing) {
                 is Message -> arrived(standing, now()) { stand(it) }
                 is Op -> if (standing.phase == REQUESTED) stand(voided) else {
-                    val flight = folded.operations.firstOrNull { it.op == standing.op && it.cause == standing.cause && standing.with?.get(SEAT).let { seat -> seat == null || it.with.fields[SEAT]?.element() == seat } }
+                    // Paired as the fold pairs it: by its seat, or — naming none — with a request that names none first.
+                    val mine = folded.operations.filter { it.op == standing.op && it.cause == standing.cause }
+                    val seat = standing.with?.get(SEAT)
+                    val flight = if (seat != null) mine.firstOrNull { it.with.fields[SEAT]?.element() == seat } else mine.firstOrNull { SEAT !in it.with.fields } ?: mine.firstOrNull()
                     val with = flight?.with ?: Datum.Fields(emptyMap())
                     val returned = (Datum.of(standing.plain()[RESULT] ?: emptyMap<String, Any?>()) as? Datum.Fields) ?: Datum.Fields(emptyMap())
                     complete(OperationRequest(standing.op, standing.cause, with),

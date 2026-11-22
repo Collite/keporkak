@@ -62,7 +62,7 @@ class RoutingSpec : StringSpec({
 
     "a seat is woken only once its message's lines are on disk" {
         val office = Office(seed = "ready_for_review")
-        val onDisk = ArrayList<List<String>>()
+        val onDisk: MutableList<List<String>> = java.util.concurrent.CopyOnWriteArrayList() // two seats are woken side by side
         office.stop()
         office.mailroom = Mailroom.start(office.project, panda, office.texts, office.facts, office.operations, object : Deliveries {
             override fun idle(seat: String) = true

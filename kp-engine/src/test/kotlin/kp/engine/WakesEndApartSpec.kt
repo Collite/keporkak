@@ -33,4 +33,16 @@ class WakesEndApartSpec : StringSpec({
         folded(lines.take(5)).operations.map { it.with.fields["seat"] } shouldBe listOf(Datum.Text("coder-1"))
         folded(lines).operations shouldBe emptyList()
     }
+
+    "a robot's own seat woken in a mode ends by its result, which names no seat, though a seat's wake of the same message is in flight (S3.3, Amendment 36)" {
+        val lines = log(*(requested + listOf(
+            """{"event":"op","op":"seat.wake","phase":"requested","cause":"m-panda-000001","with":{"role":"retro","mode":"stage-retro","rule":"RET-2"}}""",
+            """{"event":"op","op":"seat.wake","phase":"ok","cause":"m-panda-000001"}""",
+        )).toTypedArray())
+
+        // Operations run outside the mailroom's lock: the mode wake's result may come before the seats' (contracts.md §7, Amendment 36).
+        val state = folded(lines)
+        state.operations.map { it.with.fields["seat"] } shouldBe listOf(Datum.Text("reviewer-1"), Datum.Text("coder-1"))
+        state.wakes.keys shouldBe setOf("retro")
+    }
 })

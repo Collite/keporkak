@@ -15,7 +15,7 @@ class OperationsSpec : StringSpec({
 
     "an operation is performed only once its request is on disk, after the lines of the judgement that requested it" {
         val office = Office(seed = "proposed")
-        val onDisk = ArrayList<List<String>>()
+        val onDisk: MutableList<List<String>> = java.util.concurrent.CopyOnWriteArrayList() // written on the operation's own thread
         office.stop()
         office.mailroom = Mailroom.start(office.project, panda, office.texts, office.facts, { request, done ->
             onDisk += office.readBack().lines.dropWhile { it !is kp.model.Message }.map { (it as? Op)?.let { op -> "${op.op} ${op.phase}" } ?: it::class.simpleName!! }
