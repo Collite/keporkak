@@ -41,7 +41,7 @@ object AppsMerge {
     const val TOY = "kp-toy"
 
     /** Runs the proof on [rules]' office [office] against GitHub at [api], printing through [print]; 0 when every step is as §12 gives it. */
-    fun run(rules: InForceRules, office: String, api: URI = GitHubApps.GITHUB, clock: () -> Instant = Instant::now, wait: (Long) -> Unit = Thread::sleep, print: (String) -> Unit): Int {
+    fun run(rules: InForceRules, office: String, api: URI = GitHubApps.GITHUB, clock: () -> Instant = Instant::now, print: (String) -> Unit): Int {
         val pool = rules.ruleSet.pool
         val block = pool.github ?: return 1.also { print("pool/offices.yaml has no block github:") }
         val entry = pool.offices[office] ?: return 1.also { print("pool/offices.yaml names no office '$office'") }
@@ -50,7 +50,7 @@ object AppsMerge {
         fun app(identity: String) = block.apps[identity]?.let { App(identity, it.app, it.installation) }
         val merger = app(MERGER) ?: return 1.also { print("github.apps holds no App $MERGER") }
         val coder = app(coderSeat.app) ?: return 1.also { print("github.apps holds no App ${coderSeat.app}") }
-        val proof = Proof(GitHubApps(keys, api), GitHubRest(api), "${block.organization}/$TOY", merger, coder, coderSeat.permissions, api, wait, print)
+        val proof = Proof(GitHubApps(keys, api), GitHubRest(api), "${block.organization}/$TOY", merger, coder, coderSeat.permissions, api, print)
         print("just apps merge on ${proof.repository}, as the office $office reaches it with the keys in $keys (run ${RUN.format(clock())}):")
         return try {
             proof.run("kp-apps-merge-${RUN.format(clock())}")
@@ -70,7 +70,6 @@ object AppsMerge {
         val coder: App,
         val coderPermissions: Map<String, String>,
         val api: URI,
-        val wait: (Long) -> Unit,
         val print: (String) -> Unit,
     ) {
         private var notAsGiven = 0
@@ -79,7 +78,7 @@ object AppsMerge {
         private var issue: Int? = null
 
         fun run(prefix: String): Int {
-            val reading = mint(merger, mapOf("metadata" to "read"))
+            val reading = mint(merger, GitHubApps.METADATA)
             val pushing = mint(coder, coderPermissions)
             val default = text(ask("GET", "/repos/$repository", reading), "default_branch")
             val before = sha(pushing, default)
@@ -110,7 +109,7 @@ object AppsMerge {
                 val name = (asMerger?.get("name") as? JsonPrimitive)?.content
                 val mergerBypass = (asMerger?.get(BYPASS) as? JsonPrimitive)?.content
                 val coderBypass = (asCoder?.get(BYPASS) as? JsonPrimitive)?.content
-                print("  ruleset $id '$name' holds $default to ${types.filterNotNull().sorted().joinToString(", ")} — ${merger.identity} may bypass it: $mergerBypass; ${coder.identity}: $coderBypass")
+                print("  ruleset $id '$name' holds $default to ${types.filterNotNull().joinToString(", ")} — ${merger.identity} may bypass it: $mergerBypass; ${coder.identity}: $coderBypass")
                 if ("update" in types && coderBypass == "never") coderHeld = true
                 if ("required_status_checks" in types && mergerBypass == "never") mergerHeld = true
             }
@@ -131,36 +130,36 @@ object AppsMerge {
             print("  made: the branches $base, $head, $main; the pull requests #$into ($main into $default) and #$between ($head into $base)")
 
             val asCoder = GitMerge(apps, coder, api).perform(at(main), "just-apps-merge", named)
-            step("the coder's merge of #$into is refused", (asCoder as? Performed.Failed)?.reason?.startsWith("${GitMerge.REFUSED}: GitHub answered") == true, asCoder)
+            says("the coder's merge of #$into is refused", (asCoder as? Performed.Failed)?.reason?.startsWith("${GitMerge.REFUSED}: GitHub answered") == true, asCoder)
             if (asCoder is Performed.Ok) throw Stopped("SC-10: GitHub merged #$into into $default with ${coder.identity}'s token")
             val elsewhere = GitMerge(apps, merger, api).perform(at(main), "just-apps-merge", stale)
-            step("a merge of #$into as ${merger.identity} on another head than its own is refused", (elsewhere as? Performed.Failed)?.reason?.startsWith("${GitMerge.STALE_CI}:") == true, elsewhere)
+            says("a merge of #$into as ${merger.identity} on another head than its own is refused", (elsewhere as? Performed.Failed)?.reason?.startsWith("${GitMerge.STALE_CI}:") == true, elsewhere)
             if (elsewhere is Performed.Ok) throw Stopped("SC-10: GitHub merged #$into into $default on a head other than the one named")
             if (mergerHeld) beforeGreen(pushing, main, into, named)
             val closed = PrClose(apps, merger, api).perform(at(main))
-            step("#$into is closed unmerged", closed == Performed.Ok(mapOf("closed" to "$repository#$into")), closed)
+            says("#$into is closed unmerged", closed == Performed.Ok(mapOf("closed" to "$repository#$into")), closed)
 
             mergeable(pushing, between, false)
             val conflict = GitMerge(apps, merger, api).perform(at(head), "just-apps-merge", conflicting)
-            step("a merge of #$between, whose head conflicts with its base, is a conflict", (conflict as? Performed.Failed)?.reason?.startsWith("${GitMerge.CONFLICT}:") == true, conflict)
+            says("a merge of #$between, whose head conflicts with its base, is a conflict", (conflict as? Performed.Failed)?.reason?.startsWith("${GitMerge.CONFLICT}:") == true, conflict)
             val resolved = commit(pushing, head, "kp-apps-merge/merged.txt", "as the base has it\n")
             mergeable(pushing, between, true)
             val merged = GitMerge(apps, merger, api).perform(at(head), "just-apps-merge", resolved)
-            step("#$between, its head now as its base has it, is merged with a merge commit", merged is Performed.Ok, merged)
+            says("#$between, its head now as its base has it, is merged with a merge commit", merged is Performed.Ok, merged)
 
             val filed = IssueFile(apps, merger, api).perform(at(head), "just-apps-merge",
                 listOf(Issue("just apps merge: one issue, filed and closed", "Filed by `just apps merge` (KP/P3/S3.9), and closed by the same run.")))
             issue = ((filed as? Performed.Ok)?.result?.get("numbers") as? List<*>)?.singleOrNull() as? Int
-            step("an issue is filed", issue != null, filed)
+            says("an issue is filed", issue != null, filed)
         }
 
         /** Where the repository's rules hold `kp-merger` to green checks: a merge of [into] before the checks of [head] are green is refused. */
         private fun beforeGreen(pushing: Token, main: String, into: Int, head: String) {
             val runs = (ask("GET", "/repos/$repository/commits/$head/check-runs", pushing).json as? JsonObject)?.get("check_runs") as? JsonArray ?: JsonArray(emptyList())
             val green = runs.isNotEmpty() && runs.all { ((it as? JsonObject)?.get("conclusion") as? JsonPrimitive)?.content in setOf("success", "neutral", "skipped") }
-            if (green) return step("a merge of #$into before its checks are green is refused", false, "not run: the checks of ${head.take(SHORT)} are green already")
+            if (green) return says("a merge of #$into before its checks are green is refused", false, "not run: the checks of ${head.take(SHORT)} are green already")
             val early = GitMerge(apps, merger, api).perform(at(main), "just-apps-merge", head)
-            step("a merge of #$into before its checks are green is refused", early is Performed.Failed, early)
+            says("a merge of #$into before its checks are green is refused", early is Performed.Failed, early)
             if (early is Performed.Ok) throw Stopped("SC-10: GitHub merged #$into into its default branch before its checks were green")
         }
 
@@ -169,7 +168,7 @@ object AppsMerge {
             issue?.let { number ->
                 val closing = mint(merger, mapOf("issues" to "write"))
                 val reply = ask("PATCH", "/repos/$repository/issues/$number", closing, buildJsonObject { put("state", "closed"); put("state_reason", "not_planned") })
-                step("issue #$number is closed", reply.status == GitHubRest.OK && text(reply, "state") == "closed", "GitHub answered ${reply.status}")
+                says("issue #$number is closed", reply.status == GitHubRest.OK && text(reply, "state") == "closed", "GitHub answered ${reply.status}")
             }
             for (number in pulls) {
                 val state = text(ask("GET", "/repos/$repository/pulls/$number", pushing), "state")
@@ -177,15 +176,15 @@ object AppsMerge {
             }
             for (branch in made) {
                 val reply = ask("DELETE", "/repos/$repository/git/refs/heads/$branch", pushing)
-                step("the branch $branch is deleted", reply.status == NO_CONTENT, "GitHub answered ${reply.status}")
+                says("the branch $branch is deleted", reply.status == NO_CONTENT, "GitHub answered ${reply.status}")
             }
             val after = sha(pushing, default)
-            step("the default branch $default is where it was", after == before, "at $after")
+            says("the default branch $default is where it was", after == before, "at $after")
             val open = pulls.filter { text(ask("GET", "/repos/$repository/pulls/$it", pushing), "state") != "closed" }
-            step("no pull request the proof made is open", open.isEmpty(), if (open.isEmpty()) "#${pulls.joinToString(", #")} closed" else "open: #${open.joinToString(", #")}")
+            says("no pull request the proof made is open", open.isEmpty(), if (open.isEmpty()) "#${pulls.joinToString(", #")} closed" else "open: #${open.joinToString(", #")}")
         }
 
-        private fun step(what: String, asGiven: Boolean, outcome: Any) {
+        private fun says(what: String, asGiven: Boolean, outcome: Any) {
             if (!asGiven) notAsGiven++
             val said = when (outcome) {
                 is Performed.Ok -> "ok ${outcome.result}"
@@ -254,7 +253,7 @@ object AppsMerge {
             repeat(MERGEABLE_ASKS) {
                 val said = ((ask("GET", "/repos/$repository/pulls/$number", token).json as? JsonObject)?.get("mergeable") as? JsonPrimitive)?.booleanOrNull
                 if (said == expected) return
-                wait(MERGEABLE_EVERY)
+                Thread.sleep(MERGEABLE_EVERY)
             }
             throw Stopped("GitHub did not say within a minute that #$number is ${if (expected) "mergeable" else "not mergeable"}")
         }

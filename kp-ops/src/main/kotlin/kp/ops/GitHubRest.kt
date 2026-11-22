@@ -103,9 +103,10 @@ class GitHubRest(private val api: URI = GitHubApps.GITHUB, private val http: Htt
             next = reply.next?.let(URI::create)?.also { if (!it.toString().startsWith(api.toString())) return Looked.Failed("GitHub's next page of GET $path is not under $api") }
         }
         val open = all.filter { it.state == OPEN }
+        val theOpenOne = open.singleOrNull()
         return when {
-            open.size > 1 -> Looked.Failed("${where.repository} holds ${open.size} open pull requests whose head is ${where.branch}: ${open.joinToString(", ") { "#${it.number}" }}")
-            open.size == 1 -> Looked.Found(open.single())
+            theOpenOne != null -> Looked.Found(theOpenOne)
+            open.isNotEmpty() -> Looked.Failed("${where.repository} holds ${open.size} open pull requests whose head is ${where.branch}: ${open.joinToString(", ") { "#${it.number}" }}")
             all.isEmpty() -> Looked.None("${where.repository} holds no pull request whose head is ${where.branch}")
             else -> Looked.Found(all.maxWith(compareBy<PullRequest> { it.created }.thenBy { it.number }))
         }
