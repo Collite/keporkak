@@ -92,6 +92,8 @@ class OperationsOutsideTheLockSpec : StringSpec({
             performer.awaitEntered("worktree.create $STAGE")
             val second = within { office.boraNow(APPROVAL_OF_OTHER) }
 
+            // Its request is on disk and the lock is free: it would be performed now, were it not for the first.
+            performer.notEnteredWithin("worktree.create $OTHER", seconds = 2)
             performer.release("worktree.create $STAGE")
             office.mailroom.settle()
 
@@ -106,12 +108,15 @@ class OperationsOutsideTheLockSpec : StringSpec({
     "two operations on one seat are performed one after the other, in the order requested: its compaction, then its wake" {
         val office = Office(seed = "proposed")
         val events = CopyOnWriteArrayList<String>()
-        val performer = Held(events).also { office.performing(it, HeldSeats(events, holds = false)) }
+        val seats = HeldSeats(events, holds = false)
+        val performer = Held(events).also { office.performing(it, seats) }
         office.facts.set("seat.context_used", 0.95)
         try {
             val compact = within { office.sendNow("pool-1", COMPACT) }
             performer.awaitEntered("seat.compact $STAGE")
 
+            // The wake's request is on disk and the lock is free: it would be performed now, were it not for the compaction.
+            seats.notPromptedWithin("coder-1", seconds = 2)
             performer.release("seat.compact $STAGE")
             office.mailroom.settle()
 
@@ -174,6 +179,11 @@ class Held(
         if (!latch(entered, name).await(10, TimeUnit.SECONDS)) fail("$name was not performed in 10 s — performed so far: $events")
     }
 
+    /** [name] is not performed within [seconds]: what the spec gives an operation that must wait its turn to start. */
+    fun notEnteredWithin(name: String, seconds: Long) {
+        if (latch(entered, name).await(seconds, TimeUnit.SECONDS)) fail("$name was performed before its turn — performed so far: $events")
+    }
+
     fun release(name: String) = latch(gates, name).countDown()
 
     fun releaseAll() = gates.values.forEach(CountDownLatch::countDown)
@@ -197,6 +207,11 @@ class HeldSeats(private val events: MutableList<String> = CopyOnWriteArrayList()
 
     fun awaitPrompted(seat: String) {
         if (!prompted.computeIfAbsent(seat) { CountDownLatch(1) }.await(10, TimeUnit.SECONDS)) fail("$seat was not prompted in 10 s — $events")
+    }
+
+    /** [seat] is not prompted within [seconds]: what the spec gives a wake that must wait its turn to start. */
+    fun notPromptedWithin(seat: String, seconds: Long) {
+        if (prompted.computeIfAbsent(seat) { CountDownLatch(1) }.await(seconds, TimeUnit.SECONDS)) fail("$seat was prompted before its turn — $events")
     }
 
     fun releaseAll() = gate.countDown()
