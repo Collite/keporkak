@@ -130,6 +130,8 @@ class Mailroom private constructor(
      * judged (contracts.md §3, Amendment 29). No caller hears of it.
      */
     private val journal: (String) -> Unit,
+    /** Told each time a result has been judged, on the thread that gave it: what the daemon signals its watchers with. */
+    private val resulted: () -> Unit,
 ) : AutoCloseable {
     /** The rule set every judgement reads: one per message, replaced only between two (architecture.md §3). */
     private val rules: RuleSet get() = inForce.ruleSet
@@ -678,13 +680,16 @@ class Mailroom private constructor(
         val seat = (request.with.fields[SEAT] as? Datum.Text)?.value
         val woken = seat?.takeIf { request.operation == SEAT_WAKE }
         val message = request.cause.let(messages::get)
-        val lane = seat?.let { "$SEAT $it" } ?: operations.on(request)?.let { "$CHECKOUT $it" }
+        val lane = seat?.let { "$SEAT $it" } ?: runCatching { operations.on(request) }.getOrNull()?.let { "$CHECKOUT $it" }
         lanes.hand(lane) { ended ->
             val answered = AtomicBoolean(false)
             val answer: (OperationResult) -> Unit = { result ->
                 if (answered.compareAndSet(false, true)) lanes.answering {
-                    finished(request, result)
-                    ended()
+                    try {
+                        finished(request, result)
+                    } finally {
+                        ended()
+                    }
                 }
             }
             // It begins once the lock is free: the judgement that requested it, and the drain that handed it over, are done.
@@ -699,11 +704,13 @@ class Mailroom private constructor(
     }
 
     /** A result — now, from inside [perform], or later, from the performer's own thread — arrives: it is judged in its turn. */
-    @Synchronized
     private fun finished(request: OperationRequest, result: OperationResult) {
-        if (closed) return
-        arrivals += "the result of ${request.operation} for ${request.cause}" to { complete(request, result) }
-        drain()
+        synchronized(this) {
+            if (closed) return
+            arrivals += "the result of ${request.operation} for ${request.cause}" to { complete(request, result) }
+            drain()
+        }
+        resulted()
     }
 
     /**
@@ -991,12 +998,13 @@ class Mailroom private constructor(
          * Opens the log, folds it, puts the rules in force and records what start-up records (contracts.md §2.2, §4.4).
          * The writer reaches the disk through [disk]. [whenFolded] is told the mailroom once the log is folded and the rules
          * are in force, before the start carries anything again: what reads the fold reads it from then on (contracts.md
-         * §4.4, Amendment 34).
+         * §4.4, Amendment 34). [resulted] is told each time an operation's result has been judged: it arrives from the
+         * operation's own thread (Amendment 36), not through a way in whose caller signals.
          */
         fun start(
             project: Path, office: OfficeId, rules: RuleTexts, facts: FactSource, operations: Operations, deliveries: Deliveries, clock: Clock,
             robots: Boolean = false, disk: Channels = Channels.files, journal: (String) -> Unit = { System.err.println(it) },
-            whenFolded: (Mailroom) -> Unit = {},
+            resulted: () -> Unit = {}, whenFolded: (Mailroom) -> Unit = {},
         ): Mailroom {
             val writer = LogWriter.open(project, office, disk)
             try {
@@ -1006,7 +1014,7 @@ class Mailroom private constructor(
                 if (inForce == null) throw MailroomRefusal("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
                 // Under the mailroom's lock, as every other step: a performer that answers from its own thread while the
                 // start is carrying its queue waits for it (issue #21).
-                return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce, robots, journal).apply {
+                return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce, robots, journal, resulted).apply {
                     synchronized(this) {
                         val entries = read.lines.map { it.entry }
                         // The judgement the log ends in begins after the last `judged` line — at the `voided` record after it, when

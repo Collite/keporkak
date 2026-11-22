@@ -162,7 +162,9 @@ class Office private constructor(
             val presence = Presence(clock)
             val facts = FactSource { fact, stage -> presence.observe(fact) ?: world.observe(fact, stage) }
             var office: Office? = null
-            Mailroom.start(project, OfficeId(name), files, facts, operations, deliveries, clock, robots = true, journal = Journal::say) { mailroom ->
+            // A result is judged on its operation's thread (contracts.md §7, Amendment 36): its change is signalled there.
+            Mailroom.start(project, OfficeId(name), files, facts, operations, deliveries, clock, robots = true, journal = Journal::say,
+                resulted = { office?.changes?.signal() }) { mailroom ->
                 val rules = InForceRules.of(files.lastRead).first ?: error("the mailroom started on rules kp-rules refuses")
                 presence.seed(mailroom.state)
                 presence.state = { mailroom.state }
