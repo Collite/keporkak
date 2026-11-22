@@ -32,6 +32,9 @@ class Token internal constructor(private val value: String, val expiresAt: Strin
     /** The `Authorization` header's value that carries it. */
     fun authorization(): String = "Bearer $value"
 
+    /** Its text, for the one environment `kp-ops` hands it to `git` in (contracts.md §7, Amendment 36): never an argument. */
+    internal fun text(): String = value
+
     override fun toString(): String = "an installation token until $expiresAt"
 }
 
