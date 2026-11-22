@@ -91,10 +91,11 @@ class Seats(
     /**
      * What hears that a seat's turn has ended (S2.5), before the seat is idle again: the seat, the message that woke it for
      * the turn — null for a re-seat's replay and a compaction — and the turn's `seat.usage` as the driver observes it then;
-     * null when the turn ended without the agent's answer or reported no usage.
+     * null when the turn ended without the agent's answer or reported no usage. [parts] is that usage by its parts, as the
+     * agent reported them (S3.6 T6).
      */
     fun interface Turns {
-        fun ended(seat: String, cause: String?, usage: Long?)
+        fun ended(seat: String, cause: String?, usage: Long?, parts: kp.driver.Usage?)
     }
 
     /** The registry of live session tokens the seat API reads (contracts.md §5). */
@@ -190,7 +191,7 @@ class Seats(
             reporter.execute {
                 if (!unsent) {
                     then.turn(outcome)
-                    turns?.ended(seat, cause, (outcome as? Outcome.Ok<*>)?.let { used(seat) })
+                    turns?.ended(seat, cause, (outcome as? Outcome.Ok<*>)?.let { used(seat) }, ((outcome as? Outcome.Ok<*>)?.value as? kp.driver.TurnEnd)?.usage)
                 }
                 ended(seat, session, turned = !unsent)
             }

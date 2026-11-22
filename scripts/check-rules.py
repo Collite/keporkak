@@ -741,6 +741,20 @@ class Walk:
         self.robot=None
         self.index=0
         self.emissions=[]
+        # A state per seat, as the engine keeps one per seat it moved (S3.6 T2, D-81): `seat.state`, the seat machine's
+        # transitions and a robot's trigger are that seat's. A seat is bound to the stage of the message that last moved it
+        # (contracts.md §2.2, Amendment 29); a seat transition that names no seat moves each seat bound to the stage, in the
+        # order they were first moved. `subject` is the seat a seat transition is read for, while it is read.
+        self.seats={}
+        self.bound={}
+        self.first_moved=[]
+        self.subject=None
+        # Every operation requested, as `<operation> (<kind of the message that asked> <its seat>)`: part of a walk's end (T3).
+        self.requested=[]
+        # While an unordered step's events are played (T3): what the robots and the mailroom send is judged as it is sent,
+        # as the daemon judges it, each named `<the step's id>/<kind>` (then `/2`, `/3`); `in_group` says so.
+        self.in_group=False
+        self.group_sent={}
         self.set_stage(self.stage)
     def set_stage(self, stage):
         self.stage=stage
@@ -749,12 +763,42 @@ class Walk:
             initial=setting.get("initial",self.definition.get("initial","planned"))
             self.contexts[stage]={"states":{"stage":initial,"seat":"ready","found_item":"found","flag_thread":"asked",**setting.get("machines",{})},"previous":None,"found_items":{},"counters":{},"facts":{**self.definition.get("facts",{}),**setting.get("facts",{})}}
         self.current=self.contexts[stage]
+    def seat_default(self,seat):
+        """The state a seat no step has moved is in (S3.6 T2): a stage's `machines: seat:` is that stage's coder's — the seat
+        its table names for `coder`, as the harness seeds it — or, when the table names none, any seat first met there;
+        every other seat is `ready`, as the harness seeds a walk's seats."""
+        settings=self.definition.get("stages",{})
+        for stage,setting in settings.items():
+            names={**self.definition.get("facts",{}),**setting.get("facts",{})}.get("seat.name")
+            if "seat" in setting.get("machines",{}) and isinstance(names,dict) and names.get("coder")==seat:return setting["machines"]["seat"]
+        here=settings.get(self.stage,{})
+        names=self.current["facts"].get("seat.name")
+        if "seat" in here.get("machines",{}) and not (isinstance(names,dict) and "coder" in names):return here["machines"]["seat"]
+        return "ready"
+    def seat_state(self,seat):
+        if not isinstance(seat,str):return MISSING
+        if seat not in self.seats:self.seats[seat]=self.seat_default(seat)
+        return self.seats[seat]
+    def seats_of(self,stage):
+        return [seat for seat in self.first_moved if self.bound.get(seat)==stage]
+    def subjects(self,machine):
+        """Whom a machine's transition moves (contracts.md §2.2): the seat the message names (`args.seat`), else each seat
+        bound to its stage; one subject for every other machine."""
+        if machine!="seat":return [None]
+        seat=self.ctx.get("args",{}).get("seat")
+        return [seat] if isinstance(seat,str) else self.seats_of(self.ctx.get("stage",self.stage))
     def state(self,machine):
         if machine=="found_item":return self.current["found_items"].get(self.ctx.get("args",{}).get("found","default"),"found")
+        if machine=="seat":return self.seat_state(self.subject) if self.subject is not None else None
         return self.shared[machine] if machine in self.shared else self.current["states"].get(machine)
     def set_state(self,machine,state):
         if machine=="found_item":
             self.current["found_items"][self.ctx.get("args",{}).get("found","default")]=state
+            return
+        if machine=="seat":
+            self.seats[self.subject]=state
+            self.bound[self.subject]=self.ctx.get("stage",self.stage)
+            if self.subject not in self.first_moved:self.first_moved.append(self.subject)
             return
         if machine in self.shared:self.shared[machine]=state
         else:self.current["states"][machine]=state
@@ -768,8 +812,8 @@ class Walk:
         if name=="phase.state":return self.state("phase")
         if name=="bora.present":return self.state("presence")=="present"
         if name=="thread.state":return self.state("flag_thread")
-        # The seat machine answers a seat's state, as the engine answers it from the log (D-81): one seat per stage here.
-        if name=="seat.state":return self.state("seat")
+        # The seat machine answers a seat's state, as the engine answers it from the log (D-81): the state of the seat asked about.
+        if name=="seat.state":return self.seat_state(params.get("seat"))
         if name=="thread.open":return self.state("flag_thread") in ("asked","held")
         # The last signed delivery that carries `stages` (contracts.md §4.4, Amendment 12): the wave was checked when it
         # was delivered and is not checked again.
@@ -876,6 +920,8 @@ class Walk:
                 if operation in self.used_operations.setdefault(request_id,set()):raise WalkError(f"operation '{operation}' requested twice")
                 self.used_operations[request_id].add(operation)
                 self.pending.setdefault(request_id,set()).add(operation)
+                seat=self.ctx.get("args",{}).get("seat")
+                self.requested.append(f"{operation} ({self.ctx.get('kind')}{' '+seat if isinstance(seat,str) else ''})")
             elif "emit" in effect:
                 self.emissions.append({"kind":effect["emit"],"from":"mailroom","to":self.value(effect["to"]),"args":self.value(effect.get("args",{}))})
     def matches(self,transition,machine,event,kind):
@@ -886,18 +932,23 @@ class Walk:
             return transition.get("kind") is None and any(item.get("fact")==kind for item in transition["require"])
         return transition.get("kind")==kind
     def transitions(self,event,kind,request_id):
-        fired=[]
+        """Each machine in turn, and each subject it moves in turn (contracts.md §2.2, §4.1): the first candidate whose
+        requirements hold fires. `first_candidate` is the first candidate of all, which names a refusal."""
+        fired=[];self.first_candidate=None
         for machine,definition in machines.items():
-            candidates=[t for t in definition["transitions"] if self.matches(t,machine,event,kind)]
-            selected=next((t for t in candidates if self.require(t["require"]) is None),None)
-            if selected is None:continue
-            src=self.state(machine);dst=selected["to"]
-            # `*previous` is the state before the present one: a move to the same state keeps it, as the engine does (D-81).
-            if machine=="stage" and dst=="paused" and src!=dst:self.current["previous"]=src
-            if dst=="*previous":dst=self.current["previous"]
-            self.set_state(machine,dst)
-            self.effects(selected["effects"],request_id)
-            fired.append(selected["id"])
+            for self.subject in self.subjects(machine):
+                candidates=[t for t in definition["transitions"] if self.matches(t,machine,event,kind)]
+                if self.first_candidate is None and candidates:self.first_candidate=candidates[0]["id"]
+                selected=next((t for t in candidates if self.require(t["require"]) is None),None)
+                if selected is None:continue
+                src=self.state(machine);dst=selected["to"]
+                # `*previous` is the state before the present one: a move to the same state keeps it, as the engine does (D-81).
+                if machine=="stage" and dst=="paused" and src!=dst:self.current["previous"]=src
+                if dst=="*previous":dst=self.current["previous"]
+                self.set_state(machine,dst)
+                self.effects(selected["effects"],request_id)
+                fired.append(selected["id"])
+        self.subject=None
         return fired
     def robot_rules(self, event, name, record=True):
         sends=[];wakes=[];rules=[]
@@ -920,7 +971,7 @@ class Walk:
                         sends.append(message)
                     else:
                         wakes.append(action["wake"])
-                        if record:self.history.append({"operation":"seat.wake","mode":action["wake"],"role":robot["role"],"stage":self.stage,"tick":self.index})
+                        if record:self.history.append({"operation":"seat.wake","mode":action["wake"],"role":robot["role"],"rule":rule["id"],"stage":self.stage,"tick":self.index})
         self.robot=None
         self.emissions.extend(sends)
         return {"rules":rules,"sends":[message["kind"] for message in sends],"wakes":wakes}
@@ -928,9 +979,18 @@ class Walk:
         expected=step.get("expect",{})
         for key,value in expected.items():
             if key=="state":observed=self.state("stage")
-            elif key=="states":observed={name:self.state(name) for name in value}
+            elif key=="states":observed={name:self.seat_state(self.step_seat(step)) if name=="seat" else self.state(name) for name in value}
+            elif key=="seats":observed={seat:self.seat_state(seat) for seat in value}
             else:observed=actual.get(key)
             if observed!=value:raise WalkError(f"expected {key} {value!r}, observed {observed!r}")
+    def step_seat(self,step):
+        """The seat a step speaks of, as the harness reads it: the one its args or trigger name, else its stage's coder (its
+        table's `seat.name` for `coder`), else the first seat bound to its stage."""
+        named=step.get("args",{}).get("seat") or step.get("trigger",{}).get("seat")
+        if isinstance(named,str):return named
+        names=self.current["facts"].get("seat.name")
+        if isinstance(names,dict) and isinstance(names.get("coder"),str):return names["coder"]
+        return next(iter(self.seats_of(self.stage)),None)
     def execute_step(self,step):
         self.set_stage(step.get("stage",self.stage))
         for name in step.get("facts",{}):
@@ -950,7 +1010,8 @@ class Walk:
                 finally:self.shared["presence"]=current_presence
                 actual={key:actual[key]+edge[key] for key in ("rules","sends","wakes")}
             self.fired=fired
-            if not actual["rules"] and not fired:raise WalkError("observation has no robot or lifecycle arrow")
+            # An event whose order the world does not fix may find nothing to do: the order before it did it (T3).
+            if not actual["rules"] and not fired and not self.in_group:raise WalkError("observation has no robot or lifecycle arrow")
             self.check_expectation(step,{**actual,"transitions":fired})
             return
         operation=step.get("operation")
@@ -1006,15 +1067,18 @@ class Walk:
         fired=self.transitions(event,kind_name,request_id)
         self.fired=fired
         if not fired and not operation and any(t.get("kind")==kind_name and t.get("on","message")==event for _,t in all_transitions):
-            # The rule that refuses: the first candidate of the machines in their order, as the engine names it; the kind when none leaves the state.
-            first=next((t["id"] for machine,definition in machines.items() for t in definition["transitions"] if self.matches(t,machine,event,kind_name)),kind_name)
-            raise Refusal(first,f"no arrow from {self.state('stage')} for {kind_name}")
+            # The rule that refuses: the first candidate of the machines in their order, and of their subjects, as the engine
+            # names it; the kind when none leaves the state.
+            raise Refusal(self.first_candidate or kind_name,f"no arrow from {self.state('stage')} for {kind_name}")
         if not operation:self.history.append(copy.deepcopy(self.ctx))
         else:self.history.append({"operation":operation,"result":self.ctx["result"],"stage":self.stage,"tick":self.index})
         observed=self.robot_rules("op" if operation else "delivered",operation or kind_name)
         if not operation:
             observed={key:arrivals[key]+observed[key] for key in ("rules","sends","wakes")}
         self.check_expectation(step,{**observed,"transitions":fired,"held":False,"class":self.ctx.get("class")})
+    def seat_states(self):
+        """Every seat the walk names or a step moved, with its state — what a seat no step moved starts in, for those."""
+        return {seat:self.seats[seat] if seat in self.seats else self.seat_default(seat) for seat in sorted(set(self.definition.get("seats",{}))|set(self.seats))}
     def let_go(self):
         # A message a robot holds is let go, in the order held, once that robot is no longer active, and judged then as on
         # arrival — its requirement, its cap, its arrows and what they request (contracts.md §8; the engine's release).
@@ -1064,31 +1128,188 @@ class Walk:
             return
         raise WalkError("expected refusal, but the message was delivered")
     def run(self):
-        if TRACE:print("WALK "+json.dumps(self.definition,sort_keys=True))
-        for self.index,step in enumerate(self.definition["steps"],1):
+        """Plays the walk; a walk whose steps mark events as unordered, in every order of them (S3.6 T3). Each order ends with
+        its end — everything the walk keeps but what [LEFT_OUT] names ([ended]) — and the walk fails, naming two orders
+        and their ends, unless every order ends alike. `--trace` prints `LEAVES` with what an end leaves out, `ORDER` as
+        an order of a step's events begins and `END` with each order's end."""
+        if TRACE:
+            print("WALK "+json.dumps(self.definition,sort_keys=True))
+            print("LEAVES "+json.dumps({"walk":self.LEFT_OUT,"stage":self.LEFT_OUT_OF_A_STAGE,"record":self.LEFT_OUT_OF_A_RECORD},sort_keys=True))
+        ends=[]
+        self.play(0,[],ends)
+        first=ends[0]
+        other=next((each for each in ends if each[1]!=first[1]),None)
+        if other is not None:
+            fail(f"walk {self.name}: its orders end apart — in the order {self.shown(first[0])} it ends {json.dumps(first[1],sort_keys=True)}; "
+                 f"in the order {self.shown(other[0])} it ends {json.dumps(other[1],sort_keys=True)}")
+            return
+        passed,text=first[2]
+        (ok if passed else fail)(text)
+    def play(self,start,order,ends):
+        """The steps from [start] to the walk's end, in [order]; an unordered step plays each order of its events, and the
+        steps after it in each. Each end reached goes to [ends], with the order and the walk's verdict on it."""
+        steps=self.definition["steps"]
+        for at in range(start,len(steps)):
+            self.index=at+1;step=steps[at]
+            if "unordered" in step:
+                self.unordered(at,step,order,ends)
+                return
             self.fired=[]
             try:
                 self.step(step)
                 self.let_go()
             except WalkError as error:
-                fail(f"walk {self.name} step {self.index}: {error}")
+                ends.append(self.ended(order,f"step {self.index}: {error}"))
                 return
-            if TRACE:print("TRACE "+json.dumps({"step":self.index,"refused":bool(step.get("expect",{}).get("refused")),"fired":self.fired,
-                "stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()}},sort_keys=True))
+            self.trace(step)
+        ends.append(self.ended(order,None))
+    def unordered(self,at,step,order,ends):
+        """An unordered step (T3): its events in every order, each order played from the state before the step to the walk's end."""
+        events=step["unordered"]
+        group=step.get("id",f"step-{at+1}")
+        if not isinstance(events,list) or len(events)<2 or any(not isinstance(event,dict) or "unordered" in event or "expect" in event for event in events):
+            ends.append(self.ended(order,f"step {at+1}: an unordered step holds two events or more, none of them unordered itself and none with an expect — what they do is read at the walk's end"))
+            return
+        labels=[str(event.get("id",f"{group}.{number}")) for number,event in enumerate(events,1)]
+        snapshot=copy.deepcopy(self.__dict__)
+        for permutation in itertools.permutations(range(len(events))):
+            self.__dict__.clear();self.__dict__.update(copy.deepcopy(snapshot))
+            names=[labels[number] for number in permutation]
+            if TRACE:print("ORDER "+json.dumps({"step":at+1,"events":names}))
+            self.group_sent={}
+            error=None
+            for number in permutation:
+                self.index=at+1
+                try:
+                    self.happen({**events[number],"id":labels[number]},group)
+                    self.let_go()
+                except WalkError as failure:
+                    error=f"step {at+1} ({labels[number]}): {failure}"
+                    break
+                self.trace(events[number],labels[number])
+            if error is not None:ends.append(self.ended(order+[[at+1,names]],error))
+            else:self.play(at+1,order+[[at+1,names]],ends)
+    def happen(self,event,group):
+        """One unordered event, then what it made the robots and the mailroom send, each judged as it is sent — and what
+        that sends in turn. A message refused here is an outcome of the order, counted at its end, not a failure."""
+        start=len(self.emissions);fired=[]
+        self.in_group=True
+        try:
+            self.fired=[]
+            try:self.execute_step(event)
+            except Refusal:self.history.append({"kind":event.get("kind"),"status":"refused","stage":self.stage,"tick":self.index})
+            fired+=self.fired
+            while len(self.emissions)>start:
+                sent=self.emissions[start]
+                count=self.group_sent[sent["kind"]]=self.group_sent.get(sent["kind"],0)+1
+                message={"id":f"{group}/{sent['kind']}"+(f"/{count}" if count>1 else ""),"who":sent["from"],"kind":sent["kind"],"args":sent["args"],"to":sent["to"]}
+                if str(sent.get("by","")).startswith("robot:"):message["by"]=sent["by"]
+                else:self.emissions.pop(start)
+                self.fired=[]
+                try:self.execute_step(message)
+                except Refusal:self.history.append({"kind":sent["kind"],"status":"refused","stage":self.stage,"tick":self.index})
+                if len(self.emissions)>start and self.emissions[start] is sent:self.emissions.pop(start)
+                fired+=self.fired
+        finally:
+            self.in_group=False
+        self.fired=fired
+    def trace(self,step,event=None):
+        if TRACE:print("TRACE "+json.dumps({"step":self.index,**({"event":event} if event is not None else {}),"refused":bool(step.get("expect",{}).get("refused")),"fired":self.fired,
+            "stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()},"seats":self.seat_states()},sort_keys=True))
+    # What an order's end leaves out of what the walk keeps, each with its reason (architecture.md §8; review-027 B2).
+    # `ended` holds the rest, and refuses to end a walk that keeps anything it neither holds nor names here.
+    LEFT_OUT={
+        "definition":"the walk as written: the same in every order",
+        "name":"the walk's name: the same in every order",
+        "index":"the tick, a step's place in the walk: the same in every order, as an unordered step's events all take the step's own",
+        "stage":"the stage of the last step or event played, which a step that names none is played in: where the walk's text has got to",
+        "current":"the stage being played's own part of `contexts`, which the end holds with the rest of it",
+        "ctx":"the message read while one step is played",
+        "robot":"the robot read while one step is played",
+        "subject":"the seat a seat transition is read for while it is read",
+        "fired":"the rules the last step fired, which `TRACE` prints after each step; what they did is held",
+        "first_candidate":"the first candidate of the last transitions read, which names a refusal",
+        "in_group":"whether an unordered step's events are being played: never, at an end",
+        "group_sent":"how many of each kind the robots and the mailroom sent in the last unordered step, which numbers those messages' ids",
+        "first_moved":"the order the seats were first moved, in which a seat transition that names no seat moves them: the order played, "
+                      "which the orders vary on purpose; where each seat ends, and the stage it is bound to, are held",
+        "used_operations":"the operations each request asked for, by its id: `operations` holds each, named by the kind and seat of the message that asked",
+        "thread_hops":"never written: the walker counts no thread's hops",
+        "history's order":"the order the walk kept its messages, results and wakes in: the order played, which the orders vary on "
+                          "purpose; `log` holds them as a set, though what a later step reads as the last of a kind "
+                          "(`log.count … since:`, `review.open_blockers`) follows that order",
+    }
+    # Of a stage's machines: the two the walk keeps elsewhere.
+    LEFT_OUT_OF_A_STAGE={
+        "seat":"its entry is set once from the walk and never read: `seats` holds each seat's state",
+        "found_item":"its entry is set once from the walk and never read: `found` holds each Found line's state",
+    }
+    # Of a message, refusal, operation's result or wake the walk keeps. Every record the end holds is held through one filter,
+    # which leaves out these fields and no other: the end rebuilds no record field by field (review-027 B2, round 2).
+    LEFT_OUT_OF_A_RECORD={
+        "id":"a message's request id: what the robots and the mailroom send in an unordered step is numbered in the order sent",
+        "re":"a copy of the message a reply answers, which `reply_id` names",
+        "by":"which robot rule sent a message — the robot is `from`: two rules may send one message for one cause, as POOL-1 and "
+             "POOL-12 each send a seat's one seat-gone when its first end report comes (D-85; the walk a-killed-seats-ends); "
+             "no rule reads it, though a requirement `msg: by` could",
+        "rule":"which robot rule woke a seat, as `by` — the robot is the wake's `role`, which is held",
+    }
+    HELD={"contexts","shared","shared_counters","seats","bound","history","messages","pending","requested","kind_fires","emissions"}
+    def ended(self,order,error):
+        """An order's end, printed as `END` with the order, and the walk's verdict on it: (passed, the line to print). The
+        end holds everything the walk keeps but what LEFT_OUT and the two lists after it name, each with its reason
+        (review-027 B1, B2): of each stage, its state (`stages`), the state it returns to from a pause (`returns`), its
+        flag thread (`threads`), Found lines (`found`), other machines (`machines`), facts (`facts`) and counters
+        (`counters`, with the effort's); each seat's state (`seats`) and the stage it is bound to (`bound`); Bora's
+        presence and the phase; how often each kind fired in its window (`fires`); every message, refusal, operation's
+        result and robot's wake (an op `seat.wake`, contracts.md §4.4) the walk keeps (`log`), and each message's present
+        status (`messages`); what a robot or the mailroom sent that no step delivered (`unsent`); the operations a
+        transition's `do:` requested (`operations`), and those still waiting, each with the message that asked it
+        (`waiting`). A record is held whole but for the fields LEFT_OUT_OF_A_RECORD names."""
+        unnamed=sorted(set(self.__dict__)-self.HELD-set(self.LEFT_OUT))
+        unnamed+=sorted({f"contexts.{key}" for context in self.contexts.values() for key in context if key not in ("states","previous","found_items","counters","facts")})
+        unnamed+=sorted(f"shared.{key}" for key in self.shared if key not in ("presence","phase"))
+        if unnamed:raise RuntimeError(f"walk {self.name}: its end neither holds nor leaves out {', '.join(unnamed)}")
+        counters={stage:{name:value for name,value in sorted(context["counters"].items()) if value} for stage,context in self.contexts.items()}
+        counters={stage:values for stage,values in counters.items() if values}
+        if any(self.shared_counters.values()):counters["effort"]={name:value for name,value in sorted(self.shared_counters.items()) if value}
+        def described(record):
+            return json.dumps({key:value for key,value in record.items() if key not in self.LEFT_OUT_OF_A_RECORD},sort_keys=True)
+        def asked(request_id,operation):
+            # An event's request has no message: its id is its tick, the same in every order.
+            message=self.messages.get(request_id)
+            return json.dumps({"operation":operation,"asked by":described(message) if message is not None else request_id},sort_keys=True)
+        others={stage:{machine:state for machine,state in sorted(context["states"].items()) if machine not in ("stage","flag_thread",*self.LEFT_OUT_OF_A_STAGE)}
+                for stage,context in self.contexts.items()}
+        end={"stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()},
+             "returns":{stage:context["previous"] for stage,context in self.contexts.items()},
+             "seats":self.seat_states(),"bound":dict(sorted(self.bound.items())),
+             "threads":{stage:context["states"]["flag_thread"] for stage,context in self.contexts.items()},
+             "found":{stage:dict(sorted(context["found_items"].items())) for stage,context in self.contexts.items() if context["found_items"]},
+             **({"machines":{stage:states for stage,states in others.items() if states}} if any(others.values()) else {}),
+             "facts":{stage:context["facts"] for stage,context in self.contexts.items()},
+             "presence":self.shared["presence"],"phase":self.shared["phase"],"counters":counters,
+             "fires":{json.dumps(key):count for key,count in sorted(self.kind_fires.items(),key=lambda item:json.dumps(item[0]))},
+             "log":sorted(described(record) for record in self.history),
+             "messages":sorted(described(message) for message in self.messages.values()),
+             "unsent":sorted(described(sent) for sent in self.emissions),
+             "operations":sorted(self.requested),
+             "waiting":sorted(asked(request_id,operation) for request_id,operations in self.pending.items() for operation in operations)}
+        if error is not None:end["error"]=error
+        if TRACE:print("END "+json.dumps({"orders":order,"end":end},sort_keys=True))
+        return order,end,((False,f"walk {self.name} {error}") if error is not None else self.verdict())
+    def verdict(self):
         expected=self.definition["final"]
         actual={stage:context["states"]["stage"] for stage,context in self.contexts.items()} if isinstance(expected,dict) else self.state("stage")
-        if actual!=expected:
-            fail(f"walk {self.name}: expected final {expected!r}, observed {actual!r}")
-            return
-        if any(self.pending.values()):
-            fail(f"walk {self.name}: operation results are missing")
-            return
+        if actual!=expected:return False,f"walk {self.name}: expected final {expected!r}, observed {actual!r}"
+        if any(self.pending.values()):return False,f"walk {self.name}: operation results are missing"
         for kind,expected_count in self.definition.get("expected_counts",{}).items():
             actual_count=sum(record.get("kind")==kind and record.get("status")=="delivered" for record in self.history)
-            if actual_count!=expected_count:
-                fail(f"walk {self.name}: expected {expected_count} {kind} deliveries, observed {actual_count}")
-                return
-        ok(f"walk {self.name} reached {expected}")
+            if actual_count!=expected_count:return False,f"walk {self.name}: expected {expected_count} {kind} deliveries, observed {actual_count}"
+        return True,f"walk {self.name} reached {expected}"
+    @staticmethod
+    def shown(order):
+        return ", ".join(label for _,labels in order for label in labels) or "of its steps"
 
 # The rules data reads clean (issues #5, #6): no counter that nothing reads, no anchor, the comments a round trip loses.
 def counter_reads(value):

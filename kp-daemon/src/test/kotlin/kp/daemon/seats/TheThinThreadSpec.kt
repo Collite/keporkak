@@ -123,12 +123,15 @@ class TheThinThreadSpec : StringSpec({
         ThinThread(coder = leaking).use { thread ->
             thread.hero.rest()
 
-            val evidence = thread.evidence.listDirectoryEntries("thin-thread-*.md").single().readText()
-            evidence shouldContain "the log: ${thread.hero.project.resolve("mail")}"
+            val file = thread.evidence.listDirectoryEntries("thin-thread-*.md").single()
+            val evidence = file.readText()
+            // The log and the transcripts as the play's record keeps them, beside the evidence (S3.6 T5).
+            val record = file.resolveSibling(file.fileName.toString().removeSuffix(".md"))
+            evidence shouldContain "the log: ${record.resolve("mail")}"
             evidence shouldContain "| coder-1 | coder | claude-opus-5-5 | low | ${thread.sessions("coder-1").joinToString(" · ")} | " +
-                "${thread.hero.project.resolve("office/seats/_transcripts/coder-1.log")} | 4400 in 4 turns |"
+                "${record.resolve("transcripts/coder-1.log")} | 4400 in 4 turns |"
             evidence shouldContain "| reviewer-1 | reviewer | claude-opus-5-5 | low | ${thread.sessions("reviewer-1").single()} | " +
-                "${thread.hero.project.resolve("office/seats/_transcripts/reviewer-1.log")} | 1100 in 1 turn |"
+                "${record.resolve("transcripts/reviewer-1.log")} | 1100 in 1 turn |"
             evidence shouldNotContain FAKE_CLAUDE_TOKEN
             evidence.split(Regex("""[^A-Za-z0-9_-]+""")).map(::sha256) shouldNotContainAny thread.sessionTokenDigests("coder-1")
         }

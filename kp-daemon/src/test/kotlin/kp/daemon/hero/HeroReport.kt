@@ -11,8 +11,8 @@ import kotlin.io.path.writeText
 
 /**
  * What `just hero` prints (S1.6 T7): each hero scenario and how many of its steps passed, the sweep's exceptions with
- * their reasons, the restart's cuts (S1.10 T7), and last the counts — scenarios, requirements on master, swept,
- * exceptions, restart cuts. Written to
+ * their reasons, the restart's cuts (S1.10 T7), the walks played in every order of their unordered events (S3.6 T3), and
+ * last the counts — scenarios, requirements on master, swept, exceptions, restart cuts, orders. Written to
  * `kp-daemon/build/hero/report.txt` once the hero specs have run; registered on the spec that runs them.
  */
 object HeroReport : AfterEachListener, AfterSpecListener {
@@ -21,6 +21,8 @@ object HeroReport : AfterEachListener, AfterSpecListener {
     private val specs = LinkedHashMap<String, MutableList<Pair<String, Boolean>>>()
     private var sweep: Sweep? = null
     private var restarts: Restarts? = null
+    /** The walks played once per order of their unordered events (S3.6 T3), in the order they were played. */
+    private val orders = ArrayList<Orders>()
 
     fun sweep(sweep: Sweep) {
         this.sweep = sweep
@@ -29,6 +31,11 @@ object HeroReport : AfterEachListener, AfterSpecListener {
     /** The restart of H-1′ (S1.10 T7): each cut and how it ended, printed after the sweep. */
     fun restarts(restarts: Restarts) {
         this.restarts = restarts
+    }
+
+    /** A walk played in each of its orders (S3.6 T3): one line, after the restart's. */
+    fun orders(orders: Orders) {
+        this.orders += orders
     }
 
     override suspend fun afterEach(testCase: TestCase, result: TestResult) {
@@ -52,10 +59,12 @@ object HeroReport : AfterEachListener, AfterSpecListener {
         }
         val swept = sweep?.let { it.report() } ?: listOf("the sweep did not finish")
         val restarted = restarts?.report() ?: listOf("the restart did not finish")
+        val ordered = orders.map { "orders of ${it.report()}" }
         val counts = "$passed of ${scenarios.size} scenarios passed" + (if (noRoll) " and the no-roll exit" else ", the no-roll exit did not") +
             (sweep?.let { " · requirements on master: ${it.onMaster} · swept: ${it.swept} · exceptions: ${it.exceptions.size} (swept + exceptions = ${it.swept + it.exceptions.size})" } ?: "") +
-            (restarts?.let { " · restart cuts: ${it.cuts.size}, a wake as an operation in flight: ${it.wakesInFlight.size}, otherwise: ${it.otherwise.size}" } ?: "")
-        return told + swept.dropLast(1) + restarted + counts
+            (restarts?.let { " · restart cuts: ${it.cuts.size}, a wake as an operation in flight: ${it.wakesInFlight.size}, otherwise: ${it.otherwise.size}" } ?: "") +
+            (if (orders.isEmpty()) "" else " · walks played in every order: ${orders.size}, orders: ${orders.sumOf { it.played.size }}")
+        return told + swept.dropLast(1) + restarted + ordered + counts
     }
 
     /** The step of H-3 that is the stage with a live DONE and nothing to roll (D-42). */

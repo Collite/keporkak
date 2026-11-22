@@ -287,6 +287,22 @@ exceptions:
     reason: '`bora.idle_for` as the vocabulary defines it: the time since his last signed command, reported; the rules compare'
   kp-daemon/src/main/kotlin/kp/daemon/OwnSteps.kt:
   - shape: comparison
+    in: SeatsAtPlay.Evidence.text
+    code: sorted()
+    line: at.seats.sorted().forEach { seat -> … }
+    reason: 'a rehearsal''s evidence (S3.6 T6): the table of each turn''s parts lists the seats in the order of their names'
+  - shape: comparison
+    in: SeatsAtPlay.Evidence.text
+    code: turns.size == 1
+    line: if (turns.isNotEmpty()) appendLine("| $seat | ${turns.size} turn${if (turns.size == 1) "" else "s"} | " + PARTS.joinToString("
+      | ") { part ->
+    reason: 'a rehearsal''s evidence (S3.6 T6): its wording — the sums of one turn or of more'
+  - shape: comparison
+    in: SeatsAtPlay.Evidence.text
+    code: reported.size < turns.size
+    line: '"${reported.sum()}" + if (reported.size < turns.size) " ($NOT_REPORTED in ${turns.size - reported.size})" else ""'
+    reason: 'a rehearsal''s evidence (S3.6 T6): a part some turns did not report says in how many — wording, no limit'
+  - shape: comparison
     in: SeatsAtPlay.ended
     code: total > claude.tokens
     line: if (total > claude.tokens && over == null) {
@@ -448,6 +464,25 @@ exceptions:
       { it.name }'
     reason: the rule files, read in the order of their names
   kp-daemon/src/main/kotlin/kp/daemon/Script.kt:
+  - shape: comparison
+    in: Player.named
+    code: it.seq.toLong() >= groupFirst
+    line: lines().filterIsInstance<Message>().filter { it.seq.toLong() >= groupFirst && (it.by.startsWith(ROBOT) || it.from.value
+      == MAILROOM) }.forEach { message ->
+    reason: 'the walk player (S3.6 T3): the messages written from an unordered step''s first line on — the log from a line'
+  - shape: comparison
+    in: Player.named
+    code: count > 1
+    line: ids["$group/${message.kind}" + if (count > 1) "/$count" else ""] = message.id.value
+    reason: 'the walk player (S3.6 T3): the second message of a kind an unordered step''s events made is named `…/2`, as the
+      walker names it'
+  - shape: comparison
+    in: Player.check
+    code: played.first..played.last
+    line: .filter { it.cause == played.message && (step.operation == null || it.seq.toLong() in played.first..played.last) }.mapNotNull
+      { it.rule }.map(Datum::Text))
+    reason: 'the walk player (S3.6 T4): an operation step''s transitions are read among the lines the step wrote — where to
+      read, no limit'
   - shape: timer
     in: Script.seed
     code: truncatedTo(ChronoUnit.SECONDS)
@@ -482,8 +517,8 @@ exceptions:
   - shape: comparison
     in: Player.step
     code: index >= caughtUp
-    line: if (index >= caughtUp) check(played)
-    reason: 'the walk player: a step a restarted daemon had not kept is checked'
+    line: if (index >= caughtUp && inGroup == null) check(played)
+    reason: 'the walk player: a step a restarted daemon had not kept is checked — an unordered step''s events are not (S3.6)'
   - shape: comparison
     in: Player.throughStep
     code: next < number
@@ -656,6 +691,12 @@ exceptions:
     line: 'add("open tickets: " + state.openTickets().keys.sorted().joinToString(", ") { "#$it" }.ifEmpty { "none" })'
     reason: '`kp status`: the open tickets in order'
   kp-daemon/src/main/kotlin/kp/daemon/Walk.kt:
+  - shape: comparison
+    in: Walk.Companion.permutations
+    code: items.size <= 1
+    line: if (items.size <= 1) listOf(items) else items.indices.flatMap { at -> permutations(items.take(at) + items.drop(at
+      + 1)).map { listOf(items[at]) + it } }
+    reason: 'a walk''s orders (S3.6 T3): one item or none has one order — the recursion''s end'
   - shape: timer
     in: Walk.Companion.read
     code: toJavaDuration()

@@ -1,0 +1,67 @@
+# D-85: a seat the daemon's own operation ends. The TeamLead asks to remove an idle seat, the Pool Manager's robot sends
+# `retire` (POOL-8), and the seat is `retired` once that message is judged (SEAT-11). The operation ends its process: the
+# driver's two reports of the end and the operation's result come in an order the world does not fix (contracts.md §4.4,
+# Amendment 30), and the walker plays all six (S3.6 T4). In each the reports find the seat retired and send nothing, and
+# the result moves no seat. With D-85's edit taken out, a report before the result re-seats the seat being retired.
+# Supplied observations and fake operation results; this walk never runs external actions.
+name: seat-ends-by-operation-D-85
+stage: S2.9
+initial: building
+final: building
+seats:
+  coder-1: coder
+stages:
+  S2.9:
+    machines:
+      seat: idle
+facts:
+  seat.name:
+    coder: coder-1
+  budget.slot_open: true
+  seat.process_gone: false
+  seat.protocol_closed: false
+  seat.tool_call_open_for: 0
+steps:
+- id: remove
+  who: teamlead
+  kind: session-request
+  args:
+    action: remove
+    seat: coder-1
+  expect:
+    rules:
+    - POOL-8
+    sends:
+    - retire
+- id: retire
+  who: pool
+  by: robot:POOL-8
+  kind: retire
+  re: remove
+  args:
+    seat: coder-1
+  expect:
+    transitions:
+    - SEAT-11
+- id: ends
+  unordered:
+  - id: process-gone
+    who: daemon
+    event:
+      fact: seat.process_gone
+    trigger:
+      seat: coder-1
+    facts:
+      seat.process_gone: true
+  - id: protocol-closed
+    who: daemon
+    event:
+      fact: seat.protocol_closed
+    trigger:
+      seat: coder-1
+    facts:
+      seat.protocol_closed: true
+  - id: retired
+    operation: seat.retire
+    request: retire
+    result: ok

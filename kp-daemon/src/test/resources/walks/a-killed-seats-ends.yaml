@@ -1,0 +1,70 @@
+# S3.6's fixture of three unordered events (T1): a seat silent past the watchdog is killed, and its two end reports and the
+# kill's result come in an order the world does not fix (D-85). Whichever report comes first, the robot sends one
+# seat-gone and the seat comes back; the kill's result moves no seat. The seat-gone the group's events made is named
+# `ends/seat-gone`: the robot that sent it depends on the order.
+# Supplied observations and fake operation results; this walk never runs external actions.
+name: a-killed-seats-ends
+stage: S3.6
+initial: building
+final: building
+seats:
+  coder-1: coder
+facts:
+  seat.name:
+    coder: coder-1
+  seat.silent_for: 30m
+  seat.process_gone: false
+  seat.protocol_closed: false
+  seat.tool_call_open_for: 0
+  seat.inbox_replayed: true
+steps:
+- who: daemon
+  event:
+    fact: seat.silent_for
+  trigger:
+    seat: coder-1
+  expect:
+    rules:
+    - POOL-2
+    sends:
+    - kill
+- id: kill
+  who: pool
+  by: robot:POOL-2
+  kind: kill
+  args:
+    seat: coder-1
+- id: ends
+  unordered:
+  - id: process-gone
+    who: daemon
+    event:
+      fact: seat.process_gone
+    trigger:
+      seat: coder-1
+    facts:
+      seat.process_gone: true
+  - id: protocol-closed
+    who: daemon
+    event:
+      fact: seat.protocol_closed
+    trigger:
+      seat: coder-1
+    facts:
+      seat.protocol_closed: true
+  - id: killed
+    operation: seat.kill
+    request: kill
+    result: ok
+- operation: seat.reseat
+  request: ends/seat-gone
+  result: ok
+- who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: coder-1
+  expect:
+    state: building
+    seats:
+      coder-1: ready
