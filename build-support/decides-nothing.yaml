@@ -244,10 +244,10 @@ exceptions:
     line: 'private fun <T> MutableList<T>.removeAtOrNull(index: Int): T? = if (index < size) removeAt(index) else null'
     reason: 'the command line: an option''s value, if one follows it'
   - shape: timer
-    in: service
+    in: serviceClock
     code: truncatedTo(ChronoUnit.SECONDS)
-    line: val clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }
-    reason: 'a time written to the second: no wait'
+    line: internal val serviceClock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }
+    reason: 'the service''s clock — a time written to the second: no wait'
   kp-daemon/src/main/kotlin/kp/daemon/Office.kt:
   - shape: timer
     in: Changes.await
@@ -997,6 +997,33 @@ exceptions:
     code: i < glob.length
     line: while (i < glob.length) {
     reason: a glob's characters, read one by one into an expression (S2.2)
+  kp-ops/src/main/kotlin/kp/ops/GitHubApps.kt:
+  - shape: timer
+    in: GitHubApps.Companion.TIMEOUT
+    code: Duration.ofSeconds(30)
+    line: 'val TIMEOUT: Duration = Duration.ofSeconds(30)'
+    reason: 'GitHub''s Apps (Amendment 33): how long one request to GitHub may take before it is ended — the token or name it asked for is then not had, and the fact asked is unknown with that reason, which the rules judge'
+  - shape: timer
+    in: GitHubApps.Companion.client
+    code: connectTimeout(Duration.ofSeconds(10))
+    line: 'fun client(): HttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NEVER).build()'
+    reason: 'GitHub''s Apps (Amendment 33): how long a connection to GitHub may take to open — past it the request fails and says so'
+  kp-ops/src/main/kotlin/kp/ops/Keys.kt:
+  - shape: comparison
+    in: Keys.signed
+    code: sign()
+    line: 'val signature = Signature.getInstance("SHA256withRSA").apply { … }.sign()'
+    reason: 'an App''s claim signed RS256: `Signature.sign()` makes the signature''s bytes — no number''s sign, and it compares nothing'
+  - shape: comparison
+    in: Keys.length
+    code: n < 0x80
+    line: if (n < 0x80) return byteArrayOf(n.toByte())
+    reason: 'an App''s PEM key wrapped in PKCS#8: a DER length''s form, short below 128 and long from it (X.690 8.1.3) — an encoding''s rule'
+  - shape: comparison
+    in: Keys.length
+    code: it > 0
+    line: val bytes = generateSequence(n) { it ushr 8 }.takeWhile { it > 0 }.map { (it and 0xff).toByte() }.toList().reversed().toByteArray()
+    reason: 'an App''s PEM key wrapped in PKCS#8: a DER length''s bytes in the long form, taken while the length shifted right is not yet zero (X.690 8.1.3) — an encoding''s rule'
   kp-seat-api/src/main/kotlin/kp/seatapi/StopGate.kt:
   - shape: number
     in: StopGate.route
