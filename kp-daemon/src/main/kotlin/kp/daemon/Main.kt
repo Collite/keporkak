@@ -10,8 +10,6 @@ import kp.driver.home.CompiledAnswerer
 import kp.mailroom.Clock
 import kp.log.LogRefusal
 import kp.mailroom.MailroomRefusal
-import kp.mailroom.OperationResult
-import kp.mailroom.Operations
 import java.net.InetAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -135,14 +133,13 @@ internal fun projectOf(root: Path, office: String): Path {
  * `watch.every`, and the panes. Its world is `kp-facts` over the project checkout it runs on and the office's main
  * checkouts, with the fold (S3.1, [ProjectWorld]), and GitHub read as `kp-merger` (S3.2, [GitHubWorld]) — both handed
  * the fold before the start carries any judgement again, and a view's ask writing no journal line (S3.8, Amendment 34);
- * beside it, Bora's presence. Until the performers exist (P3), it ends
- * `notify.bora` at once — the inbox is the notification, and `kp inbox --follow` raises it — and ends every other
- * operation that is not a seat's `failed`, saying no performer exists yet.
+ * beside it, Bora's presence. Its performers (S3.3, [OfficeOperations]) make and remove a stage's worktree, rebuild the
+ * register and commit and push the project, outside the mailroom's lock (Amendment 36); they end `notify.bora` at once —
+ * the inbox is the notification, and `kp inbox --follow` raises it — and every other operation that is not a seat's
+ * `failed`, saying no performer exists for it yet.
  */
 private fun service(root: Path, office: String, project: Path, socket: Path, listening: String?): Daemon {
-    val operations = Operations { request, done ->
-        done(if (request.operation == "notify.bora") OperationResult.Ok() else OperationResult.Failed("no performer for ${request.operation} on this office yet"))
-    }
+    val operations = OfficeOperations(root, office, project)
     val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
     val entry = rules?.ruleSet?.pool?.offices?.get(office)
         ?: fail(if (rules == null) "the rules are not valid:\n" + loaded.problems.joinToString("\n") else "pool/offices.yaml names no office '$office'")
@@ -150,7 +147,7 @@ private fun service(root: Path, office: String, project: Path, socket: Path, lis
     val listen = listening ?: entry.listen["mcp"] ?: fail("pool/offices.yaml gives office '$office' no listen.mcp")
     val clock = serviceClock
     val world = ServiceWorld(ProjectWorld.of(checkNotNull(rules), office, project), GitHubWorld.of(office, project))
-    val seated = Seated.start(office, project, root, world, operations, clock, listen, folded = world::reading) { starting ->
+    val seated = Seated.start(office, project, root, world, operations, clock, listen, folded = { folded -> world.reading(folded); operations.reading(folded) }) { starting ->
         Seats(root, office, project, roots, ClaudeAgent(root.resolve("office/adapter")), clock, Panes(say = Journal::say), Journal::say, starting) { listener, time ->
             ClaudeAdapter.driver(roots.secrets.resolve("claude-token"), roots.seats, time, CompiledAnswerer(roots.seats), listener)
         }

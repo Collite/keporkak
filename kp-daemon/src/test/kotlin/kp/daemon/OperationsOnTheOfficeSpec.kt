@@ -57,7 +57,7 @@ class OperationsOnTheOfficeSpec : FreeSpec({
         OfficeOnDisk(mapOf(OFFICE_STAGE to "merged"), worktree = true).use { office ->
             val exit = office.send("teamlead", STAGE_EXIT)
 
-            office.ops(exit.id) shouldContainExactly listOf("worktree.remove requested", "worktree.remove ok", "register.rebuild requested", "register.rebuild ok",
+            office.ops(exit.id).filterNot { it.startsWith("seat.wake") } shouldContainExactly listOf("worktree.remove requested", "worktree.remove ok", "register.rebuild requested", "register.rebuild ok",
                 "project.commit_push requested", "project.commit_push ok")
             office.worktrees.resolve(OFFICE_WORKTREE).exists() shouldBe false
             office.scratch.resolve(OFFICE_WORKTREE).exists() shouldBe false
