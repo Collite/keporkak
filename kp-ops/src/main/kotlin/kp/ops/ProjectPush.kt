@@ -84,7 +84,7 @@ class ProjectPush(
             config.withIndex().flatMap { (at, entry) -> listOf("GIT_CONFIG_KEY_$at" to entry.first, "GIT_CONFIG_VALUE_$at" to entry.second) }
     }
 
-    private fun run(vararg args: String, more: Map<String, String> = emptyMap()): GitCommand.Ran = git.run(checkout, *args, more = ISOLATED + more)
+    private fun run(vararg args: String, more: Map<String, String> = emptyMap()): Ran = git.run(checkout, *args, more = ISOLATED + more)
 
     private fun read(vararg args: String): String? = run(*args).takeIf { it.ok }?.output?.trim()
 

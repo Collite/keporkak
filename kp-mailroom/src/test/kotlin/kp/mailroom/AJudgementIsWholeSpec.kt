@@ -3,6 +3,7 @@ package kp.mailroom
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FreeSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import kp.engine.fold
@@ -84,9 +85,10 @@ class AJudgementIsWholeSpec : FreeSpec({
         val office = Office(seed = "proposed")
         office.stopWriterAfter(theJudgedLineAfter("op worktree.create requested"))
 
-        // Bora's approval was written whole: he is answered for it; the result stopped in its turn goes to the journal (Amendment 29).
+        // Bora's approval was written whole: he is answered for it; the result stopped in its turn goes to the journal (Amendment 29)
+        // — beside the wake's, performed side by side and stopped too, in either order (contracts.md §7, Amendment 36).
         office.bora(APPROVAL).status shouldBe Status.DELIVERED
-        office.journal.first() shouldContain "the result of worktree.create"
+        office.journal.filter { "the result of worktree.create" in it } shouldHaveSize 1
         office.restart()
 
         val approval = office.readBack().sent("approval").single().id.value

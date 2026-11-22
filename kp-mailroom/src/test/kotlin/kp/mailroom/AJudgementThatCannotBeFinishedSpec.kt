@@ -31,6 +31,8 @@ class AJudgementThatCannotBeFinishedSpec : StringSpec({
         office.facts.set("budget.slot_open", true)
         office.facts.set("roster.model_allowed", mapOf("coder-3" to true))
         val request = office.send("teamlead", """{"kind": "session-request", "stage": "$STAGE", "args": {"action": "add", "role": "coder", "seat": "coder-3"}}""")
+        // The TeamLead is in a turn: no wake of it is judged beside coder-3's start, which runs on a lane of its own (Amendment 36).
+        office.seats.busy += "teamlead"
         var started = false
         office.stop()
         office.mailroom = Mailroom.start(office.project, panda, office.texts,

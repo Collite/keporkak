@@ -95,17 +95,17 @@ class Worktrees(private val git: GitCommand = GitCommand()) {
 
     companion object {
         private const val ORIGIN = "origin"
+        /** One entry of `git status --porcelain=v1 -z`: its two letters, a space, its file. */
+        private val ENTRY = Regex("^(..) (.+)$", RegexOption.DOT_MATCHES_ALL)
 
         /** `git status --porcelain=v1 -z`'s entries, each as `<file> (<what>)`: untracked, modified, added, deleted, renamed. */
         internal fun changed(status: String): List<String> {
             val entries = status.split('\u0000').filter { it.isNotEmpty() }.iterator()
             val changes = ArrayList<String>()
             while (entries.hasNext()) {
-                val entry = entries.next()
-                if (entry.length < 4) continue
-                val code = entry.substring(0, 2)
+                val (code, file) = ENTRY.matchEntire(entries.next())?.destructured ?: continue
                 if (code[0] == 'R' || code[0] == 'C') entries.takeIf { it.hasNext() }?.next()
-                changes += "${entry.substring(3)} (${what(code)})"
+                changes += "$file (${what(code)})"
             }
             return changes
         }

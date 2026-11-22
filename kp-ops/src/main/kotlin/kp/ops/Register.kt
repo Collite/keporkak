@@ -1,9 +1,7 @@
 package kp.ops
 
-import java.io.File
 import java.nio.file.Path
 import java.time.Duration
-import java.util.concurrent.TimeUnit
 
 /**
  * `register.rebuild` (contracts.md §7, Amendment 36): `scripts/build-register.py` of the keporkak checkout — [script] —
@@ -12,24 +10,12 @@ import java.util.concurrent.TimeUnit
  */
 class Register(private val script: Path, private val python: String = "python3", private val limit: Duration = LIMIT) {
     fun rebuild(project: Path, efforts: List<Pair<String, String>>): Performed {
-        val command = listOf(python, script.toString(), "--project", project.toString()) + efforts.flatMap { (effort, folder) -> listOf("--effort", "$effort=$folder") }
-        val process = try {
-            ProcessBuilder(command).redirectErrorStream(true).redirectInput(ProcessBuilder.Redirect.from(File("/dev/null"))).start()
-        } catch (error: java.io.IOException) {
-            return Performed.Failed("$python could not be started: ${error.message}")
-        }
-        val output = StringBuilder()
-        val reader = Thread.ofVirtual().start { output.append(process.inputStream.bufferedReader().readText()) }
-        if (!process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
-            process.destroyForcibly()
-            return Performed.Failed("${script.fileName} did not end in ${limit.toSeconds()} s")
-        }
-        reader.join(READER_MILLIS)
-        return if (process.exitValue() == 0) Performed.Ok() else Performed.Failed("${script.fileName} failed: ${output.toString().trim()}")
+        val ran = runOnce(listOf(python, script.toString(), "--project", project.toString()) + efforts.flatMap { (effort, folder) -> listOf("--effort", "$effort=$folder") }, limit)
+        return if (ran.ok) Performed.Ok() else Performed.Failed("${script.fileName} failed: ${ran.output.trim()}")
     }
 
     private companion object {
+        /** How long the script may take: it reads a few STATUS files. */
         val LIMIT: Duration = Duration.ofMinutes(1)
-        const val READER_MILLIS = 10_000L
     }
 }
