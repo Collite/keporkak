@@ -35,6 +35,16 @@ sealed interface Handed {
 }
 
 /**
+ * Where a stage acts on GitHub (contracts.md §4.4, Amendment 33; §7, Amendment 37): the stage's repository,
+ * `<organization>/<repo>` — the `<repo>` of its list's title — and its branch, the one its list's first line names, whose
+ * pull request is the stage's; or what was missing to tell.
+ */
+sealed interface Located {
+    data class At(val repository: String, val branch: String) : Located
+    data class Unknown(val missing: String) : Located
+}
+
+/**
  * The observers of GitHub (contracts.md §4.4, Amendment 33): a stage's pull request — the one whose head is the branch its
  * list names, in the repository its list's title names — and the check runs of a sha. They read with the token they are
  * handed and write nothing; a list GitHub gives in pages is read to its end; a request that fails makes the fact unknown,
@@ -68,7 +78,22 @@ class GitHubFacts(
         }
     }
 
+    /** Where [stage] acts on GitHub, read from its list as the facts read it — the list is read from the project checkout, and GitHub is not asked. */
+    fun located(stage: String): Located = try {
+        GitHubReading(Reading(where, log, Git(null), Asked(mapOf(STAGE to stage))), github, access, http).located()
+    } catch (missing: Missing) {
+        Located.Unknown(missing.message)
+    } catch (ambiguous: Ambiguous) {
+        Located.Unknown(ambiguous.message)
+    } catch (error: IOException) {
+        Located.Unknown(error.toString())
+    } catch (error: UncheckedIOException) {
+        Located.Unknown(error.cause.toString())
+    }
+
     companion object {
+        private const val STAGE = "stage"
+
         /** The facts answered from GitHub, as Amendment 33 reads them; the parameters are those of `rules/vocabulary.yaml`, and the stage `ci.state`'s sha is in. */
         val ANSWERED: Map<String, Fact> = listOf(
             Fact("pr.ready", listOf("stage")),

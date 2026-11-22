@@ -135,14 +135,16 @@ internal fun projectOf(root: Path, office: String): Path {
  * `watch.every`, and the panes. Its world is `kp-facts` over the project checkout it runs on and the office's main
  * checkouts, with the fold (S3.1, [ProjectWorld]), and GitHub read as `kp-merger` (S3.2, [GitHubWorld]) — both handed
  * the fold before the start carries any judgement again, and a view's ask writing no journal line (S3.8, Amendment 34);
- * beside it, Bora's presence. Until the performers exist (P3), it ends
- * `notify.bora` at once — the inbox is the notification, and `kp inbox --follow` raises it — and ends every other
- * operation that is not a seat's `failed`, saying no performer exists yet.
+ * beside it, Bora's presence. It acts on GitHub as `kp-merger` — `git.merge`, `pr.close`, `issue.file` (S3.9,
+ * [GitHubOperations]), handed the fold as the world is. Until the other performers exist (P3), it ends `notify.bora`
+ * at once — the inbox is the notification, and `kp inbox --follow` raises it — and ends every other operation that is
+ * not a seat's `failed`, saying no performer exists yet.
  */
 private fun service(root: Path, office: String, project: Path, socket: Path, listening: String?): Daemon {
-    val operations = Operations { request, done ->
+    val github = GitHubOperations.of(office, project, Operations { request, done ->
         done(if (request.operation == "notify.bora") OperationResult.Ok() else OperationResult.Failed("no performer for ${request.operation} on this office yet"))
-    }
+    })
+    val operations: Operations = github
     val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
     val entry = rules?.ruleSet?.pool?.offices?.get(office)
         ?: fail(if (rules == null) "the rules are not valid:\n" + loaded.problems.joinToString("\n") else "pool/offices.yaml names no office '$office'")
@@ -150,7 +152,7 @@ private fun service(root: Path, office: String, project: Path, socket: Path, lis
     val listen = listening ?: entry.listen["mcp"] ?: fail("pool/offices.yaml gives office '$office' no listen.mcp")
     val clock = serviceClock
     val world = ServiceWorld(ProjectWorld.of(checkNotNull(rules), office, project), GitHubWorld.of(office, project))
-    val seated = Seated.start(office, project, root, world, operations, clock, listen, folded = world::reading) { starting ->
+    val seated = Seated.start(office, project, root, world, operations, clock, listen, folded = { world.reading(it); github.reading(it) }) { starting ->
         Seats(root, office, project, roots, ClaudeAgent(root.resolve("office/adapter")), clock, Panes(say = Journal::say), Journal::say, starting) { listener, time ->
             ClaudeAdapter.driver(roots.secrets.resolve("claude-token"), roots.seats, time, CompiledAnswerer(roots.seats), listener)
         }

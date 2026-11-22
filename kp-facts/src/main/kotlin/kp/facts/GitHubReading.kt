@@ -26,11 +26,10 @@ internal class GitHubReading(private val reading: Reading, private val github: G
     private val heading: Heading by lazy { Heading.of(reading.stageList(stage), stage) }
 
     /** `<organization>/<repo>`: the repository of the list's title (Amendment 32), in the organization of §9's block. */
-    private val repository: String by lazy {
-        val repo = heading.repo()
-        if (!NAME.matches(repo) || !NAME.matches(github.organization)) throw Missing("'${github.organization}/$repo' is no repository name GitHub gives")
-        "${github.organization}/$repo"
-    }
+    private val repository: String by lazy { repositoryOf(heading, github) }
+
+    /** Where the stage acts on GitHub (Amendment 37): its repository, and its branch — the head of its pull request. */
+    fun located(): Located = Located.At(repository, heading.branch())
 
     private val authorization: String by lazy {
         when (val handed = access.token(repository)) {
@@ -291,6 +290,13 @@ internal class GitHubReading(private val reading: Reading, private val github: G
         private val LINK_NEXT = Regex("<([^>]+)>;\\s*rel=\"next\"")
 
         private fun next(link: String?): String? = link?.let { LINK_NEXT.find(it)?.groupValues?.get(1) }
+
+        /** `<organization>/<repo>` for the repository [heading] names, in [github]'s organization; what is wrong when GitHub gives no such name. */
+        fun repositoryOf(heading: Heading, github: GitHub): String {
+            val repo = heading.repo()
+            if (!NAME.matches(repo) || !NAME.matches(github.organization)) throw Missing("'${github.organization}/$repo' is no repository name GitHub gives")
+            return "${github.organization}/$repo"
+        }
 
         private fun JsonObject.text(name: String): String? = (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content
     }
