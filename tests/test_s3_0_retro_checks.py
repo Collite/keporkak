@@ -196,14 +196,14 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
         spec.parent.mkdir(parents=True)
         spec.write_text(
             "package kp.planted\n\nimport io.kotest.core.spec.style.StringSpec\n\n"
+            "private fun own() {\n"
+            "    val module = java.io.File(System.getProperty(\"user.dir\")).name\n"
+            "    val config = Class.forName(\"io.kotest.provided.ProjectConfig\").protectionDomain.codeSource.location.path\n"
+            "    check(\"/$module/build/\" in config) { \"the ProjectConfig in force is $config, not $module's own\" }\n"
+            "}\n\n"
             "class NeverEndsSpec : StringSpec({\n"
-            "    \"the ProjectConfig in force is the module's own\" {\n"
-            "        val module = java.io.File(System.getProperty(\"user.dir\")).name\n"
-            "        val config = Class.forName(\"io.kotest.provided.ProjectConfig\").protectionDomain.codeSource.location.path\n"
-            "        check(\"/$module/build/\" in config) { \"the ProjectConfig in force is $config, not $module's own\" }\n"
-            "    }\n"
-            "    \"a spec that never ends, suspended\" { kotlinx.coroutines.awaitCancellation() }\n"
-            "    \"a spec that never ends, blocking its thread\" { Thread.sleep(Long.MAX_VALUE) }\n"
+            "    \"a spec that never ends, suspended\" { own(); kotlinx.coroutines.awaitCancellation() }\n"
+            "    \"a spec that never ends, blocking its thread\" { own(); Thread.sleep(Long.MAX_VALUE) }\n"
             "})\n")
         (copy / "build/every-module.gradle").write_text(EVERY_MODULE)
         for module in modules:
@@ -221,14 +221,12 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
         self.assertNotEqual(run.returncode, 0)
         self.assertEqual(sorted((module, case) for module, case, _ in ran),
                          sorted((module, case) for module in modules for case in
-                                ("the ProjectConfig in force is the module's own", "a spec that never ends, blocking its thread",
-                                 "a spec that never ends, suspended")), run.stdout[-6000:])
-        # Each module's own ProjectConfig is the one in force; under it, the suspended spec ends by Kotest's timeout, the
-        # blocked one by the interrupt that timeout sends its thread.
+                                ("a spec that never ends, blocking its thread", "a spec that never ends, suspended")), run.stdout[-6000:])
+        # Each case first says the ProjectConfig in force is the module's own — loaded from its build: a module with none,
+        # or with kp-log's, fails there at once, where its blocking case would hold the run (review-029 B2). Under it, the
+        # suspended spec ends by Kotest's timeout; the blocked one by the interrupt that timeout sends its thread.
         for module, case, failure in ran:
-            if case.endswith("own"):
-                self.assertIsNone(failure, module)
-            elif case.endswith("suspended"):
+            if case.endswith("suspended"):
                 self.assertRegex(failure or "", r"\S*TestTimeoutException: Test '[^']+' did not complete within 2s", module)
             else:
                 self.assertRegex(failure or "", r"^java.lang.InterruptedException", module)
