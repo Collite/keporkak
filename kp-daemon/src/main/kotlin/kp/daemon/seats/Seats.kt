@@ -338,7 +338,7 @@ class Seats(
             is Outcome.Failed -> return OperationResult.Failed("the home of $seat cannot be built: ${built.reason}")
         }
         val spec = SessionSpec(SeatId(seat), agent.command(seat, binding.role), workingDirectory, home.path, binding.model, binding.effort, home.servers,
-            agent.environment(seat), hookUrl)
+            SeatEnvironment.of(agent.environment(seat), home.programs), hookUrl)
         minting[seat] = binding
         val started = try {
             val loaded = session?.let { blocking { driver.load(spec, it) } }

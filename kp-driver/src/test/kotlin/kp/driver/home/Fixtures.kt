@@ -51,7 +51,7 @@ class Sources : AutoCloseable {
     )
 
     init {
-        for (folder in listOf("agents", "renders", "skills", "docs/profiles", "hooks")) copy(root(folder), root.resolve(folder))
+        for (folder in listOf("agents", "renders", "skills", "docs/profiles", "hooks", "seat")) copy(root(folder), root.resolve(folder))
     }
 
     /** The names in [folder], sorted. */
