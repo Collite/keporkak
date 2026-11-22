@@ -71,8 +71,10 @@ class ASeatsGitHubIdentitySpec : StringSpec({
             fun start(seat: String, role: String) {
                 val request = office.send("teamlead", "session-request", """{"action": "add", "role": "$role", "seat": "$seat"}""").id
                 office.send("pool", "session-report", """{"seat": "$seat", "role": "$role"}""", re = request)
-                office.until("$seat's token.mint ended") { office.ops("token.mint").count { it.phase != "requested" } == office.ops("token.mint").count { it.phase == "requested" } &&
-                    office.ops("token.mint").any { it.with?.text("seat") == seat } }
+                office.until("$seat's token.mint ended") {
+                    val mints = office.ops("token.mint")
+                    mints.any { it.with?.text("seat") == seat } && mints.count { it.phase != "requested" } == mints.count { it.phase == "requested" }
+                }
             }
             // GitHub refuses the reviewer's App the checks its role is given.
             office.apps!!.withdraw("kp-reviewer", "checks")
@@ -167,7 +169,8 @@ class ASeatsGitHubIdentitySpec : StringSpec({
             office.project.resolve("tasks-p2-s2.4-seats.md").writeText("# KP-kp-toy-P2 · S2.4 — Seats            (PR: feat/kp-kp-toy-p2-s2.4-seats)\n")
             val stop = office.send("coder-1", "stop", """{"sc": "SC-3"}""").id
             office.send("principal", "triage", """{"outcome": "resume", "found": "1", "since": "$stop"}""", re = stop)
-            office.until("coder-1's turn printed the token") { office.received("coder-1").any { it.text("event") == "shell" } }
+            val transcript = office.project.resolve("office/seats/_transcripts/coder-1.log")
+            office.until("coder-1's turn ended") { transcript.isRegularFile() && transcript.readText().lines().any { " coder-1 turn ended" in it } }
             office.close()
         }
 
