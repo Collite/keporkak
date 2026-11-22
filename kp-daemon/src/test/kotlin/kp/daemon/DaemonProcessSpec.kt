@@ -11,7 +11,6 @@ import org.slf4j.spi.SLF4JServiceProvider
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.ServiceLoader
-import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -123,42 +122,3 @@ class DaemonProcessSpec : FreeSpec({
 
 /** The jars that would give SLF4J somewhere to write. */
 private val PROVIDERS = listOf("slf4j-simple", "slf4j-jdk14", "slf4j-reload4j", "slf4j-nop", "logback-classic", "log4j-slf4j", "slf4j-log4j")
-
-/** The daemon as the unit starts it: the installed launcher, `run`, on [project], listening on [socket]. */
-private class Launched(project: Path, socket: Path) {
-    private val lines = LinkedBlockingQueue<String>()
-    private val seen = StringBuilder()
-    val process: Process = ProcessBuilder(
-        checkout.resolve("kp-daemon/build/install/kp-daemon/bin/kp-daemon").toString(), "run",
-        "--root", checkout.toString(), "--office", "panda", "--project", project.toString(), "--socket", socket.toString(), "--listen", "127.0.0.1:0",
-    ).redirectErrorStream(true).start().also { process ->
-        Thread.ofVirtual().start { process.inputStream.bufferedReader().forEachLine { lines += it } }
-    }
-
-    fun awaitLine(part: String): String {
-        while (true) {
-            val line = lines.poll(60, TimeUnit.SECONDS) ?: error("no line with '$part' in:\n$seen")
-            seen.appendLine(line)
-            if (part in line) return line
-        }
-    }
-
-    /** This, once it has ended — or killed, when it has not within a minute. */
-    fun ended(): Launched = apply { if (!process.waitFor(60, TimeUnit.SECONDS)) process.destroyForcibly() }
-
-    /** Everything it wrote, once it has ended. */
-    fun journal(): String {
-        process.waitFor(60, TimeUnit.SECONDS)
-        Thread.sleep(300)
-        while (true) seen.appendLine(lines.poll() ?: break)
-        return seen.toString()
-    }
-}
-
-private fun kp(socket: Path, vararg args: String): Ran {
-    val process = ProcessBuilder(listOf(checkout.resolve("scripts/kp").toString()) + args).redirectErrorStream(true)
-        .apply { environment()["KP_SOCKET"] = socket.toString() }.start()
-    val text = process.inputStream.bufferedReader().readText()
-    process.waitFor(60, TimeUnit.SECONDS)
-    return Ran(process.exitValue(), text)
-}

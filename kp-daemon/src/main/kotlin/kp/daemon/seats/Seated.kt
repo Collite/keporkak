@@ -37,15 +37,20 @@ class Seated private constructor(val office: Office, val seats: Seats, val api: 
     }
 
     companion object {
+        /**
+         * The office [name] on [project]'s log in front of [seats], the seat API on [listen]; [folded] is told the office
+         * before its start carries any judgement again ([Office.start]).
+         */
         fun start(
             name: String, project: Path, root: Path, world: FactSource, operations: Operations, clock: Clock, listen: String,
+            folded: (Office) -> Unit = {},
             seats: (startingRules: () -> InForceRules?) -> Seats,
         ): Seated {
             var started: Office? = null
             val rules = RuleFiles(root)
             val made = seats { started?.rules ?: InForceRules.of(rules.lastRead.ifEmpty { rules.read() }).first }
             val office = try {
-                Office.start(name, project, root, made.facts(world), made.operations(operations), made, clock)
+                Office.start(name, project, root, made.facts(world), made.operations(operations), made, clock, folded)
             } catch (error: Exception) {
                 made.close()
                 throw error

@@ -8,6 +8,9 @@
 - **RW-2 Three verdicts.** `PASS` · `PASS — follow-ups filed` · `FIX FIRST`. `R5.2`
 - **RW-14 Acceptance specs are read first.** Each DONE item needs a spec that reads as that behaviour and would fail
   without it; a missing one, or one that would stay green, is a blocker (a test that does not test what it claims). `D-38`
+- **RW-15 Each `choice:` line is read.** The reviewer reads every Found line that begins `choice:` (EX-6) against the
+  diff. One that put a decision into the daemon, touched `rules/`, `robots/` or `pool/`, or changed what the contract
+  promises is a blocker: it was a stop, not a choice. `D-83`
 - **RW-3 A blocker** violates `contracts.md`, a D-n, the DONE line or a security invariant, or is a test that does not
   test what it claims. Everything else — minors, cleanups, style, wishes — is a **follow-up** and becomes a GitHub
   issue (one issue may collect several), never a task in the stage. `R5.2`
@@ -33,8 +36,5 @@
   moment of writing). No "coder response" sections: the coder's response is the fix commit and the `done` line. `R5.7, R6.2`
 - **RW-12 A blocker is written so it can be fixed without a conversation:** what · where (a permalink at the reviewed
   sha) · which contract clause, D-n or DONE item it violates · the regression test that is missing. `practice review-234`
-- **RW-15 Each `choice:` line is read.** The reviewer reads every Found line that begins `choice:` (EX-6) against the
-  diff. One that put a decision into the daemon, touched `rules/`, `robots/` or `pool/`, or changed what the contract
-  promises is a blocker: it was a stop, not a choice. `D-83`
 - **RW-13 Verification section.** The exact head, the CI run ids and counts read, and any independent command the
   reviewer ran with its result. `practice review-234`

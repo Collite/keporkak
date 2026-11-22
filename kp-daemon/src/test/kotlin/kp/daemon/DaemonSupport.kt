@@ -19,6 +19,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.copyToRecursively
 import kotlin.io.path.createDirectories
@@ -220,4 +221,47 @@ object Judgements {
         if (lines.isNotEmpty() && lines.last() !is kp.model.Judged) problems += "${lines.last().seq}: the log does not end with a judged line"
         return problems
     }
+}
+
+/**
+ * The daemon as the unit starts it (S1.5 T7): the installed launcher, `run`, on [project], listening on [socket], with the
+ * rules of [root]. What it writes — its journal — is read line by line.
+ */
+class Launched(project: Path, socket: Path, root: Path = checkout) {
+    private val lines = LinkedBlockingQueue<String>()
+    private val seen = StringBuilder()
+    val process: Process = ProcessBuilder(
+        checkout.resolve("kp-daemon/build/install/kp-daemon/bin/kp-daemon").toString(), "run",
+        "--root", root.toString(), "--office", "panda", "--project", project.toString(), "--socket", socket.toString(), "--listen", "127.0.0.1:0",
+    ).redirectErrorStream(true).start().also { process ->
+        Thread.ofVirtual().start { process.inputStream.bufferedReader().forEachLine { lines += it } }
+    }
+
+    fun awaitLine(part: String): String {
+        while (true) {
+            val line = lines.poll(60, TimeUnit.SECONDS) ?: error("no line with '$part' in:\n$seen")
+            seen.appendLine(line)
+            if (part in line) return line
+        }
+    }
+
+    /** This, once it has ended — or killed, when it has not within a minute. */
+    fun ended(): Launched = apply { if (!process.waitFor(60, TimeUnit.SECONDS)) process.destroyForcibly() }
+
+    /** Everything it wrote, once it has ended. */
+    fun journal(): String {
+        process.waitFor(60, TimeUnit.SECONDS)
+        Thread.sleep(300)
+        while (true) seen.appendLine(lines.poll() ?: break)
+        return seen.toString()
+    }
+}
+
+/** The real `kp` against the daemon on [socket]. */
+fun kp(socket: Path, vararg args: String): Ran {
+    val process = ProcessBuilder(listOf(checkout.resolve("scripts/kp").toString()) + args).redirectErrorStream(true)
+        .apply { environment()["KP_SOCKET"] = socket.toString() }.start()
+    val text = process.inputStream.bufferedReader().readText()
+    process.waitFor(60, TimeUnit.SECONDS)
+    return Ran(process.exitValue(), text)
 }

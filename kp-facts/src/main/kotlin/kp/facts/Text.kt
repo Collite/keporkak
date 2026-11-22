@@ -1,7 +1,10 @@
 package kp.facts
 
+import java.nio.file.AccessDeniedException
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
@@ -9,20 +12,40 @@ import kotlin.io.path.readText
 
 /**
  * An effort's folder in the project checkout (contracts.md §4.4, Amendment 32): `project.efforts` under the checkout.
- * [prefix] is its path relative to the checkout, as evidence names a file in it.
+ * [prefix] is its path relative to the checkout, as evidence names a file in it. A folder the daemon may not read is
+ * named as such, never as a file that does not exist (review-025's follow-up, Collite/keporkak#52).
  */
-internal class Folder(val dir: Path, val prefix: String) {
-    /** The file [name] of this folder as it stands in the working tree; what was missing when it is not there. */
+internal class Folder(val dir: Path, val prefix: String, val effort: String) {
+    /** The file [name] of this folder as it stands in the working tree; what was missing when it is not there or cannot be read. */
     fun read(name: String): Text {
         val file = dir.resolve(name)
-        if (!file.isRegularFile()) throw Missing("$prefix$name does not exist")
-        return Text(prefix + name, file.readText())
+        val regular = try {
+            Files.readAttributes(file, BasicFileAttributes::class.java).isRegularFile
+        } catch (_: NoSuchFileException) {
+            false
+        } catch (_: AccessDeniedException) {
+            throw unreadable()
+        }
+        if (!regular) throw Missing("$prefix$name does not exist")
+        return try {
+            Text(prefix + name, file.readText())
+        } catch (_: AccessDeniedException) {
+            throw Missing("$prefix$name cannot be read")
+        }
     }
 
     /** The files of this folder — not below it — whose name begins with [start] and ends with [end], sorted. */
-    fun files(start: String, end: String): List<String> =
+    fun files(start: String, end: String): List<String> {
         if (!Files.isDirectory(dir)) throw Missing("${prefix.ifEmpty { "the effort's folder" }} does not exist")
-        else dir.listDirectoryEntries().filter { it.isRegularFile() && it.name.startsWith(start) && it.name.endsWith(end) }.map { it.name }.sorted()
+        return try {
+            dir.listDirectoryEntries().filter { it.isRegularFile() && it.name.startsWith(start) && it.name.endsWith(end) }.map { it.name }.sorted()
+        } catch (_: AccessDeniedException) {
+            throw unreadable()
+        }
+    }
+
+    /** The folder's permission denies the daemon: what was missing, naming the effort and the folder. */
+    private fun unreadable() = Missing("the effort $effort's folder ${prefix.ifEmpty { "(the project checkout)" }} cannot be read")
 
     companion object {
         /** [effort]'s folder in [where]'s project checkout. */
@@ -30,7 +53,7 @@ internal class Folder(val dir: Path, val prefix: String) {
             val folder = where.efforts[effort] ?: throw Missing("the office's project.efforts names no folder for the effort $effort")
             val dir = where.project.resolve(folder).normalize()
             val prefix = where.project.normalize().relativize(dir).toString().let { if (it.isEmpty()) "" else "$it/" }
-            return Folder(dir, prefix)
+            return Folder(dir, prefix, effort)
         }
     }
 }

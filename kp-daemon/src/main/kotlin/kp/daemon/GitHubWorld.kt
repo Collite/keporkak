@@ -6,6 +6,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kp.engine.Datum
 import kp.engine.FactRef
+import kp.engine.State
 import kp.daemon.seats.Roots
 import kp.daemon.seats.Seats
 import kp.facts.Checkouts
@@ -17,6 +18,7 @@ import kp.facts.Observation
 import kp.facts.StageState
 import kp.facts.WhatTheLogKnows
 import kp.mailroom.FactSource
+import kp.model.Envelope
 import kp.model.Record
 import kp.ops.App
 import kp.ops.Asked
@@ -57,6 +59,9 @@ class GitHubWorld private constructor(
         is Observation.Value -> Datum.of(answer.value)
         is Observation.Unknown -> null.also { say("facts: $fact for ${stage ?: "no stage"} is unknown — ${answer.missing}") }
     }
+
+    /** A view's ask — `kp inbox`: the same answer, and no journal line (Amendment 34). */
+    val view: FactSource = FactSource { fact, stage -> (observation(fact, stage) as? Observation.Value)?.let { Datum.of(it.value) } }
 
     /** [fact]'s answer for a judgement about [stage], with its evidence: a value, or unknown and why; null when the fact is not GitHub's. */
     fun observation(fact: FactRef, stage: String?): Observation? {
@@ -124,6 +129,7 @@ class GitHubWorld private constructor(
  * fact asked of the one that holds it.
  */
 class ServiceWorld(val project: ProjectWorld, val github: GitHubWorld) : FactSource {
+    /** Reads [office]'s fold from now on — handed over as the office is made, before its start carries a judgement again (S3.8). */
     fun reading(office: Office) {
         project.reading(office)
         github.reading(office)
@@ -131,6 +137,9 @@ class ServiceWorld(val project: ProjectWorld, val github: GitHubWorld) : FactSou
 
     override fun observe(fact: FactRef, stage: String?): Datum? =
         if (fact.name in GitHubFacts.ANSWERED) github.observe(fact, stage) else project.observe(fact, stage)
+
+    /** A view's ask — `kp inbox`: each world's view, writing no journal line (Amendment 34). */
+    val view: FactSource = FactSource { fact, stage -> if (fact.name in GitHubFacts.ANSWERED) github.view.observe(fact, stage) else project.view.observe(fact, stage) }
 }
 
 /**
@@ -163,15 +172,21 @@ class OfficeLog : WhatTheLogKnows {
  * The `pr.head` the judgement of [message] observed: the `observed` of the record that judged it — `delivered` or
  * `refused` — read back from the log, which the fold does not keep (contracts.md §2.2); null when it observed none.
  */
-internal fun Office.observedHead(message: String): String? {
-    val judged = counted().filterIsInstance<Record>().lastOrNull { record ->
+internal fun Office.observedHead(message: String): String? = observedHead(counted(), message)
+
+/** The `pr.head` the judgement of [message] observed, from the log's lines as they count, [counted]; null when it observed none. */
+internal fun observedHead(counted: List<Envelope>, message: String): String? {
+    val judged = counted.filterIsInstance<Record>().lastOrNull { record ->
         record.json["id"]?.jsonPrimitive?.contentOrNull == message && record.json["event"]?.jsonPrimitive?.contentOrNull in JUDGED
     } ?: return null
     return ((judged.json["observed"] as? JsonObject)?.get(HEAD) as? JsonPrimitive)?.takeIf { it.isString }?.content
 }
 
 /** When [stage]'s last message of one of [kinds] was delivered, as the fold dates it; null when none was. */
-internal fun Office.lastDelivered(stage: String, kinds: Set<String>): String? = state.delivered.values.lastOrNull { it.stage == stage && it.kind in kinds }?.at
+internal fun Office.lastDelivered(stage: String, kinds: Set<String>): String? = state.lastDelivered(stage, kinds)
+
+/** When [stage]'s last message of one of [kinds] was delivered, as this fold dates it; null when none was. */
+internal fun State.lastDelivered(stage: String, kinds: Set<String>): String? = delivered.values.lastOrNull { it.stage == stage && it.kind in kinds }?.at
 
 private const val HEAD = "pr.head"
 private val JUDGED = setOf("delivered", "refused")

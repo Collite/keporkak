@@ -39,8 +39,9 @@ internal class StageList(val text: Text) {
     }
 
     /** The ids `SC-<n>` the `Scope fence` section names, in their order by number. */
-    fun stopConditions(): List<String> =
-        section(FENCE).flatMap { index -> SC.findAll(text.lines[index]).map { it.value } }.distinct().sortedBy { it.removePrefix("SC-").toInt() }
+    fun stopConditions(): List<String> = section(FENCE).flatMap { index ->
+        SC.findAll(text.lines[index]).map { sc -> sc.value to held(sc.value.removePrefix("SC-"), sc.value, text.cite(index)) }
+    }.distinct().sortedBy { it.second }.map { it.first }
 
     /** The tasks of the `Tasks` section: each line that begins `- [ ] T<n>` or `- [x] T<n>`, with the lines after it up to the next. */
     fun tasks(): List<Task> {
@@ -48,6 +49,7 @@ internal class StageList(val text: Text) {
         val starts = lines.filter { TASK.containsMatchIn(it.value) }
         return starts.mapIndexed { at, start ->
             val (tick, number) = TASK.find(start.value)!!.destructured
+            held(number, "T$number", text.cite(start.index))
             val next = starts.getOrNull(at + 1)?.index ?: (section(TASKS).last + 1)
             val own = (start.index until next).map { text.lines[it] }
             Task("T$number", start.index, closed = tick == "x" && own.any { DONE_SHA.containsMatchIn(it) })
@@ -83,7 +85,7 @@ internal fun Reading.stageList(stage: StageId = stage()): StageList {
     val (pattern, files) = listFiles(stage)
     return when (files.size) {
         0 -> throw Missing("no file $pattern")
-        1 -> StageList(Text(files.single(), where.project.resolve(files.single()).toFile().readText()))
+        1 -> Folder.of(where, stage.effort).let { folder -> StageList(folder.read(files.single().removePrefix(folder.prefix))) }
         else -> throw Missing("${times(files.size)} list files for ${stage.local}: ${files.joinToString(", ")}")
     }
 }
@@ -135,6 +137,7 @@ internal fun Reading.taskExists(): Observation {
     val list = stageList()
     val id = asked.text("id")
     if (!Regex("^T[0-9]+$").matches(id)) return Observation.Value(false, "'$id' is no task id T<n>")
+    held(id.drop(1), id, "the parameter 'id'")
     val task = list.tasks().firstOrNull { it.id == id }
     return if (task != null) Observation.Value(true, list.text.cite(task.index)) else Observation.Value(false, "${list.text.cite(list.section(StageList.TASKS))} holds no task $id")
 }
@@ -142,7 +145,8 @@ internal fun Reading.taskExists(): Observation {
 internal fun Reading.doneItemExists(): Observation {
     val list = stageList()
     val id = asked.text("id")
-    val number = Regex("^D([0-9]+)$").matchEntire(id)?.groupValues?.get(1)?.toInt() ?: return Observation.Value(false, "'$id' is no DONE item id D<n>")
+    val number = Regex("^D([0-9]+)$").matchEntire(id)?.groupValues?.get(1)?.let { held(it, id, "the parameter 'id'") }
+        ?: return Observation.Value(false, "'$id' is no DONE item id D<n>")
     val items = list.doneItems()
     val item = items.getOrNull(number - 1)
     return if (number >= 1 && item != null) Observation.Value(true, list.text.cite(item))

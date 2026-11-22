@@ -109,9 +109,14 @@ class KnownLog(
 /**
  * An office's checkouts on a temp folder: the project checkout — the effort KP at its root, TOY under `toy/` — and two
  * main checkouts, `keporkak` and `kp-toy`, each with one commit. [observe] asks `kp-facts`' one entry and holds that the
- * observation changed nothing in any of them.
+ * observation changed nothing in any of them. Its `git` is looked up on [path] and given [limit] to end in.
  */
-class Office(folder: java.io.File, val log: KnownLog = KnownLog(), private val path: String? = System.getenv("PATH")) {
+class Office(
+    folder: java.io.File,
+    val log: KnownLog = KnownLog(),
+    private val path: String? = System.getenv("PATH"),
+    private val limit: java.time.Duration = Git.LIMIT,
+) {
     private val root: Path = folder.toPath()
     val project: Checkout = Checkout.init(root.resolve("project"))
     val keporkak: Checkout = Checkout.init(root.resolve("keporkak")).apply { write("README.md", "keporkak\n").commit("2026-11-01T09:00:00+01:00") }
@@ -124,7 +129,7 @@ class Office(folder: java.io.File, val log: KnownLog = KnownLog(), private val p
         repos = mapOf("keporkak" to keporkak.dir, "kp-toy" to toy.dir),
     )
 
-    fun facts(): ProjectFacts = ProjectFacts(checkouts, log, Git(path))
+    fun facts(): ProjectFacts = ProjectFacts(checkouts, log, Git(path, limit))
 
     /** [fact] with [params] — the observation, after holding that no checkout changed under it. */
     fun observe(fact: String, vararg params: Pair<String, Any>): Observation {

@@ -9,14 +9,20 @@ module; the hero's specs run in `:kp-daemon:hero`.
 
 It prints each spec case that ran — `<module> · <spec> — <case> — passed|failed`, a failure's message below it, whole —
 and the counts. KP_SPEC_TIMEOUT, as for every test task, sets the default timeout of a spec.
+Stopped — SIGTERM, SIGINT, SIGHUP, or `just` above it gone — it stops its Gradle run and waits until the run's test
+workers have ended before it exits, 128 and the signal's number (S3.8 T6): a run ended by its timeout leaves nothing
+going.
 Exit: 0 every case passed · 1 one failed · 3 the filter names no spec, or the run left it none · 4 the build failed
 before its specs reported.
 Usage: python3 build-support/spec.py <spec filter>
 """
+import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 import xml.etree.ElementTree as ElementTree
 
@@ -28,6 +34,69 @@ PASSED, FAILED, RUNS_NOTHING, DOES_NOT_BUILD = 0, 1, 3, 4
 
 def say(text):
     print(text, flush=True)
+
+
+class Stopped(Exception):
+    """The run was told to stop: by a signal, or because the `just` that started it is gone (SIGHUP's number then)."""
+
+    def __init__(self, number):
+        super().__init__(f"stopped by signal {number}")
+        self.number = number
+
+
+def on_signal(number, _frame):
+    raise Stopped(number)
+
+
+def workers():
+    """The test workers of a run in this checkout: Gradle's test executors whose working directory is in it."""
+    found = []
+    for proc in Path("/proc").iterdir():
+        try:
+            cwd = os.readlink(proc / "cwd")
+            if proc.name.isdigit() and (cwd == str(ROOT) or cwd.startswith(f"{ROOT}/")) and b"Gradle Test Executor" in (proc / "cmdline").read_bytes():
+                found.append(int(proc.name))
+        except OSError:
+            continue
+    return found
+
+
+def stop(gradle):
+    """[gradle]'s run stopped: the client told to stop, then killed — its daemon then cancels the build — and the run's
+    test workers awaited until they have ended, a minute at most."""
+    if gradle.poll() is None:
+        for sent, wait in ((signal.SIGTERM, 30), (signal.SIGKILL, 10)):
+            try:
+                gradle.send_signal(sent)
+            except ProcessLookupError:
+                break
+            try:
+                gradle.wait(timeout=wait)
+                break
+            except subprocess.TimeoutExpired:
+                continue
+    until = time.monotonic() + 60
+    while workers() and time.monotonic() < until:
+        time.sleep(0.5)
+
+
+def run_gradle(command):
+    """[command] run to its end, its output as one text; stopped as [stop] says when a signal comes or its parent goes."""
+    parent = os.getppid()
+    gradle = subprocess.Popen(command, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    try:
+        while True:
+            try:
+                output, _ = gradle.communicate(timeout=1)
+                return subprocess.CompletedProcess(command, gradle.returncode, output)
+            except subprocess.TimeoutExpired:
+                if os.getppid() != parent:
+                    raise Stopped(signal.SIGHUP)
+    except Stopped:
+        for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            signal.signal(number, signal.SIG_IGN)
+        stop(gradle)
+        raise
 
 
 def cases(tasks):
@@ -64,7 +133,13 @@ def main(arguments):
         _, module, name = task.split(":")
         shutil.rmtree(ROOT / module / "build/test-results" / name, ignore_errors=True)
     say(f"spec: running {' '.join(tasks)} --tests '{pattern}'")
-    run = subprocess.run(command, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(number, on_signal)
+    try:
+        run = run_gradle(command)
+    except Stopped as stopped:
+        say(f"spec: {stopped}; its run stopped — no spec's verdict")
+        return 128 + stopped.number
     ran = cases(tasks)
     if not ran:
         say(run.stdout[-6000:])

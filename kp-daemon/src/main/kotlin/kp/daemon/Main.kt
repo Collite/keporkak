@@ -23,18 +23,21 @@ import kotlin.system.exitProcess
 
 private const val USAGE = """kp-daemon run [--root DIR] [--office NAME] [--project DIR] [--socket PATH] [--listen HOST:PORT]
 kp-daemon rehearse <walk.yaml> [--root DIR] [--office NAME] [--socket PATH] [--seats scripted|fake --fake-classpath CP|real]
+kp-daemon facts <stage> [--root DIR] [--office NAME] [--project DIR]
 kp-daemon apps [--root DIR] [--office NAME]
   apps: what GitHub says of each App of pool/offices.yaml's block github: (`just apps`); it prints no token
   --root: the keporkak checkout whose rules are in force (default: the working folder)
   --seats: the walk's seats scripted (default), S2.1's fake agent run from --fake-classpath (`just rehearse <walk> --seats fake`),
            or Claude seats on the pinned adapter and the office's token (`just rehearse <walk> --seats real`: it spends tokens)
+  facts: every fact of the project and of git for <stage>, its phase and its effort (`just facts <stage>`): it writes nothing
   --office: the office (default: the short host name) · --project: its project checkout (default: pool/offices.yaml's)
   --listen: where the seat API listens (default: the office's listen.mcp in pool/offices.yaml)
   --socket: the control socket (default: <runtime folder>/keporkak/kp.sock; the runtime folder is ${'$'}XDG_RUNTIME_DIR, or /run/user/<uid>)"""
 
 /**
  * The daemon's entry (architecture.md §7). `run` is the office's daemon — the systemd user service: `just run`,
- * `just stop`, `just logs`. `rehearse` is `just rehearse <walk>`. Either stops cleanly on SIGTERM or Ctrl-C.
+ * `just stop`, `just logs`. `rehearse` is `just rehearse <walk>`. Either stops cleanly on SIGTERM or Ctrl-C. `facts` is
+ * `just facts <stage>` (contracts.md §12): it prints and ends, and needs no running daemon.
  */
 fun main(args: Array<String>) {
     val words = args.toMutableList()
@@ -47,6 +50,13 @@ fun main(args: Array<String>) {
     val seats = option("--seats") ?: "scripted"
     val fakeClasspath = option("--fake-classpath")
     val listen = option("--listen")
+    if (command == "facts") {
+        val stage = words.singleOrNull() ?: fail("facts names one stage")
+        val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
+        if (rules == null) fail("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
+        StageFacts.lines(rules, office, project ?: projectOf(root, office), stage).forEach(::println)
+        return
+    }
     if (command == "apps") {
         if (words.isNotEmpty()) fail("unknown words: $words")
         val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
@@ -103,6 +113,9 @@ private fun hostName(): String =
 private fun <T> MutableList<T>.removeAtOrNull(index: Int): T? = if (index < size) removeAt(index) else null
 
 /** The control socket in the office user's runtime folder (contracts.md §6): where `kp` looks for it. */
+/** The service's clock: the machine's, to the second. */
+internal val serviceClock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }
+
 internal fun defaultSocket(): Path {
     val runtime = System.getenv("XDG_RUNTIME_DIR")?.takeIf { it.isNotBlank() } ?: "/run/user/${Files.getAttribute(Path.of("/proc/self"), "unix:uid")}"
     return Path.of(runtime, "keporkak", "kp.sock")
@@ -120,8 +133,9 @@ internal fun projectOf(root: Path, office: String): Path {
  * The office's daemon (S2.4 T8): the mailroom on the project's log, the seats in front of the driver — the Claude
  * adapter `just adapter` installed under the checkout's `office/adapter` — the seat API on `listen.mcp`, the watch every
  * `watch.every`, and the panes. Its world is `kp-facts` over the project checkout it runs on and the office's main
- * checkouts, with the fold (S3.1, [ProjectWorld]), and GitHub read as `kp-merger` (S3.2, [GitHubWorld]); beside it, Bora's
- * presence. Until the performers exist (P3), it ends
+ * checkouts, with the fold (S3.1, [ProjectWorld]), and GitHub read as `kp-merger` (S3.2, [GitHubWorld]) — both handed
+ * the fold before the start carries any judgement again, and a view's ask writing no journal line (S3.8, Amendment 34);
+ * beside it, Bora's presence. Until the performers exist (P3), it ends
  * `notify.bora` at once — the inbox is the notification, and `kp inbox --follow` raises it — and ends every other
  * operation that is not a seat's `failed`, saying no performer exists yet.
  */
@@ -134,14 +148,13 @@ private fun service(root: Path, office: String, project: Path, socket: Path, lis
         ?: fail(if (rules == null) "the rules are not valid:\n" + loaded.problems.joinToString("\n") else "pool/offices.yaml names no office '$office'")
     val roots = Roots.of(entry.roots)
     val listen = listening ?: entry.listen["mcp"] ?: fail("pool/offices.yaml gives office '$office' no listen.mcp")
-    val clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }
+    val clock = serviceClock
     val world = ServiceWorld(ProjectWorld.of(checkNotNull(rules), office, project), GitHubWorld.of(office, project))
-    val seated = Seated.start(office, project, root, world, operations, clock, listen) { starting ->
+    val seated = Seated.start(office, project, root, world, operations, clock, listen, folded = world::reading) { starting ->
         Seats(root, office, project, roots, ClaudeAgent(root.resolve("office/adapter")), clock, Panes(say = Journal::say), Journal::say, starting) { listener, time ->
             ClaudeAdapter.driver(roots.secrets.resolve("claude-token"), roots.seats, time, CompiledAnswerer(roots.seats), listener)
         }
     }
-    world.reading(seated.office)
     Journal.say(world.project.reads)
     try {
         seated.start()
@@ -151,5 +164,5 @@ private fun service(root: Path, office: String, project: Path, socket: Path, lis
         throw error
     }
     Journal.say("seats: the seat API listens on ${seated.listen}; seats' homes under ${roots.seats}")
-    return Daemon.start(seated.office, world, socket, SoPeerCred, beside = listOf(seated))
+    return Daemon.start(seated.office, world.view, socket, SoPeerCred, beside = listOf(seated))
 }

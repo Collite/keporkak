@@ -78,9 +78,10 @@ owed log *args: _python-env
 
 # Runs the specs <filter> names and no other, in the working tree (S3.0 T4): `just mutant`'s narrowing without a patch.
 # Prints each case that ran, passed or failed with its whole message; exit 0 every case passed · 1 one failed · 3 the
-# filter names no spec · 4 the build failed first. KP_SPEC_TIMEOUT sets a spec's default timeout (5m).
+# filter names no spec · 4 the build failed first. KP_SPEC_TIMEOUT sets a spec's default timeout (5m). Stopped, or with
+# `just` gone, it stops its Gradle run and waits for the run's test workers to end (S3.8 T6).
 spec filter: _python-env
-    build/python/bin/python build-support/spec.py "$1"
+    exec build/python/bin/python build-support/spec.py "$1"
 
 # Applies <patch> to a throwaway copy of the working tree, runs the specs <filter> names there with a forced rerun, and
 # prints `red` and the specs that failed, or `green`; the working tree stays as it was (S2.8; architecture.md §7).
@@ -140,6 +141,16 @@ rehearse walk *args:
         set -- "$@" --fake-classpath "$(cat kp-driver/build/fake.classpath)"
     fi
     exec kp-daemon/build/install/kp-daemon/bin/kp-daemon rehearse "rules/walks/$walk.yaml" --root "$PWD" "$@"
+
+# Every fact of the project and of git for <stage>, its phase and its effort (contracts.md §12, Amendment 34; S3.8 T5): each
+# with its value and evidence, or unknown and what is missing — read by the daemon's own world on the office's project
+# checkout and main checkouts (pool/offices.yaml), with the log's word for a stage the log knows. It writes nothing and
+# needs no running daemon. `--project DIR` reads another checkout of the project; `--office NAME` another office's entry.
+facts stage *args:
+    #!/usr/bin/env sh
+    set -eu
+    ./gradlew --console=plain -q :kp-daemon:installDist
+    exec kp-daemon/build/install/kp-daemon/bin/kp-daemon facts "$@" --root "$PWD"
 
 # Install the Claude adapter the roster pins, from office/adapter/package-lock.json and nothing else (contracts.md §9).
 adapter:
