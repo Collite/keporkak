@@ -225,15 +225,15 @@ object Judgements {
 
 /**
  * The daemon as the unit starts it (S1.5 T7): the installed launcher, `run`, on [project], listening on [socket], with the
- * rules of [root]. What it writes — its journal — is read line by line.
+ * rules of [root], [environment] added to the spec's own. What it writes — its journal — is read line by line.
  */
-class Launched(project: Path, socket: Path, root: Path = checkout) {
+class Launched(project: Path, socket: Path, root: Path = checkout, environment: Map<String, String> = emptyMap()) {
     private val lines = LinkedBlockingQueue<String>()
     private val seen = StringBuilder()
     val process: Process = ProcessBuilder(
         checkout.resolve("kp-daemon/build/install/kp-daemon/bin/kp-daemon").toString(), "run",
         "--root", root.toString(), "--office", "panda", "--project", project.toString(), "--socket", socket.toString(), "--listen", "127.0.0.1:0",
-    ).redirectErrorStream(true).start().also { process ->
+    ).redirectErrorStream(true).apply { environment().putAll(environment) }.start().also { process ->
         Thread.ofVirtual().start { process.inputStream.bufferedReader().forEachLine { lines += it } }
     }
 

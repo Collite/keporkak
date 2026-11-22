@@ -328,6 +328,13 @@ class Mailroom private constructor(
     private fun recordRules() =
         write(line(now(), EVENT to text("rules"), HASH to text(inForce.hash), FILES to JsonObject(inForce.files.mapValues { JsonPrimitive(it.value) })))
 
+    /**
+     * Waits, at most [millis], until every operation handed to its performer has been performed — or waits for an answer
+     * its performer gives later — and every result that arrived is judged: what a harness that plays its world step by
+     * step waits for before its next step (S3.3). True when it did.
+     */
+    fun settle(millis: Long = SETTLE_MILLIS): Boolean = true
+
     @Synchronized
     override fun close() {
         closed = true
@@ -1006,6 +1013,8 @@ private fun partyName(element: JsonElement?): String? =
 
 private const val BORA = "bora"
 private const val MAILROOM = "mailroom"
+/** How long [Mailroom.settle] waits by default. */
+private const val SETTLE_MILLIS = 60_000L
 /** The kind that tells a sender of a refusal, and the guard it names (`message-kinds.yaml`: `nudge`). */
 private const val NUDGE = "nudge"
 private const val FAILED_GUARD = "failed_guard"

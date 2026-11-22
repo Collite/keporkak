@@ -97,6 +97,12 @@ class Office private constructor(
      */
     fun seatApi(tokens: kp.seatapi.Tokens, listen: String): kp.seatapi.SeatApi = kp.seatapi.SeatApi.start(mailroom, tokens, listen)
 
+    /**
+     * Waits until the operations handed to their performers are performed — or wait for an answer given later — and every
+     * result is judged (contracts.md §7, Amendment 36): what a walk's next step, or a spec, waits for. True when they are.
+     */
+    fun settle(): Boolean = mailroom.settle().also { changes.signal() }
+
     /** Fires the deadlines that have passed. */
     fun tick() {
         mailroom.tick()
