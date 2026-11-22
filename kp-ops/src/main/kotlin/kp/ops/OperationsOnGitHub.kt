@@ -6,7 +6,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
-import kp.ops.Rest.Companion.text
+import kp.ops.GitHubRest.Companion.text
 import java.net.URI
 import java.net.http.HttpClient
 
@@ -34,7 +34,7 @@ data class StageOnGitHub(val stage: String, val repository: String, val branch: 
  * stands; `failed(refused)` — anything else, with GitHub's reason. The reason begins with the failure's name.
  */
 class GitMerge(private val apps: GitHubApps, private val merger: App, api: URI = GitHubApps.GITHUB, http: HttpClient = GitHubApps.client()) {
-    private val rest = Rest(api, http)
+    private val rest = GitHubRest(api, http)
 
     /**
      * Merges [where]'s pull request on [head] — the `pr.head` the judgement of [cause] observed; null when it observed
@@ -52,18 +52,18 @@ class GitMerge(private val apps: GitHubApps, private val merger: App, api: URI =
             is Looked.None -> return refused(looked.why)
             is Looked.Failed -> return refused(looked.reason)
         }
-        if (pull.state != Rest.OPEN) return refused("${pull.name} is ${if (pull.merged) "merged" else "closed"}: only an open pull request is merged")
+        if (pull.state != GitHubRest.OPEN) return refused("${pull.name} is ${if (pull.merged) "merged" else "closed"}: only an open pull request is merged")
         val path = "/repos/${where.repository}/pulls/${pull.number}/merge"
         val body = buildJsonObject {
             put("sha", head)
             put("merge_method", "merge")
         }
         val reply = when (val sent = rest.send("PUT", path, token, body)) {
-            is Rest.Sent.Answered -> sent.reply
-            is Rest.Sent.NotReached -> return refused(sent.reason)
+            is GitHubRest.Sent.Answered -> sent.reply
+            is GitHubRest.Sent.NotReached -> return refused(sent.reason)
         }
         return when {
-            reply.status == Rest.OK -> (reply.json as? JsonObject)?.takeIf { (it["merged"] as? JsonPrimitive)?.booleanOrNull == true }?.text("sha")
+            reply.status == GitHubRest.OK -> (reply.json as? JsonObject)?.takeIf { (it["merged"] as? JsonPrimitive)?.booleanOrNull == true }?.text("sha")
                 ?.let { Performed.Ok(mapOf(SHA to it)) } ?: refused("GitHub's answer to PUT $path names no merge commit")
             reply.status == HEAD_MOVED -> Performed.Failed("$STALE_CI: ${rest.refused("PUT", path, reply)}")
             reply.status == NOT_ALLOWED && reply.message in UNMERGEABLE -> Performed.Failed("$CONFLICT: ${rest.refused("PUT", path, reply)}")
@@ -100,7 +100,7 @@ class GitMerge(private val apps: GitHubApps, private val merger: App, api: URI =
  * nothing to close, and the result says so. A merged one is `failed`.
  */
 class PrClose(private val apps: GitHubApps, private val merger: App, api: URI = GitHubApps.GITHUB, http: HttpClient = GitHubApps.client()) {
-    private val rest = Rest(api, http)
+    private val rest = GitHubRest(api, http)
 
     /** Closes [where]'s pull request: `ok` names it, or says why there was nothing to close. */
     fun perform(where: StageOnGitHub): Performed {
@@ -114,15 +114,15 @@ class PrClose(private val apps: GitHubApps, private val merger: App, api: URI = 
             is Looked.Failed -> return Performed.Failed(looked.reason)
         }
         if (pull.merged) return Performed.Failed("${pull.name} is merged: a merged pull request is not closed")
-        if (pull.state != Rest.OPEN) return Performed.Ok(mapOf(CLOSED to "$NOTHING: ${pull.name} was closed already"))
+        if (pull.state != GitHubRest.OPEN) return Performed.Ok(mapOf(CLOSED to "$NOTHING: ${pull.name} was closed already"))
         val path = "/repos/${where.repository}/pulls/${pull.number}"
         val reply = when (val sent = rest.send("PATCH", path, token, buildJsonObject { put("state", "closed") })) {
-            is Rest.Sent.Answered -> sent.reply
-            is Rest.Sent.NotReached -> return Performed.Failed(sent.reason)
+            is GitHubRest.Sent.Answered -> sent.reply
+            is GitHubRest.Sent.NotReached -> return Performed.Failed(sent.reason)
         }
         val state = (reply.json as? JsonObject)?.text("state")
         return when {
-            reply.status != Rest.OK -> Performed.Failed(rest.refused("PATCH", path, reply))
+            reply.status != GitHubRest.OK -> Performed.Failed(rest.refused("PATCH", path, reply))
             state != "closed" -> Performed.Failed("GitHub's answer to PATCH $path leaves ${pull.name} ${state ?: "in no state"}")
             else -> Performed.Ok(mapOf(CLOSED to pull.name))
         }
@@ -154,7 +154,7 @@ data class Issue(val title: String, val body: String) {
  * the operation is `failed`, names the numbers already filed, and files no further one.
  */
 class IssueFile(private val apps: GitHubApps, private val merger: App, api: URI = GitHubApps.GITHUB, http: HttpClient = GitHubApps.client()) {
-    private val rest = Rest(api, http)
+    private val rest = GitHubRest(api, http)
 
     /**
      * Files [issues] in [where]'s repository, in order, for the message [cause]: with none, GitHub is asked nothing. The
@@ -181,11 +181,11 @@ class IssueFile(private val apps: GitHubApps, private val merger: App, api: URI 
                 put("body", if (issue.body.isEmpty()) last else "${issue.body}\n\n$last")
             }
             val number = when (val sent = rest.send("POST", path, token, body)) {
-                is Rest.Sent.NotReached -> null to sent.reason
-                is Rest.Sent.Answered -> sent.reply.let { reply ->
+                is GitHubRest.Sent.NotReached -> null to sent.reason
+                is GitHubRest.Sent.Answered -> sent.reply.let { reply ->
                     val number = ((reply.json as? JsonObject)?.get("number") as? JsonPrimitive)?.intOrNull
                     when {
-                        reply.status != Rest.CREATED -> null to rest.refused("POST", path, reply)
+                        reply.status != GitHubRest.CREATED -> null to rest.refused("POST", path, reply)
                         number == null -> null to "GitHub's answer to POST $path names no issue number"
                         else -> number to null
                     }

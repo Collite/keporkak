@@ -30,11 +30,11 @@ internal sealed interface Looked {
 }
 
 /**
- * GitHub's REST API as the performers ask it (Amendments 33 and 37): each request made once, with the token handed in for
- * it, which goes into that request's `Authorization` header and nowhere else; a list read to its last page, a next page
- * followed on [api] only. Nothing is kept from one request for the next.
+ * GitHub's REST API as the performers ask it (Amendments 33 and 37), and `just apps merge` beside them: each request made
+ * once, with the token handed in for it, which goes into that request's `Authorization` header and nowhere else; a list
+ * read to its last page, a next page followed on [api] only. Nothing is kept from one request for the next.
  */
-internal class Rest(private val api: URI, private val http: HttpClient) {
+class GitHubRest(private val api: URI = GitHubApps.GITHUB, private val http: HttpClient = GitHubApps.client()) {
     /** GitHub's answer: its status, its body, and the `Link` header's next page. */
     class Reply(val status: Int, val text: String, val next: String?) {
         val json: JsonElement? by lazy {
@@ -87,7 +87,7 @@ internal class Rest(private val api: URI, private val http: HttpClient) {
      * The stage's pull request (Amendment 33): of those in [where]'s repository whose head is its branch, every page of
      * them, the open one, else the one made last. Two open are no answer.
      */
-    fun stagePull(where: StageOnGitHub, token: Token): Looked {
+    internal fun stagePull(where: StageOnGitHub, token: Token): Looked {
         val owner = where.repository.substringBefore('/')
         val path = "/repos/${where.repository}/pulls"
         val all = ArrayList<PullRequest>()
@@ -126,7 +126,7 @@ internal class Rest(private val api: URI, private val http: HttpClient) {
 
         private fun encode(text: String): String = URLEncoder.encode(text, Charsets.UTF_8)
 
-        fun JsonObject.text(name: String): String? = (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        internal fun JsonObject.text(name: String): String? = (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content
 
         /** A pull request of GitHub's list, or null when it lacks a field Amendment 33 reads. */
         private fun pull(repository: String, item: JsonElement): PullRequest? {

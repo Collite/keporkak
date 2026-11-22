@@ -108,9 +108,12 @@ install: _python-env
 # What GitHub says of each App of pool/offices.yaml's block `github:` (contracts.md §12, Amendment 33): the name it shows,
 # the repositories its installation reaches, and for each role whether its permissions can be minted. Run on the office,
 # where the Apps' keys are; it prints no token, no key and no claim, and changes nothing on GitHub.
-apps:
+# `just apps merge` (Amendment 37) is the live proof of the operations on GitHub, on Collite/kp-toy: what a merge into
+# the default branch must be refused, that pull request closed unmerged; a conflict and a merge between two branches of
+# its own; an issue filed and closed; its branches deleted. It never moves the default branch (office/README.md).
+apps *args:
     ./gradlew --console=plain -q :kp-daemon:installDist
-    kp-daemon/build/install/kp-daemon/bin/kp-daemon apps --root "$PWD"
+    kp-daemon/build/install/kp-daemon/bin/kp-daemon apps "$@" --root "$PWD"
 
 # The daemon as the systemd user service: start, stop, and follow its journal.
 run:
