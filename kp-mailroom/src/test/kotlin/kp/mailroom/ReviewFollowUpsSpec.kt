@@ -11,7 +11,7 @@ import kotlin.io.path.appendText
 class ReviewFollowUpsSpec : StringSpec({
     afterTest { Office.checkAndCloseAll() }
 
-    "a result a performer gives from its own thread while the mailroom starts is carried once the start is done" {
+    "a result a performer gives from its own thread is carried once the start is done" {
         val office = Office(seed = "proposed")
         office.operations.holding = true
         val approval = office.bora("""{"kind": "approval", "stage": "$STAGE", "subject": "approved"}""")
@@ -20,15 +20,13 @@ class ReviewFollowUpsSpec : StringSpec({
         office.texts.edit("rules/stage-lifecycle.yaml", "  - op: worktree.create\n    eq: ok\n  effects: []\n",
             "  - op: worktree.create\n    eq: failed\n  effects:\n  - do: register.rebuild\n    with: {}\n")
         var answering: Thread? = null
-        var answeredDuringStart: Boolean? = null
 
         office.mailroom = Mailroom.start(office.project, panda, office.texts, office.facts, { _, done ->
-            answering = thread { done(OperationResult.Ok()) }.also { it.join(300) }
-            answeredDuringStart = !answering!!.isAlive
+            answering = thread { done(OperationResult.Ok()) }
         }, office.seats, office.clock)
+        office.mailroom.settle()
         answering!!.join()
 
-        answeredDuringStart shouldBe false
         office.readBack().ops(approval.id).withoutWakes() shouldBe
             listOf("worktree.create requested", "worktree.create failed interrupted", "register.rebuild requested", "register.rebuild ok")
     }

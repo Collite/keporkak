@@ -34,7 +34,23 @@ class OfficeOperations(
         done(if (request.operation == NOTIFY_BORA) OperationResult.Ok() else OperationResult.Failed("no performer for ${request.operation} on this office yet"))
     }
 
-    private companion object {
-        const val NOTIFY_BORA = "notify.bora"
+    companion object {
+        private const val NOTIFY_BORA = "notify.bora"
+        private const val WORKTREE_CREATE = "worktree.create"
+        private const val WORKTREE_REMOVE = "worktree.remove"
+        private const val REGISTER_REBUILD = "register.rebuild"
+        private const val PROJECT_COMMIT_PUSH = "project.commit_push"
+        private const val BOARD_REGENERATE = "board.regenerate"
+
+        /**
+         * What [request] works on, as the office names it (contracts.md §7, Amendment 36): a stage's worktree operation,
+         * the [main] checkout of its repository — or, with none known, the stage's worktree; the project's operations,
+         * the project checkout. Null: no checkout another operation works on.
+         */
+        fun checkout(request: OperationRequest, stage: String?, main: Path?): String? = when (request.operation) {
+            WORKTREE_CREATE, WORKTREE_REMOVE -> main?.let { "the main checkout $it" } ?: stage?.let { "the worktree of $it" }
+            PROJECT_COMMIT_PUSH, REGISTER_REBUILD, BOARD_REGENERATE -> "the project checkout"
+            else -> null
+        }
     }
 }

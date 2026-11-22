@@ -75,6 +75,8 @@ private fun waitingInQasQueue(office: Office): Answer {
     val job = office.send("coder-1", QA_REQUEST)
     office.clock.advance(3.hours)
     office.mailroom.tick()
+    // What the expiry requested is performed and judged before the world changes (contracts.md §7, Amendment 36).
+    office.mailroom.settle()
     namespaceAbsent(office, true)
     office.readBack().story().count { it == "qa-request delivered" } shouldBe 1 // the first: held, and let go in its own judgement
     listOf(first.status, job.status) shouldBe listOf(Status.HELD, Status.HELD)

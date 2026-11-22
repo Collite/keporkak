@@ -35,10 +35,10 @@ class OperationsOutsideTheLockSpec : StringSpec({
         val office = Office(seed = "proposed", others = mapOf(OTHER to "proposed"))
         val performer = Held().also { office.performing(it) }
         try {
-            val first = within { office.bora(APPROVAL) }
+            val first = within { office.boraNow(APPROVAL) }
             performer.awaitEntered("worktree.create $STAGE")
 
-            val other = within { office.bora(APPROVAL_OF_OTHER) }
+            val other = within { office.boraNow(APPROVAL_OF_OTHER) }
             performer.release("worktree.create $STAGE")
             office.mailroom.settle()
 
@@ -46,6 +46,7 @@ class OperationsOutsideTheLockSpec : StringSpec({
             office.readBack().judgedLineOf(other.id) shouldBeLessThan office.readBack().resultOf("worktree.create", first.id)
         } finally {
             performer.releaseAll()
+            office.mailroom.settle()
         }
     }
 
@@ -54,15 +55,16 @@ class OperationsOutsideTheLockSpec : StringSpec({
         val seats = HeldSeats().also { office.performing(Operations { _, done -> done(OperationResult.Ok()) }, it) }
         office.facts.set("seat.context_used", 0.95)
         try {
-            val compact = within { office.send("pool-1", COMPACT) }
+            val compact = within { office.sendNow("pool-1", COMPACT) }
             seats.awaitPrompted("coder-1")
 
-            val approval = within { office.bora(APPROVAL) }
+            val approval = within { office.boraNow(APPROVAL) }
 
             approval.status shouldBe Status.DELIVERED
-            office.readBack().ops(compact.id) shouldContainExactly listOf("seat.compact requested", "seat.wake requested", "seat.compact ok")
+            ReadBack(office.project).ops(compact.id) shouldContainExactly listOf("seat.compact requested", "seat.wake requested", "seat.compact ok")
         } finally {
             seats.releaseAll()
+            office.mailroom.settle()
         }
     }
 
@@ -70,14 +72,15 @@ class OperationsOutsideTheLockSpec : StringSpec({
         val office = Office(seed = "proposed", others = mapOf(OTHER to "proposed"))
         val performer = Held(on = { request -> "the worktree of ${request.stage()}" }).also { office.performing(it) }
         try {
-            within { office.bora(APPROVAL) }
-            within { office.bora(APPROVAL_OF_OTHER) }
+            within { office.boraNow(APPROVAL) }
+            within { office.boraNow(APPROVAL_OF_OTHER) }
 
             performer.awaitEntered("worktree.create $STAGE")
             performer.awaitEntered("worktree.create $OTHER")
             performer.events shouldContainExactly listOf("enter worktree.create $STAGE", "enter worktree.create $OTHER")
         } finally {
             performer.releaseAll()
+            office.mailroom.settle()
         }
     }
 
@@ -85,9 +88,9 @@ class OperationsOutsideTheLockSpec : StringSpec({
         val office = Office(seed = "proposed", others = mapOf(OTHER to "proposed"))
         val performer = Held(on = { "the main checkout of keporkak" }, holds = { it == "worktree.create $STAGE" }).also { office.performing(it) }
         try {
-            val first = within { office.bora(APPROVAL) }
+            val first = within { office.boraNow(APPROVAL) }
             performer.awaitEntered("worktree.create $STAGE")
-            val second = within { office.bora(APPROVAL_OF_OTHER) }
+            val second = within { office.boraNow(APPROVAL_OF_OTHER) }
 
             performer.release("worktree.create $STAGE")
             office.mailroom.settle()
@@ -96,6 +99,7 @@ class OperationsOutsideTheLockSpec : StringSpec({
             office.readBack().resultOf("worktree.create", first.id) shouldBeLessThan office.readBack().resultOf("worktree.create", second.id)
         } finally {
             performer.releaseAll()
+            office.mailroom.settle()
         }
     }
 
@@ -105,7 +109,7 @@ class OperationsOutsideTheLockSpec : StringSpec({
         val performer = Held(events).also { office.performing(it, HeldSeats(events, holds = false)) }
         office.facts.set("seat.context_used", 0.95)
         try {
-            val compact = within { office.send("pool-1", COMPACT) }
+            val compact = within { office.sendNow("pool-1", COMPACT) }
             performer.awaitEntered("seat.compact $STAGE")
 
             performer.release("seat.compact $STAGE")
@@ -115,6 +119,7 @@ class OperationsOutsideTheLockSpec : StringSpec({
             office.readBack().ops(compact.id) shouldContainExactly listOf("seat.compact requested", "seat.wake requested", "seat.compact ok", "seat.wake ok")
         } finally {
             performer.releaseAll()
+            office.mailroom.settle()
         }
     }
 })
@@ -127,6 +132,10 @@ fun <T> within(seconds: Long = 10, block: () -> T): T {
     if (runner.isAlive) fail("it did not return in $seconds s: the mailroom waited for an operation to end")
     return value.get().getOrThrow()
 }
+
+/** Bora's message, submitted, and the seat's: answered once their lines are on disk, whatever runs after them. */
+fun Office.boraNow(input: String): Answer = mailroom.submit(Sender.Bora(true), json(input)).answered().also { submitted += it.id }
+fun Office.sendNow(seat: String, input: String): Answer = mailroom.submit(Sender.Seat(seat), json(input)).answered().also { submitted += it.id }
 
 /** The office's mailroom started again with [operations] as its performers and [seats] as its seats. */
 fun Office.performing(operations: Operations, seats: Deliveries = this.seats) {

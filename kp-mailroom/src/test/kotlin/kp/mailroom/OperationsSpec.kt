@@ -25,8 +25,9 @@ class OperationsSpec : StringSpec({
         office.bora(APPROVAL)
 
         // Bora's own approval waits for no one: no notify.bora (S1.8, contracts.md §2.2). The judgement is closed — and
-        // only then are its operation performed and its addressee woken, in the order it asked for them (S1.10).
-        onDisk.first() shouldBe listOf("Message", "Delivered", "Transition", "worktree.create requested", "seat.wake requested", "Judged")
+        // only then are its operation performed and its addressee woken (S1.10), each on a lane of its own, side by side:
+        // the wake may have ended first (contracts.md §7, Amendment 36).
+        onDisk.first().take(6) shouldBe listOf("Message", "Delivered", "Transition", "worktree.create requested", "seat.wake requested", "Judged")
     }
 
     "a failed result is recorded with its reason and judged: nothing fires for worktree.create failed, and the stage stays assigned" {

@@ -82,6 +82,7 @@ class Hero(
         require(!next.isBefore(clock.now)) { "the clock does not go back: $next is before ${clock.now}" }
         clock.now = next
         office.tick()
+        office.settle()
         return Story(this).told(before + 1, office.state.seq)
     }
 
