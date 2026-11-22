@@ -250,7 +250,7 @@ sealed class LiveSeating(val tmux: String, val panes: String, val profile: Strin
         }
         own?.attach(seated.office)
         script.live = object : LiveSeats {
-            override fun performs(operation: String) = operation in Seats.OPERATIONS
+            override fun performs(operation: String) = made.performs(operation)
             override fun die(seat: String) = die(seat, made, agent)
             override val own: OwnSteps? get() = own
         }

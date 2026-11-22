@@ -1,6 +1,7 @@
 package kp.daemon.seats
 
 import kp.daemon.InForceRules
+import kp.engine.Datum
 import kp.facts.Checkouts
 import kp.facts.GitHub
 import kp.facts.GitHubFacts
@@ -26,6 +27,7 @@ import java.nio.file.Path
  *
  * An ask ([ask]) is answered with the token, which [hide] is told before it is handed over — the seat's transcript hides
  * it from then on — and leaves one journal line through [say]: the seat, the App, the repositories; never a token.
+ * `token.mint` ([mint]) mints as an ask would and throws the token away.
  */
 class GitHubIdentity(
     private val office: String,
@@ -50,7 +52,20 @@ class GitHubIdentity(
         }
     }
 
-    fun mint(binding: Binding): OperationResult = OperationResult.Failed("not built yet")
+    /**
+     * `token.mint` for the seat [binding] names (Amendment 35): a mint as an ask makes it, its token thrown away — `ok`
+     * with `{app, repositories, permissions}`, saying the seat's App can act for it now; `failed` with the reason,
+     * GitHub's when GitHub refused. A role with no entry is `ok` with `{app: "none"}`. What `failed` means is the rules'.
+     */
+    fun mint(binding: Binding): OperationResult = when (val minted = minted(binding)) {
+        is Mint.NoEntry -> OperationResult.Ok(Datum.Fields(mapOf(APP to Datum.Text(NONE))))
+        is Mint.Failed -> OperationResult.Failed(minted.reason)
+        is Mint.Ok -> OperationResult.Ok(Datum.Fields(mapOf(
+            APP to Datum.Text(minted.app),
+            REPOSITORIES to Datum.Items(minted.repositories.map(Datum::Text)),
+            PERMISSIONS to Datum.Fields(minted.permissions.toSortedMap().mapValues { Datum.Text(it.value) }),
+        )))
+    }
 
     /** What one mint for a seat came to: no entry for its role; failed, with the reason; or a token, with what it was asked for. */
     private sealed interface Mint {
@@ -87,5 +102,10 @@ class GitHubIdentity(
 
     private companion object {
         const val BEARER = "Bearer "
+        const val APP = "app"
+        const val REPOSITORIES = "repositories"
+        const val PERMISSIONS = "permissions"
+        /** The App of a role with no entry: none, and nothing minted. */
+        const val NONE = "none"
     }
 }

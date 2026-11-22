@@ -7,6 +7,7 @@ import kp.daemon.seats.Seated
 import kp.daemon.seats.Seats
 import kp.driver.claude.ClaudeAdapter
 import kp.driver.home.CompiledAnswerer
+import kp.ops.GitHubApps
 import kp.mailroom.Clock
 import kp.log.LogRefusal
 import kp.mailroom.MailroomRefusal
@@ -135,7 +136,8 @@ internal fun projectOf(root: Path, office: String): Path {
  * `watch.every`, and the panes. Its world is `kp-facts` over the project checkout it runs on and the office's main
  * checkouts, with the fold (S3.1, [ProjectWorld]), and GitHub read as `kp-merger` (S3.2, [GitHubWorld]) — both handed
  * the fold before the start carries any judgement again, and a view's ask writing no journal line (S3.8, Amendment 34);
- * beside it, Bora's presence. Until the performers exist (P3), it ends
+ * beside it, Bora's presence. The seats perform `token.mint` and answer a seat's ask for a GitHub token as its role's
+ * App (S3.7, Amendment 35). Until the other performers exist (P3), it ends
  * `notify.bora` at once — the inbox is the notification, and `kp inbox --follow` raises it — and ends every other
  * operation that is not a seat's `failed`, saying no performer exists yet.
  */
@@ -151,7 +153,7 @@ private fun service(root: Path, office: String, project: Path, socket: Path, lis
     val clock = serviceClock
     val world = ServiceWorld(ProjectWorld.of(checkNotNull(rules), office, project), GitHubWorld.of(office, project))
     val seated = Seated.start(office, project, root, world, operations, clock, listen, folded = world::reading) { starting ->
-        Seats(root, office, project, roots, ClaudeAgent(root.resolve("office/adapter")), clock, Panes(say = Journal::say), Journal::say, starting) { listener, time ->
+        Seats(root, office, project, roots, ClaudeAgent(root.resolve("office/adapter")), clock, Panes(say = Journal::say), Journal::say, starting, github = GitHubApps.GITHUB) { listener, time ->
             ClaudeAdapter.driver(roots.secrets.resolve("claude-token"), roots.seats, time, CompiledAnswerer(roots.seats), listener)
         }
     }

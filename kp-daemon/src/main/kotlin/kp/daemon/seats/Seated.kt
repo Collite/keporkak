@@ -57,7 +57,7 @@ class Seated private constructor(val office: Office, val seats: Seats, val api: 
             }
             started = office
             val api = try {
-                office.seatApi(made.tokens, listen)
+                office.seatApi(made.tokens, listen, made.identity ?: kp.seatapi.GitHubTokens.NONE)
             } catch (error: Exception) {
                 made.close()
                 office.close()

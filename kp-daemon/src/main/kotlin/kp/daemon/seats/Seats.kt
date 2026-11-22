@@ -133,6 +133,14 @@ class Seats(
     }
     private val driver: Driver = driver(listener, time)
 
+    /**
+     * A seat's GitHub identity (contracts.md §4.4, Amendment 35), when the seats have [github]: `token.mint` performed for a
+     * seat, and the seat API's answer to its ask — with the Apps' keys in the office's secrets folder.
+     */
+    val identity: GitHubIdentity? = github?.let { api ->
+        GitHubIdentity(officeName, project, ::inForce, roots.secrets.resolve("apps"), api, say) { _, _ -> }
+    }
+
     /** What hears how a turn ended. */
     private fun interface Ended {
         fun turn(end: Outcome<*>)
@@ -235,8 +243,9 @@ class Seats(
     fun operations(other: Operations): Operations = Operations { request, done ->
         val seat = (request.with.fields[SEAT] as? Datum.Text)?.value
         when {
-            seat == null || request.operation !in PERFORMED -> other.perform(request, done)
+            seat == null || !performs(request.operation) -> other.perform(request, done)
             closing -> done(OperationResult.Failed("the daemon is stopping"))
+            request.operation == TOKEN_MINT -> work.execute { done(mint(seat)) }
             else -> work.execute {
                 val result = try {
                     when (request.operation) {
@@ -346,6 +355,22 @@ class Seats(
             is Outcome.Failed -> OperationResult.Failed(started.reason)
         }
     }
+
+    /**
+     * `token.mint` (contracts.md §4.4, Amendment 35), the effect of a seat's start: a mint for the seat's role and stage, its
+     * token thrown away.
+     */
+    private fun mint(seat: String): OperationResult {
+        val binding = held[seat]?.binding ?: return OperationResult.Failed("seat $seat has no session")
+        return try {
+            identity!!.mint(binding)
+        } catch (error: Exception) {
+            OperationResult.Failed("token.mint of $seat failed: ${error.message ?: error.javaClass.simpleName}")
+        }
+    }
+
+    /** Whether [operation] is the seats' to perform: a seat operation, and `token.mint` when the seats have a GitHub identity. */
+    fun performs(operation: String): Boolean = operation in PERFORMED || (operation == TOKEN_MINT && identity != null)
 
     /** `seat.cancel` (contracts.md §4.4): the turn in flight asked to end; with none, nothing to cancel, and the result says so. */
     private fun cancel(seat: String): OperationResult = when (val cancelled = blocking { driver.cancel(SeatId(seat)) }) {
@@ -646,6 +671,7 @@ class Seats(
         private const val RETIRE = "seat.retire"
         private const val COMPACT_OP = "seat.compact"
         private val PERFORMED = setOf(START, RESEAT, CANCEL, KILL, RETIRE, COMPACT_OP)
+        private const val TOKEN_MINT = "token.mint"
         private const val MODEL_ALLOWED = "roster.model_allowed"
         private const val SEAT_ROLE = "seat.role"
         private const val SEAT_MODEL = "seat.model"
@@ -679,9 +705,6 @@ class Seats(
 
         /** A stage's worktree's name under the worktrees root: `<effort>-p<n>-s<n.m>`, lower case; null for no stage. */
         fun worktree(stage: String?): String? = stage?.let(STAGE_FORM::matchEntire)?.destructured?.let { (effort, phase, number) -> "${effort.lowercase()}-p$phase-s$number" }
-
-        /** The operations the seats perform (contracts.md §4.4): every seat operation but a robot's own wake. */
-        val OPERATIONS: Set<String> get() = PERFORMED
 
         /** `~` as the office user's home. */
         internal fun home(path: String): Path = Path.of(path.replaceFirst(Regex("^~(?=/|$)"), System.getProperty("user.home")))

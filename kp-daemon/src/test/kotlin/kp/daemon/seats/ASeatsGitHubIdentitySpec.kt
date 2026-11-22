@@ -87,7 +87,7 @@ class ASeatsGitHubIdentitySpec : StringSpec({
                 """ok {"app":"none"}""",
             )
             // Each seat moved by its own result: ready only after its token.mint was ok.
-            val seats = office.lines().filterIsInstance<Transition>().filter { it.machine == "seat" && it.subject in setOf("reviewer-1", "coder-3", "qa-1") }
+            val seats = office.lines().filterIsInstance<Transition>().filter { it.machine == "seat" && it.subject in setOf("reviewer-1", "coder-3", "qa-1") && it.from != it.to }
             seats.map { "${it.subject} ${it.from}→${it.to}" } shouldBe listOf("coder-3 provisioned→ready", "qa-1 provisioned→ready")
             office.office.state.machine("seat", "reviewer-1")?.state shouldBe "provisioned"
             val coderReady = seats.first { it.subject == "coder-3" }.seq.toLong()
