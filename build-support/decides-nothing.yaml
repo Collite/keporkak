@@ -13,6 +13,29 @@
 # The words for a conclusion about a seat: no name, literal or comment of the driver or the seat API holds one.
 conclusions: [stall, stalled, stalling, done, idle, hung, stuck]
 exceptions:
+  kp-daemon/src/main/kotlin/kp/daemon/AppsProve.kt:
+  - shape: kind
+    in: AppsProve.Proof.remove
+    code: '"close"'
+    line: val closed = coder.run(clone, "gh", "pr", "close", opened, "--repo", repository)
+    reason: '`just apps prove` (S3.7): gh''s own subcommand `pr close`, which the coder''s home runs on the pull request the
+      proof opened — no message of the kind `close`'
+  - shape: timer
+    in: AppsProve.Proof.run
+    code: waitFor(WAIT_SECONDS, TimeUnit.SECONDS)
+    line: if (!process.waitFor(WAIT_SECONDS, TimeUnit.SECONDS)) {
+    reason: '`just apps prove` (S3.7), Bora''s live proof and no part of the daemon''s running: how long it waits for a git
+      or gh it started, so that a hung one ends the proof with its step — nothing is concluded about a seat'
+  - shape: timer
+    in: AppsProve.Proof.run
+    code: WAIT_SECONDS
+    line: return Ran(-1, "", "$name's ${command.first()} did not end in ${WAIT_SECONDS}s")
+    reason: '`just apps prove` (S3.7): the wait above, named in what the proof prints of a git or gh that did not end'
+  - shape: timer
+    in: AppsProve.WAIT_SECONDS
+    code: private const val WAIT_SECONDS = 120L
+    line: private const val WAIT_SECONDS = 120L
+    reason: '`just apps prove` (S3.7): the wait above, two minutes for one git or gh run on GitHub'
   kp-daemon/src/main/kotlin/kp/daemon/Check.kt:
   - shape: comparison
     in: Check.run

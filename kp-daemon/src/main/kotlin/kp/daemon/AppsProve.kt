@@ -139,38 +139,38 @@ object AppsProve {
         private fun prove() {
             val cloned = coder.run(work, "git", "clone", "--quiet", "--single-branch", "--branch", DEFAULT_BRANCH, "git@github.com:$repository.git", TOY)
             val remote = if (cloned.exit == 0) coder.run(clone, "git", "ls-remote", "--get-url", "origin").out.trim() else ""
-            if (!step("the coder clones git@github.com:$repository.git", cloned.exit == 0, "cloned over $remote", "not cloned: ${cloned.said()}")) return
+            if (!outcome("the coder clones git@github.com:$repository.git", cloned.exit == 0, "cloned over $remote", "not cloned: ${cloned.said()}")) return
             Files.writeString(clone.resolve("apps-prove.md"), "Pushed by `just apps prove` at $time (contracts.md §12); its branch is deleted by the proof.\n")
             coder.run(clone, "git", "switch", "--quiet", "--create", branch)
             coder.run(clone, "git", "add", "apps-prove.md")
             val committed = coder.run(clone, "git", "commit", "--quiet", "--message", "just apps prove $time")
-            if (!step("the coder commits on $branch", committed.exit == 0, "committed", "not committed: ${committed.said()}")) return
+            if (!outcome("the coder commits on $branch", committed.exit == 0, "committed", "not committed: ${committed.said()}")) return
 
             val push = coder.run(clone, "git", "push", "--quiet", "origin", branch)
             pushed = push.exit == 0
-            if (!step("1. the coder pushes $branch", pushed, "pushed", "not pushed: ${push.said()}")) return
+            if (!outcome("1. the coder pushes $branch", pushed, "pushed", "not pushed: ${push.said()}")) return
 
             val master = coder.run(clone, "git", "push", "--quiet", "origin", "HEAD:refs/heads/$DEFAULT_BRANCH")
-            step("2. the coder pushes $DEFAULT_BRANCH", master.exit != 0, "refused: ${master.said()}", "SC-10: GitHub let $coderName push $DEFAULT_BRANCH")
+            outcome("2. the coder pushes $DEFAULT_BRANCH", master.exit != 0, "refused: ${master.said()}", "SC-10: GitHub let $coderName push $DEFAULT_BRANCH")
 
             val created = coder.run(clone, "gh", "pr", "create", "--repo", repository, "--base", DEFAULT_BRANCH, "--head", branch, "--title", "just apps prove $time",
                 "--body", "Opened by `just apps prove` (contracts.md §12), which closes it and deletes its branch.")
             number = PULL.find(created.out)?.groupValues?.get(1)
             val opened = number
             if (opened == null) {
-                step("3. the coder opens a pull request", false, "", "not opened: ${created.said()}")
+                outcome("3. the coder opens a pull request", false, "", "not opened: ${created.said()}")
                 return
             }
             val author = coder.run(clone, "gh", "pr", "view", opened, "--repo", repository, "--json", "author", "--jq", ".author.login").out.trim()
-            step("3. the coder opens a pull request", login(author) == coderName, "#$opened opened by $author", "#$opened opened by $author, not $coderName")
+            outcome("3. the coder opens a pull request", login(author) == coderName, "#$opened opened by $author", "#$opened opened by $author, not $coderName")
 
             val reviewed = reviewer.run(clone, "gh", "pr", "review", opened, "--repo", repository, "--comment", "--body", "`just apps prove`: the reviewer's review.")
             val reviewers = reviewer.run(clone, "gh", "api", "repos/$repository/pulls/$opened/reviews", "--jq", ".[].user.login").out.lines().filter { it.isNotBlank() }
-            step("4. the reviewer reviews #$opened", reviewed.exit == 0 && reviewers.any { login(it) == reviewerName }, "a review left by ${reviewers.joinToString(", ")}",
+            outcome("4. the reviewer reviews #$opened", reviewed.exit == 0 && reviewers.any { login(it) == reviewerName }, "a review left by ${reviewers.joinToString(", ")}",
                 "no review by $reviewerName: ${reviewed.said()}")
 
             val approved = coder.run(clone, "gh", "pr", "review", opened, "--repo", repository, "--approve", "--body", "`just apps prove`: the coder approves its own.")
-            step("5. the coder approves its own #$opened", approved.exit != 0, "refused: ${approved.said()}", "SC-10: GitHub let $coderName approve its own pull request")
+            outcome("5. the coder approves its own #$opened", approved.exit != 0, "refused: ${approved.said()}", "SC-10: GitHub let $coderName approve its own pull request")
         }
 
         /** The pull request closed and the branch deleted, whatever went before: what the proof made, removed. */
@@ -179,17 +179,17 @@ object AppsProve {
             if (opened != null) {
                 val closed = coder.run(clone, "gh", "pr", "close", opened, "--repo", repository)
                 val state = coder.run(clone, "gh", "pr", "view", opened, "--repo", repository, "--json", "state", "--jq", ".state").out.trim()
-                step("6. the coder closes #$opened", closed.exit == 0 && state == "CLOSED", "closed", "not closed ($state): ${closed.said()}")
+                outcome("6. the coder closes #$opened", closed.exit == 0 && state == "CLOSED", "closed", "not closed ($state): ${closed.said()}")
             }
             if (pushed) {
                 val deleted = coder.run(clone, "git", "push", "--quiet", "origin", "--delete", branch)
                 val left = coder.run(clone, "git", "ls-remote", "--heads", "origin", branch)
-                step("7. the coder deletes $branch", deleted.exit == 0 && left.exit == 0 && left.out.isBlank(), "gone", "not gone: ${deleted.said()}")
+                outcome("7. the coder deletes $branch", deleted.exit == 0 && left.exit == 0 && left.out.isBlank(), "gone", "not gone: ${deleted.said()}")
             }
         }
 
         /** One step's outcome, printed: [yes] when it went as §12 gives it. */
-        private fun step(what: String, yes: Boolean, went: String, otherwise: String): Boolean {
+        private fun outcome(what: String, yes: Boolean, went: String, otherwise: String): Boolean {
             if (!yes) this.otherwise++
             say("  $what — ${if (yes) went else otherwise}")
             return yes

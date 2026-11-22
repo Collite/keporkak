@@ -84,7 +84,7 @@ class GitHubIdentity(
         val ids = block.apps[seat.app] ?: return Mint.Failed("github.apps holds no App ${seat.app}", " as ${seat.app}")
         val entry = pool.offices[office] ?: return Mint.Failed("pool/offices.yaml names no office '$office'", " as ${seat.app}")
         val names = when (val stage = binding.stage) {
-            null -> entry.repos.keys.sorted()
+            null -> entry.repos.keys.toList()
             else -> {
                 val checkouts = Checkouts(office, project, entry.project.efforts, entry.repos.toSortedMap().mapValues { (_, checkout) -> Seats.home(checkout) })
                 when (val repository = GitHubFacts.repository(checkouts, GitHub(block.organization, api), stage)) {

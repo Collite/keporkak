@@ -60,8 +60,8 @@ fun main(args: Array<String>) {
         return
     }
     if (command == "apps") {
-        val prove = words.firstOrNull() == "prove"
-        if (words.size > (if (prove) 1 else 0)) fail("unknown words: $words")
+        val prove = words == listOf("prove")
+        if (!prove && words.isNotEmpty()) fail("unknown words: $words")
         val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
         val inForce = rules ?: fail("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
         exitProcess(if (prove) AppsProve.run(root, inForce, office) { println(it) } else Apps.run(inForce, office) { println(it) })

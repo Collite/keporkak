@@ -28,7 +28,7 @@ import kotlin.io.path.writeText
 class PackagingAndHooksSpec : StringSpec({
     val allow = PermissionDefaults(writeInside = Answer.ALLOW, writeOutside = Answer.DENY, read = Answer.ALLOW)
 
-    "a config home holds, for its role, the render as CLAUDE.md, the skills its persona lists and no other, settings.json and permissions.json — and what an earlier build put there and this one does not is gone" {
+    "a config home holds, for its role, the render as CLAUDE.md, the skills its persona lists and no other, settings.json, permissions.json and bin/ (S3.7) — and what an earlier build put there and this one does not is gone" {
         Sources().use { sources ->
             val homes = ConfigHomes(sources.root, sources.seats)
 
@@ -36,7 +36,7 @@ class PackagingAndHooksSpec : StringSpec({
 
             home.resolve("CLAUDE.md").readBytes() shouldBe sources.root.resolve("renders/coder.md").readBytes()
             sources.names(home.resolve("skills")) shouldContainExactly listOf("context7-mcp", "diagnosing-bugs", "handoff-pr", "tdd")
-            sources.names(home) shouldContainExactly listOf("CLAUDE.md", "permissions.json", "settings.json", "skills")
+            sources.names(home) shouldContainExactly listOf("CLAUDE.md", "bin", "permissions.json", "settings.json", "skills")
 
             sources.persona("coder") { it.replace("skills: [context7-mcp, tdd, diagnosing-bugs, handoff-pr]", "skills: [tdd]") }
             home.resolve("projects").also(Files::createDirectories).resolve("session.jsonl").writeText("Claude Code's own")
