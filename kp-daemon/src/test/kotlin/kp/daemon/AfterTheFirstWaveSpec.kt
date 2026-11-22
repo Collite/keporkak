@@ -7,7 +7,6 @@ import io.kotest.matchers.string.shouldNotContain
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kp.mailroom.Clock
 import kp.mailroom.OperationResult
 import kp.mailroom.Operations
 import kp.mailroom.Sender
@@ -16,7 +15,6 @@ import kp.model.Message
 import kp.model.Record
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
@@ -77,6 +75,7 @@ class AfterTheFirstWaveSpec : FreeSpec({
         daemon.process.toHandle().destroy()
         val journal = daemon.journal()
 
+        inboxes.forEach { it shouldNotContain "deadline passed" }
         inboxes.map { it.lines().count { line -> line == "   rolls: unknown · live: unknown · touches: unknown" } } shouldBe listOf(1, 1, 1)
         firstTime.unknown() shouldContainExactly listOf("facts: stage.live for KP/P3/S3.8 is unknown — tasks-p3-s3.8-after-the-first-wave.md has no line that begins 'rolls:'")
         journal.unknown() shouldContainExactly listOf("facts: stage.live for KP/P3/S3.8 is unknown — tasks-p3-s3.8-after-the-first-wave.md has no line that begins 'rolls:'")
@@ -120,12 +119,13 @@ private class Project(log: Map<String, String>, ticked: List<String>, rolls: Boo
 
     /**
      * Carries each message, from its seat, through an office in this process whose world is the service's on this
-     * project and [root]'s rules; what its journal said.
+     * project and [root]'s rules; what its journal said. Its clock is the service's, as the daemon started later on this
+     * log keeps: a deadline the rules set here has not passed when the daemon starts, whatever day the spec runs (review-029 B1).
      */
     fun carry(vararg messages: Pair<String, String>): List<String> {
         val journal = CopyOnWriteArrayList<String>()
         val world = ProjectWorld.of(InForceRules.of(RuleFiles(root).read()).first!!, "panda", dir) { journal += it }
-        Office.start("panda", dir, root, world, Operations { _, done -> done(OperationResult.Ok()) }, NoSeats, Clock { Instant.parse("2026-11-21T09:00:00Z") })
+        Office.start("panda", dir, root, world, Operations { _, done -> done(OperationResult.Ok()) }, NoSeats, serviceClock)
             .also(world::reading)
             .use { office -> messages.forEach { (seat, input) -> office.submit(Sender.Seat(seat), json(input)).answered() } }
         return journal

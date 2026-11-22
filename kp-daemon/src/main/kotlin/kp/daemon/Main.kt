@@ -113,6 +113,9 @@ private fun hostName(): String =
 private fun <T> MutableList<T>.removeAtOrNull(index: Int): T? = if (index < size) removeAt(index) else null
 
 /** The control socket in the office user's runtime folder (contracts.md §6): where `kp` looks for it. */
+/** The service's clock: the machine's, to the second. */
+internal val serviceClock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }
+
 internal fun defaultSocket(): Path {
     val runtime = System.getenv("XDG_RUNTIME_DIR")?.takeIf { it.isNotBlank() } ?: "/run/user/${Files.getAttribute(Path.of("/proc/self"), "unix:uid")}"
     return Path.of(runtime, "keporkak", "kp.sock")
@@ -145,7 +148,7 @@ private fun service(root: Path, office: String, project: Path, socket: Path, lis
         ?: fail(if (rules == null) "the rules are not valid:\n" + loaded.problems.joinToString("\n") else "pool/offices.yaml names no office '$office'")
     val roots = Roots.of(entry.roots)
     val listen = listening ?: entry.listen["mcp"] ?: fail("pool/offices.yaml gives office '$office' no listen.mcp")
-    val clock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }
+    val clock = serviceClock
     val world = ServiceWorld(ProjectWorld.of(checkNotNull(rules), office, project), GitHubWorld.of(office, project))
     val seated = Seated.start(office, project, root, world, operations, clock, listen, folded = world::reading) { starting ->
         Seats(root, office, project, roots, ClaudeAgent(root.resolve("office/adapter")), clock, Panes(say = Journal::say), Journal::say, starting) { listener, time ->
