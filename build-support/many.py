@@ -187,8 +187,10 @@ def main(arguments):
         for each in (copy, second):
             (each / ".owner").write_text(f"{os.getpid()}\n")
             copy_of_the_working_tree(each)
+        # A repository of its own, as `just mutant`'s copy: git applies a patch here, and a spec that lists the working tree
+        # with git (the Python suite's copies) lists this copy's, not the checkout's around it.
+        subprocess.run(["git", "init", "--quiet"], cwd=copy, check=True)
         if patch is not None:
-            subprocess.run(["git", "init", "--quiet"], cwd=copy, check=True)
             applies = subprocess.run(["git", "apply", "--check", str(patch)], cwd=copy, capture_output=True, text=True)
             if applies.returncode != 0:
                 say(f"error: the patch does not apply to the working tree — nothing was run (exit {DOES_NOT_APPLY})\n" + applies.stderr.strip())
