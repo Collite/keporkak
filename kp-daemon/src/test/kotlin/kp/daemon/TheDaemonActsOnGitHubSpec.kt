@@ -8,14 +8,19 @@ import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import kp.engine.Datum
 import kp.facts.Answer
+import kp.facts.MOVED_HEAD
+import kp.facts.RecordedGitHub.Companion.jsonList
 import kp.facts.RecordedGitHub.Companion.recorded
 import kp.facts.TOY_HEAD
 import kp.facts.filedIssue
+import kp.facts.mergesOnItsHead
 import kp.facts.pull
 import kp.facts.toyCheckRuns
 import kp.facts.toyPullRequests
 import kp.mailroom.Status
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * KP/P3/S3.9 — the daemon acts on GitHub (T1's wiring sentences; T5). The office is the service's on GitHub
@@ -43,6 +48,29 @@ class TheDaemonActsOnGitHubSpec : FreeSpec({
             office.state() shouldBe "merged"
             val tokens = office.apps.issued.map { it.token }.also { it.shouldNotBeEmpty() }
             tokens.filter { token -> (listOf(printed, office.logText()) + office.journal).any { token in it } }.shouldBeEmpty()
+        }
+    }
+
+    "a head that moved after the judgement observed it: the merge is asked on the head handed from the log, not on the one GitHub lists when it runs, and ends `stale-ci`" {
+        ActingOffice(mapOf("TOY/P0/S0.1" to "passed"), fromGitHub = setOf("pr.head", "ci.state"), mergeReadsTheHead = true).use { office ->
+            val head = AtomicReference(TOY_HEAD)
+            val listed = CopyOnWriteArrayList<String>()
+            office.github.onRequest("GET", "/repos/Collite/kp-toy/pulls") {
+                Answer(200, jsonList(pull("state" to "open", "closed_at" to null, "merged_at" to null, "head.sha" to head.get().also(listed::add))))
+            }
+            // A push lands on the branch once the judgement has read the check runs of the head it observed.
+            office.github.onRequest("GET", "/repos/Collite/kp-toy/commits/$TOY_HEAD/check-runs") { Answer(200, recorded("check-runs.json")).also { head.set(MOVED_HEAD) } }
+            office.github.mergesOnItsHead("/repos/Collite/kp-toy/pulls/1/merge") { head.get() }
+
+            office.send("teamlead", MERGE_THE_TOY).status shouldBe Status.DELIVERED
+            office.awaitResult("git.merge")
+
+            office.observedOf("merge")["pr.head"] shouldBe "\"$TOY_HEAD\""
+            listed.last() shouldBe MOVED_HEAD
+            Json.parseToJsonElement(office.github.requests.single { it.method == "PUT" }.body) shouldBe
+                Json.parseToJsonElement("""{"sha": "$TOY_HEAD", "merge_method": "merge"}""")
+            office.ops("git.merge") shouldBe listOf("requested null",
+                "failed stale-ci: GitHub answered 409 to PUT /repos/Collite/kp-toy/pulls/1/merge: Head branch was modified. Review and try the merge again.")
         }
     }
 

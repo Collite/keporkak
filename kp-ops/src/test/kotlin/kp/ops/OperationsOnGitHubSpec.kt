@@ -10,11 +10,13 @@ import kp.facts.Answer
 import kp.facts.CLOSED_BRANCH
 import kp.facts.MERGED_BRANCH
 import kp.facts.MERGED_HEAD
+import kp.facts.MOVED_HEAD
 import kp.facts.RecordedGitHub
 import kp.facts.RecordedGitHub.Companion.recorded
 import kp.facts.closedPull
 import kp.facts.filedIssue
 import kp.facts.mergedPull
+import kp.facts.mergesOnItsHead
 import kp.facts.openPull
 import kp.facts.pullsOf
 import java.net.ServerSocket
@@ -76,6 +78,22 @@ class OperationsOnGitHubSpec : FreeSpec({
 
             toy.github.requests.shouldBeEmpty()
             toy.fake.requests.shouldBeEmpty()
+        }
+    }
+
+    "a head that moved after the judgement observed it: the merge is asked on the observed head, never on the one GitHub lists now — and GitHub, which merges only on the head it holds, answers `stale-ci` (Amendment 37: handed over from the log, never read again)" {
+        Toy(tempdir().toPath()).use { toy ->
+            toy.github.pullsOf(MERGED_BRANCH, openPull("head.sha" to MOVED_HEAD))
+            toy.github.mergesOnItsHead("/repos/Collite/kp-toy/pulls/3/merge") { MOVED_HEAD }
+            val merge = GitMerge(toy.apps, MERGER, toy.api)
+
+            merge.perform(AT_PULL_3, "m-000041", MERGED_HEAD) shouldBe
+                Performed.Failed("stale-ci: GitHub answered 409 to PUT /repos/Collite/kp-toy/pulls/3/merge: Head branch was modified. Review and try the merge again.")
+            Json.parseToJsonElement(toy.github.requests.single { it.method == "PUT" }.body) shouldBe
+                Json.parseToJsonElement("""{"sha": "$MERGED_HEAD", "merge_method": "merge"}""")
+
+            // The same GitHub merges a request on the head it lists: what a merge that read the head again would get.
+            merge.perform(AT_PULL_3, "m-000041", MOVED_HEAD) shouldBe Performed.Ok(mapOf("sha" to "0c6b33afb43dd4addb3147ad73edf4c53087a17a"))
         }
     }
 

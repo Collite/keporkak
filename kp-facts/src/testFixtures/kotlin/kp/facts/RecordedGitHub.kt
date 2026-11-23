@@ -35,10 +35,18 @@ data class RecordedRequest(val method: String, val target: String, val headers: 
  * route given several pages answers each with GitHub's `Link` header to the next. Routes match a path and the query
  * parameters a spec names; the last route put wins. [server] may serve other routes beside — GitHub's App endpoints.
  * A write — `PUT`, `PATCH`, `POST`, `DELETE` — answers what [onRequests] put there, one answer per request in turn
- * (S3.9: the operations on GitHub, recorded on Panda from `Collite/kp-toy`), or is held by [hold].
+ * (S3.9: the operations on GitHub, recorded on Panda from `Collite/kp-toy`), or is held by [hold]. A route of [onRequest]
+ * answers what its function makes of each request: GitHub as it acts on what it holds, each answer a recorded one.
  */
 class RecordedGitHub(val server: HttpServer = local()) : AutoCloseable {
-    private class Route(val path: String, val query: Map<String, String>, val pages: List<Answer>, val method: String = "GET", val held: Held? = null) {
+    private class Route(
+        val path: String,
+        val query: Map<String, String>,
+        val pages: List<Answer>,
+        val method: String = "GET",
+        val held: Held? = null,
+        val answering: ((RecordedRequest) -> Answer)? = null,
+    ) {
         val asked = AtomicInteger()
     }
 
@@ -81,6 +89,11 @@ class RecordedGitHub(val server: HttpServer = local()) : AutoCloseable {
         routes += Route(path, emptyMap(), answers.toList(), method)
     }
 
+    /** [method] [path] — any query — answers what [answer] makes of each request, on the server's thread. */
+    fun onRequest(method: String, path: String, answer: (RecordedRequest) -> Answer) {
+        routes += Route(path, emptyMap(), emptyList(), method, answering = answer)
+    }
+
     /** [method] [path] is held: kept, unanswered, until the spec releases it — then answered [answer]. */
     fun hold(method: String, path: String, answer: Answer = Answer(504, "")): Held = Held(answer).also { routes += Route(path, emptyMap(), emptyList(), method, it) }
 
@@ -102,6 +115,7 @@ class RecordedGitHub(val server: HttpServer = local()) : AutoCloseable {
         val answer = when {
             route == null -> Answer(404, NOT_FOUND)
             route.held != null -> route.held.await()
+            route.answering != null -> route.answering.invoke(request)
             route.method != "GET" -> route.pages[minOf(route.asked.getAndIncrement(), route.pages.size - 1)]
             else -> route.pages.getOrNull(page - 1) ?: Answer(404, NOT_FOUND)
         }
