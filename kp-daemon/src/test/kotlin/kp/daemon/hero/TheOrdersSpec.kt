@@ -21,7 +21,7 @@ class TheOrdersSpec : FreeSpec({
                 listOf("protocol-closed", "process-gone", "killed"), listOf("protocol-closed", "killed", "process-gone"),
                 listOf("killed", "process-gone", "protocol-closed"), listOf("killed", "protocol-closed", "process-gone"),
             )
-            orders.played.map { it.end }.distinct() shouldBe listOf(Orders.End(mapOf("S3.6" to "building"), mapOf("coder-1" to "ready")))
+            orders.played.map { it.end.stages to it.end.seats }.distinct() shouldBe listOf(mapOf("S3.6" to "building") to mapOf("coder-1" to "ready"))
             orders.played.filter { it.end != it.walkers } shouldBe emptyList()
         }
         "every walk on master that marks unordered events or binds two seats to a stage" {

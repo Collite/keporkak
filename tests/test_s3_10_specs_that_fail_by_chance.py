@@ -4,7 +4,7 @@ Seam: `just many`, which runs one spec many times over — alone, then in its mo
 beside each run, on a throwaway copy of the working tree, a patch applied to the copy when one is given. The three specs:
 `TheSeatsSpec`'s first case and `TheThinThreadSpec`'s first case, in kp-daemon, and S3.0's never-ending spec — the
 Python suite's, which plants a spec that never ends in kp-log and runs it in every module's test task. Each is run
-KP_MANY times each way (2 when it is not set; the hand-off gives a run with more), and once with a patch that breaks
+KP_MANY times each way (once when it is not set, as `just check` runs it; the hand-off gives a run with more), and once with a patch that breaks
 what it holds: `tests/fixtures/s3_10/`.
 """
 import os
@@ -14,9 +14,10 @@ import sys
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from retro_checks_support import ROOT, just  # noqa: E402
+from retro_checks_support import ROOT, TEST_INPUTS, gradle, just, shared_copy  # noqa: E402
+from test_s3_6_walker import copy_of_the_rules, failures, named, walker  # noqa: E402
 
-COUNT = int(os.environ.get("KP_MANY", "2"))
+COUNT = int(os.environ.get("KP_MANY", "1"))
 FIXTURES = "tests/fixtures/s3_10"
 
 # Each of the three, and the patch that breaks what it holds — in the daemon, or in the specs' timeout.
@@ -40,6 +41,31 @@ class TheSpecsThatFailedByChance(unittest.TestCase):
                               many.stdout)
                 self.assertEqual(red.returncode, 1, red.stdout[-6000:])
                 self.assertRegex(red.stdout, re.compile(r"— alone 0 of 1 passed · in its module's whole run 0 of 1 passed"))
+
+
+class TheHeroAndTheWalker(unittest.TestCase):
+    """T5's slices (Collite/keporkak#56), for the next developer."""
+
+    def test_the_walk_of_d85s_case_itself_fails_on_the_rules_as_they_were_before_d85_naming_two_orders(self):
+        rules = copy_of_the_rules(self, edit="d85-taken-out")
+
+        lines = walker(rules, rules / "rules/walks/seat-ends-by-operation.yaml")
+
+        self.assertEqual(len(failures(lines)), 1, "\n".join(lines[-20:]))
+        (first, first_end), (other, other_end) = named(failures(lines)[0])
+        self.assertNotEqual(first, other)
+        self.assertNotEqual(first_end, other_end)
+        self.assertEqual(sorted(first), sorted(other))
+
+    def test_the_hero_task_names_the_walker_among_its_inputs_so_a_change_to_it_alone_runs_the_task_again(self):
+        copy = shared_copy()
+        script = copy / "build/test-inputs.gradle"
+        script.write_text(TEST_INPUTS)
+
+        listed = gradle(copy, "--quiet", "--init-script", str(script), "kpTestInputs")
+
+        self.assertEqual(listed.returncode, 0, listed.stdout[-4000:])
+        self.assertIn("INPUT :kp-daemon:hero scripts/check-rules.py", listed.stdout.splitlines())
 
 
 if __name__ == "__main__":
