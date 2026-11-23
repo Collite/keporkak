@@ -71,7 +71,8 @@ import kotlin.system.exitProcess
  * on a real seat. A coder's config home built by S2.2's builder, this API on a loopback port, a mailroom on a throwaway
  * log with the checkout's rules, and the pinned adapter with the roster's cheapest model and effort — through the steps
  * of S2.3's DONE line, in two prompts. It spends tokens: it is no part of `just check`, and CI never runs it. Its
- * evidence — tokens removed, and searched for before it is written — goes to the file it names on its last line.
+ * evidence — tokens removed, and searched for before it is written — goes to the office's scratch root, `handshakes/`,
+ * in the file it names on its last line (S3.10 T6; before it, under the checkout's `build/`).
  *
  * Who registers a session's token is S2.4's wiring. Here the agent's command is a wrapper that hands the token the
  * driver gave the process (`KP_SESSION_TOKEN`) to this program over loopback, on curl's standard input — never in an
@@ -102,6 +103,9 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
     private val offices = yaml(root.resolve("pool/offices.yaml"))
     private val tokenFile = given ?: Path.of(offices.get<YamlMap>("offices")!!.get<YamlMap>(office)!!.get<YamlMap>("roots")!!.getScalar("secrets")!!.content
         .replaceFirst("~", System.getProperty("user.home"))).resolve("claude-token")
+    /** The office's scratch root (contracts.md §9): where the evidence goes, `handshakes/`, as every handshake's (S3.10 T6). */
+    private val handshakes = Path.of(offices.get<YamlMap>("offices")!!.get<YamlMap>(office)!!.get<YamlMap>("roots")!!.getScalar("scratch")!!.content
+        .replaceFirst("~", System.getProperty("user.home"))).resolve("handshakes")
     private val cheapest = roster.get<YamlList>("order")!!.items.first().yamlMap
     private val model = cheapest.getScalar("model")!!.content
     private val effort = cheapest.getScalar("effort")!!.content
@@ -315,7 +319,7 @@ private class ToolsHandshake(private val root: Path, private val adapter: Path, 
             transcript().forEach(::appendLine)
             appendLine("```")
         }
-        val file = root.resolve("build/handshake/handshake-tools-${version(adapter.resolve("node_modules/$ADAPTER/package.json")) ?: "not-installed"}-${at.toString().replace(":", "")}.md")
+        val file = handshakes.resolve("handshake-tools-${version(adapter.resolve("node_modules/$ADAPTER/package.json")) ?: "not-installed"}-${at.toString().replace(":", "")}.md")
         file.parent.createDirectories()
         file.writeText(hide(evidence))
         val leaked = secrets().any { file.readText().contains(it) }

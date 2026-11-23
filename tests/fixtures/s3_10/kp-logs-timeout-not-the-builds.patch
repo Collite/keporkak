@@ -1,0 +1,12 @@
+diff --git a/kp-log/src/test/kotlin/io/kotest/provided/ProjectConfig.kt b/kp-log/src/test/kotlin/io/kotest/provided/ProjectConfig.kt
+index b9de36a..12c52b8 100644
+--- a/kp-log/src/test/kotlin/io/kotest/provided/ProjectConfig.kt
++++ b/kp-log/src/test/kotlin/io/kotest/provided/ProjectConfig.kt
+@@ -13,6 +13,6 @@ import kotlin.time.Duration
+  * `blockingTest` itself keeps Kotest's.
+  */
+ object ProjectConfig : AbstractProjectConfig() {
+-    override val timeout: Duration? = System.getProperty("kp.spec.timeout")?.let(Duration::parse)
++    override val timeout: Duration? = Duration.parse("3s")
+     override val extensions: List<Extension> = listOf(OwnThread(this))
+ }

@@ -36,7 +36,7 @@ class ReviewsAndCommentsReadingSpec : FreeSpec({
         }
     }
 
-    "`pr.blocker_responses`: a re-verdict is a verdict; with neither on the log, unknown; an id alone on its line, or after a bullet, answers nothing" {
+    "`pr.blocker_responses`: a re-verdict is a verdict; with neither on the log, unknown; an id alone on its line answers nothing, and after a bullet it answers (Amendment 38)" {
         Toy(tempdir()).use { toy ->
             toy.pullRequests(pull())
             toy.comments(comment("created_at" to "2026-11-13T11:52:00Z", "body" to "B1\n- B2: fixed\nB3: fixed"))
@@ -45,7 +45,7 @@ class ReviewsAndCommentsReadingSpec : FreeSpec({
             toy.log.delivered(TOY_STAGE, "verdict", "2026-11-13T11:00:00Z")
             toy.log.delivered(TOY_STAGE, "re-verdict", "2026-11-13T11:30:00Z")
             toy.log.delivered("TOY/P0/S0.2", "verdict", "2026-11-13T12:00:00Z")
-            toy.observe("pr.blocker_responses", "ids" to listOf("B1", "B2", "B3")).value shouldBe listOf("B3")
+            toy.observe("pr.blocker_responses", "ids" to listOf("B1", "B2", "B3")).value shouldBe listOf("B2", "B3")
             toy.log.delivered(TOY_STAGE, "re-verdict", "2026-11-13T12:00:00Z")
             toy.observe("pr.blocker_responses", "ids" to "B3").value shouldBe emptyList<String>()
         }

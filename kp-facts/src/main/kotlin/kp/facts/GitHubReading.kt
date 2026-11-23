@@ -23,7 +23,7 @@ import java.time.format.DateTimeParseException
 internal class GitHubReading(private val reading: Reading, private val github: GitHub, private val access: GitHubAccess, private val http: HttpClient) {
     private val asked: Asked get() = reading.asked
     private val stage: StageId by lazy { reading.stage() }
-    private val heading: Heading by lazy { Heading.of(reading.stageList(stage), stage) }
+    private val heading: Heading by lazy { reading.stageList(stage).heading(stage) }
 
     /** `<organization>/<repo>`: the repository of the list's title (Amendment 32), in the organization of §9's block. */
     private val repository: String by lazy { repositoryOf(heading, github) }
@@ -99,7 +99,8 @@ internal class GitHubReading(private val reading: Reading, private val github: G
         val reviews = pages(path, emptyMap()).filter { review ->
             (review["user"] as? JsonObject)?.text("login") == login && review.text("commit_id") == sha && review.text("submitted_at") != null
         }
-        val last = reviews.maxByOrNull { Instant.parse(it.text("submitted_at")) }
+        // Every review's time is read, the last's and the others': one in another shape is unknown, whichever it is.
+        val last = reviews.map { it to time(it.text("submitted_at").orEmpty(), "a review's submitted_at", path) }.maxByOrNull { it.second }?.first
             ?: return Observation.Value("none", "$repository#${pull.number}: no review by $login on ${sha.take(SHORT)}")
         val state = last.text("state")
         val value = REVIEW_STATES[state]
@@ -128,8 +129,8 @@ internal class GitHubReading(private val reading: Reading, private val github: G
 
     /**
      * `pr.blocker_responses` for ids: those for which a comment on the pull request, written by its author after the stage's
-     * last `verdict` or `re-verdict` was delivered, holds a line that begins with the id and is followed by something that
-     * is neither a letter nor a digit.
+     * last `verdict` or `re-verdict` was delivered, holds a line that begins with the id — or with a list marker and then
+     * the id (Amendment 38): `- `, `* `, `+ `, `1. ` — and is followed by something that is neither a letter nor a digit.
      */
     fun blockerResponses(): Observation {
         val ids = asked.texts("ids")
@@ -143,10 +144,10 @@ internal class GitHubReading(private val reading: Reading, private val github: G
         val path = "repos/$repository/issues/${pull.number}/comments"
         val comments = pages(path, emptyMap()).filter { comment ->
             (comment["user"] as? JsonObject)?.text("login") == pull.author &&
-                comment.text("created_at")?.let { Instant.parse(it).isAfter(after) } == true
+                comment.text("created_at")?.let { time(it, "a comment's created_at", path).isAfter(after) } == true
         }
         val lines = comments.flatMap { (it.text("body") ?: "").lines() }
-        val answered = ids.filter { id -> lines.any { it.length > id.length && it.startsWith(id) && !it[id.length].isLetterOrDigit() } }
+        val answered = ids.filter { id -> lines.any { line -> answers(line, id) } }
         return Observation.Value(answered, "$repository#${pull.number}: ${comments.size} ${if (comments.size == 1) "comment" else "comments"} by ${pull.author} after $since")
     }
 
@@ -164,6 +165,19 @@ internal class GitHubReading(private val reading: Reading, private val github: G
             else -> "the description of $repository#${pull.number}: the six headings, and ${under.count { it.isNotBlank() }} lines under $VERIFIED"
         }
         return Observation.Value(present, evidence)
+    }
+
+    /** Whether [line] answers [id]: it begins with the id, after a list marker or with none, and no letter or digit follows the id. */
+    private fun answers(line: String, id: String): Boolean {
+        val rest = LIST_MARKER.find(line)?.let { line.substring(it.range.last + 1) } ?: line
+        return rest.length > id.length && rest.startsWith(id) && !rest[id.length].isLetterOrDigit()
+    }
+
+    /** A time GitHub gives — ISO 8601, in UTC — [what] in its answer to GET [path]; in any other shape what was missing (Amendment 38). */
+    private fun time(text: String, what: String, path: String): Instant = try {
+        Instant.parse(text)
+    } catch (_: DateTimeParseException) {
+        throw Missing("$what in GitHub's answer to GET $path is '$text', which is no time in the shape GitHub gives")
     }
 
     private fun sha(name: String): String = asked.text(name).also { if (!SHA.matches(it)) throw Missing("the parameter '$name' is '$it', which is no sha") }
@@ -288,6 +302,8 @@ internal class GitHubReading(private val reading: Reading, private val github: G
         private const val VERIFIED = "## Verified"
         private val HEADINGS = listOf("## Stage", "## What landed", "## DONE line", VERIFIED, "## Not in this stage", "## Found while doing")
         private val LINK_NEXT = Regex("<([^>]+)>;\\s*rel=\"next\"")
+        /** A list marker at a line's beginning: a dash, a star or a plus, or a number and a dot — then a space or more (Amendment 38). */
+        private val LIST_MARKER = Regex("^(?:[-*+]|[0-9]+\\.)\\s+")
 
         private fun next(link: String?): String? = link?.let { LINK_NEXT.find(it)?.groupValues?.get(1) }
 
@@ -299,21 +315,5 @@ internal class GitHubReading(private val reading: Reading, private val github: G
         }
 
         private fun JsonObject.text(name: String): String? = (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content
-    }
-}
-
-/**
- * A stage list's first line, as Amendment 32 reads it for `git.branch_exists`: the branch it names — `(PR: <branch>)` —
- * and the repository of its title `# <EFFORT>-<repo>-P<n>`; each is what was missing when the line names none. [line]
- * cites it.
- */
-internal class Heading(private val first: String, val line: String, private val stage: StageId) {
-    fun branch(): String = Regex("\\(PR: ([^)\\s]+)\\)").find(first)?.groupValues?.get(1) ?: throw Missing("$line names no branch '(PR: <branch>)'")
-
-    fun repo(): String = Regex("^# ${Regex.escape(stage.effort)}-(\\S+)-P${stage.n}(?=\\s|$)").find(first)?.groupValues?.get(1)
-        ?: throw Missing("$line names no repository '# ${stage.effort}-<repo>-P${stage.n}'")
-
-    companion object {
-        fun of(list: StageList, stage: StageId): Heading = Heading(list.text.lines.firstOrNull().orEmpty(), list.text.cite(0), stage)
     }
 }

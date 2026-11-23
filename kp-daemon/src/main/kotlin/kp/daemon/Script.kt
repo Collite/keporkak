@@ -316,13 +316,21 @@ class Player internal constructor(private val script: Script, val office: Office
             // The turns of the walk's end are held to the walk's tokens as every other (review-024, B1).
             own.failure()?.let { failure -> this.played.last().let { last -> throw WalkFailure(at(last.number, last.step) + ", at the walk's end: " + failure) } }
             finish()
-            evidence = own.ended(this, null)
+            evidence = own.ended(this, null).evidence
             return played
         } catch (failure: Throwable) {
             // However the play ends, its evidence and its record are written (S3.6 T5): a failed step, the time or the tokens
-            // run out, the rehearsal closed under it.
-            evidence = own.ended(this, failure.message ?: failure.toString())
-            throw failure
+            // run out, the rehearsal closed under it. The failure then points at the record, not into the throwaway project;
+            // a record that cannot be written is said beside the play's own failure, after it, never in its place
+            // (Amendment 38, S3.10 T6).
+            val said = failure.message ?: failure.toString()
+            val written = try {
+                own.ended(this, said)
+            } catch (unwritten: Exception) {
+                throw WalkFailure("$said — and its record could not be written: $unwritten").apply { initCause(failure) }
+            }
+            evidence = written.evidence
+            throw if (failure is WalkFailure) WalkFailure(written.pointed(said)).apply { initCause(failure) } else failure
         }
     }
 
