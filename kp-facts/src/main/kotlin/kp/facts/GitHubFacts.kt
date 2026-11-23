@@ -102,7 +102,7 @@ class GitHubFacts(
         fun repository(where: Checkouts, github: GitHub, stage: String): Observation = try {
             val reading = Reading(where, NO_LOG, Git(null), Asked(mapOf("stage" to stage)))
             val id = reading.stage()
-            val heading = Heading.of(reading.stageList(id), id)
+            val heading = reading.stageList(id).heading(id)
             val repo = heading.repo()
             if (!NAME.matches(repo) || !NAME.matches(github.organization)) throw Missing("'${github.organization}/$repo' is no repository name GitHub gives")
             Observation.Value("${github.organization}/$repo", heading.line)

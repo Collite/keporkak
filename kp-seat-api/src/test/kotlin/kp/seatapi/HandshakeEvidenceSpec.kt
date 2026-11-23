@@ -40,6 +40,8 @@ class HandshakeEvidenceSpec : StringSpec({
         process.waitFor(5, TimeUnit.MINUTES) shouldBe true
         val evidence = Path.of(said.lines().last { it.startsWith("RESULT:") }.substringAfter("evidence: ").trim())
         val text = evidence.readText().also { evidence.deleteIfExists() }
+        // Under the office's scratch root — panda's, `~/Dev/_scratch` — as every handshake's evidence is (S3.10 T6).
+        evidence.parent shouldBe Path.of(System.getProperty("user.home"), "Dev/_scratch/handshakes")
         val log = text.substringAfter("## The throwaway log\n```\n").substringBefore("```").lines().filter(String::isNotBlank).map(::json)
 
         log.mapNotNull { it["kind"]?.jsonPrimitive?.content ?: it["event"]?.jsonPrimitive?.content } shouldContainAll listOf("transition", "judged", "assign", "delivered")

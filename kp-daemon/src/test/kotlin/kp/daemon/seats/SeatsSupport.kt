@@ -123,6 +123,12 @@ class SeatsOffice(
     /** The texts [seat]'s fake agents were prompted with, in order. */
     fun prompts(seat: String): List<String> = received(seat).filter { it.text("event") == "session/prompt" }.map { it.text("text")!! }
 
+    /**
+     * Waits until [seat]'s fake agents have recorded a prompt that [done] holds of — the record a fake agent writes once the
+     * prompt has reached it, after the daemon's log says the prompt was sent (S3.10 T2): by that record, never a time.
+     */
+    fun prompted(seat: String, what: String, done: (String) -> Boolean) = awaitWritten(agents.record(seat), "$seat prompted with $what") { prompts(seat).any(done) }
+
     /** What the fake tmux was asked, one call a line. */
     fun tmuxCalls(): List<String> = project.resolve("office/tmux.log").let { if (Files.exists(it)) it.readLines() else emptyList() }
 

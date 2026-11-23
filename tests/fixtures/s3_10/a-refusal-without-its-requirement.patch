@@ -1,0 +1,12 @@
+diff --git a/kp-mailroom/src/main/kotlin/kp/mailroom/Offers.kt b/kp-mailroom/src/main/kotlin/kp/mailroom/Offers.kt
+index 7a040b2..efad08e 100644
+--- a/kp-mailroom/src/main/kotlin/kp/mailroom/Offers.kt
++++ b/kp-mailroom/src/main/kotlin/kp/mailroom/Offers.kt
+@@ -56,7 +56,6 @@ fun Answer.result(): JsonObject = buildJsonObject {
+     put(ID, JsonPrimitive(id))
+     transition?.let { put(TRANSITION, JsonPrimitive(it)) }
+     rule?.let { put(RULE, JsonPrimitive(it)) }
+-    requirement?.let { put(REQUIREMENT, JsonPrimitive(it)) }
+     failed?.let { put(FAILED, it.element()) }
+     refusalsToday?.let { put(REFUSALS_TODAY, JsonPrimitive(it)) }
+ }

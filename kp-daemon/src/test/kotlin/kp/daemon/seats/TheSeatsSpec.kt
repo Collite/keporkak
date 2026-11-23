@@ -40,6 +40,8 @@ class TheSeatsSpec : StringSpec({
             office.told(before).filter { it.startsWith("triage") || it.startsWith("delivered") || "seat.wake" in it || it.startsWith("read coder-1") }
                 .dropWhile { !it.startsWith("triage") }.take(5) shouldBe
                 listOf("triage principal→coder", "delivered woke [coder-1]", "op seat.wake requested coder-1", "op seat.wake ok coder-1", "read coder-1")
+            // The wake is `ok` once its prompt is on the wire; the fake agent records it once the prompt has reached it (S3.10 T2).
+            office.prompted("coder-1", "the triage") { triage in it }
             office.prompts("coder-1").single() shouldContain triage
 
             // Busy — its first turn holds: the second triage waits in its inbox, and no wake is asked for it.
@@ -53,6 +55,7 @@ class TheSeatsSpec : StringSpec({
             office.release("first-turn")
             office.until("coder-1 woken with the second triage") { office.office.state.unread("coder-1").isEmpty() }
             office.ops("seat.wake").filter { it.cause == second }.map { it.phase } shouldBe listOf("requested", "ok")
+            office.prompted("coder-1", "the second triage") { second in it }
             office.prompts("coder-1").last() shouldContain second
         }
     }

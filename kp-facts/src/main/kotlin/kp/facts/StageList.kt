@@ -75,6 +75,9 @@ internal class StageList(val text: Text) {
         val TASK = Regex("^- \\[([ x])\\] T([0-9]+)(?![0-9])")
         val DONE_SHA = Regex("(?<![A-Za-z0-9])done [0-9a-fA-F]{7,40}(?![0-9A-Za-z])")
     }
+
+    /** The list's first line ([Heading]): the one reading of it, the project's facts' and GitHub's (S3.10 T3). */
+    fun heading(stage: StageId): Heading = Heading(text.lines.firstOrNull().orEmpty(), text.cite(0), stage)
 }
 
 /** "two", or the number [n] in digits. */
@@ -170,4 +173,16 @@ internal fun Reading.cutAt(): Observation {
     val project = git.root(where.project)
     val oldest = git.commits(project, "--diff-filter=A", "--", list.text.path).minByOrNull { it.time } ?: throw Missing("${list.text.path} is in no commit")
     return Observation.Value(oldest.at, "project: commit ${oldest.short}")
+}
+
+/**
+ * A stage list's first line, as Amendment 32 reads it: the branch it names — `(PR: <branch>)` — and the repository of its
+ * title `# <EFFORT>-<repo>-P<n>`; each is what was missing when the line names none. [line] cites it. `git.branch_exists`
+ * and GitHub's facts read it here, and nowhere else (S3.10 T3).
+ */
+internal class Heading(private val first: String, val line: String, private val stage: StageId) {
+    fun branch(): String = Regex("\\(PR: ([^)\\s]+)\\)").find(first)?.groupValues?.get(1) ?: throw Missing("$line names no branch '(PR: <branch>)'")
+
+    fun repo(): String = Regex("^# ${Regex.escape(stage.effort)}-(\\S+)-P${stage.n}(?=\\s|$)").find(first)?.groupValues?.get(1)
+        ?: throw Missing("$line names no repository '# ${stage.effort}-<repo>-P${stage.n}'")
 }

@@ -69,13 +69,15 @@ import java.io.File
 enum class Shape(val id: String) {
     /**
      * A comparison or ordering of a value: `<`, `>`, a range, a call that compares, bounds or sorts; `==`, `!=` or a `when`'s
-     * branch on arithmetic, a number, or a value of the rules' caps or engagement (S3.8 T2).
+     * branch on arithmetic, a number, or a value of the rules' caps or engagement (S3.8 T2) — a lambda's parameter that is
+     * one among them — and a membership test with such a value: `in`, `!in`, `contains` (S3.10 T6).
      */
     COMPARISON("comparison"),
     /**
      * A timer, a delay or a wait for a time: a sleep, a schedule, a wait with a timeout — a condition's `awaitNanos` and
-     * `awaitUntil`, a selector's `select(timeout)`, a socket's timeout among them (S3.8 T2) — a duration, a time unit, a
-     * constant named for one.
+     * `awaitUntil`, a selector's `select(timeout)`, a socket's timeout among them (S3.8 T2); an HTTP request's `timeout`, a
+     * socket's timed `connect`, the timed forms of the concurrent collections and executors (S3.10 T6) — a duration, a time
+     * unit, a constant named for one.
      */
     TIMER("timer"),
     /** A kind's name of rules/message-kinds.yaml in a literal — in kp-engine anywhere: its literals, comments and names. */
@@ -269,7 +271,9 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
         val token = e.operationToken
         val name = e.operationReference.getReferencedName()
         val compares = token in ORDER || (token == KtTokens.IDENTIFIER && (name in RANGE_WORDS || name in ORDERING)) ||
-            (token in EQUALITY && (sum(e.left) || sum(e.right) || nonZero(e.left) || nonZero(e.right) || capped(e.left) || capped(e.right)))
+            (token in EQUALITY && (sum(e.left) || sum(e.right) || nonZero(e.left) || nonZero(e.right) || capped(e.left) || capped(e.right))) ||
+            // A membership test with a cap on either side (S3.10 T6, issue #59): `blocks in listOf(cap)`.
+            (token in MEMBERSHIP && (capped(e.left) || capped(e.right)))
         if (compares) found(Shape.COMPARISON, e)
         if (token == KtTokens.IDENTIFIER && name in TIMER_CALLS) found(Shape.TIMER, e)
     }
@@ -280,10 +284,13 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
         if (sum(valueOf(subject)) || nonZero(e.expression) || capped(valueOf(subject)) || capped(e.expression)) found(Shape.COMPARISON, e, "when (${subject.text}) ${e.text}")
     }
 
-    /** `in a..b ->`, `in limits ->` of a `when` over arithmetic: where the difference falls is an ordering. */
+    /**
+     * `in a..b ->`, `in limits ->` of a `when` over arithmetic: where the difference falls is an ordering. `in setOf(cap) ->`,
+     * or any `in` of a `when` over a cap, is a membership test with a cap (S3.10 T6).
+     */
     private fun whenInRange(e: KtWhenConditionInRange) {
         val subject = (e.parent?.parent as? KtWhenExpression)?.subjectExpression ?: return
-        if (sum(valueOf(subject))) found(Shape.COMPARISON, e, "when (${subject.text}) ${e.text}")
+        if (sum(valueOf(subject)) || capped(valueOf(subject)) || capped(e.rangeExpression)) found(Shape.COMPARISON, e, "when (${subject.text}) ${e.text}")
     }
 
     private fun reference(e: KtNameReferenceExpression) {
@@ -300,9 +307,9 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
             if (name in ORDERING || (name in RANGE_WORDS && (arguments >= 1 || parent is KtCallableReferenceExpression))) found(Shape.COMPARISON, owner)
             // `blocks.equals(cap)`: an equality written as a call (S3.8 T2).
             val receiver = (call?.parent as? KtQualifiedExpression)?.takeIf { it.selectorExpression === call }?.receiverExpression
-            if (name == "equals" && call != null && (call.valueArguments.any { capped(it.getArgumentExpression()) } || capped(receiver))) found(Shape.COMPARISON, owner)
+            if (name in EQUALS_CALLS && call != null && (call.valueArguments.any { capped(it.getArgumentExpression()) } || capped(receiver))) found(Shape.COMPARISON, owner)
             val timer = name in TIMER_CALLS || name in TIME_NAMES || (name in TIMEOUT_CALLS && arguments >= 1) ||
-                (name == "get" && arguments == 2) || (name == "offer" && arguments == 3)
+                (name == "get" && arguments == 2) || (name == "offer" && arguments == 3) || (TIMED_FROM[name]?.let { arguments >= it } == true)
             if (timer) found(Shape.TIMER, owner)
         }
         // A time unit or a duration by its type: `Duration.ofSeconds(2)`, `TimeUnit.SECONDS`, `ChronoUnit.MINUTES` — and by
@@ -425,15 +432,39 @@ private class FileScan(val path: String, val file: KtFile, val shapes: Set<Shape
      * A value of the rules' caps or engagement, by its name: an expression — outside a lambda or an object in it — that
      * names `cap`, `caps` or `engagement` in a word of a name (`cap`, `stopGateCap`, `rules.engagement.caps[name]`), or a
      * cap of `rules/engagement.yaml` by its own name in any case, as a name or a literal (`stopGateBlocks`,
-     * `STOP_GATE_BLOCKS`, `"stop_gate_blocks"`). A syntax tree without types sees a cap by its name only: `val n = cap`
-     * makes `blocks == n` none (S3.8 T2).
+     * `STOP_GATE_BLOCKS`, `"stop_gate_blocks"`). A lambda's parameter — `it`, one it names, one of its destructuring — is
+     * the value of what the lambda is called on: `cap.let { blocks == it }`, `engagement.caps.values.any { it == blocks }`,
+     * `(blocks to cap).let { (a, b) -> a == b }` (S3.10 T6, issue #59). A syntax tree without types sees a cap by its name
+     * only: `val n = cap` makes `blocks == n` none (S3.8 T2).
      */
     private fun capped(e: KtExpression?): Boolean {
         val x = unwrap(e) ?: return false
+        if (x is KtNameReferenceExpression && capped(calledOn(x))) return true
         return namesIn(x).any { name ->
             val words = name.split('_', '-').flatMap { CAMEL.findAll(it).map { m -> m.value.lowercase() } }
             words.any { it in CAP_WORDS } || words.joinToString("_") in names.caps
         }
+    }
+
+    /**
+     * What the lambda whose parameter [name] reads is called on — `X` of `X.let { … }`, `X?.any { … }` — when [name] is its
+     * `it` or a parameter it declares, a destructured one among them; null otherwise.
+     */
+    private fun calledOn(name: KtNameReferenceExpression): KtExpression? {
+        var at: PsiElement? = name.parent
+        while (at != null && at !is KtNamedFunction && at !is KtClassOrObject) {
+            if (at is KtLambdaExpression) {
+                val parameters = at.valueParameters
+                val declared = parameters.flatMap { parameter -> listOfNotNull(parameter.name) + (parameter.destructuringDeclaration?.entries?.mapNotNull { it.name } ?: emptyList()) }
+                val mine = if (parameters.isEmpty()) name.getReferencedName() == "it" else name.getReferencedName() in declared
+                if (mine) {
+                    val call = (at.parent as? KtLambdaArgument)?.parent as? KtCallExpression ?: return null
+                    return (call.parent as? KtQualifiedExpression)?.takeIf { it.selectorExpression === call }?.receiverExpression
+                }
+            }
+            at = at.parent
+        }
+        return null
     }
 
     /** The names and the literals of [element], not those inside a lambda or an object in it. */
@@ -479,6 +510,9 @@ private val NUMBERS = setOf(KtNodeTypes.INTEGER_CONSTANT, KtNodeTypes.FLOAT_CONS
 private val NUMBER_TEXT = Regex("-?(0[xX][0-9a-fA-F_]+|0[bB][01_]+|[0-9][0-9_]*(\\.[0-9]+)?)[lLuUfF]?")
 private val ORDER = setOf(KtTokens.LT, KtTokens.GT, KtTokens.LTEQ, KtTokens.GTEQ, KtTokens.RANGE, KtTokens.RANGE_UNTIL)
 private val EQUALITY = setOf(KtTokens.EQEQ, KtTokens.EXCLEQ, KtTokens.EQEQEQ, KtTokens.EXCLEQEQEQ)
+private val MEMBERSHIP = setOf(KtTokens.IN_KEYWORD, KtTokens.NOT_IN)
+/** An equality, or a membership test, written as a call: `cap.equals(blocks)`, `setOf(cap).contains(blocks)` (S3.10 T6). */
+private val EQUALS_CALLS = setOf("equals", "contains")
 private val ARITHMETIC = setOf(KtTokens.PLUS, KtTokens.MINUS, KtTokens.MUL, KtTokens.DIV, KtTokens.PERC)
 private val ARITHMETIC_WORDS = setOf("rem", "div", "mod", "shr", "ushr", "shl", "and", "or", "xor", "floorDiv")
 private val RANGE_WORDS = setOf("until", "downTo", "rangeTo", "rangeUntil", "step")
@@ -514,6 +548,15 @@ private val TIMER_CALLS = setOf(
  * a selector's `select(millis)` (S3.8 T2) — its `select()` waits for a key, not a time.
  */
 private val TIMEOUT_CALLS = setOf("wait", "join", "await", "waitFor", "poll", "tryAcquire", "tryLock", "select")
+
+/**
+ * Calls that wait with a timeout from that many arguments on (S3.10 T6, issue #59): an HTTP request's `timeout(duration)` —
+ * `HttpRequest.Builder` — a socket's `connect(address, millis)`, the concurrent collections' and executors' timed forms.
+ */
+private val TIMED_FROM = mapOf(
+    "timeout" to 1, "connect" to 2, "pollFirst" to 2, "pollLast" to 2, "awaitQuiescence" to 2, "exchange" to 3, "invokeAll" to 3,
+    "invokeAny" to 3, "awaitAdvanceInterruptibly" to 3, "offerFirst" to 3, "offerLast" to 3, "tryTransfer" to 3,
+)
 
 /** A connection's timeout, as a property or its setter: a socket's `soTimeout` (S3.8 T2, issue #53), a URL connection's two. */
 private val TIMEOUT_PROPERTIES = setOf("soTimeout", "setSoTimeout", "connectTimeout", "setConnectTimeout", "readTimeout", "setReadTimeout")

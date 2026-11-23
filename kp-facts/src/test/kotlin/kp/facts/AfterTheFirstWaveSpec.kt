@@ -8,6 +8,7 @@ import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
 import java.time.Duration
 import kotlin.io.path.readLines
+import kotlin.io.path.readText
 
 /**
  * KP/P3/S3.8 — `kp-facts` on its edges (T1's fourth sentence; T4; review-025's follow-ups, Collite/keporkak#52), at its
@@ -64,6 +65,26 @@ class AfterTheFirstWaveSpec : FreeSpec({
             stray.missing shouldBe "keporkak: git rev-parse in ${office.keporkak.dir} did not end within 2 s; it was ended"
             took.toSeconds() shouldBeLessThan 10L
             pids.readLines().map { ProcessHandle.of(it.trim().toLong()).map(ProcessHandle::isAlive).orElse(false) } shouldBe listOf(false, false)
+        }
+
+        "a `git` that ends at once and leaves a child holding both its streams open makes the fact unknown within one limit, not one for each stream (S3.10 T6, issue #59)" {
+            val fake = tempdir().toPath()
+            val pid = fake.resolve("child.pid")
+            fake.resolve("git").toFile().apply {
+                // It ends a second after it began — once both its streams are being read — leaving its child with them.
+                writeText("#!/bin/sh\nsleep 60 &\necho $! > '$pid'\nsleep 1\nexit 0\n")
+                setExecutable(true)
+            }
+            val office = Office(tempdir(), path = fake.toString(), limit = Duration.ofSeconds(4))
+
+            val began = System.nanoTime()
+            val stray = office.observe("git.stray_changes", "office" to "panda")
+            val took = Duration.ofNanos(System.nanoTime() - began)
+
+            stray.missing shouldBe "keporkak: git rev-parse in ${office.keporkak.dir} ended, but its output stayed open past 4 s"
+            // One limit is 4 s; the two streams one after the other took two, 8 s.
+            took.toMillis() shouldBeLessThan 6_000L
+            ProcessHandle.of(pid.readText().trim().toLong()).ifPresent { it.destroyForcibly() }
         }
     }
 })

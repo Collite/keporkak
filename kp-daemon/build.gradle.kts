@@ -55,6 +55,9 @@ tasks.register<Test>("hero") {
     classpath = sourceSets["test"].runtimeClasspath
     include("kp/daemon/hero/**")
     readsTheCheckout()
+    // TheOrdersSpec runs the Python walker, `scripts/check-rules.py --trace`, beside each order: a change to it alone runs
+    // the heroes again, as kp-engine's and kp-mailroom's specs (S3.10 T5).
+    inputs.files(rootProject.file("scripts/check-rules.py")).withPropertyName("walker").withPathSensitivity(PathSensitivity.RELATIVE)
     val report = layout.buildDirectory.file("hero/report.txt")
     outputs.file(report).withPropertyName("report")
     doFirst { delete(report) }
