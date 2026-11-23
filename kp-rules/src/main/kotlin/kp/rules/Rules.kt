@@ -44,7 +44,7 @@ object Rules {
         val officesNode = parsed(OFFICES)
         // Without a roster there are no vendors to check against: a missing roster is one problem, not one per vendor named.
         val offices = officesNode?.let { readOffices(Doc(OFFICES, report), it, roster?.vendors?.keys) }
-        val github = officesNode?.let { readGitHub(Doc(OFFICES, report), it) }
+        val github = officesNode?.let { readGitHub(Doc(OFFICES, report), it, personaModes.keys) }
         val budgetsNode = parsed(BUDGETS)
         // Without the offices file there are no offices to check against: a missing file is one problem, not one per office named.
         val budgets = budgetsNode?.let { readBudgets(Doc(BUDGETS, report), it, roster?.vendors?.keys, offices?.keys) }

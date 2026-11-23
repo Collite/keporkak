@@ -158,11 +158,12 @@ private val permissionLevels = setOf("read", "write")
 
 /**
  * The block `github:` of pool/offices.yaml (contracts.md §9, Amendment 33): the organization, each App's id and its
- * installation's id, and for each role the App it acts as and its permissions, each `read` or `write`. Each problem names
- * its line. A role is not checked against the engagement's: the shared fixtures load this file beside an engagement of
- * three roles (S3.2). Null with no block.
+ * installation's id, and for each role the App it acts as and its permissions, each `read` or `write`. Each role is one a
+ * persona declares — of [personas], the roles of the `agents/<role>/AGENT.md` handed to the load (Amendment 38, S3.10) —
+ * not the engagement's: the shared fixtures load this file beside an engagement of three roles. Each problem names its
+ * line. Null with no block.
  */
-internal fun readGitHub(doc: Doc, node: Node): GitHub? {
+internal fun readGitHub(doc: Doc, node: Node, personas: Set<String>): GitHub? {
     val block = (node as? Node.Mapping)?.entries?.get("github") ?: return null
     fun problem(message: String, at: Node) = doc.problem(GITHUB, "$message (line ${at.line})")
     val fields = (block as? Node.Mapping)?.entries ?: return null.also { problem("must be a map", block) }
@@ -181,6 +182,7 @@ internal fun readGitHub(doc: Doc, node: Node): GitHub? {
     val seatsNode = fields["seats"]
     if (seatsNode != null && seatsNode !is Node.Mapping) problem("seats must map roles to an App and its permissions", seatsNode)
     val seats = (seatsNode as? Node.Mapping)?.entries.orEmpty().mapNotNull { (role, seat) ->
+        if (role !in personas) problem("seats.$role: no persona declares the role '$role'", seat)
         val read = (seat as? Node.Mapping)?.entries ?: return@mapNotNull null.also { problem("seats.$role must be {app: <identity>, permissions: {…}}", seat) }
         val app = doc.textOrNull(read["app"])
         if (app == null || app !in appNodes) problem("seats.$role names the App '${app ?: (read["app"] as? Node.Scalar)?.literal?.let(::show)}', which github.apps does not hold", read["app"] ?: seat)
