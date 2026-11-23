@@ -45,7 +45,9 @@ class TheThinThreadSpec : StringSpec({
             val started = thread.hero.player.step()
             val outside = thread.hero.player.step()
 
-            // Both are what coder-1's fake agent sent through the seat API, answered by the mailroom's judgement.
+            // Both are what coder-1's fake agent sent through the seat API, answered by the mailroom's judgement. The step
+            // returns once the judgement is on the log; the fake agent records the answer once it has reached it (S3.10 T2).
+            thread.answered("coder-1", 2)
             thread.sent("coder-1").map { it.text("result") } shouldBe listOf(
                 """{"status":"delivered","id":"${started.message}","transition":"T-08"}""",
                 """{"status":"refused","id":"${outside.message}","rule":"verdict","requirement":"from: reviewer","refusals_today":1}""",
@@ -161,6 +163,9 @@ private class ThinThread(coder: String? = null, reviewer: String? = null) : Auto
 
     /** What [seat]'s fake agents sent through the seat API, in order, each with the tool's result as it came back. */
     fun sent(seat: String): List<JsonObject> = agents.received(seat).filter { it.text("event") == "mcp" }
+
+    /** Waits until [seat]'s fake agents have recorded [count] tools' results: by that record, never a time (S3.10 T2). */
+    fun answered(seat: String, count: Int) = awaitWritten(agents.record(seat), "$count results of $seat's tools") { sent(seat).size >= count }
 
     /** The texts [seat]'s fake agents were prompted with, in order, across its processes. */
     fun prompts(seat: String): List<String> = agents.received(seat).filter { it.text("event") == "session/prompt" }.map { it.text("text")!! }

@@ -202,17 +202,18 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
             "    check(\"/$module/build/\" in config) { \"the ProjectConfig in force is $config, not $module's own\" }\n"
             "}\n\n"
             "class NeverEndsSpec : StringSpec({\n"
-            "    \"a spec that never ends, suspended\" { own(); kotlinx.coroutines.awaitCancellation() }\n"
             "    \"a spec that never ends, blocking its thread\" { own(); Thread.sleep(Long.MAX_VALUE) }\n"
+            "    \"a spec that never ends, suspended\" { own(); kotlinx.coroutines.awaitCancellation() }\n"
             "})\n")
         (copy / "build/every-module.gradle").write_text(EVERY_MODULE)
         for module in modules:
             shutil.rmtree(copy / module / "build/test-results/test", ignore_errors=True)
 
         # The nine test tasks run one after another, each waiting out its two timeouts — 2 s each, not 10 (S3.8 T6). The
-        # suspended case comes first: after the blocking case's interrupt, a suspended case of the same spec was twice
-        # left with no timeout to end it (S3.8's Found lines). A spec its timeout does not end holds the run: past 15
-        # minutes it is ended, and this spec fails.
+        # blocking case comes first, as S3.0 wrote it: each case runs on a thread of its own (`kp.spec.OwnThread`, S3.10
+        # T2), and the suspended case is ended by Kotest's coroutine timeout whatever ran before it — Kotest's own
+        # `blockingTest` threw its resumption away now and then (S3.8's Found lines). A spec its timeout does not end
+        # holds the run: past 15 minutes it is ended, and this spec fails.
         run = gradle(copy, "--continue", "--init-script", "build/every-module.gradle", *[word for module in modules for word in (f":{module}:test", "--rerun")],
                      environment={"KP_SPEC_TIMEOUT": "2s"}, timeout=900)
         ran = reported(copy, modules)
@@ -224,7 +225,7 @@ class TheChecksP2sRetroAskedFor(unittest.TestCase):
                                 ("a spec that never ends, blocking its thread", "a spec that never ends, suspended")), run.stdout[-6000:])
         # Each case first says the ProjectConfig in force is the module's own — loaded from its build: a module with none,
         # or with kp-log's, fails there at once, where its blocking case would hold the run (review-029 B2). Under it, the
-        # suspended spec ends by Kotest's timeout; the blocked one by the interrupt that timeout sends its thread.
+        # suspended spec ends by Kotest's timeout; the blocked one by the interrupt its own thread is sent at the timeout.
         for module, case, failure in ran:
             if case.endswith("suspended"):
                 self.assertRegex(failure or "", r"\S*TestTimeoutException: Test '[^']+' did not complete within 2s", module)
