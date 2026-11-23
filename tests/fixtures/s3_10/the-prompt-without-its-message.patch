@@ -1,0 +1,15 @@
+diff --git a/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt b/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
+index c42df69..ba05caa 100644
+--- a/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
++++ b/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
+@@ -224,8 +224,8 @@ class Seats(
+         ((driver.observe(SeatId(seat), SeatFacts.USAGE, UsageWindow.TURN) as? Outcome.Ok)?.value?.value as? JsonPrimitive)?.content?.toLongOrNull()
+ 
+     /** A message as the prompt that wakes a seat with it (contracts.md §4.4: the prompt is that message). */
+-    private fun mail(message: Message): String = "Mail ${message.id.value}: ${message.kind} from ${message.from.value}" +
+-        (message.stage?.let { " about ${it.value}" } ?: "") + ".\n" + message.json
++    private fun mail(message: Message): String = "Mail: ${message.kind} from ${message.from.value}" +
++        (message.stage?.let { " about ${it.value}" } ?: "") + "."
+ 
+     // ---- the operations (contracts.md §4.4)
+ 

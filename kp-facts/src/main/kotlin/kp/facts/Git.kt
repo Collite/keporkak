@@ -29,19 +29,24 @@ class Git(val path: String?, private val limit: Duration = LIMIT) {
             environment()["LC_ALL"] = "C"
         }.start()
         // Both streams are read beside the wait, so the limit holds while `git` — or a child it left — keeps its output
-        // open (review-025's follow-up, Collite/keporkak#52).
+        // open (review-025's follow-up, Collite/keporkak#52). One limit holds for all of it: `git`, then each of its two
+        // streams, until the same moment (Collite/keporkak#59).
+        val deadline = System.nanoTime() + limit.toNanos()
         var output = ""
         var errors = ""
         val readers = listOf(
             thread(isDaemon = true, name = "kp-facts-git") { output = process.inputStream.bufferedReader().readText() },
             thread(isDaemon = true, name = "kp-facts-git") { errors = process.errorStream.bufferedReader().readText() },
         )
-        if (!process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)) {
+        if (!process.waitFor(limit.toNanos(), TimeUnit.NANOSECONDS)) {
             end(process)
             throw Missing("git ${args.first()} in $dir did not end within ${limit.toSeconds()} s; it was ended")
         }
-        // `git` has ended; what it wrote is read to its end, unless a process it left holds its output open.
-        readers.forEach { it.join(limit.toMillis()) }
+        // `git` has ended; what it wrote is read to its end, unless a process it left holds its output open past the limit.
+        for (reader in readers) {
+            val left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+            if (left > 0) reader.join(left)
+        }
         if (readers.any { it.isAlive }) throw Missing("git ${args.first()} in $dir ended, but its output stayed open past ${limit.toSeconds()} s")
         val code = process.exitValue()
         if (code !in ok) throw Missing("git ${args.joinToString(" ")} in $dir failed: " + (errors.lines().firstOrNull { it.isNotBlank() }?.trim() ?: "exit $code"))

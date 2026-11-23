@@ -45,7 +45,9 @@ class TheThinThreadSpec : StringSpec({
             val started = thread.hero.player.step()
             val outside = thread.hero.player.step()
 
-            // Both are what coder-1's fake agent sent through the seat API, answered by the mailroom's judgement.
+            // Both are what coder-1's fake agent sent through the seat API, answered by the mailroom's judgement. The step
+            // returns once the judgement is on the log; the fake agent records the answer once it has reached it (S3.10 T2).
+            thread.answered("coder-1", 2)
             thread.sent("coder-1").map { it.text("result") } shouldBe listOf(
                 """{"status":"delivered","id":"${started.message}","transition":"T-08"}""",
                 """{"status":"refused","id":"${outside.message}","rule":"verdict","requirement":"from: reviewer","refusals_today":1}""",
@@ -62,7 +64,8 @@ class TheThinThreadSpec : StringSpec({
             val failure = shouldThrow<WalkFailure> { thread.hero.rest() }
 
             failure.message shouldContain "walk thin-thread step 5 (started · coder-1 · started): coder-1 sent stop, not started"
-            failure.message shouldContain "its transcript: ${thread.hero.project.resolve("office/seats/_transcripts/coder-1.log")}"
+            // The play's failure points at its record, beside its evidence (Amendment 38, S3.10 T6).
+            failure.message shouldContain "its transcript: ${thread.record().resolve("transcripts/coder-1.log")}"
         }
         ThinThread(coder = """{"turns": [[{"do": "end"}]]}""").use { thread ->
             thread.hero.through(4)
@@ -88,7 +91,7 @@ class TheThinThreadSpec : StringSpec({
 
             failure.shouldBeInstanceOf<WalkFailure>().message shouldContain Regex("""^walk thin-thread step [0-9]+ \(""")
             failure?.message shouldContain "the seats have used 1500001 tokens, more than the walk's 1500000 (coder-1 1500001); the last turn was coder-1's — its transcript: " +
-                thread.hero.project.resolve("office/seats/_transcripts/coder-1.log")
+                thread.record().resolve("transcripts/coder-1.log")
         }
         // The walk's last turn — the reviewer's, woken by `review-bind` — is held to the walk's tokens too (review-024, B1).
         ThinThread(reviewer = """{"turns": [[{"do": "end", "usage": {"input": 1500000, "output": 0, "total": 1500000}}]]}""").use { thread ->
@@ -97,7 +100,7 @@ class TheThinThreadSpec : StringSpec({
 
             failure.shouldBeInstanceOf<WalkFailure>().message shouldContain "walk thin-thread step 12 (bind · teamlead · review-bind), at the walk's end: the seats have used "
             failure?.message shouldContain "more than the walk's 1500000 (coder-1 "
-            failure?.message shouldContain "the last turn was reviewer-1's — its transcript: " + thread.hero.project.resolve("office/seats/_transcripts/reviewer-1.log")
+            failure?.message shouldContain "the last turn was reviewer-1's — its transcript: " + thread.record().resolve("transcripts/reviewer-1.log")
             thread.evidence.listDirectoryEntries("thin-thread-*.md").single().readText() shouldStartWith "# Rehearsal thin-thread with its seats playing their own steps — failed"
         }
     }
@@ -150,6 +153,9 @@ private class ThinThread(coder: String? = null, reviewer: String? = null) : Auto
 
     fun lines() = hero.office.counted()
 
+    /** The play's record: the folder beside its evidence, named as it is (S3.6 T5). */
+    fun record(): Path = evidence.listDirectoryEntries("thin-thread-*.md").single().let { it.resolveSibling(it.fileName.toString().removeSuffix(".md")) }
+
     /** Waits until [done] holds, at most 30 s. */
     fun until(what: String, done: () -> Boolean) {
         val end = System.nanoTime() + 30_000_000_000
@@ -161,6 +167,9 @@ private class ThinThread(coder: String? = null, reviewer: String? = null) : Auto
 
     /** What [seat]'s fake agents sent through the seat API, in order, each with the tool's result as it came back. */
     fun sent(seat: String): List<JsonObject> = agents.received(seat).filter { it.text("event") == "mcp" }
+
+    /** Waits until [seat]'s fake agents have recorded [count] tools' results: by that record, never a time (S3.10 T2). */
+    fun answered(seat: String, count: Int) = awaitWritten(agents.record(seat), "$count results of $seat's tools") { sent(seat).size >= count }
 
     /** The texts [seat]'s fake agents were prompted with, in order, across its processes. */
     fun prompts(seat: String): List<String> = agents.received(seat).filter { it.text("event") == "session/prompt" }.map { it.text("text")!! }

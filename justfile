@@ -83,6 +83,14 @@ owed log *args: _python-env
 spec filter: _python-env
     exec build/python/bin/python build-support/spec.py "$1"
 
+# Does a spec pass every time, or only by chance? (S3.10 T1) Runs <spec> <times> times alone, then <times> times in its
+# module's whole run, a second build busy beside each run, on a throwaway copy of the working tree — [patch] applied to the
+# copy when given. <spec>: `<module>:<SpecClass>[/<case>]`, or a test of the Python suite, `python:<module>.<Class>.<test>`.
+# Prints each run as it ends and the counts. Exit 0 every run passed · 1 one failed · 2 the patch does not apply · 3 it
+# names no spec · 4 the copy does not build.
+many spec times *patch: _python-env
+    build/python/bin/python build-support/many.py --from "{{invocation_directory()}}" "$@"
+
 # Applies <patch> to a throwaway copy of the working tree, runs the specs <filter> names there with a forced rerun, and
 # prints `red` and the specs that failed, or `green`; the working tree stays as it was (S2.8; architecture.md §7).
 # Exit 0 red · 1 green · 2 the patch does not apply · 3 the filter runs no spec · 4 the patched copy does not build.
@@ -164,7 +172,7 @@ adapter:
 # persona in front of the seat API and a mailroom on a throwaway log, through the five tools and the stop gate: two
 # prompts. None of them is part of `check`, and CI never runs them. `just handshake --personas coder,reviewer,teamlead,principal`
 # (S3.6, D-96) also gives a seat of each persona named two prompts that ask for nothing, and reports each turn's usage by
-# its parts; the evidence goes to the office's scratch root, `handshakes/`.
+# its parts. Each one's evidence goes to the office's scratch root, `handshakes/` — `just handshake tools`' too (S3.10).
 handshake *args:
     #!/usr/bin/env sh
     set -eu
