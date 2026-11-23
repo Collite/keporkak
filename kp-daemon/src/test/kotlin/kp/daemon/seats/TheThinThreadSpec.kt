@@ -64,7 +64,8 @@ class TheThinThreadSpec : StringSpec({
             val failure = shouldThrow<WalkFailure> { thread.hero.rest() }
 
             failure.message shouldContain "walk thin-thread step 5 (started · coder-1 · started): coder-1 sent stop, not started"
-            failure.message shouldContain "its transcript: ${thread.hero.project.resolve("office/seats/_transcripts/coder-1.log")}"
+            // The play's failure points at its record, beside its evidence (Amendment 38, S3.10 T6).
+            failure.message shouldContain "its transcript: ${thread.record().resolve("transcripts/coder-1.log")}"
         }
         ThinThread(coder = """{"turns": [[{"do": "end"}]]}""").use { thread ->
             thread.hero.through(4)
@@ -90,7 +91,7 @@ class TheThinThreadSpec : StringSpec({
 
             failure.shouldBeInstanceOf<WalkFailure>().message shouldContain Regex("""^walk thin-thread step [0-9]+ \(""")
             failure?.message shouldContain "the seats have used 1500001 tokens, more than the walk's 1500000 (coder-1 1500001); the last turn was coder-1's — its transcript: " +
-                thread.hero.project.resolve("office/seats/_transcripts/coder-1.log")
+                thread.record().resolve("transcripts/coder-1.log")
         }
         // The walk's last turn — the reviewer's, woken by `review-bind` — is held to the walk's tokens too (review-024, B1).
         ThinThread(reviewer = """{"turns": [[{"do": "end", "usage": {"input": 1500000, "output": 0, "total": 1500000}}]]}""").use { thread ->
@@ -99,7 +100,7 @@ class TheThinThreadSpec : StringSpec({
 
             failure.shouldBeInstanceOf<WalkFailure>().message shouldContain "walk thin-thread step 12 (bind · teamlead · review-bind), at the walk's end: the seats have used "
             failure?.message shouldContain "more than the walk's 1500000 (coder-1 "
-            failure?.message shouldContain "the last turn was reviewer-1's — its transcript: " + thread.hero.project.resolve("office/seats/_transcripts/reviewer-1.log")
+            failure?.message shouldContain "the last turn was reviewer-1's — its transcript: " + thread.record().resolve("transcripts/reviewer-1.log")
             thread.evidence.listDirectoryEntries("thin-thread-*.md").single().readText() shouldStartWith "# Rehearsal thin-thread with its seats playing their own steps — failed"
         }
     }
@@ -151,6 +152,9 @@ private class ThinThread(coder: String? = null, reviewer: String? = null) : Auto
     private val agents = FakeAgents(classpath, hero.project.resolve("office/fake"))
 
     fun lines() = hero.office.counted()
+
+    /** The play's record: the folder beside its evidence, named as it is (S3.6 T5). */
+    fun record(): Path = evidence.listDirectoryEntries("thin-thread-*.md").single().let { it.resolveSibling(it.fileName.toString().removeSuffix(".md")) }
 
     /** Waits until [done] holds, at most 30 s. */
     fun until(what: String, done: () -> Boolean) {

@@ -172,7 +172,7 @@ adapter:
 # persona in front of the seat API and a mailroom on a throwaway log, through the five tools and the stop gate: two
 # prompts. None of them is part of `check`, and CI never runs them. `just handshake --personas coder,reviewer,teamlead,principal`
 # (S3.6, D-96) also gives a seat of each persona named two prompts that ask for nothing, and reports each turn's usage by
-# its parts; the evidence goes to the office's scratch root, `handshakes/`.
+# its parts. Each one's evidence goes to the office's scratch root, `handshakes/` — `just handshake tools`' too (S3.10).
 handshake *args:
     #!/usr/bin/env sh
     set -eu

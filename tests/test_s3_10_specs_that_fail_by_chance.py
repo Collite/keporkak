@@ -4,8 +4,8 @@ Seam: `just many`, which runs one spec many times over — alone, then in its mo
 beside each run, on a throwaway copy of the working tree, a patch applied to the copy when one is given. The three specs:
 `TheSeatsSpec`'s first case and `TheThinThreadSpec`'s first case, in kp-daemon, and S3.0's never-ending spec — the
 Python suite's, which plants a spec that never ends in kp-log and runs it in every module's test task. Each is run
-KP_MANY times each way (once when it is not set, as `just check` runs it; the hand-off gives a run with more), and once with a patch that breaks
-what it holds: `tests/fixtures/s3_10/`.
+KP_MANY times each way — once when it is not set, as `just check` runs it; the hand-off gives a run with more — and once
+with a patch that breaks what it holds: `tests/fixtures/s3_10/`. The slices of T5 and T6 follow, for the next developer.
 """
 import os
 import pathlib
@@ -14,7 +14,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from retro_checks_support import ROOT, TEST_INPUTS, gradle, just, shared_copy  # noqa: E402
+from retro_checks_support import ROOT, TEST_INPUTS, findings, gradle, just, keep, plant, shared_copy  # noqa: E402
 from test_s3_6_walker import copy_of_the_rules, failures, named, walker  # noqa: E402
 
 COUNT = int(os.environ.get("KP_MANY", "1"))
@@ -66,6 +66,52 @@ class TheHeroAndTheWalker(unittest.TestCase):
 
         self.assertEqual(listed.returncode, 0, listed.stdout[-4000:])
         self.assertIn("INPUT :kp-daemon:hero scripts/check-rules.py", listed.stdout.splitlines())
+
+
+
+# Review-029's follow-ups (Collite/keporkak#59) and S3.8's Found line, each planted in kp-daemon and in kp-ops: S2.4's
+# grace written as an HTTP request's timeout, the timed waits the check did not name, and a cap reached through a lambda's
+# parameter or a membership test.
+TIMED = [
+    "fun graceOfARequest(uri: java.net.URI, grace: java.time.Duration) = java.net.http.HttpRequest.newBuilder(uri).timeout(grace).build()",
+    "fun graceOfAConnect(socket: java.net.Socket, address: java.net.SocketAddress, millis: Int) = socket.connect(address, millis)",
+    "fun graceOfAnExchange(exchanger: java.util.concurrent.Exchanger<String>, n: Long, unit: java.util.concurrent.TimeUnit) = exchanger.exchange(\"v\", n, unit)",
+    "fun graceOfAll(pool: java.util.concurrent.ExecutorService, tasks: List<java.util.concurrent.Callable<Int>>, n: Long, unit: java.util.concurrent.TimeUnit) = pool.invokeAll(tasks, n, unit)",
+    "fun graceOfAny(pool: java.util.concurrent.ExecutorService, tasks: List<java.util.concurrent.Callable<Int>>, n: Long, unit: java.util.concurrent.TimeUnit) = pool.invokeAny(tasks, n, unit)",
+    "fun graceOfAPhase(phaser: java.util.concurrent.Phaser, n: Long, unit: java.util.concurrent.TimeUnit) = phaser.awaitAdvanceInterruptibly(1, n, unit)",
+    "fun graceOfAFirst(deque: java.util.concurrent.LinkedBlockingDeque<String>, n: Long, unit: java.util.concurrent.TimeUnit) = deque.pollFirst(n, unit)",
+    "fun graceOfAnOffer(deque: java.util.concurrent.LinkedBlockingDeque<String>, n: Long, unit: java.util.concurrent.TimeUnit) = deque.offerFirst(\"v\", n, unit)",
+    "fun graceOfATransfer(queue: java.util.concurrent.LinkedTransferQueue<String>, n: Long, unit: java.util.concurrent.TimeUnit) = queue.tryTransfer(\"v\", n, unit)",
+    "fun graceOfQuiescence(pool: java.util.concurrent.ForkJoinPool, n: Long, unit: java.util.concurrent.TimeUnit) = pool.awaitQuiescence(n, unit)",
+]
+CAPPED = [
+    "fun atTheCapByLet(blocks: Long, cap: Long) = cap.let { blocks == it }",
+    "fun atTheGateByLet(blocks: Long, rules: RuleSet) = rules.engagement.caps[\"stop_gate_blocks\"]?.let { it == blocks }",
+    "fun atAnyCap(blocks: Long, engagement: Map<String, Long>) = engagement.values.any { it == blocks }",
+    "fun atTheCapByPair(blocks: Long, cap: Long) = (blocks to cap).let { (a, b) -> a == b }",
+    "fun inTheCaps(blocks: Long, cap: Long) = blocks in listOf(cap)",
+    "fun containsTheCap(blocks: Long, cap: Long) = setOf(cap).contains(blocks)",
+    "fun whenInTheCaps(blocks: Long, cap: Long) = when (blocks) { in setOf(cap) -> true; else -> false }",
+]
+
+
+class TheCheck(unittest.TestCase):
+    """T6's slices (Collite/keporkak#59), for the next developer: the check that the daemon decides nothing."""
+
+    def test_the_check_names_each_timed_wait_of_issue_59_and_sees_a_cap_through_a_lambdas_parameter_or_a_membership_test_each_planted_in_kp_daemon_and_kp_ops(self):
+        copy = shared_copy()
+        keep(self, copy, "build-support/decides-nothing.yaml")
+        planted = {}
+        for module in ("kp-daemon", "kp-ops"):
+            for shape, forms in (("timer", TIMED), ("comparison", CAPPED)):
+                path, numbers = plant(copy, module, "Planted" + shape.capitalize(), forms, test=self)
+                planted.update({(module, shape, form): (path, number) for form, number in zip(forms, numbers)})
+
+        red = just(copy, "spec", "DecidesNothingSpec")
+        reported = {(path, int(line), shape) for path, line, shape, *_ in findings(red.stdout)}
+
+        self.assertNotEqual(red.returncode, 0, red.stdout[-3000:])
+        self.assertEqual([key for key, (path, line) in planted.items() if (path, line, key[1]) not in reported], [], red.stdout[-6000:])
 
 
 if __name__ == "__main__":
