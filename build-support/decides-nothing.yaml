@@ -1076,6 +1076,11 @@ exceptions:
     code: maxWith(compareBy<PullRequest> { it.created }.thenBy { it.number })
     line: else -> Looked.Found(all.maxWith(compareBy<PullRequest> { it.created }.thenBy { it.number }))
     reason: 'the stage''s pull request, as Amendment 33 names it: with none open, "the one made last" — GitHub''s creation times, then its numbers, ordered to find which pull request the contract means; nothing is compared with a cap or a rule''s value'
+  - shape: timer
+    in: GitHubRest.send
+    code: timeout(GitHubApps.TIMEOUT)
+    line: 'val request = HttpRequest.newBuilder(url) .timeout(GitHubApps.TIMEOUT) .header("Accept", "application/vnd.github+json") .header("X-GitHub-Api-Version", GitHubApps.API_VERSION) .header("Authorization", token.authorization()) .method(method, if (body == null) HttpRequest.BodyPublishers.noBody() else HttpRequest.BodyPublishers.ofString(body.toString())) .apply { if (body != null) header("Content-Type", "application/json") } .build()'
+    reason: 'an operation on GitHub (Amendment 37): each request is bounded by GitHubApps.TIMEOUT, the entry for GitHubApps.kt — past it the request fails as not reached and the operation is `failed` with that reason (a merge `refused`), asked once and never again; S3.10 made `HttpRequest.Builder.timeout` a timer the check names (issue #59)'
   kp-ops/src/main/kotlin/kp/ops/Keys.kt:
   - shape: comparison
     in: Keys.signed
