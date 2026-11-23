@@ -17,7 +17,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from retro_checks_support import ROOT, TEST_INPUTS, findings, gradle, just, keep, plant, shared_copy  # noqa: E402
-from test_s3_6_walker import copy_of_the_rules, failures, named, walker  # noqa: E402
+from test_s3_6_walker import ORDERS_APART, copy_of_the_rules, failures, named, walker  # noqa: E402
 
 COUNT = int(os.environ.get("KP_MANY", "0"))
 FIXTURES = "tests/fixtures/s3_10"
@@ -64,6 +64,7 @@ class TheHeroAndTheWalker(unittest.TestCase):
         lines = walker(rules, rules / "rules/walks/seat-ends-by-operation.yaml")
 
         self.assertEqual(len(failures(lines)), 1, "\n".join(lines[-20:]))
+        self.assertRegex(failures(lines)[0], ORDERS_APART)
         (first, first_end), (other, other_end) = named(failures(lines)[0])
         self.assertNotEqual(first, other)
         self.assertNotEqual(first_end, other_end)
