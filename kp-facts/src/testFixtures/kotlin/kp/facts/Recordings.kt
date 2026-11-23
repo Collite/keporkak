@@ -6,7 +6,11 @@ import kp.facts.RecordedGitHub.Companion.recordedItem
 /** The toy's stage whose pull request was recorded (S3.2): `Collite/kp-toy`'s merged #1. */
 const val TOY_STAGE = "TOY/P0/S0.1"
 const val TOY_BRANCH = "feat/toy-kp-toy-p0-s0.1-skeleton"
-/** The head of `Collite/kp-toy`'s pull request #1, as GitHub shows it, and the two commits before it. */
+/**
+ * The head of `Collite/kp-toy`'s pull request #1, as GitHub shows it, and the two commits before it. Each recording under
+ * `github/kp-toy/` is GitHub's answer as it gave it, but `compare.json`'s files, which have no `patch` — the toy's code,
+ * which no fact reads (S3.2) — and hold both of the comparison's commits since S3.10 (Collite/keporkak#57).
+ */
 const val TOY_HEAD = "028e9e2dece9c94f65f3c0da144e6f2ce3c9f013"
 const val ONE_BACK = "14024311a28d6027148612808100e30556e48dc4"
 const val TWO_BACK = "5d1a7961f450b02339f8a464e544b3ef53f55d9f"

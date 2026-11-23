@@ -27,16 +27,12 @@ internal fun Reading.strayChanges(): Observation {
  */
 internal fun Reading.branchExists(): Observation {
     val stage = stage()
-    val list = stageList(stage)
-    val first = list.text.lines.firstOrNull().orEmpty()
-    val line = list.text.cite(0)
-    val branch = Regex("\\(PR: ([^)\\s]+)\\)").find(first)?.groupValues?.get(1) ?: throw Missing("$line names no branch '(PR: <branch>)'")
-    val repo = asked.optionalText("repo")
-        ?: Regex("^# ${Regex.escape(stage.effort)}-(\\S+)-P${stage.n}(?=\\s|$)").find(first)?.groupValues?.get(1)
-        ?: throw Missing("$line names no repository '# ${stage.effort}-<repo>-P${stage.n}'")
+    val heading = stageList(stage).heading(stage)
+    val branch = heading.branch()
+    val repo = asked.optionalText("repo") ?: heading.repo()
     val dir = where.repos[repo] ?: throw Missing("the office holds no repository '$repo'")
     val refs = git.run(git.root(dir), "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes").output.lines()
     val ref = refs.firstOrNull { it == "refs/heads/$branch" }
         ?: refs.firstOrNull { it.startsWith("refs/remotes/") && it.removePrefix("refs/remotes/").substringAfter('/') == branch }
-    return Observation.Value(ref != null, "$line; $repo: ${ref ?: "no ref of $branch"}")
+    return Observation.Value(ref != null, "${heading.line}; $repo: ${ref ?: "no ref of $branch"}")
 }
