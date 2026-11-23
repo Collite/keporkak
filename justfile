@@ -116,6 +116,10 @@ install: _python-env
 # What GitHub says of each App of pool/offices.yaml's block `github:` (contracts.md §12, Amendment 33): the name it shows,
 # the repositories its installation reaches, and for each role whether its permissions can be minted. Run on the office,
 # where the Apps' keys are; it prints no token, no key and no claim, and changes nothing on GitHub.
+# `just apps prove` (Amendment 35) is the live proof of a seat's GitHub identity on Collite/kp-toy, with no agent: from
+# homes built for the coder and the reviewer it pushes a branch, is refused a push to master, opens a pull request,
+# reviews it, is refused the coder's approval of its own, then closes the pull request and deletes the branch. It prints
+# each step's outcome and never a token, and leaves nothing on GitHub (office/README.md).
 # `just apps merge` (Amendment 37) is the live proof of the operations on GitHub, on Collite/kp-toy: what a merge into
 # the default branch must be refused, that pull request closed unmerged; a conflict and a merge between two branches of
 # its own; an issue filed and closed; its branches deleted. It never moves the default branch (office/README.md).

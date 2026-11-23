@@ -105,7 +105,7 @@ class FixedClock(var now: Instant = Instant.parse(START)) : Clock {
  * unless a spec edits them — this stage seeded in [seed], its seats `ready`; facts, operations and delivery faked;
  * the API on a loopback port, and tokens registered by the spec.
  */
-class SeatOffice(seed: String = "assigned", rules: RuleTexts = MasterRules()) : AutoCloseable {
+class SeatOffice(seed: String = "assigned", rules: RuleTexts = MasterRules(), github: GitHubTokens = GitHubTokens.NONE) : AutoCloseable {
     val project: Path = Files.createTempDirectory(root.resolve("build").toPath().createDirectories(), "seat-api-")
     val tokens = Tokens()
     /** Every token this office made, live or dead: none may show anywhere (S2.3 DONE). */
@@ -125,7 +125,7 @@ class SeatOffice(seed: String = "assigned", rules: RuleTexts = MasterRules()) : 
             judgement.close(START)
         }
         mailroom = Mailroom.start(project, panda, rules, SpecFacts(), SpecOperations(), BusySeats(), FixedClock())
-        api = SeatApi.start(mailroom, tokens, "127.0.0.1:0")
+        api = SeatApi.start(mailroom, tokens, "127.0.0.1:0", github)
     }
 
     /** A seat with a live token, bound to [role] in [stage]. */

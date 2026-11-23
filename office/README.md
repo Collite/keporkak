@@ -240,10 +240,11 @@ driver builds it at every start of the seat, from the keporkak checkout:
 ├── CLAUDE.md          0600  renders/<role>.md, byte for byte
 ├── skills/<name>/           the skills the persona lists, and no other
 ├── settings.json      0600  the three hooks of hooks/, and nothing else — no permission rules
-└── permissions.json   0600  the persona's deny rules, compiled with each border's name; the hooks and the driver answer from it
+├── permissions.json   0600  the persona's deny rules, compiled with each border's name; the hooks and the driver answer from it
+└── bin/               0700  seat/'s two programs, 0700: git-credential-keporkak and gh (§6)
 ```
 
-Those four are replaced at every start; what Claude Code keeps beside them — its sessions, its own `.claude.json`
+Those five are replaced at every start; what Claude Code keeps beside them — its sessions, its own `.claude.json`
 — stays, because loading a session needs it. **Nothing in a home is edited by hand**: a change there is gone at the
 next start. A border changes in the persona (`agents/<role>/AGENT.md`), the packaging data
 (`agents/packaging/claude.yaml`) or the profile's frontmatter (`docs/profiles/<name>.md`), through a stage. Never
@@ -251,3 +252,34 @@ run `claude mcp add`, `claude config` or `/permissions` with a home as `CLAUDE_C
 reports a home whose `.claude.json` names an MCP server.
 
 The seats' transcripts are beside the homes, in `~/.local/share/keporkak/seats/_transcripts/<seat>.log`.
+
+## 6. A seat's GitHub identity — and `just apps prove`
+
+A seat holds no GitHub key and no GitHub token (contracts.md §4.4, Amendment 35). Its home's `bin/` is first on its
+path: when its `git` or `gh` needs GitHub, the program asks the daemon (`POST /hook/github-token` on the seat API,
+with the seat's session token), which mints a token then — for the App `pool/offices.yaml`'s `github.seats` gives the
+seat's role, narrowed to its stage's repository — and hides it in the seat's transcript, where a token handed before
+the daemon was started again is hidden too, by its prefix `ghs_`, when the seat's session is loaded and replayed.
+`git` is told, through its environment, to use that helper and no other, to reach GitHub over https where a remote
+says `git@github.com:`, and never to prompt; `gh` runs the office's own `gh` with the token in that one process's
+environment. Nothing is installed for it, and no `gh auth login` is needed for a seat: your own `gh` login and
+`~/.gitconfig` stay yours, and a seat's `git` uses no helper they name.
+
+**`just apps prove`** (from `~/Dev/keporkak/keporkak`, on Panda, where the Apps' keys are) is the live proof of it, on
+`Collite/kp-toy`, with no agent and none of the seats' Claude tokens. It builds a home for the coder's persona and one
+for the reviewer's in a throwaway folder (`build/apps-prove/`), and a listener of its own answers their asks. Then, on
+GitHub:
+
+1. the coder clones the toy over `git@github.com:…` — rewritten to https — commits one file on a branch
+   `kp-apps-prove-<UTC time>`, and pushes that branch;
+2. the coder pushes to `master`, and the ruleset refuses it;
+3. the coder opens a pull request from the branch, under the name GitHub shows for `kp-coder` (`collite-kp-coder`);
+4. the reviewer leaves a comment review on it, as `kp-reviewer`;
+5. the coder approves its own pull request, and GitHub refuses it;
+6. the coder closes the pull request, and
+7. deletes the branch.
+
+Steps 6 and 7 run whatever happened before. **It leaves nothing on GitHub**: no open pull request, no branch — the
+closed pull request stays in the toy's history, as every closed one does. It prints each step's outcome and never a
+token, removes its throwaway folder, and exits 0 when every step went as above. A step that GitHub lets through
+where it must refuse (2 or 5) is printed as `SC-10`: the ruleset and the Apps' settings are yours.
