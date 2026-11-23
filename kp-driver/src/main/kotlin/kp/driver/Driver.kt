@@ -39,8 +39,8 @@ interface Driver : AutoCloseable {
     /**
      * [secret] is hidden in [seat]'s transcript from now on, and in every reason the driver returns for it, as every
      * secret its sessions held: a GitHub token handed to the seat (contracts.md §4.4, Amendment 35), told before it is
-     * handed over. A transcript hides a GitHub token by its shape too, so one this driver was not told of — handed before
-     * the daemon was started again — is hidden as well.
+     * handed over. A transcript hides a GitHub token by its prefix too, so one this driver was not told of — handed
+     * before the daemon was started again — is hidden as well.
      */
     fun hide(seat: SeatId, secret: String)
 

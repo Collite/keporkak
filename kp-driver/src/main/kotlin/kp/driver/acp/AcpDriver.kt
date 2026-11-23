@@ -110,7 +110,7 @@ internal class AcpDriver(
     /**
      * Loads [sessionId] into a fresh process (T7): `session/load` with the servers injected again under a fresh token
      * (§5); the agent replays the history, marked `replay` in the transcript, its secrets hidden as the transcript hides
-     * them — a GitHub token handed before a restart by its shape; mode, model and effort are set again.
+     * them — a GitHub token handed before a restart by its prefix; mode, model and effort are set again.
      * A session that cannot be loaded fails with the reason; starting a new one instead is the caller's decision.
      */
     override suspend fun load(spec: SessionSpec, sessionId: String): Outcome<Started> {

@@ -54,9 +54,11 @@ class SeatsOffice(
      * four Apps, with keys of the spec's in the seats' secrets folder (`office/secrets/apps`) — which is [apps].
      */
     github: Boolean = false,
+    /** The shape of the tokens [apps] mints: GitHub's today, unless a spec asks for the former one. */
+    private val shape: kp.ops.FakeApps.TokenShape = kp.ops.FakeApps.TokenShape.STATELESS,
 ) : AutoCloseable {
     val project: Path = prepared ?: Files.createTempDirectory(checkout.resolve("build").createDirectories(), "seats-")
-    val apps: kp.ops.FakeApps? = if (github) kp.ops.FakeApps.start(project.resolve("office/secrets/apps")).also { apps -> kp.daemon.THE_APPS.forEach(apps::add) } else null
+    val apps: kp.ops.FakeApps? = if (github) kp.ops.FakeApps.start(project.resolve("office/secrets/apps"), shape = shape).also { apps -> kp.daemon.THE_APPS.forEach(apps::add) } else null
     private val sockets: Path = Files.createTempDirectory("kp-")
     val clock = SetClock(Instant.parse(startsAt))
     val script = Script(Walk.read(Hero.walkFile(walk)), EFFORT)
@@ -134,8 +136,8 @@ class SeatsOffice(
         sockets.deleteRecursively()
     }
 
-    /** A daemon started again on this project, with the same walk: nothing seeded, no seat started; [github] as at the first. */
-    fun again(scripts: Map<String, String> = emptyMap(), github: Boolean = false): SeatsOffice = SeatsOffice(script.walk.name, root, project, scripts, github = github)
+    /** A daemon started again on this project, with the same walk: nothing seeded, no seat started; [github] as asked, its tokens in this one's shape. */
+    fun again(scripts: Map<String, String> = emptyMap(), github: Boolean = false): SeatsOffice = SeatsOffice(script.walk.name, root, project, scripts, github = github, shape = shape)
 
     fun delete() = project.deleteRecursively()
 

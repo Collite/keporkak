@@ -13,6 +13,7 @@ import kp.daemon.seats.SeatsOffice.Companion.text
 import kp.facts.TOY_STAGE
 import kp.model.Op
 import kp.model.Transition
+import kp.ops.FakeApps.TokenShape
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.readText
 import kotlin.io.path.walk
@@ -159,9 +160,10 @@ class ASeatsGitHubIdentitySpec : StringSpec({
 
     "a token handed to a seat and then printed by it is in no line of its transcript: at a line's start, across the cut, after it; and no ask's journal line holds one" {
         // The seat's turn: `git credential fill` in its own environment, then the token printed three times — at the start of
-        // its output, across the transcript's cut at 2000 characters, and after it.
+        // its output, across the transcript's cut at 2000 characters (the second print starts 20 before it, whatever the
+        // token's length: today's are about 520 characters), and after it.
         val print = """t=${'$'}(printf 'protocol=https\nhost=github.com\n\n' | git credential fill | sed -n 's/^password=//p'); """ +
-            """printf '%s %1944s%s %s\n' "${'$'}t" '' "${'$'}t" "${'$'}t""""
+            """pad=${'$'}((1979 - ${'$'}{#t})); printf "%s %${'$'}{pad}s%s %s\n" "${'$'}t" '' "${'$'}t" "${'$'}t""""
         val turn = """{"turns": [[{"do": "shell", "id": "print", "command": ${kotlinx.serialization.json.JsonPrimitive(print)}}, {"do": "end"}]]}"""
         lateinit var office: SeatsOffice
         val printed = printedDuring {
@@ -191,48 +193,61 @@ class ASeatsGitHubIdentitySpec : StringSpec({
         office.delete()
     }
 
-    "a token a seat printed before the daemon is started again is in no line of its transcript when the seat is re-seated with its session loaded and replayed — by a daemon that never handed it (review-030 B1)" {
-        // The second daemon's turn: `git credential fill`, then the token printed twice. Once its session is loaded, the
-        // seat's turns do nothing: what writes the token again is the replay alone.
-        val print = """t=${'$'}(printf 'protocol=https\nhost=github.com\n\n' | git credential fill | sed -n 's/^password=//p'); """ +
-            """printf '%s, and again: %s\n' "${'$'}t" "${'$'}t""""
-        val turn = """{"turns": [[{"do": "shell", "id": "print", "command": ${kotlinx.serialization.json.JsonPrimitive(print)}}, {"do": "end"}]], "loaded_turns": [[{"do": "end"}]]}"""
-        lateinit var first: SeatsOffice
-        lateinit var second: SeatsOffice
-        lateinit var third: SeatsOffice
-        var printing = 0
-        var loading = 0
-        val printed = printedDuring {
-            // The first daemon seeds coder-1 as the walk starts it, with no session on the log.
-            first = SeatsOffice(github = true)
-            first.close()
-            first.project.resolve("tasks-p2-s2.4-seats.md").writeText("# KP-kp-toy-P2 · S2.4 — Seats            (PR: feat/kp-kp-toy-p2-s2.4-seats)\n")
-            val transcript = first.project.resolve("office/seats/_transcripts/coder-1.log")
-            printing = transcript.readText().lines().size
-            // The second re-seats it in a new session, which the log names; the re-seat's prompt is the turn that prints.
-            second = first.again(scripts = mapOf("coder-1" to turn), github = true)
-            second.until("coder-1 re-seated, its turn ended") { transcript.readText().lines().drop(printing).any { " coder-1 turn ended" in it } }
-            second.close()
-            loading = transcript.readText().lines().size
-            // The third re-seats it with that session loaded: its agent replays the history, then the re-seat's prompt ends.
-            third = second.again(github = true)
-            third.until("coder-1 re-seated, its session loaded, its turn ended") { transcript.readText().lines().drop(loading).any { " coder-1 turn ended" in it } }
-            third.close()
-        }
+    // Once for each shape of token: GitHub's today and its former one (review-030 B1, both rounds).
+    listOf(
+        TokenShape.STATELESS to "GitHub's shape of today, `ghs_<app id>_<JWT>`",
+        TokenShape.FORMER to "the shape GitHub minted before, `ghs_` and 36 letters and digits",
+    ).forEach { (shape, named) ->
+        "a token a seat printed before the daemon is started again is in no line of its transcript when the seat is re-seated with its session loaded and replayed — by a daemon that never handed it (review-030 B1): a token in $named" {
+            // The second daemon's turn: `git credential fill`, then the token printed twice, each time with a space after it —
+            // what follows a token up to a space is hidden with it. Once its session is loaded, the seat's turns do nothing:
+            // what writes the token again is the replay alone.
+            val print = """t=${'$'}(printf 'protocol=https\nhost=github.com\n\n' | git credential fill | sed -n 's/^password=//p'); """ +
+                """printf '%s and again: %s \n' "${'$'}t" "${'$'}t""""
+            val turn = """{"turns": [[{"do": "shell", "id": "print", "command": ${kotlinx.serialization.json.JsonPrimitive(print)}}, {"do": "end"}]], "loaded_turns": [[{"do": "end"}]]}"""
+            lateinit var first: SeatsOffice
+            lateinit var second: SeatsOffice
+            lateinit var third: SeatsOffice
+            var printing = 0
+            var loading = 0
+            val printed = printedDuring {
+                // The first daemon seeds coder-1 as the walk starts it, with no session on the log.
+                first = SeatsOffice(github = true, shape = shape)
+                first.close()
+                first.project.resolve("tasks-p2-s2.4-seats.md").writeText("# KP-kp-toy-P2 · S2.4 — Seats            (PR: feat/kp-kp-toy-p2-s2.4-seats)\n")
+                val transcript = first.project.resolve("office/seats/_transcripts/coder-1.log")
+                printing = transcript.readText().lines().size
+                // The second re-seats it in a new session, which the log names; the re-seat's prompt is the turn that prints.
+                second = first.again(scripts = mapOf("coder-1" to turn), github = true)
+                second.until("coder-1 re-seated, its turn ended") { transcript.readText().lines().drop(printing).any { " coder-1 turn ended" in it } }
+                second.close()
+                loading = transcript.readText().lines().size
+                // The third re-seats it with that session loaded: its agent replays the history, then the re-seat's prompt ends.
+                third = second.again(github = true)
+                third.until("coder-1 re-seated, its session loaded, its turn ended") { transcript.readText().lines().drop(loading).any { " coder-1 turn ended" in it } }
+                third.close()
+            }
 
-        val minted = second.apps!!.issued.map { it.token }
-        minted.size shouldBe 1
-        // The third daemon was asked for no token: the one its seat's agent replays is one it never handed, never knew.
-        third.apps!!.issued shouldBe emptyList()
-        third.said.filter { "github-token:" in it } shouldBe emptyList()
-        val lines = first.project.resolve("office/seats/_transcripts/coder-1.log").readText().lines()
-        lines.subList(printing, loading).single { " coder-1 tool print " in it && "→" in it } shouldContain "‹hidden›, and again: ‹hidden›"
-        lines.drop(loading).single { " coder-1 loading session " in it }
-        lines.drop(loading).single { " coder-1 replay tool print " in it && "→" in it } shouldContain "‹hidden›, and again: ‹hidden›"
-        // No token, nor any dozen characters of one, in a transcript, the log, the journal or what the spec printed.
-        val files = listOf("office/seats/_transcripts", "mail", "office/fake").flatMap { folder -> first.project.resolve(folder).walk().filter { it.isRegularFile() }.map { it.readText() } }
-        val seen = files + first.said + second.said + third.said + printed
-        minted.flatMap { it.windowed(12) }.filter { piece -> seen.any { piece in it } } shouldBe emptyList()
-        first.delete()
+            val minted = second.apps!!.issued.map { it.token }
+            minted.size shouldBe 1
+            // The token is of the shape asked: about 520 characters, its JWT three parts with `-` and `_` in them; or 40.
+            when (shape) {
+                TokenShape.STATELESS -> minted.single().substringAfter('_').substringAfter('_').split('.').map { part -> part.length to ('-' in part && '_' in part) } shouldBe
+                    listOf(36 to true, 400 to true, 64 to true)
+                TokenShape.FORMER -> minted.single().length shouldBe 40
+            }
+            // The third daemon was asked for no token: the one its seat's agent replays is one it never handed, never knew.
+            third.apps!!.issued shouldBe emptyList()
+            third.said.filter { "github-token:" in it } shouldBe emptyList()
+            val lines = first.project.resolve("office/seats/_transcripts/coder-1.log").readText().lines()
+            lines.subList(printing, loading).single { " coder-1 tool print " in it && "→" in it } shouldContain "‹hidden› and again: ‹hidden› "
+            lines.drop(loading).single { " coder-1 loading session " in it }
+            lines.drop(loading).single { " coder-1 replay tool print " in it && "→" in it } shouldContain "‹hidden› and again: ‹hidden› "
+            // No token, nor any dozen characters of one, in a transcript, the log, the journal or what the spec printed.
+            val files = listOf("office/seats/_transcripts", "mail", "office/fake").flatMap { folder -> first.project.resolve(folder).walk().filter { it.isRegularFile() }.map { it.readText() } }
+            val seen = files + first.said + second.said + third.said + printed
+            minted.flatMap { it.windowed(12) }.filter { piece -> seen.any { piece in it } } shouldBe emptyList()
+            first.delete()
+        }
     }
 })

@@ -13,7 +13,7 @@ import java.util.concurrent.CopyOnWriteArraySet
  * A seat's readable transcript, `<roots.seats>/_transcripts/<seat>.log` (contracts.md §10): one line per event,
  * `<time> <seat> <event>`, appended across the seat's sessions. Every secret the seat's sessions held — the agent's
  * token, each session token, each GitHub token handed to the seat (Amendment 35) — is replaced before a line is written,
- * and in every reason the driver returns. A GitHub token is replaced by its shape as well ([INSTALLATION_TOKEN]): one
+ * and in every reason the driver returns. A GitHub token is replaced by its prefix as well ([INSTALLATION_TOKEN]): one
  * handed by an earlier daemon, which this driver was never told of, is hidden when the seat's loaded session replays it
  * or the seat prints it again (review-030 B1). Nothing of a token is kept for that: no token, no digest of one.
  */
@@ -38,10 +38,12 @@ internal class Transcript(private val file: Path, private val seat: SeatId, priv
         const val HIDDEN = "‹hidden›"
 
         /**
-         * A GitHub App's installation token as GitHub writes one — `ghs_`, then letters and digits — the one kind of GitHub
-         * token the daemon hands a seat (Amendment 35).
+         * A GitHub App's installation token, the one kind of GitHub token the daemon hands a seat (Amendment 35): its prefix
+         * `ghs_` and everything after it up to a space, a quote or a backslash. Past its prefix the token is opaque, as
+         * GitHub asks — today `ghs_<app id>_<JWT>`, about 520 characters with `_`, `-` and `.` in it; before 2026-10-02
+         * `ghs_` and 36 letters and digits (review-030 B1, round 2).
          */
-        private val INSTALLATION_TOKEN = Regex("ghs_[A-Za-z0-9]+")
+        private val INSTALLATION_TOKEN = Regex("""ghs_[^\s"'\\]+""")
 
         fun of(seatsRoot: Path, seat: SeatId, clock: Clock) = Transcript(seatsRoot.resolve("_transcripts").resolve("${seat.value}.log"), seat, clock)
     }
