@@ -19,7 +19,15 @@ import kotlin.io.path.name
  */
 class Orders(val walk: String, val played: List<Played>) {
     /** An end: each stage's state, by its name in the walk, and each of the walk's seats'. */
-    data class End(val stages: Map<String, String>, val seats: Map<String, String>)
+    data class End(
+        val stages: Map<String, String>,
+        val seats: Map<String, String>,
+        val counters: Map<String, Map<String, Int>> = emptyMap(),
+        val delivered: Map<String, Int> = emptyMap(),
+        val refused: Map<String, Int> = emptyMap(),
+        val operations: List<String> = emptyList(),
+        val waiting: List<String> = emptyList(),
+    )
 
     /** One order: the labels of its events, in the order played; how it ended through the mailroom, and in the walker. */
     data class Played(val labels: List<String>, val end: End, val walkers: End?)
@@ -32,9 +40,10 @@ class Orders(val walk: String, val played: List<Played>) {
         /** [name] — a walk of `rules/walks/`, or of the specs' own walks — in each of its orders. */
         fun of(name: String): Orders = of(Hero.walkFile(name))
 
-        fun of(file: Path): Orders {
+        /** [file] in each of its orders; [walker] the root whose `scripts/check-rules.py` and `rules/` give the walker's ends. */
+        fun of(file: Path, walker: Path = checkout): Orders {
             val walk = Walk.read(file)
-            val walkers = walker(file)
+            val walkers = walker(file, walker)
             val played = walk.orders().map { order ->
                 val hero = Hero(file.name.removeSuffix(".yaml"), amend = { order.walk })
                 hero.use {
@@ -58,11 +67,11 @@ class Orders(val walk: String, val played: List<Played>) {
             .map(::of)
 
         /** The walker's end of each order of [file], by the labels of its events. */
-        private fun walker(file: Path): Map<List<String>, End> {
+        private fun walker(file: Path, root: Path): Map<List<String>, End> {
             val python = checkout.resolve("build/python/bin/python")
             check(python.exists()) { "run `just _python-env` first" }
-            val process = ProcessBuilder(python.toString(), "scripts/check-rules.py", "--trace", file.toString())
-                .directory(checkout.toFile()).redirectErrorStream(true).start()
+            val process = ProcessBuilder(python.toString(), root.resolve("scripts/check-rules.py").toString(), "--trace", file.toString())
+                .directory(root.toFile()).redirectErrorStream(true).start()
             val lines = process.inputStream.bufferedReader().readLines()
             check(process.waitFor(10, TimeUnit.MINUTES)) { "the walker did not end" }
             val failures = lines.filter { it.startsWith("FAIL walk ") }
