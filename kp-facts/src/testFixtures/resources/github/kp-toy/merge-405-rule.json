@@ -1,0 +1,1 @@
+{"message":"Repository rule violations found\n\nCannot update this protected ref.\n\nRequired status check \"check\" is in progress.\n\n","documentation_url":"https://docs.github.com/rest/pulls/pulls#merge-a-pull-request","status":"405"}

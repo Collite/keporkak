@@ -208,6 +208,27 @@ install -m 0600 <the copied key>.pem ~/.config/keporkak/secrets/apps/kp-merger.p
 
 and the same for `kp-coder`, `kp-reviewer` and `kp-gardener`. Delete the copies on both machines afterwards.
 
+**`just apps merge` — the live proof of the daemon's operations on GitHub (S3.9; contracts.md §12, Amendment 37).**
+Run it on Panda, in the keporkak checkout, when you want to see a merge, a close and an issue work as `kp-merger`; it
+needs no daemon and spends none of the seats' tokens. It acts on `Collite/kp-toy` only:
+
+- it reads which rules hold the toy's default branch and whom — and stops, having made nothing, if no rule holds the
+  coder's App to `update`;
+- it makes three branches `kp-apps-merge-<UTC time>-base`, `-head` and `-main` off the default branch, a few
+  one-line commits under `kp-apps-merge/`, and two pull requests: `-main` into the default branch, `-head` into `-base`;
+- on the pull request into the default branch it shows the coder's merge refused and a merge as `kp-merger` on a head
+  other than its own refused — and, only where a second ruleset holds `kp-merger` to green checks, a merge before the
+  checks are green refused — then closes that pull request unmerged;
+- on the pull request between its own branches it shows a conflict, makes the head agree with the base, and merges
+  it with a merge commit — into `-base`, never into the default branch;
+- it files one issue and closes it; it deletes its three branches; it reads the default branch's sha again and says
+  whether it is where it was.
+
+It prints one line per step — `yes`, or `NO` and why — and never a token, a key or a claim; it exits 0 when every step
+is as §12 gives it. What it leaves on GitHub: the two pull requests, closed (one merged into its own base, one
+unmerged), and the one issue, closed. If GitHub ever merges into the default branch where it must refuse, the run says
+`SC-10`, stops there and still deletes its branches; tell the Planner.
+
 ## 5. A seat's home — nothing to install, nothing to edit
 
 Each seat has a Claude config home, `~/.local/share/keporkak/seats/<seat>/` (`roots.seats`), and its Claude Code

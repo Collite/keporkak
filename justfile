@@ -120,6 +120,9 @@ install: _python-env
 # homes built for the coder and the reviewer it pushes a branch, is refused a push to master, opens a pull request,
 # reviews it, is refused the coder's approval of its own, then closes the pull request and deletes the branch. It prints
 # each step's outcome and never a token, and leaves nothing on GitHub (office/README.md).
+# `just apps merge` (Amendment 37) is the live proof of the operations on GitHub, on Collite/kp-toy: what a merge into
+# the default branch must be refused, that pull request closed unmerged; a conflict and a merge between two branches of
+# its own; an issue filed and closed; its branches deleted. It never moves the default branch (office/README.md).
 apps *args:
     ./gradlew --console=plain -q :kp-daemon:installDist
     kp-daemon/build/install/kp-daemon/bin/kp-daemon apps "$@" --root "$PWD"
