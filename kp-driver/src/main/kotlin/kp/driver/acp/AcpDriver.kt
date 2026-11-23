@@ -109,7 +109,8 @@ internal class AcpDriver(
 
     /**
      * Loads [sessionId] into a fresh process (T7): `session/load` with the servers injected again under a fresh token
-     * (§5); the agent replays the history, marked `replay` in the transcript; mode, model and effort are set again.
+     * (§5); the agent replays the history, marked `replay` in the transcript, its secrets hidden as the transcript hides
+     * them — a GitHub token handed before a restart by its prefix; mode, model and effort are set again.
      * A session that cannot be loaded fails with the reason; starting a new one instead is the caller's decision.
      */
     override suspend fun load(spec: SessionSpec, sessionId: String): Outcome<Started> {
@@ -201,6 +202,8 @@ internal class AcpDriver(
         session.launched.connection.close()
         return Outcome.Ok(Unit)
     }
+    override fun hide(seat: SeatId, secret: String) = transcript(seat).hide(secret)
+
     override fun offers(seat: SeatId): Outcome<Offers> =
         seats[seat]?.let { Outcome.Ok(it.offers()) } ?: Outcome.Failed("seat ${seat.value} has no session")
     override fun observe(seat: SeatId, fact: String, window: UsageWindow?): Outcome<ObservedFact> {

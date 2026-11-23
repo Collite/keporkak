@@ -63,20 +63,25 @@ data class PermissionDefaults(val writeInside: Answer, val writeOutside: Answer,
 }
 
 /** A built config home, and the MCP servers its persona names, by address, for the caller to inject per session. */
-data class Home(val path: Path, val servers: List<McpServer>)
+data class Home(val path: Path, val servers: List<McpServer>) {
+    /** The folder of the home's two programs (contracts.md §4.4, Amendment 35): first on the seat's path. */
+    val programs: Path get() = path.resolve(ConfigHomes.PROGRAMS)
+}
 
 /**
  * Builds a seat's config home, `<seatsRoot>/<seat>/`, at every start (contracts.md §10, T3), from the keporkak
  * checkout: `renders/<role>.md`, the skills the persona lists, `agents/packaging/claude.yaml`, the profile's
- * frontmatter and the hooks in `hooks/`.
+ * frontmatter, the hooks in `hooks/` and the seat's two programs in `seat/`.
  *
  * The home holds `CLAUDE.md` (the render, byte for byte), `skills/<name>/` for each skill the persona lists,
- * `settings.json` (the three hooks by absolute path, and no permission rule, no MCP server, no token)
- * and `permissions.json` (the same rules compiled, each with its border's name, and the defaults the caller gives).
- * Those four are replaced at every build; what Claude Code keeps in the home itself — its sessions — stays. The home
- * is the office user's only: the folder and its folders 0700, its files 0600. A persona the packaging data cannot
- * package is reported with every problem, and nothing is built or changed — so is a hook script that is missing or
- * cannot be run (§11: the `deny` hook fails closed only when it runs).
+ * `settings.json` (the three hooks by absolute path, and no permission rule, no MCP server, no token),
+ * `permissions.json` (the same rules compiled, each with its border's name, and the defaults the caller gives), and
+ * `bin/` with the two programs a seat's `git` and `gh` ask the daemon for a GitHub token with (§4.4, Amendment 35):
+ * `git-credential-keporkak` and `gh`, copied from `seat/`, and nothing else. Those five are replaced at every build;
+ * what Claude Code keeps in the home itself — its sessions — stays. The home is the office user's only: the folder and
+ * its folders 0700, its files 0600, its programs 0700. A persona the packaging data cannot package is reported with
+ * every problem, and nothing is built or changed — so is a hook script or a program that is missing or cannot be run
+ * (§11: the `deny` hook fails closed only when it runs).
  */
 class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
     fun build(seat: SeatId, role: String, profile: String, places: Places, defaults: PermissionDefaults): Outcome<Home> {
@@ -96,6 +101,12 @@ class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
         hooks.forEach { (name, script) ->
             if (!script.isRegularFile()) problems += "hook $name: hooks/$name does not exist"
             else if (!Files.isExecutable(script)) problems += "hook $name: hooks/$name is not executable"
+        }
+        // The seat's two programs (Amendment 35): one that is missing, or cannot be run, builds no home.
+        val programs = SEAT_PROGRAMS.associateWith { keporkak.resolve("$PROGRAM_SOURCES/$it") }
+        programs.forEach { (name, program) ->
+            if (!program.isRegularFile()) problems += "program $name: $PROGRAM_SOURCES/$name does not exist"
+            else if (!Files.isExecutable(program)) problems += "program $name: $PROGRAM_SOURCES/$name is not executable"
         }
         if (persona == null || packaging == null || values == null || render == null || problems.isNotEmpty()) return Outcome.Failed(problems.joinToString("; "))
 
@@ -121,6 +132,7 @@ class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
             replace(home.resolve("settings.json"), settings(packaging, hooks, home).toString().toByteArray())
             replace(home.resolve("permissions.json"), permissions.toString().toByteArray())
             replaceSkills(home, skills.mapValues { it.value!! })
+            replacePrograms(home, programs)
             Outcome.Ok(Home(home, servers))
         } catch (e: IOException) {
             Outcome.Failed("the config home $home cannot be built: ${e.javaClass.simpleName}: ${e.message}")
@@ -187,6 +199,19 @@ class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
         delete(old)
     }
 
+    /** `bin/` replaced by exactly the seat's programs, each 0700: built beside it, then swapped in; the old one removed. */
+    private fun replacePrograms(home: Path, programs: Map<String, Path>) {
+        val next = home.resolve(".$PROGRAMS.kp-build")
+        delete(next)
+        Files.createDirectory(next, FOLDER)
+        programs.forEach { (name, source) -> Files.write(Files.createFile(next.resolve(name), PROGRAM), Files.readAllBytes(source)) }
+        val old = home.resolve(".$PROGRAMS.kp-old")
+        delete(old)
+        if (home.resolve(PROGRAMS).exists()) Files.move(home.resolve(PROGRAMS), old, ATOMIC_MOVE)
+        Files.move(next, home.resolve(PROGRAMS), ATOMIC_MOVE)
+        delete(old)
+    }
+
     private fun delete(path: Path) {
         if (path.exists()) path.toFile().deleteRecursively().also { if (!it) throw IOException("$path cannot be removed") }
     }
@@ -195,9 +220,16 @@ class ConfigHomes(private val keporkak: Path, private val seatsRoot: Path) {
 
     companion object {
         const val PACKAGING = "agents/packaging/claude.yaml"
+        /** The home's folder of programs, and the credential helper's name in it (contracts.md §4.4, Amendment 35). */
+        const val PROGRAMS = "bin"
+        const val HELPER = "git-credential-keporkak"
+        /** The seat's two programs, and the checkout's folder they are copied from. */
+        val SEAT_PROGRAMS = listOf(HELPER, "gh")
+        private const val PROGRAM_SOURCES = "seat"
         /** What every `deny:` word that leaves one project file writable has in its name (contracts.md §10). */
         private const val OWN_FILE_WORD = "-beyond-own-"
         private val FOLDER = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------"))
         private val FILE = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------"))
+        private val PROGRAM = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------"))
     }
 }

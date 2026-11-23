@@ -94,6 +94,39 @@ class GitHubFacts(
             "ci.state" to GitHubReading::ciState,
         )
 
+        /**
+         * [stage]'s repository, `<organization>/<repo>` — the `<repo>` of its list's title (Amendment 32), in [github]'s
+         * organization (Amendment 33) — read from the project checkout [where] names, with its evidence: the list's line;
+         * or unknown, with what is missing. A seat's token is narrowed to it (Amendment 35). Nothing is asked of GitHub.
+         */
+        fun repository(where: Checkouts, github: GitHub, stage: String): Observation = try {
+            val reading = Reading(where, NO_LOG, Git(null), Asked(mapOf("stage" to stage)))
+            val id = reading.stage()
+            val heading = reading.stageList(id).heading(id)
+            val repo = heading.repo()
+            if (!NAME.matches(repo) || !NAME.matches(github.organization)) throw Missing("'${github.organization}/$repo' is no repository name GitHub gives")
+            Observation.Value("${github.organization}/$repo", heading.line)
+        } catch (missing: Missing) {
+            Observation.Unknown(missing.message)
+        } catch (ambiguous: Ambiguous) {
+            Observation.Unknown(ambiguous.message)
+        } catch (error: IOException) {
+            Observation.Unknown(error.toString())
+        } catch (error: UncheckedIOException) {
+            Observation.Unknown(error.cause.toString())
+        }
+
+        private val NAME = Regex("[A-Za-z0-9._-]+")
+
+        /** What a stage's repository is read without: the log. */
+        private val NO_LOG = object : WhatTheLogKnows {
+            override fun state(stage: String): StageState? = throw Missing("the log is not read for a stage's repository")
+            override fun stages(): Map<String, StageState> = throw Missing("the log is not read for a stage's repository")
+            override fun activeStates(): Set<String> = throw Missing("the log is not read for a stage's repository")
+            override fun observedHead(message: String): String? = throw Missing("the log is not read for a stage's repository")
+            override fun lastDelivered(stage: String, kinds: Set<String>): String? = throw Missing("the log is not read for a stage's repository")
+        }
+
         /** How long one request may take: a judgement that reads GitHub holds the mailroom's lock meanwhile (Amendment 33). */
         val TIMEOUT: Duration = Duration.ofSeconds(30)
 

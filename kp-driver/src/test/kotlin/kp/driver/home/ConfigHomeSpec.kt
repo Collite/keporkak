@@ -44,7 +44,7 @@ class ConfigHomeSpec : StringSpec({
         }
     }
 
-    "no file of any home names an MCP server or holds a token" {
+    "no file of any home names an MCP server or holds a token; only the seat's two programs say how a bearer is sent (S3.7)" {
         Sources().use { sources ->
             val token = "sk-ant-oat01-" + "x".repeat(40)
             sources.root.resolve("secrets").also(Files::createDirectories).resolve("claude-token").writeText(token)
@@ -54,20 +54,22 @@ class ConfigHomeSpec : StringSpec({
             (files.size >= roles.size * 3) shouldBe true
             for (file in files) {
                 val text = file.readText()
-                for (forbidden in listOf(token, "mcpServers", "127.0.0.1:7711", "mcp.context7.com", "Bearer", "Authorization")) {
+                // The programs ask the daemon with the session token as a bearer (Amendment 35), read from the environment.
+                val program = file.parent.fileName.toString() == "bin"
+                for (forbidden in listOf(token, "mcpServers", "127.0.0.1:7711", "mcp.context7.com") + if (program) emptyList() else listOf("Bearer", "Authorization")) {
                     (forbidden in text) shouldBe false
                 }
             }
         }
     }
 
-    "the home is the office user's only: its folders 0700, its files 0600" {
+    "the home is the office user's only: its folders 0700, its files 0600, its two programs 0700 (S3.7)" {
         Sources().use { sources ->
             val home = ConfigHomes(sources.root, sources.seats).build(SeatId("coder-1"), "coder", "keporkak", sources.places, defaults).ok().path
 
             Files.walk(home).use { paths ->
                 paths.forEach { path ->
-                    PosixFilePermissions.toString(Files.getPosixFilePermissions(path)) shouldBe if (path.isDirectory()) "rwx------" else "rw-------"
+                    PosixFilePermissions.toString(Files.getPosixFilePermissions(path)) shouldBe if (path.isDirectory() || path.parent == home.resolve("bin")) "rwx------" else "rw-------"
                 }
             }
         }

@@ -56,9 +56,15 @@ data class Issued(val app: FakeApp, val token: String, val repositories: List<St
  * documentation says: `POST /app/installations/<id>/access_tokens` — a token for exactly what was asked, or 422 with
  * GitHub's message when the App does not hold a permission or reach a repository; `GET /app` — the App's slug;
  * `GET /installation/repositories` — what a token reaches. A claim that is not the App's, or out of date, is 401.
- * [server] may serve other routes beside: it is shared with the recorded responses of `kp-facts`.
+ * [server] may serve other routes beside: it is shared with the recorded responses of `kp-facts`. A token is minted in
+ * [shape]: by default the one GitHub mints today (review-030 B1, round 2).
  */
-class FakeApps(val server: HttpServer, private val keys: Path, private val clock: () -> Instant = Instant::now) : AutoCloseable {
+class FakeApps(
+    val server: HttpServer,
+    private val keys: Path,
+    private val clock: () -> Instant = Instant::now,
+    private val shape: TokenShape = TokenShape.STATELESS,
+) : AutoCloseable {
     private val apps = CopyOnWriteArrayList<FakeApp>()
     private val publicKeys = java.util.concurrent.ConcurrentHashMap<String, PublicKey>()
     private val pems = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -128,7 +134,7 @@ class FakeApps(val server: HttpServer, private val keys: Path, private val clock
         if (repositories != null && !app.reaches.containsAll(repositories)) {
             return 422 to message("There is at least one repository that does not exist or is not accessible to the parent installation.")
         }
-        val token = "ghs_" + (1..36).map { ALPHABET.random() }.joinToString("")
+        val token = shape.mint(app)
         issued += Issued(app, token, repositories, permissions)
         return 201 to buildJsonObject {
             put("token", token)
@@ -175,12 +181,36 @@ class FakeApps(val server: HttpServer, private val keys: Path, private val clock
         return app.takeIf { verified && iat <= now + 60 && exp > now && exp - iat <= 600 }
     }
 
+    /** The shape of an installation token, to GitHub's own documentation; GitHub asks that a token be treated as opaque. */
+    enum class TokenShape {
+        /**
+         * `ghs_<app id>_<JWT>`, about 520 characters — the JWT's three base64url parts, each with a `-` and a `_` in it,
+         * joined by `.` — as GitHub mints every installation token by default since its changelog of 2026-10-02.
+         */
+        STATELESS {
+            override fun mint(app: FakeApp) = "ghs_${app.id}_" + listOf(36, 400, 64).joinToString(".") { length -> part(length) }
+        },
+
+        /** `ghs_` and 36 letters and digits, 40 characters: the shape GitHub minted before. */
+        FORMER {
+            override fun mint(app: FakeApp) = "ghs_" + (1..36).map { ALPHABET.random() }.joinToString("")
+        };
+
+        abstract fun mint(app: FakeApp): String
+
+        /** [length] random base64url characters, a `-` a third of the way in and a `_` two thirds. */
+        protected fun part(length: Int): String = (1..length).map { URL_SAFE.random() }.toMutableList()
+            .also { it[length / 3] = '-'; it[2 * length / 3] = '_' }.joinToString("")
+    }
+
     companion object {
         private val MINT = Regex("/app/installations/([0-9]+)/access_tokens")
         private val ALPHABET = ('A'..'Z') + ('a'..'z') + ('0'..'9')
+        private val URL_SAFE = ALPHABET + '-' + '_'
 
-        /** A fake GitHub of its own, on a loopback port the system picks. */
-        fun start(keys: Path, clock: () -> Instant = Instant::now): FakeApps = FakeApps(local(), keys, clock).also { it.server.start() }
+        /** A fake GitHub of its own, on a loopback port the system picks, minting tokens in [shape]. */
+        fun start(keys: Path, clock: () -> Instant = Instant::now, shape: TokenShape = TokenShape.STATELESS): FakeApps =
+            FakeApps(local(), keys, clock, shape).also { it.server.start() }
 
         /** A local server on a loopback port the system picks, not started. */
         fun local(): HttpServer = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0)
