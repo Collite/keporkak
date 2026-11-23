@@ -329,14 +329,18 @@ class HeroesSpec : FreeSpec({
         // operations in flight as well. None is left with its message unread.
         restarts.wakesInFlight.filterNot { it.endsAsUninterrupted }.map { "after line ${it.seq} (${it.told}): ${it.ending}" }.shouldBeEmpty()
         // The cuts right after such a judgement, by what the start found in flight: the seven S1.10 counted among them —
-        // review-bind's with both the reviewer's wake and the coder's it copies — each held to the end above.
-        restarts.wakesInFlight.filter { it.told == "judged" }.map { it.flights.joinToString() } shouldBe listOf(
+        // review-bind's with both the reviewer's wake and the coder's it copies — each held to the end above. Those two
+        // wakes run side by side, each on its seat's lane (Amendment 36): which ends first is the scheduler's, and the cut
+        // after the first result holds the other one's — of either seat (review-032, B1).
+        val oneOfReviewBinds = setOf("seat.wake of reviewer-1 for review-bind", "seat.wake of coder-1 for review-bind")
+        restarts.wakesInFlight.filter { it.told == "judged" }.map { it.flights.joinToString() }
+            .map { if (it in oneOfReviewBinds) ONE_OF_REVIEW_BINDS else it } shouldBe listOf(
             "seat.wake of coder-1 for assign", // S1.10's
             "seat.wake of coder-1 for triage", // S1.10's: the resume
             "seat.wake of coder-1 for re-seated",
             "seat.wake of coder-1 for triage", // S1.10's: the found-batch's triage
             "seat.wake of reviewer-1 for review-bind, seat.wake of coder-1 for review-bind", // S1.10's: two wakes in flight
-            "seat.wake of coder-1 for review-bind", // the reviewer's wake judged, the coder's still in flight
+            ONE_OF_REVIEW_BINDS, // one of the two judged, the other still in flight
             "seat.wake of coder-1 for verdict", // S1.10's
             "seat.wake of reviewer-1 for repair-done", // S1.10's
             "seat.wake of coder-1 for re-verdict", // S1.10's
@@ -345,3 +349,6 @@ class HeroesSpec : FreeSpec({
         restarts.report().none { "a wake in flight" in it || "stays unread" in it } shouldBe true
     }
 })
+
+/** The cut between review-bind's two wake results, as the restart case lists it: what is in flight there is either seat's wake. */
+private const val ONE_OF_REVIEW_BINDS = "one of review-bind's two seat.wakes, of either seat"
