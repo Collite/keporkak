@@ -134,8 +134,8 @@ class SeatsOffice(
         sockets.deleteRecursively()
     }
 
-    /** A daemon started again on this project, with the same walk: nothing seeded, no seat started. */
-    fun again(scripts: Map<String, String> = emptyMap()): SeatsOffice = SeatsOffice(script.walk.name, root, project, scripts)
+    /** A daemon started again on this project, with the same walk: nothing seeded, no seat started; [github] as at the first. */
+    fun again(scripts: Map<String, String> = emptyMap(), github: Boolean = false): SeatsOffice = SeatsOffice(script.walk.name, root, project, scripts, github = github)
 
     fun delete() = project.deleteRecursively()
 

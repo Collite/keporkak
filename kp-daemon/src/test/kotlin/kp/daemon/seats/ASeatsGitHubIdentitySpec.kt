@@ -190,4 +190,49 @@ class ASeatsGitHubIdentitySpec : StringSpec({
             """"GIT_CONFIG_KEY_3","GIT_CONFIG_VALUE_0","GIT_CONFIG_VALUE_1","GIT_CONFIG_VALUE_2","GIT_CONFIG_VALUE_3","GIT_TERMINAL_PROMPT","KP_HOOK_URL","KP_SESSION_TOKEN","LANG","PATH"]"""
         office.delete()
     }
+
+    "a token a seat printed before the daemon is started again is in no line of its transcript when the seat is re-seated with its session loaded and replayed — by a daemon that never handed it (review-030 B1)" {
+        // The second daemon's turn: `git credential fill`, then the token printed twice. Once its session is loaded, the
+        // seat's turns do nothing: what writes the token again is the replay alone.
+        val print = """t=${'$'}(printf 'protocol=https\nhost=github.com\n\n' | git credential fill | sed -n 's/^password=//p'); """ +
+            """printf '%s, and again: %s\n' "${'$'}t" "${'$'}t""""
+        val turn = """{"turns": [[{"do": "shell", "id": "print", "command": ${kotlinx.serialization.json.JsonPrimitive(print)}}, {"do": "end"}]], "loaded_turns": [[{"do": "end"}]]}"""
+        lateinit var first: SeatsOffice
+        lateinit var second: SeatsOffice
+        lateinit var third: SeatsOffice
+        var printing = 0
+        var loading = 0
+        val printed = printedDuring {
+            // The first daemon seeds coder-1 as the walk starts it, with no session on the log.
+            first = SeatsOffice(github = true)
+            first.close()
+            first.project.resolve("tasks-p2-s2.4-seats.md").writeText("# KP-kp-toy-P2 · S2.4 — Seats            (PR: feat/kp-kp-toy-p2-s2.4-seats)\n")
+            val transcript = first.project.resolve("office/seats/_transcripts/coder-1.log")
+            printing = transcript.readText().lines().size
+            // The second re-seats it in a new session, which the log names; the re-seat's prompt is the turn that prints.
+            second = first.again(scripts = mapOf("coder-1" to turn), github = true)
+            second.until("coder-1 re-seated, its turn ended") { transcript.readText().lines().drop(printing).any { " coder-1 turn ended" in it } }
+            second.close()
+            loading = transcript.readText().lines().size
+            // The third re-seats it with that session loaded: its agent replays the history, then the re-seat's prompt ends.
+            third = second.again(github = true)
+            third.until("coder-1 re-seated, its session loaded, its turn ended") { transcript.readText().lines().drop(loading).any { " coder-1 turn ended" in it } }
+            third.close()
+        }
+
+        val minted = second.apps!!.issued.map { it.token }
+        minted.size shouldBe 1
+        // The third daemon was asked for no token: the one its seat's agent replays is one it never handed, never knew.
+        third.apps!!.issued shouldBe emptyList()
+        third.said.filter { "github-token:" in it } shouldBe emptyList()
+        val lines = first.project.resolve("office/seats/_transcripts/coder-1.log").readText().lines()
+        lines.subList(printing, loading).single { " coder-1 tool print " in it && "→" in it } shouldContain "‹hidden›, and again: ‹hidden›"
+        lines.drop(loading).single { " coder-1 loading session " in it }
+        lines.drop(loading).single { " coder-1 replay tool print " in it && "→" in it } shouldContain "‹hidden›, and again: ‹hidden›"
+        // No token, nor any dozen characters of one, in a transcript, the log, the journal or what the spec printed.
+        val files = listOf("office/seats/_transcripts", "mail", "office/fake").flatMap { folder -> first.project.resolve(folder).walk().filter { it.isRegularFile() }.map { it.readText() } }
+        val seen = files + first.said + second.said + third.said + printed
+        minted.flatMap { it.windowed(12) }.filter { piece -> seen.any { piece in it } } shouldBe emptyList()
+        first.delete()
+    }
 })

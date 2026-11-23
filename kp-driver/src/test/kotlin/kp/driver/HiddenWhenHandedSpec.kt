@@ -9,12 +9,13 @@ import kotlin.io.path.writeText
 /**
  * S3.7 T5 — a secret handed to a seat while its session runs — a GitHub token (contracts.md §4.4, Amendment 35) — is
  * hidden in its transcript from then on. The seam: the driver and S2.1's fake agent, whose shell prints a file the spec
- * writes the secret into; the transcript the driver writes.
+ * writes the secret into; the transcript the driver writes. The secrets are not of a GitHub token's shape, which every
+ * transcript hides anyway (review-030 B1): what these specs see hidden, the driver was told.
  */
 class HiddenWhenHandedSpec : StringSpec({
     "a secret the driver is told while a seat's session runs is in no line of its transcript after: at the start, across the cut, after it" {
         Office().use { office ->
-            val secret = "ghs_" + "Q7".repeat(18)
+            val secret = "told_" + "Q7".repeat(18)
             val file = office.root.resolve("handed.txt").also { it.writeText("$secret ${" ".repeat(1955)}$secret $secret\n") }
             val agent = office.agent("""{"turns": [[{"do": "shell", "id": "s1", "command": "cat '$file'"}, {"do": "end"}]]}""")
             val driver = office.driver()
@@ -30,7 +31,7 @@ class HiddenWhenHandedSpec : StringSpec({
 
     "a secret is hidden only in its own seat's transcript" {
         Office().use { office ->
-            val secret = "ghs_" + "Z9".repeat(18)
+            val secret = "told_" + "Z9".repeat(18)
             val file = office.root.resolve("handed.txt").also { it.writeText("$secret\n") }
             val script = """{"turns": [[{"do": "shell", "id": "s1", "command": "cat '$file'"}, {"do": "end"}]]}"""
             val driver = office.driver()

@@ -237,9 +237,10 @@ The seats' transcripts are beside the homes, in `~/.local/share/keporkak/seats/_
 A seat holds no GitHub key and no GitHub token (contracts.md §4.4, Amendment 35). Its home's `bin/` is first on its
 path: when its `git` or `gh` needs GitHub, the program asks the daemon (`POST /hook/github-token` on the seat API, with
 the seat's session token), which mints a token then — for the App `pool/offices.yaml`'s `github.seats` gives the seat's
-role, narrowed to its stage's repository — and hides it in the seat's transcript. `git` is told, through its
-environment, to use that helper and no other, to reach GitHub over https where a remote says `git@github.com:`, and
-never to prompt; `gh` runs the office's own `gh` with the token in that one process's environment. Nothing is
+role, narrowed to its stage's repository — and hides it in the seat's transcript, where a token handed before the
+daemon was started again is hidden too, by its shape, when the seat's session is loaded and replayed. `git` is told,
+through its environment, to use that helper and no other, to reach GitHub over https where a remote says
+`git@github.com:`, and never to prompt; `gh` runs the office's own `gh` with the token in that one process's environment. Nothing is
 installed for it, and no `gh auth login` is needed for a seat: your own `gh` login and `~/.gitconfig` stay yours, and
 a seat's `git` uses no helper they name.
 
