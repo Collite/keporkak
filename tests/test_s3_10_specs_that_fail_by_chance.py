@@ -4,8 +4,10 @@ Seam: `just many`, which runs one spec many times over — alone, then in its mo
 beside each run, on a throwaway copy of the working tree, a patch applied to the copy when one is given. The three specs:
 `TheSeatsSpec`'s first case and `TheThinThreadSpec`'s first case, in kp-daemon, and S3.0's never-ending spec — the
 Python suite's, which plants a spec that never ends in kp-log and runs it in every module's test task. Each is run
-KP_MANY times each way — once when it is not set, as `just check` runs it; the hand-off gives a run with more — and once
-with a patch that breaks what it holds: `tests/fixtures/s3_10/`. The slices of T5 and T6 follow, for the next developer.
+KP_MANY times each way, and once with a patch that breaks what it holds: `tests/fixtures/s3_10/`. It runs on demand —
+`KP_MANY=<n> build/python/bin/python -m unittest test_s3_10_specs_that_fail_by_chance` in tests/ — and the hand-off
+gives a run with its count: one pass of the three, alone, whole and broken, takes about forty minutes, and CI's job is
+bounded at twenty. `just check` runs the recipe's own refusals, and the slices of T5 and T6 that follow.
 """
 import os
 import pathlib
@@ -17,7 +19,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from retro_checks_support import ROOT, TEST_INPUTS, findings, gradle, just, keep, plant, shared_copy  # noqa: E402
 from test_s3_6_walker import copy_of_the_rules, failures, named, walker  # noqa: E402
 
-COUNT = int(os.environ.get("KP_MANY", "1"))
+COUNT = int(os.environ.get("KP_MANY", "0"))
 FIXTURES = "tests/fixtures/s3_10"
 
 # Each of the three, and the patch that breaks what it holds — in the daemon, or in the specs' timeout.
@@ -30,6 +32,7 @@ THE_THREE = {
 
 
 class TheSpecsThatFailedByChance(unittest.TestCase):
+    @unittest.skipUnless(COUNT, "on demand: KP_MANY=<n> runs each of the three n times alone and n times in its module's whole run")
     def test_a_spec_that_reads_what_a_seat_or_the_daemon_wrote_waits_for_that_record_by_the_log_never_for_a_time_the_three_pass_every_run_alone_in_their_modules_whole_run_and_with_a_second_build_busy_and_still_fail_when_what_they_hold_is_broken(self):
         for spec, broken in THE_THREE.items():
             with self.subTest(spec):
@@ -41,6 +44,15 @@ class TheSpecsThatFailedByChance(unittest.TestCase):
                               many.stdout)
                 self.assertEqual(red.returncode, 1, red.stdout[-6000:])
                 self.assertRegex(red.stdout, re.compile(r"— alone 0 of 1 passed · in its module's whole run 0 of 1 passed"))
+
+    def test_the_recipe_runs_nothing_for_a_spec_it_cannot_name_or_a_patch_that_does_not_apply_and_says_so(self):
+        nothing = just(ROOT, "many", "kp-daemon:NoSuchSpecAnywhere", "1")
+        unknown = just(ROOT, "many", "python:test_no_such_module.Tests.test_none", "1")
+        unapplied = just(ROOT, "many", "kp-model:SkeletonSpec", "1", f"{FIXTURES}/../d85-rule-edit.patch")
+
+        self.assertEqual((nothing.returncode, unknown.returncode, unapplied.returncode), (3, 3, 2), nothing.stdout + unknown.stdout + unapplied.stdout)
+        self.assertIn("names no spec, or more than one module's — nothing was run", nothing.stdout)
+        self.assertIn("the patch does not apply to the working tree — nothing was run", unapplied.stdout)
 
 
 class TheHeroAndTheWalker(unittest.TestCase):
