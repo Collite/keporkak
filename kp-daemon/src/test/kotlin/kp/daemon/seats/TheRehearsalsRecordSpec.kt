@@ -63,8 +63,9 @@ class TheRehearsalsRecordSpec : StringSpec({
         late.hero.clock.now = late.hero.clock.now.plus(Duration.ofMinutes(10)).plusSeconds(1)
         late.hero.office.changes.signal()
         waiting.join(30_000)
+        // The printed failure points at the record too (Amendment 38, S3.10 T6; Collite/keporkak#56).
         failure?.message shouldBe "walk thin-thread step 5 (started · coder-1 · started): coder-1 sent nothing in 10m — its transcript: " +
-            late.hero.project.resolve("office/seats/_transcripts/coder-1.log")
+            late.folder().resolve("transcripts/coder-1.log")
         late.removeTheBuildFolder()
         late.pointers().filterNot { it.exists() } shouldBe emptyList()
         late.pointers().filter { "/build/" in it.toString() } shouldBe emptyList()

@@ -4,6 +4,7 @@ import io.kotest.core.spec.style.FreeSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldNotContain
+import io.kotest.matchers.string.shouldStartWith
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -56,6 +57,13 @@ class AfterTheFirstWaveSpec : FreeSpec({
             restart.outcomeAgain shouldBe restart.outcomeFirst
             restart.journal shouldNotContain "has not folded"
         }
+    }
+
+    "a daemon started on a log in which Bora is absent judges its first carried message with him absent: held for the Deputy, as the first time (S3.10 T6, issue #59)" {
+        val restart = Restarted(log = mapOf("KP/P3/S3.0" to "exited"), ticked = listOf("S3.1"), away = true)
+
+        restart.outcomeFirst shouldStartWith "held by "
+        restart.outcomeAgain shouldBe restart.outcomeFirst
     }
 
     "a view's ask of an unknown fact writes no journal line, however often it is asked; a judgement's ask writes one each time" {
@@ -127,7 +135,7 @@ private class Project(log: Map<String, String>, ticked: List<String>, rolls: Boo
         val world = ProjectWorld.of(InForceRules.of(RuleFiles(root).read()).first!!, "panda", dir) { journal += it }
         Office.start("panda", dir, root, world, Operations { _, done -> done(OperationResult.Ok()) }, NoSeats, serviceClock)
             .also(world::reading)
-            .use { office -> messages.forEach { (seat, input) -> office.submit(Sender.Seat(seat), json(input)).answered() } }
+            .use { office -> messages.forEach { (seat, input) -> office.submit(if (seat == BORA) Sender.Bora(signed = true) else Sender.Seat(seat), json(input)).answered() } }
         return journal
     }
 
@@ -144,13 +152,15 @@ private class Project(log: Map<String, String>, ticked: List<String>, rolls: Boo
  * The TeamLead's proposal for S3.8 carried by an office in this process, the log cut after its line, and the daemon
  * started through its launcher on that log — which carries the proposal again — then stopped.
  */
-private class Restarted(log: Map<String, String>, ticked: List<String>) {
+private class Restarted(log: Map<String, String>, ticked: List<String>, away: Boolean = false) {
     private val project = Project(log, ticked)
     private val before: List<Envelope>
     private val after: List<Envelope>
     val journal: String
 
     init {
+        // With [away], Bora has said he is away — a signed `away` — before the proposal comes (S3.10 T6).
+        if (away) project.carry(BORA to """{"kind": "away", "subject": "away", "args": {}}""")
         project.carry("teamlead" to proposal("KP/P3/S3.8"))
         before = project.lines()
         project.cutAfter("assignment-proposal")
@@ -180,11 +190,14 @@ private class Restarted(log: Map<String, String>, ticked: List<String>) {
         .filterKeys { it.startsWith("plan.") }
         .mapValues { (_, value) -> if (value is JsonPrimitive && !value.isString) value.content else value.toString() }
 
-    private fun outcome(lines: List<Envelope>): String = record(lines).json.let { "${it["event"]?.jsonPrimitive?.content} by ${it["rule"]}, failed ${it["failed"]}" }
+    private fun outcome(lines: List<Envelope>): String = record(lines).json.let { "${it["event"]?.jsonPrimitive?.content} by ${it["rule"] ?: it["by"]}, failed ${it["failed"]}" }
 }
 
-/** The records that close what became of a message. */
-private val JUDGED = setOf("delivered", "refused")
+/** The records that close what became of a message — or hold it (S3.10 T6). */
+private val JUDGED = setOf("delivered", "refused", "held")
+
+/** Bora at his command line, signed, as [Project.carry] names him. */
+private const val BORA = "bora"
 
 private val PLAN = """
     ## 2 · Stages

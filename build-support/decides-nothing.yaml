@@ -1077,6 +1077,11 @@ exceptions:
     code: connectTimeout(Duration.ofSeconds(10))
     line: 'fun client(): HttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NEVER).build()'
     reason: 'GitHub''s Apps (Amendment 33): how long a connection to GitHub may take to open — past it the request fails and says so'
+  - shape: timer
+    in: GitHubApps.send
+    code: timeout(TIMEOUT)
+    line: 'val request = HttpRequest.newBuilder(url) .timeout(TIMEOUT) .header("Accept", "application/vnd.github+json") .header("X-GitHub-Api-Version", API_VERSION) .header("Authorization", authorization) .method(method, if (body == null) HttpRequest.BodyPublishers.noBody() else HttpRequest.BodyPublishers.ofString(body)) .apply { if (body != null) header("Content-Type", "application/json") } .build()'
+    reason: 'GitHub''s Apps (Amendment 33, Amendment 38): each request is bounded by TIMEOUT, the entry above — past it the request fails, the token or name it asked for is not had and the fact asked is unknown with that reason, which the rules judge; S3.10 made `HttpRequest.Builder.timeout` a timer the check names (issue #59)'
   kp-ops/src/main/kotlin/kp/ops/Keys.kt:
   - shape: comparison
     in: Keys.signed

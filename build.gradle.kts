@@ -24,7 +24,12 @@ plugins {
 }
 subprojects {
     apply(plugin = "org.jetbrains.kotlin.jvm")
-    extensions.configure<KotlinJvmProjectExtension> { jvmToolchain(21) }
+    extensions.configure<KotlinJvmProjectExtension> {
+        jvmToolchain(21)
+        // Each case on a thread of its own, interrupted at its timeout (S3.10 T2): one extension, `kp.spec.OwnThread`,
+        // compiled into the specs of every module that has specs, and named by the module's own ProjectConfig.
+        if (file("src/test/kotlin").isDirectory) sourceSets.getByName("test").kotlin.srcDir(rootProject.file("build-support/kotest"))
+    }
     configurations.configureEach { resolutionStrategy { failOnDynamicVersions(); failOnChangingVersions() } }
     if (name != "kp-engine") {
         val module = name

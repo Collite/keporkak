@@ -142,8 +142,9 @@ class GitHubFactsSpec : FreeSpec({
             )
 
             toy.observe("pr.blocker_responses", "ids" to listOf("B1", "B2")).value shouldBe listOf("B1")
+            // The recorded answer, `- B1 — Fixed in …`, answers B1: a list marker may come before the id (Amendment 38, S3.10).
             toy.comments(comment())
-            toy.observe("pr.blocker_responses", "ids" to listOf("B1")).value shouldBe emptyList<String>()
+            toy.observe("pr.blocker_responses", "ids" to listOf("B1")).value shouldBe listOf("B1")
         }
     }
 

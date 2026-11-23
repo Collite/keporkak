@@ -45,8 +45,17 @@ interface OwnSteps {
     /** Why the play must end now — the seats have used more tokens than the walk allows — or null. */
     fun failure(): String?
 
-    /** The play of [player] has ended — failed, with [failure], or not: the evidence is written, and named. */
-    fun ended(player: Player, failure: String?): Path
+    /** The play of [player] has ended — failed, with [failure], or not: the evidence and the play's record are written ([Written]). */
+    fun ended(player: Player, failure: String?): Written
+}
+
+/**
+ * What [OwnSteps.ended] wrote: the [evidence] file, and each path of the throwaway project the record keeps a copy of,
+ * with its copy (S3.6 T5).
+ */
+class Written(val evidence: Path, private val kept: List<Pair<Path, Path>>) {
+    /** [text] with each kept path its copy's: what pointed into the throwaway project points at the record (Amendment 38, S3.10). */
+    fun pointed(text: String): String = kept.fold(text) { pointed, (from, to) -> pointed.replace(from.toString(), to.toString()) }
 }
 
 /**
@@ -112,7 +121,7 @@ class SeatsAtPlay(
         driven.session(seat)?.let { session -> sessions.getOrPut(seat) { java.util.Collections.synchronizedSet(LinkedHashSet()) } += session }
     }
 
-    override fun ended(player: Player, failure: String?): Path {
+    override fun ended(player: Player, failure: String?): Written {
         seats.forEach(::sessionOf)
         val name = "${player.walkName}-${STAMP.format(clock.now())}"
         val record = folder.createDirectories().resolve(name)
@@ -120,10 +129,10 @@ class SeatsAtPlay(
         val log = player.office.project.resolve(MAIL)
         val kept = listOf(log to record.resolve(MAIL)) + seats.map { seat -> transcript(seat) to record.resolve(TRANSCRIPTS).resolve("$seat.log") }
         kept.forEach { (from, to) -> copied(from, to) }
-        val written = Evidence(player, this, failure).text()
         val file = folder.resolve("$name.md")
-        file.writeText(hidden(kept.fold(written) { text, (from, to) -> text.replace(from.toString(), to.toString()) }))
-        return file
+        val written = Written(file, kept)
+        file.writeText(hidden(written.pointed(Evidence(player, this, failure).text())))
+        return written
     }
 
     /** [from] — a file, or a folder and all it holds — as it is now, at [to]; nothing when it does not exist. */
