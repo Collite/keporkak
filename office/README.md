@@ -186,6 +186,12 @@ the office's checkout once it has merged. The daemon reads the rules of the chec
    own context), the second reads 19 003–19 772 and writes 186–323. Its evidence, each turn by its parts:
    `~/Dev/_scratch/handshakes/handshake-0.106.0-2026-11-21T111526Z.md`.
 
+   Counted as the daemon counts a turn since S3.13 — its four parts weighted by `usage.weights` of `pool/budgets.yaml`
+   (D-116) — the same eight turns count 58 397, not 158 196 at par: a persona's first turn 11 334–12 959, its second
+   2 155–2 401. So `just handshake --personas coder` spends about 15 thousand for the coder's two turns weighted, 40
+   thousand at par, beside S2.1's steps. The evidence shows each turn both ways — by its parts and weighted — and what
+   the vendor said of the subscription through the seats, or that it said nothing.
+
 `kp` without `sudo` reads (`kp inbox`, `kp status`, `kp check`); with `sudo` it answers (`approve`, `decline`,
 `rule`, `reverse`, `queue`, `away`) — and any command run with `sudo` counts as you acting. `kp help` lists them.
 
