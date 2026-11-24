@@ -68,6 +68,54 @@ class OperationsOnGitHubSpec : FreeSpec({
         }
     }
 
+    "a write cut off before GitHub answers it — the mint and the list answered: a merge is `refused`, a close `failed`, an issue `failed` saying GitHub may have filed it and none asked for after it; each write asked once (Collite/keporkak#64, 1 and 2)" {
+        val cut = mapOf(
+            "PUT" to "/repos/Collite/kp-toy/pulls/3/merge",
+            "PATCH" to "/repos/Collite/kp-toy/pulls/3",
+            "POST" to "/repos/Collite/kp-toy/issues",
+        )
+        val ended = cut.map { (method, path) ->
+            Toy(tempdir().toPath()).use { toy ->
+                toy.github.pullsOf(MERGED_BRANCH, openPull())
+                toy.github.onRequests("POST", "/repos/Collite/kp-toy/issues", Answer(201, filedIssue("number" to 6)))
+                val held = toy.github.hold(method, path)
+                val done = java.util.concurrent.CompletableFuture.supplyAsync {
+                    when (method) {
+                        "PUT" -> GitMerge(toy.apps, MERGER, toy.api).perform(AT_PULL_3, "m-000045", MERGED_HEAD)
+                        "PATCH" -> PrClose(toy.apps, MERGER, toy.api).perform(AT_PULL_3)
+                        else -> IssueFile(toy.apps, MERGER, toy.api).perform(AT_PULL_3, "m-000045", listOf(Issue.followUp("one"), Issue.followUp("two")))
+                    }
+                }
+                held.received.await(30, java.util.concurrent.TimeUnit.SECONDS) shouldBe true
+                toy.cutOff()
+                held.release()
+                val result = done.get(60, java.util.concurrent.TimeUnit.SECONDS) as Performed.Failed
+                result.reason.replace(Regex(": [A-Za-z.]*(Exception|Error)[^—]*"), ": ‹cut off›") to toy.github.requests.count { it.method == method }
+            }
+        }
+
+        ended shouldBe listOf(
+            "refused: GitHub did not answer PUT /repos/Collite/kp-toy/pulls/3/merge: ‹cut off›" to 1,
+            "GitHub did not answer PATCH /repos/Collite/kp-toy/pulls/3: ‹cut off›" to 1,
+            "issue 1 of 2 got no answer, and GitHub may have filed it — it is not known: GitHub did not answer POST /repos/Collite/kp-toy/issues: ‹cut off›— filed before it: none; none was asked for after it" to 1,
+        )
+    }
+
+    "an issue's title is its text's first line cut at 200 characters, and its whole text is in the body: a Found line of 600 characters (Amendment 41's correction; Collite/keporkak#64, 3)" {
+        Toy(tempdir().toPath()).use { toy ->
+            toy.github.pullsOf(MERGED_BRANCH, openPull())
+            toy.github.onRequests("POST", "/repos/Collite/kp-toy/issues", Answer(201, filedIssue("number" to 12)))
+            val found = ("a Found line that runs long — " + "the daemon reads the record, not the list; ".repeat(14)).take(599) + "."
+
+            IssueFile(toy.apps, MERGER, toy.api).perform(AT_PULL_3, "m-000046", listOf(Issue.found(found))) shouldBe Performed.Ok(mapOf("numbers" to listOf(12)))
+
+            val filed = Json.parseToJsonElement(toy.github.requests.last().body) as kotlinx.serialization.json.JsonObject
+            found.length shouldBe 600
+            (filed["title"] as kotlinx.serialization.json.JsonPrimitive).content shouldBe found.take(200)
+            (filed["body"] as kotlinx.serialization.json.JsonPrimitive).content shouldBe "$found\n\nFiled for TOY/P0/S0.9 · asked by m-000046 · pull request Collite/kp-toy#3"
+        }
+    }
+
     "a judgement that observed no head leaves nothing to merge on: `refused`, and GitHub is asked nothing" {
         Toy(tempdir().toPath()).use { toy ->
             toy.github.pullsOf(MERGED_BRANCH, openPull())
@@ -132,9 +180,9 @@ class OperationsOnGitHubSpec : FreeSpec({
                 Issue.followUp("Name the stage in a wake's prompt"), Issue.followUp("Say when a seat's turn ends\nThe journal has no line for it.\nNor the log."))) shouldBe
                 Performed.Ok(mapOf("numbers" to listOf(6, 7, 8)))
             toy.github.requests.filter { it.method == "POST" }.map { Json.parseToJsonElement(it.body) } shouldBe listOf(
-                Json.parseToJsonElement("""{"title": "Count a cache read once", "body": "A cache read is counted as a turn.\n\nFiled for TOY/P0/S0.9 · asked by m-000042 · pull request Collite/kp-toy#3"}"""),
-                Json.parseToJsonElement("""{"title": "Name the stage in a wake's prompt", "body": "Filed for TOY/P0/S0.9 · asked by m-000042 · pull request Collite/kp-toy#3"}"""),
-                Json.parseToJsonElement("""{"title": "Say when a seat's turn ends", "body": "The journal has no line for it.\nNor the log.\n\nFiled for TOY/P0/S0.9 · asked by m-000042 · pull request Collite/kp-toy#3"}"""),
+                Json.parseToJsonElement("""{"title": "Count a cache read once", "body": "Count a cache read once\nA cache read is counted as a turn.\n\nFiled for TOY/P0/S0.9 · asked by m-000042 · pull request Collite/kp-toy#3"}"""),
+                Json.parseToJsonElement("""{"title": "Name the stage in a wake's prompt", "body": "Name the stage in a wake's prompt\n\nFiled for TOY/P0/S0.9 · asked by m-000042 · pull request Collite/kp-toy#3"}"""),
+                Json.parseToJsonElement("""{"title": "Say when a seat's turn ends", "body": "Say when a seat's turn ends\nThe journal has no line for it.\nNor the log.\n\nFiled for TOY/P0/S0.9 · asked by m-000042 · pull request Collite/kp-toy#3"}"""),
             )
 
             toy.github.onRequests("POST", "/repos/Collite/kp-toy/issues", Answer(201, filedIssue("number" to 9)), Answer(403, recorded("issue-403.json")), Answer(201, filedIssue("number" to 10)))
@@ -145,7 +193,7 @@ class OperationsOnGitHubSpec : FreeSpec({
             toy.github.onRequests("POST", "/repos/Collite/kp-toy/issues", Answer(201, filedIssue("number" to 11)))
             file.perform(AT_PULL_3, "m-000044", listOf(Issue.found("a wake's prompt names its stage as StageId(value=…)"))) shouldBe Performed.Ok(mapOf("numbers" to listOf(11)))
             Json.parseToJsonElement(toy.github.requests.last().body) shouldBe
-                Json.parseToJsonElement("""{"title": "a wake's prompt names its stage as StageId(value=…)", "body": "Filed for TOY/P0/S0.9 · asked by m-000044 · pull request Collite/kp-toy#3"}""")
+                Json.parseToJsonElement("""{"title": "a wake's prompt names its stage as StageId(value=…)", "body": "a wake's prompt names its stage as StageId(value=…)\n\nFiled for TOY/P0/S0.9 · asked by m-000044 · pull request Collite/kp-toy#3"}""")
         }
     }
 
@@ -196,6 +244,9 @@ private class Toy(val keys: Path) : AutoCloseable {
     init {
         server.start()
     }
+
+    /** GitHub goes away under a request it holds: the connection is cut before it answers. */
+    fun cutOff() = server.stop(0)
 
     override fun close() = server.stop(0)
 }

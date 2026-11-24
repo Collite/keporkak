@@ -139,11 +139,21 @@ class PrClose(private val apps: GitHubApps, private val merger: App, api: URI = 
 /** One issue to file: its [title] and its [body], before the line that names where it came from. */
 data class Issue(val title: String, val body: String) {
     companion object {
-        /** An item of `follow_ups` (Amendment 37): its first line is the title, the rest the body. */
-        fun followUp(item: String): Issue = Issue(item.substringBefore('\n').trim(), item.substringAfter('\n', "").trim())
+        /** How long a title may be, in characters (Amendment 41's correction): GitHub names no limit; a Found line runs to hundreds. */
+        const val TITLE = 200
 
-        /** A `found`: its text is the title. */
-        fun found(text: String): Issue = Issue(text.trim(), "")
+        /** An item of `follow_ups` (Amendments 37, 41): its first line, cut at [TITLE] characters, is the title; its whole text is the body. */
+        fun followUp(item: String): Issue = of(item)
+
+        /** A `found` (Amendments 37, 41): its first line, cut at [TITLE] characters, is the title; its whole text is the body. */
+        fun found(text: String): Issue = of(text)
+
+        private fun of(text: String): Issue {
+            val whole = text.trim()
+            val first = whole.substringBefore('\n').trim()
+            val cut = if (first.codePointCount(0, first.length) <= TITLE) first else first.substring(0, first.offsetByCodePoints(0, TITLE))
+            return Issue(cut, whole)
+        }
     }
 }
 
@@ -151,7 +161,9 @@ data class Issue(val title: String, val body: String) {
  * `issue.file` (contracts.md §7, Amendment 37): as `kp-merger`, with a token minted for the stage's repository and for
  * [PERMISSIONS] alone, it files each issue in the stage's repository, in order; each body ends with a line that names the
  * stage, the message that asked and the pull request. `ok` carries the issues' numbers, in order; if GitHub refuses one,
- * the operation is `failed`, names the numbers already filed, and files no further one.
+ * the operation is `failed`, names the numbers already filed, and files no further one. A request that got no answer —
+ * GitHub not reached, or cut off before it answered — is `failed` too, and says that GitHub may have filed that issue:
+ * it is not known, and a reader must look before filing it again (Amendment 41's correction).
  */
 class IssueFile(private val apps: GitHubApps, private val merger: App, api: URI = GitHubApps.GITHUB, http: HttpClient = GitHubApps.client()) {
     private val rest = GitHubRest(api, http)
@@ -180,8 +192,10 @@ class IssueFile(private val apps: GitHubApps, private val merger: App, api: URI 
                 put("title", issue.title)
                 put("body", if (issue.body.isEmpty()) last else "${issue.body}\n\n$last")
             }
+            val before = if (filed.isEmpty()) "none" else filed.joinToString(", ") { "#$it" }
             val number = when (val sent = rest.send("POST", path, token, body)) {
-                is GitHubRest.Sent.NotReached -> null to sent.reason
+                is GitHubRest.Sent.NotReached ->
+                    return Performed.Failed("issue ${index + 1} of ${issues.size} got no answer, and GitHub may have filed it — it is not known: ${sent.reason} — filed before it: $before; none was asked for after it")
                 is GitHubRest.Sent.Answered -> sent.reply.let { reply ->
                     val number = ((reply.json as? JsonObject)?.get("number") as? JsonPrimitive)?.intOrNull
                     when {
@@ -193,7 +207,6 @@ class IssueFile(private val apps: GitHubApps, private val merger: App, api: URI 
             }
             val (issued, why) = number
             if (issued == null) {
-                val before = if (filed.isEmpty()) "none" else filed.joinToString(", ") { "#$it" }
                 return Performed.Failed("issue ${index + 1} of ${issues.size} was not filed, nor any after it: $why — filed: $before")
             }
             filed += issued

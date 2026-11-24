@@ -136,8 +136,8 @@ class TheDaemonActsOnGitHubSpec : FreeSpec({
             val verdict = office.idOf("verdict")
             office.ops("issue.file").last() shouldBe """ok {"numbers":[7,8]}"""
             office.github.requests.filter { it.method == "POST" }.map { Json.parseToJsonElement(it.body) } shouldBe listOf(
-                Json.parseToJsonElement("""{"title": "Count a cache read once", "body": "A cache read is counted as a turn.\n\nFiled for TOY/P0/S0.1 · asked by $verdict · pull request Collite/kp-toy#1"}"""),
-                Json.parseToJsonElement("""{"title": "Name the stage in a wake's prompt", "body": "Filed for TOY/P0/S0.1 · asked by $verdict · pull request Collite/kp-toy#1"}"""),
+                Json.parseToJsonElement("""{"title": "Count a cache read once", "body": "Count a cache read once\nA cache read is counted as a turn.\n\nFiled for TOY/P0/S0.1 · asked by $verdict · pull request Collite/kp-toy#1"}"""),
+                Json.parseToJsonElement("""{"title": "Name the stage in a wake's prompt", "body": "Name the stage in a wake's prompt\n\nFiled for TOY/P0/S0.1 · asked by $verdict · pull request Collite/kp-toy#1"}"""),
             )
             office.state() shouldBe "passed"
         }

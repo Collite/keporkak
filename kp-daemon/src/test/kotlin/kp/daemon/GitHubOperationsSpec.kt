@@ -11,7 +11,7 @@ import kp.mailroom.Status
 
 /** The slices of T5, for the next developer: a triage's `found` through the wiring, and a stage whose list cannot be read. */
 class GitHubOperationsSpec : FreeSpec({
-    "a triage whose outcome is `issue` files its `found` as one issue, its text the title" {
+    "a triage whose outcome is `issue` files its `found` as one issue: its first line the title, its whole text the body (Amendment 41's correction)" {
         ActingOffice(mapOf("TOY/P0/S0.1" to "building")).use { office ->
             office.github.toyPullRequests(pull("state" to "open", "closed_at" to null, "merged_at" to null))
             office.github.onRequests("POST", "/repos/Collite/kp-toy/issues", Answer(201, filedIssue("number" to 9)))
@@ -21,7 +21,7 @@ class GitHubOperationsSpec : FreeSpec({
 
             office.ops("issue.file").last() shouldBe """ok {"numbers":[9]}"""
             Json.parseToJsonElement(office.github.requests.single { it.method == "POST" }.body) shouldBe Json.parseToJsonElement(
-                """{"title": "a wake's prompt names its stage as StageId(value=…)", "body": "Filed for TOY/P0/S0.1 · asked by ${office.idOf("triage")} · pull request Collite/kp-toy#1"}""")
+                """{"title": "a wake's prompt names its stage as StageId(value=…)", "body": "a wake's prompt names its stage as StageId(value=…)\n\nFiled for TOY/P0/S0.1 · asked by ${office.idOf("triage")} · pull request Collite/kp-toy#1"}""")
         }
     }
 
