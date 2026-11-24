@@ -1,0 +1,11 @@
+diff --git a/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt b/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
+--- a/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
++++ b/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
+@@ -328,7 +328,6 @@
+             append("STATUS: ${layout.status?.let { "project:${project.relativize(it)}" } ?: "none found"}. ")
+             if (unread.isEmpty()) append("You have no unread mail.") else {
+                 append("Your unread mail, oldest first:")
+-                unread.forEach { append("\n").append(mail(it)) }
+             }
+         }
+     }

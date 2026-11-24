@@ -1,0 +1,12 @@
+diff --git a/kp-driver/src/testFixtures/kotlin/kp/driver/fake/FakeAgent.kt b/kp-driver/src/testFixtures/kotlin/kp/driver/fake/FakeAgent.kt
+--- a/kp-driver/src/testFixtures/kotlin/kp/driver/fake/FakeAgent.kt
++++ b/kp-driver/src/testFixtures/kotlin/kp/driver/fake/FakeAgent.kt
+@@ -455,6 +455,8 @@
+ 
+     @Synchronized
+     private fun note(event: String, vararg fields: Pair<String, JsonElement>) {
++        // S3.10's slowed agent (Collite/keporkak#67, 3): what it received is recorded 1.5 s late — a prompt, a tool's result, a cancel.
++        if (event in setOf("session/prompt", "mcp", "cancel")) Thread.sleep(1500)
+         record.appendText(JsonObject(mapOf("event" to JsonPrimitive(event)) + fields).toString() + "\n")
+     }
+ 

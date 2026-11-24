@@ -30,6 +30,20 @@ THE_THREE = {
         f"{FIXTURES}/kp-logs-timeout-not-the-builds.patch",
 }
 
+# S3.11 T2 (Collite/keporkak#67, 1 and 3): the four other cases of the same race — each, the patch that takes its wait out,
+# and the mutant of the daemon that breaks what it holds — and the waits of S3.10's first two, with the agent slowed.
+SLOWED = f"{FIXTURES}/the-agent-slowed.patch"
+THE_FOUR = {
+    "kp-daemon:TheSeatsSpec/a seat whose process dies*": ("the-replay-not-waited-for.patch", "a-replay-without-its-unread-mail.patch"),
+    "kp-daemon:TheSeatsSpec/after the daemon is started again*": ("the-copy-after-a-start-not-waited-for.patch", "a-start-that-tells-no-seat-it-is-re-seated.patch"),
+    "kp-daemon:TheSeatsSpec/`pause`, `kill` and `retire`*": ("the-cancel-not-waited-for.patch", "a-cancel-never-sent.patch"),
+    "kp-daemon:TheThinThreadSpec/a step that reports a seat gone*": ("the-thin-threads-replay-not-waited-for.patch", "a-replay-that-says-nothing-of-its-mail.patch"),
+}
+WAITS_OF_THE_THREE = {
+    "kp-daemon:TheSeatsSpec/a message to an idle seat is its next prompt*": "the-triage-not-waited-for.patch",
+    "kp-daemon:TheThinThreadSpec/a step of a real seat is waited for*": "the-tools-results-not-waited-for.patch",
+}
+
 
 class TheSpecsThatFailedByChance(unittest.TestCase):
     @unittest.skipUnless(COUNT, "on demand: KP_MANY=<n> runs each of the three n times alone and n times in its module's whole run")
@@ -44,6 +58,31 @@ class TheSpecsThatFailedByChance(unittest.TestCase):
                               many.stdout)
                 self.assertEqual(red.returncode, 1, red.stdout[-6000:])
                 self.assertRegex(red.stdout, re.compile(r"— alone 0 of 1 passed · in its module's whole run 0 of 1 passed"))
+
+    @unittest.skipUnless(COUNT, "on demand: KP_MANY=<n> runs each of the four n times alone and n times in its module's whole run, and again with its wait taken out")
+    def test_the_four_cases_of_the_same_race_wait_for_the_record_they_read_pass_every_run_fail_within_the_count_with_their_wait_taken_out_and_the_agent_slowed_and_fail_by_a_mutant_of_the_daemon(self):
+        # S3.11 T2 (Collite/keporkak#67, 1 and 3): the agent slowed is S3.10's — without it the race does not show on the office.
+        for spec, (wait, broken) in THE_FOUR.items():
+            with self.subTest(spec):
+                many = just(ROOT, "many", spec, str(COUNT), timeout=7200)
+                unwaited = just(ROOT, "many", spec, str(COUNT), f"{FIXTURES}/{wait}", SLOWED, timeout=7200)
+                # `just mutant` runs a spec class: the case is among those it names red.
+                red = just(ROOT, "mutant", f"{FIXTURES}/{broken}", spec.split("/")[0], timeout=3600)
+
+                self.assertEqual(many.returncode, 0, many.stdout[-6000:])
+                self.assertIn(f"— alone {COUNT} of {COUNT} passed · in its module's whole run {COUNT} of {COUNT} passed", many.stdout)
+                self.assertEqual(unwaited.returncode, 1, unwaited.stdout[-6000:])
+                self.assertEqual(red.returncode, 0, red.stdout[-6000:])
+                self.assertIn(spec.split("/")[1].rstrip("*"), red.stdout.split("red — the specs that failed:")[-1])
+
+    @unittest.skipUnless(COUNT, "on demand: KP_MANY=<n> runs S3.10's two first cases n times with their wait taken out and the agent slowed")
+    def test_s3_10s_two_first_cases_fail_within_the_count_with_their_wait_taken_out_and_the_agent_slowed(self):
+        # Collite/keporkak#67, 3: the half of S3.10's DONE item shown only by hand, now by its fixtures.
+        for spec, wait in WAITS_OF_THE_THREE.items():
+            with self.subTest(spec):
+                unwaited = just(ROOT, "many", spec, str(COUNT), f"{FIXTURES}/{wait}", SLOWED, timeout=7200)
+
+                self.assertEqual(unwaited.returncode, 1, unwaited.stdout[-6000:])
 
     def test_the_recipe_runs_nothing_for_a_spec_it_cannot_name_or_a_patch_that_does_not_apply_and_says_so(self):
         nothing = just(ROOT, "many", "kp-daemon:NoSuchSpecAnywhere", "1")

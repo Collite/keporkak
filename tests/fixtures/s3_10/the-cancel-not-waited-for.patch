@@ -1,0 +1,11 @@
+diff --git a/kp-daemon/src/test/kotlin/kp/daemon/seats/TheSeatsSpec.kt b/kp-daemon/src/test/kotlin/kp/daemon/seats/TheSeatsSpec.kt
+--- a/kp-daemon/src/test/kotlin/kp/daemon/seats/TheSeatsSpec.kt
++++ b/kp-daemon/src/test/kotlin/kp/daemon/seats/TheSeatsSpec.kt
+@@ -178,7 +178,6 @@
+             office.until("the cancel done") { office.ops("seat.cancel").any { it.phase != "requested" } }
+             office.ops("seat.cancel").map { it.phase } shouldBe listOf("requested", "ok")
+             // The cancel is `ok` once it is on the wire; the fake agent records it once it has read it (S3.11 T2).
+-            awaitWritten(office.agents.record("coder-1"), "coder-1's cancel") { office.received("coder-1").any { it.text("event") == "cancel" } }
+             office.received("coder-1").map { it.text("event") } shouldContain "cancel"
+             office.until("coder-1 in its next turn, on the pause") { office.prompts("coder-1").any { pause in it } }
+ 

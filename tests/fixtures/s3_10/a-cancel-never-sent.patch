@@ -1,0 +1,12 @@
+diff --git a/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt b/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
+--- a/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
++++ b/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
+@@ -385,7 +385,7 @@
+     fun performs(operation: String): Boolean = operation in PERFORMED || (operation == TOKEN_MINT && identity != null)
+ 
+     /** `seat.cancel` (contracts.md §4.4): the turn in flight asked to end; with none, nothing to cancel, and the result says so. */
+-    private fun cancel(seat: String): OperationResult = when (val cancelled = blocking { driver.cancel(SeatId(seat)) }) {
++    private fun cancel(seat: String): OperationResult = when (val cancelled: Outcome<Cancel> = Outcome.Ok(Cancel.SENT)) {
+         is Outcome.Ok -> OperationResult.Ok(Datum.Fields(mapOf(CANCEL_RESULT to Datum.Text(if (cancelled.value == Cancel.SENT) "sent" else "nothing in flight"))))
+         is Outcome.Failed -> OperationResult.Failed(cancelled.reason)
+     }
