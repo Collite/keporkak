@@ -1,6 +1,7 @@
-# The office — what Bora installs on Panda
+# The office — what Bora installs on the office machine
 
-Keporkak's office is Panda (D-46): Linux, terminal only, reached over ssh. Its description is in `pool/offices.yaml`.
+Keporkak's office is **dsk** since 2026-11-24 (it was Panda, D-46; the move is the homelab's host swap D8a): Linux,
+terminal only, reached over ssh. Below, "Panda" means the office machine. Its description is in `pool/offices.yaml`.
 The repository installs nothing on it. This folder holds the templates Bora installs from, and the steps below.
 
 `just office-check` (from `~/Dev/keporkak/keporkak`, as `bora`) prints one line per item:
