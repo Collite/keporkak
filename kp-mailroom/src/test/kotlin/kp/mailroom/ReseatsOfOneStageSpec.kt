@@ -32,6 +32,26 @@ class ReseatsOfOneStageSpec : FreeSpec({
         }
     }
 
+    "a stage paused by one seat's death comes back when that seat's re-seat ends ok with a message that reached it meanwhile" {
+        val office = Office(walk = "H-2-prime", seed = "building", robots = true, at = "2026-11-13T22:00:00Z").apply {
+            operations.keeping = true
+            seats.busy += "coder-1"
+            changed("seat.process_gone", true, stage = STAGE, params = mapOf("seat" to "coder-1"))
+        }
+        office.mailroom.state.stage(STAGE) shouldBe "paused"
+
+        // While its re-seat runs, the seat's context is reported past the threshold: a `compact` reaches it, unread.
+        office.changed("seat.context_used", 0.8, stage = STAGE, params = mapOf("seat" to "coder-1"))
+        val compact = office.readBack().lines.filterIsInstance<Message>().single { it.kind == "compact" }
+        office.mailroom.state.unread("coder-1") shouldBe listOf(compact.id.value)
+
+        office.reseated("coder-1")
+
+        office.reSeated().map { it.args!!.text("seat") } shouldBe listOf("coder-1")
+        office.mailroom.state.machine("seat", "coder-1")!!.state shouldBe "ready"
+        office.mailroom.state.stage(STAGE) shouldBe "building"
+    }
+
     "a message that reaches a seat while its re-seat runs stays unread through the re-seat's ok, and wakes the seat when the replay's turn ends" {
         val office = twoSeatsGone()
 
