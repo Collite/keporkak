@@ -44,7 +44,10 @@ import kotlin.io.path.writeText
  * seat's environment — the one [SeatEnvironment] makes from the agent's, with the driver's `KP_HOOK_URL` and
  * `KP_SESSION_TOKEN` — beside an office's `gh` of the spec's ([officeGh]) and the office user's own git configuration.
  */
-class IdentityOffice : AutoCloseable {
+class IdentityOffice(
+    /** What the office's environment adds to the agent's, as `/etc/gitconfig` would be pointed at (S3.11). */
+    private val base: Map<String, String> = emptyMap(),
+) : AutoCloseable {
     val github = GitHubOffice()
     private val folder: Path = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "identity-")
     val tokens = Tokens()
@@ -64,6 +67,9 @@ class IdentityOffice : AutoCloseable {
         tokens.register(token, Binding(name, role, "panda", stage, "claude-opus-5-5", "medium"))
         return SpecSeat(name, token, built(name, role))
     }
+
+    /** The App a token the local GitHub minted was minted for; null for a token it never minted. */
+    fun issuedTo(token: String): String? = github.apps.issued.firstOrNull { it.token == token }?.app?.identity
 
     /** A session token never issued. */
     fun stranger(): SpecSeat = SpecSeat("stranger", "kp-spec-never-issued", folder)
@@ -117,7 +123,7 @@ class IdentityOffice : AutoCloseable {
             is Outcome.Ok -> made.value
             is Outcome.Failed -> error("the home of $seat cannot be built: ${made.reason}")
         }
-        environments[seat] = SeatEnvironment.of(mapOf("LANG" to "C.UTF-8", "HOME" to home.toString(), "PATH" to "$officeBin:/usr/bin:/bin"), built.programs)
+        environments[seat] = SeatEnvironment.of(mapOf("LANG" to "C.UTF-8", "HOME" to home.toString(), "PATH" to "$officeBin:/usr/bin:/bin") + base, built.programs)
         return worktree
     }
 
@@ -147,12 +153,13 @@ class IdentityOffice : AutoCloseable {
         /**
          * [command] run in this seat's environment, in its worktree, with [input] on its standard input — then closed — and
          * the driver's two variables beside; it must end within [seconds]. The program is found on the seat's path, as a
-         * seat's shell finds it — not on the spec's.
+         * seat's shell finds it — not on the spec's. [network] is how the machine reaches GitHub: S3.11's local one, given
+         * after the seat's environment.
          */
-        fun run(vararg command: String, input: String = "", seconds: Long = 30): Ran {
+        fun run(vararg command: String, input: String = "", seconds: Long = 30, network: Map<String, String> = emptyMap()): Ran {
             val builder = ProcessBuilder(listOf("/usr/bin/env", "--") + command).directory(worktree.toFile())
             builder.environment().clear()
-            builder.environment().putAll(environments.getValue(name) + mapOf("KP_HOOK_URL" to "http://127.0.0.1:$port", "KP_SESSION_TOKEN" to token))
+            builder.environment().putAll(environments.getValue(name) + mapOf("KP_HOOK_URL" to "http://127.0.0.1:$port", "KP_SESSION_TOKEN" to token) + network)
             val process = builder.start()
             process.outputStream.use { it.write(input.toByteArray()) }
             val out = CompletableFuture.supplyAsync { process.inputStream.bufferedReader().readText() }
