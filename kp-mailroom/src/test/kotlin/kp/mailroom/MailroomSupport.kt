@@ -123,9 +123,13 @@ class FakeOperations : Operations {
         done(failing[request.operation]?.let { OperationResult.Failed(it) } ?: OperationResult.Ok())
     }
 
-    /** The first kept request of [operation] ends with [result], now. */
-    fun answer(operation: String, result: OperationResult = OperationResult.Ok()) =
-        synchronized(kept) { kept.removeAt(kept.indexOfFirst { it.first.operation == operation }.also { check(it >= 0) { "no $operation is kept" } }) }.second(result)
+    /** The first kept request of [operation] — of [seat], when one is named — ends with [result], now. */
+    fun answer(operation: String, result: OperationResult = OperationResult.Ok(), seat: String? = null) =
+        synchronized(kept) {
+            kept.removeAt(kept.indexOfFirst { (request, _) ->
+                request.operation == operation && (seat == null || (request.with.fields["seat"] as? Datum.Text)?.value == seat)
+            }.also { check(it >= 0) { "no $operation${seat?.let { " of $it" }.orEmpty()} is kept" } })
+        }.second(result)
 }
 
 /** Seats that are idle unless [busy]; every wake is noted. */

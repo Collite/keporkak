@@ -53,6 +53,19 @@ class OperationsOnTheOfficeSpec : FreeSpec({
         }
     }
 
+    "a worktree.create that ended ok names the repository, the branch and the worktree's path in its op record, as the list named them — made now, or found made (Amendment 40)" {
+        for (made in listOf(false, true)) {
+            OfficeOnDisk(mapOf(OFFICE_STAGE to "proposed"), worktree = made).use { office ->
+                val approval = office.bora(APPROVAL)
+
+                val ok = office.office.lines().map { it.entry }.filterIsInstance<kp.model.Op>().single { it.cause == approval.id && it.op == "worktree.create" && it.phase == "ok" }
+                ok.result shouldBe Json.parseToJsonElement(
+                    """{"repository": "keporkak", "branch": "$OFFICE_BRANCH", "worktree": "${office.worktrees.resolve(OFFICE_WORKTREE)}"}""",
+                ).jsonObject
+            }
+        }
+    }
+
     "a stage's exit: its worktree and scratch removed, REGISTER.md one row per effort in offices.yaml's order, the project committed and pushed as kp-merger — then register.fresh is true" {
         OfficeOnDisk(mapOf(OFFICE_STAGE to "merged"), worktree = true).use { office ->
             val exit = office.send("teamlead", STAGE_EXIT)
