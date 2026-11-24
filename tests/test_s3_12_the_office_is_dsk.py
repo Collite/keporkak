@@ -30,7 +30,8 @@ class TheOfficeIsDsk(unittest.TestCase):
 
         # An office the pool names: each answers with its own roots.
         machine.pool.joinpath("offices.yaml").write_text(pool(office("here", HERE), office("there", THERE)))
-        self.assertEqual(roots(office_check(machine, "--office", "here")), [
+        here = roots(office_check(machine, "--office", "here"))
+        self.assertEqual(here, [
             "ok     root worktrees ~/Dev/keporkak/_wt", "ok     root scratch ~/Dev/_scratch",
             "ok     root seats ~/.local/share/keporkak/seats", "ok     root secrets ~/.config/keporkak/secrets"])
         self.assertEqual(roots(office_check(machine, "--office", "there")), [
@@ -42,10 +43,10 @@ class TheOfficeIsDsk(unittest.TestCase):
         self.assertEqual((nowhere.returncode, nowhere.stdout), (2, ""))
         self.assertEqual(nowhere.stderr, f"office check: cannot read office 'nowhere' from {machine.pool} ('nowhere'); run `just rules`, or pass --office\n")
 
-        # Two offices with the same paths: each answers, and the same.
+        # Two offices with the same paths: each answers for its roots, and the two answers are the same.
         machine.pool.joinpath("offices.yaml").write_text(pool(office("panda", HERE), office("dsk", HERE)))
         panda, dsk = office_check(machine, "--office", "panda"), office_check(machine, "--office", "dsk")
-        self.assertEqual(roots(panda), roots(dsk))
+        self.assertEqual((roots(panda), roots(dsk)), (here, here))
         self.assertEqual(panda.stdout, dsk.stdout)
 
         # With no flag, the host's — not the first the pool names.
@@ -65,7 +66,7 @@ class TheOfficeIsDsk(unittest.TestCase):
         self.assertFalse((checkout / "build/python").exists())
 
 
-# The roots the fake machine has made once Bora has done his steps — the checkout's pool's — and roots it has not.
+# The roots the fake machine has once Bora's steps are done — the checkout's pool's — and roots it has not.
 HERE = "{worktrees: ~/Dev/keporkak/_wt, scratch: ~/Dev/_scratch, seats: ~/.local/share/keporkak/seats, secrets: ~/.config/keporkak/secrets}"
 THERE = "{worktrees: ~/Elsewhere/_wt, scratch: ~/Elsewhere/_scratch, seats: ~/Elsewhere/seats, secrets: ~/Elsewhere/secrets}"
 
