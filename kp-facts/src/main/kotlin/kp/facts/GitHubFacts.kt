@@ -66,7 +66,10 @@ class GitHubFacts(
         if (fact !in ANSWERED) return Observation.Unknown("kp-facts does not read '$fact' from GitHub")
         val read = READERS.getValue(fact)
         return try {
-            GitHubReading(Reading(where, log, Git(null), Asked(params)), github, access, http).read()
+            val reading = Reading(where, log, Git(null), Asked(params))
+            // A stage with no worktree.create record has no repository: that is what is unknown, first (Amendment 43).
+            reading.made(reading.stage())
+            GitHubReading(reading, github, access, http).read()
         } catch (missing: Missing) {
             Observation.Unknown(missing.message)
         } catch (ambiguous: Ambiguous) {

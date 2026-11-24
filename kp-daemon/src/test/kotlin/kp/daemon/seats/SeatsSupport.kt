@@ -56,6 +56,8 @@ class SeatsOffice(
     github: Boolean = false,
     /** The shape of the tokens [apps] mints: GitHub's today, unless a spec asks for the former one. */
     private val shape: kp.ops.FakeApps.TokenShape = kp.ops.FakeApps.TokenShape.STATELESS,
+    /** S3.11: with [github], whether the stage's worktree.create is on the log; without it, the stage has no repository. */
+    made: Boolean = true,
 ) : AutoCloseable {
     val project: Path = prepared ?: Files.createTempDirectory(checkout.resolve("build").createDirectories(), "seats-")
     val apps: kp.ops.FakeApps? = if (github) kp.ops.FakeApps.start(project.resolve("office/secrets/apps"), shape = shape).also { apps -> kp.daemon.THE_APPS.forEach(apps::add) } else null
@@ -72,7 +74,7 @@ class SeatsOffice(
     init {
         if (prepared == null) script.seed(project, OFFICE, clock)
         // With the seats' GitHub identity, the stage's worktree was made in kp-toy: what its seats' tokens are narrowed to (S3.11).
-        if (prepared == null && github) kp.daemon.placed(project, script.stageId(script.walk.stage), "kp-toy", "feat/kp-kp-toy-p2-s2.4-seats")
+        if (prepared == null && github && made) kp.daemon.placed(project, script.stageId(script.walk.stage), "kp-toy", "feat/kp-kp-toy-p2-s2.4-seats")
         val fake = project.resolve("office/fake").createDirectories()
         scripts.forEach { (seat, text) ->
             val given = kotlinx.serialization.json.Json.parseToJsonElement(text) as JsonObject
