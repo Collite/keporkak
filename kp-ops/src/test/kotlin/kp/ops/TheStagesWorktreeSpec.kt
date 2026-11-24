@@ -24,6 +24,19 @@ class TheStagesWorktreeSpec : FreeSpec({
         office.stage.scratch.isDirectory() shouldBe true
     }
 
+    "the daemon's git runs no hook of the main checkout's: a post-checkout hook planted there does not run at worktree.create, nor a reference-transaction one at worktree.remove (S3.11 T7, Amendment 43)" {
+        val office = Office()
+        val ran = office.main.resolveSibling("hooks-ran")
+        listOf("post-checkout", "reference-transaction").forEach { hook ->
+            office.main.resolve(".git/hooks/$hook").toFile().apply { writeText("#!/bin/sh\necho $hook >> '$ran'\n"); setExecutable(true) }
+        }
+
+        Worktrees().create(office.stage) shouldBe Performed.Ok()
+        Worktrees().remove(office.stage) shouldBe Performed.Ok()
+
+        ran.toFile().exists() shouldBe false
+    }
+
     "a second worktree.create, the worktree there on its branch with no change, is ok and changes nothing" {
         val office = Office()
         Worktrees().create(office.stage)

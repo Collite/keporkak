@@ -55,9 +55,9 @@ class OfficeOperations(
             NOTIFY_BORA -> OperationResult.Ok()
             WORKTREE_CREATE -> worktree(request) { placed -> Worktrees(git).create(placed.worktree).named(placed) }
             WORKTREE_REMOVE -> removed(request)
-            REGISTER_REBUILD -> entry()?.let { entry -> Register(keporkak.resolve(REGISTER_SCRIPT)).rebuild(project, entry.project.efforts.toList()).answer() }
+            REGISTER_REBUILD -> entry()?.let { entry -> Register(keporkak.resolve(REGISTER_SCRIPT), say = say).rebuild(project, entry.project.efforts.toList()).answer() }
                 ?: OperationResult.Failed(noOffice())
-            PROJECT_COMMIT_PUSH -> ProjectPush(project, ::mint, git).commitPush(cause(request)).answer()
+            PROJECT_COMMIT_PUSH -> ProjectPush(project, ::mint, git, say).commitPush(cause(request)).answer()
             else -> OperationResult.Failed("no performer for ${request.operation} on this office yet")
         })
     }

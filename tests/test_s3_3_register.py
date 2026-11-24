@@ -86,6 +86,19 @@ class RegisterTests(unittest.TestCase):
         self.assertEqual((result.returncode, result.stderr), (0, ""))
         self.assertEqual((self.project / "REGISTER.md").read_text(), HEADER + TOY_ROW + KP_ROW)
 
+    def test_a_status_that_lacks_a_field_of_st_2_gives_an_empty_cell_and_says_which_field_of_which_file_and_the_register_is_still_written(self):
+        # S3.11 T7 (Collite/keporkak#65, 3): a missing field is said, not only left empty.
+        (self.project / "toy" / "STATUS.md").write_text(TOY.replace("gates: []\n", "").replace("lane: coding\n", ""))
+
+        result = self.build("TOY=toy", "KP=.")
+
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+        self.assertEqual(result.stdout.splitlines(), [
+            "toy/STATUS.md: its frontmatter has no field gates: the cell is empty",
+            "toy/STATUS.md: its frontmatter has no field lane: the cell is empty",
+        ])
+        self.assertIn("| [TOY](toy/STATUS.md)", (self.project / "REGISTER.md").read_text())
+
     def test_the_same_status_files_give_the_same_bytes(self):
         self.build("KP=.", "TOY=toy")
         first = (self.project / "REGISTER.md").read_bytes()

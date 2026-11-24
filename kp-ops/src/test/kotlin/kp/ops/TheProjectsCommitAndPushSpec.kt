@@ -51,6 +51,33 @@ class TheProjectsCommitAndPushSpec : FreeSpec({
         project.remote.show("STATUS.md") shouldBe "# KP — status\n- **2026-11-22 — S3.3 merged.**"
     }
 
+    "the remote moved in `mail/`: failed(conflict) naming the log's file, nothing merged, no merge in progress, and the checkout's own commit stays (S3.11 T7; Collite/keporkak#65, 4)" {
+        val project = Project()
+        project.remote.moves(mapOf("mail/KP/p3-s3.3.jsonl" to "{\"seq\":1}\n{\"seq\":2, \"from\": \"another office\"}\n"))
+        append(project.checkout, "STATUS.md", "- **2026-11-24 — S3.3 merged.**\n")
+        val remoteBefore = project.remote.head()
+
+        val pushed = project.push.commitPush("m-panda-000052 (stage-exit of KP/P3/S3.3)")
+
+        pushed shouldBe Performed.Failed("conflict: the remote moved in mail/KP/p3-s3.3.jsonl — a file of the log, which no merge rewrites")
+        project.remote.head() shouldBe remoteBefore
+        project.checkout.resolve(".git/MERGE_HEAD").exists() shouldBe false
+        git(project.checkout, "log", "-1", "--format=%an %s") shouldBe "kp-merger project: m-panda-000052 (stage-exit of KP/P3/S3.3)"
+        project.checkout.resolve("mail/KP/p3-s3.3.jsonl").readText() shouldBe "{\"seq\":1}\n"
+    }
+
+    "a merge found in progress is given up before anything is added, and the journal says so (S3.11 T7, Amendment 43)" {
+        val project = Project()
+        project.remote.moves(mapOf("plan.md" to "# plan, changed elsewhere\n"))
+        git(project.checkout, "fetch", "--quiet", "origin")
+        git(project.checkout, "merge", "--no-commit", "--no-ff", "origin/master")
+
+        project.push.commitPush("m-panda-000053 (stage-exit of KP/P3/S3.3)")
+
+        project.journal shouldBe listOf("project.commit_push for m-panda-000053 (stage-exit of KP/P3/S3.3): the project checkout had a merge in progress — " +
+            "an earlier run's, cut off in it; it was given up before anything was added or committed")
+    }
+
     "the remote moved in the same lines: failed(conflict), no merge in progress, and every local change is still there" {
         val project = Project()
         project.remote.moves(mapOf("STATUS.md" to "# KP — status, changed elsewhere\n"))
@@ -92,5 +119,6 @@ private class Project {
     ))
     val checkout = remote.clone("project")
     val minted = ArrayList<String>()
-    val push = ProjectPush(checkout, { repository -> minted += repository; Minted.Ok(Token("ghs_theSpecsOwnToken", "2026-11-22T10:00:00Z")) })
+    val journal = ArrayList<String>()
+    val push = ProjectPush(checkout, { repository -> minted += repository; Minted.Ok(Token("ghs_theSpecsOwnToken", "2026-11-22T10:00:00Z")) }) { journal += it }
 }

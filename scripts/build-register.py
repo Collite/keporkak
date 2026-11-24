@@ -74,10 +74,17 @@ def main(argv):
             parser.error(f"--effort {given}: NAME=FOLDER")
         status = args.project / folder / "STATUS.md"
         try:
-            rows.append(row(effort, folder, frontmatter(status)))
+            fields = frontmatter(status)
         except (OSError, LookupError) as error:
             print(f"FAIL {effort}: {error}", file=sys.stderr)
             return 1
+        # A field ST-2 names that the frontmatter lacks is an empty cell, and said — the register is still written
+        # (contracts.md §7, Amendment 43; Collite/keporkak#65, 3).
+        for name in FIELDS:
+            if name not in fields:
+                shown = status.relative_to(args.project) if status.is_relative_to(args.project) else status
+                print(f"{shown}: its frontmatter has no field {name}: the cell is empty")
+        rows.append(row(effort, folder, fields))
     text = HEADER + "".join(rows)
     target = args.project / "REGISTER.md"
     # Written whole or not at all: a reader never sees half a register.

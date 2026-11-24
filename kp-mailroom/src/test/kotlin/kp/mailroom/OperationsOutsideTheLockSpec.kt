@@ -50,6 +50,24 @@ class OperationsOutsideTheLockSpec : StringSpec({
         }
     }
 
+    "an operation begins only when the mailroom's lock is free: while another holds it, the requested worktree.create is not performed; once it is let go, it is (S3.11 T7; Collite/keporkak#65, 2)" {
+        val office = Office(seed = "proposed")
+        val performer = Held().also { office.performing(it) }
+        try {
+            // The spec holds the lock, as a judgement in progress would; Bora's approval is judged on this thread — the lock is
+            // the mailroom's monitor, which this thread may take again — and its operation is handed over meanwhile.
+            synchronized(office.mailroom) {
+                office.boraNow(APPROVAL)
+                performer.notEnteredWithin("worktree.create $STAGE", 2)
+            }
+
+            performer.awaitEntered("worktree.create $STAGE")
+        } finally {
+            performer.releaseAll()
+            office.mailroom.settle()
+        }
+    }
+
     "a wake that takes as long as the spec holds it delays no other arrival (issue #42)" {
         val office = Office(seed = "proposed")
         val seats = HeldSeats().also { office.performing(Operations { _, done -> done(OperationResult.Ok()) }, it) }
