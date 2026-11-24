@@ -5,6 +5,7 @@ import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldEndWith
 import io.kotest.matchers.string.shouldStartWith
 import kp.model.Delivered
 import kp.model.Transition
@@ -102,7 +103,11 @@ class ReadingSpec : FreeSpec({
             val (first, second) = listOf(0, 1).map { office.ticket(office.id("assignment-proposal", it)) }
             all shouldContainAll listOf("Bora: present", "stage KP/P2/S2.1: proposed · proposals 1", "stage KP/P2/S2.2: proposed · proposals 1", "open tickets: #$first, #$second")
             all.first() shouldStartWith "office panda · rules "
-            all.single { it.startsWith("budgets: ") } shouldBe "budgets: 4 slots · per subscription claude 4 · per office panda 4 · 2 stages in flight per effort"
+            // The budgets line names every office of the pool: this office among them (one, two, three: TheOfficeIsDskSpec).
+            val budgets = all.single { it.startsWith("budgets: ") }
+            budgets shouldStartWith "budgets: 4 slots · per subscription claude 4 · per office "
+            budgets.substringAfter(" · per office ").substringBefore(" · ").split(", ") shouldContain "panda 4"
+            budgets shouldEndWith " · 2 stages in flight per effort"
             one.filter { it.startsWith("stage ") } shouldBe listOf("stage KP/P2/S2.2: proposed · proposals 1")
             office.kp("status", "KP/P9/S9.9").text shouldBe "nothing on the log is 'KP/P9/S9.9': an effort, a stage or a seat\n"
         }

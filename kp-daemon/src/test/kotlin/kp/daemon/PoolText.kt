@@ -68,6 +68,14 @@ fun withOffices(offices: String, names: List<String>, like: String = Rehearsed.O
     return (lines.take(map.first + 1) + entries + lines.drop(map.last + 1)).joinToString("\n")
 }
 
+/** [offices] whose map `github.seats` is [seats]: the line `  seats:` stays, every line under it is replaced. */
+fun withSeats(offices: String, seats: String): String {
+    val lines = offices.lines()
+    val first = lines.indexOf("  seats:").also { check(it >= 0) { "no '  seats:' in the block github:" } }
+    val end = (first + 1 until lines.size).firstOrNull { lines[it].isNotBlank() && !lines[it].startsWith("    ") } ?: lines.size
+    return (lines.take(first + 1) + seats.lines() + lines.drop(end)).joinToString("\n")
+}
+
 /** [budgets] whose slot limits are [slots], written as the file writes them: `slots: {…}` on one line. */
 fun withSlots(budgets: String, slots: String): String {
     val line = Regex("(?m)^slots: \\{.*}$")

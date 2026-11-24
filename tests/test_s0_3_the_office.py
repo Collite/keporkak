@@ -45,7 +45,7 @@ class TheOffice(unittest.TestCase):
     def test_a_budget_that_names_an_unknown_subscription_or_office_fails_the_check(self):
         pool = PandaPool(self)
         pool.edit("budgets.yaml", "per_subscription: {claude: 4}", "per_subscription: {claude: 4, codex: 2}")
-        pool.edit("budgets.yaml", "per_office: {panda: 4}", "per_office: {panda: 4, mac: 2}")
+        pool.edit("budgets.yaml", "per_office: {", "per_office: {mac: 2, ")
         result = pool.check()
         self.assertEqual(result.returncode, 1)
         self.assertIn("FAIL pool/budgets.yaml: per_subscription names unknown subscription 'codex'", result.stdout)

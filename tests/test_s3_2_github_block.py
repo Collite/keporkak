@@ -13,6 +13,14 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def line_of(start):
+    """The number, from 1, of the one line of the checkout's pool/offices.yaml that begins with [start] (S3.12): each
+    change below keeps its line where it is, so a problem names the line the file holds it on."""
+    lines = [number for number, line in enumerate((ROOT / "pool/offices.yaml").read_text().splitlines(), 1) if line.startswith(start)]
+    assert len(lines) == 1, f"{len(lines)} lines begin with {start!r}, not one"
+    return lines[0]
+
+
 class GitHubBlockTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=ROOT / "build")
@@ -30,15 +38,15 @@ class GitHubBlockTests(unittest.TestCase):
 
     def test_an_app_with_no_id_fails_naming_its_line(self):
         self.assertEqual(self.failures_with("    kp-merger: {app: 5849229, installation: 184045472}", "    kp-merger: {installation: 184045472}"),
-                         ["pool/offices.yaml: github: apps.kp-merger has no app id (line 31)"])
+                         [f"pool/offices.yaml: github: apps.kp-merger has no app id (line {line_of('    kp-merger: {app: 5849229,')})"])
 
     def test_a_role_naming_an_app_the_block_lacks_fails_naming_its_line(self):
         self.assertEqual(self.failures_with("    coder: {app: kp-coder,", "    coder: {app: kp-coders,"),
-                         ["pool/offices.yaml: github: seats.coder names the App 'kp-coders', which github.apps does not hold (line 36)"])
+                         [f"pool/offices.yaml: github: seats.coder names the App 'kp-coders', which github.apps does not hold (line {line_of('    coder: {app: kp-coder,')})"])
 
     def test_a_permission_neither_read_nor_write_fails_naming_its_line(self):
         self.assertEqual(self.failures_with("    coder: {app: kp-coder, permissions: {contents: write,", "    coder: {app: kp-coder, permissions: {contents: admin,"),
-                         ["pool/offices.yaml: github: seats.coder gives contents 'admin', which is neither read nor write (line 36)"])
+                         [f"pool/offices.yaml: github: seats.coder gives contents 'admin', which is neither read nor write (line {line_of('    coder: {app: kp-coder,')})"])
 
 
 if __name__ == "__main__":

@@ -21,6 +21,17 @@ class PoolValidationTests(unittest.TestCase):
         self.assertIn(old, path.read_text())
         path.write_text(path.read_text().replace(old, new))
 
+    def edit_office(self, office, old, new):
+        """[edit] inside the entry of [office] under `offices:` alone — its key's line and every line under it — so that
+        the pool's other offices keep their values, however many it names and in whatever order (S3.12)."""
+        path = self.pool / "offices.yaml"
+        lines = path.read_text().splitlines(keepends=True)
+        start = lines.index(f"  {office}:\n")
+        end = next((at for at in range(start + 1, len(lines)) if lines[at].strip() and not lines[at].startswith("    ")), len(lines))
+        entry = "".join(lines[start:end])
+        self.assertIn(old, entry)
+        path.write_text("".join(lines[:start]) + entry.replace(old, new) + "".join(lines[end:]))
+
     def failures(self):
         result = subprocess.run([sys.executable, "scripts/check-rules.py", "--pool", str(self.pool)], cwd=ROOT, text=True, capture_output=True)
         self.assertEqual(result.stderr, "")
@@ -67,14 +78,14 @@ class PoolValidationTests(unittest.TestCase):
         self.assertIn("pool/offices.yaml: 'hand' is not an office name (lower-case; 'hand' is reserved)", self.failures())
 
     def test_a_listener_off_the_loopback_fails(self):
-        self.edit("offices.yaml", 'board: "127.0.0.1:7712"', 'board: "0.0.0.0:7712"')
+        self.edit_office("panda", 'board: "127.0.0.1:7712"', 'board: "0.0.0.0:7712"')
         self.assertEqual(self.failures(), ["pool/offices.yaml: panda: listen.board must be 127.0.0.1:<port>"])
 
     def test_the_watch_period_is_a_positive_duration_with_no_other_field(self):
         # S2.4 (contracts.md §9, Amendment 22): how often the daemon reports its seats' facts.
-        self.edit("offices.yaml", "watch: {every: 30s}", "watch: {every: 30}")
+        self.edit_office("panda", "watch: {every: 30s}", "watch: {every: 30}")
         self.assertEqual(self.failures(), ["pool/offices.yaml: panda: watch.every must be a duration such as 30s"])
-        self.edit("offices.yaml", "watch: {every: 30}", "watch: {every: 0s, limit: 5m}")
+        self.edit_office("panda", "watch: {every: 30}", "watch: {every: 0s, limit: 5m}")
         self.assertEqual(self.failures(), ["pool/offices.yaml: panda: watch.every must be a duration such as 30s", "pool/offices.yaml: panda: unknown field 'watch.limit'"])
 
     def test_an_unquoted_off_is_the_word_not_a_boolean(self):
@@ -82,7 +93,7 @@ class PoolValidationTests(unittest.TestCase):
         self.assertEqual(self.failures(), [])
 
     def test_a_qa_vendor_outside_the_roster_fails(self):
-        self.edit("offices.yaml", "qa: {vendor: claude}", "qa: {vendor: codex}")
+        self.edit_office("panda", "qa: {vendor: claude}", "qa: {vendor: codex}")
         self.assertEqual(self.failures(), ["pool/offices.yaml: panda: qa vendor 'codex' is not a roster vendor"])
 
     def test_warnings_must_ascend(self):
@@ -94,9 +105,9 @@ class PoolValidationTests(unittest.TestCase):
         self.assertEqual(self.failures(), ["pool: {budget: warn.1} used by the rules does not resolve"])
 
     def test_the_project_is_one_checkout_with_a_folder_per_effort_inside_it(self):
-        self.edit("offices.yaml", 'efforts: {KP: ".", TOY: toy}', 'efforts: {KP: ".", TOY: ../toy}')
+        self.edit_office("panda", 'efforts: {KP: ".", TOY: toy}', 'efforts: {KP: ".", TOY: ../toy}')
         self.assertEqual(self.failures(), ["pool/offices.yaml: panda: project effort 'TOY' must be an effort id with a folder inside the checkout"])
-        self.edit("offices.yaml", "project: {checkout: ~/Dev/keporkak/project, efforts: {KP: \".\", TOY: ../toy}}", "project: {KP: ~/Dev/keporkak/project}")
+        self.edit_office("panda", "project: {checkout: ~/Dev/keporkak/project, efforts: {KP: \".\", TOY: ../toy}}", "project: {KP: ~/Dev/keporkak/project}")
         self.assertEqual(self.failures(), ["pool/offices.yaml: panda: project must name a checkout and a folder per effort", "pool/offices.yaml: panda: unknown field 'project.KP'"])
 
     def test_a_missing_pool_file_fails_with_one_line(self):
