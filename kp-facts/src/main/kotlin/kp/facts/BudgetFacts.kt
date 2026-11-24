@@ -59,7 +59,7 @@ object BudgetFacts {
         val today = LocalDate.ofInstant(now, ZoneOffset.UTC)
         val sums = turns.filter { it.subscription == subscription }.groupBy { LocalDate.ofInstant(it.at, ZoneOffset.UTC) }.mapValues { (_, each) -> each.sumOf { it.count } }
         val before = sums.filterKeys { it.isBefore(today) }.toSortedMap().entries.toList().takeLast(span)
-        val days = before.joinToString(", ") { it.key.toString() }
+        val days = before.joinToString(", ") { it.key.toString() }.ifEmpty { "none" }
         if (before.size < least) return Observation.Unknown("$subscription has turns on ${before.size} days before $today ($days); the median needs $least ($leastAt)")
         val ordered = before.map { BigDecimal.valueOf(it.value) }.sorted()
         val middle = ordered.size / 2
