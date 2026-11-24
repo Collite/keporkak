@@ -49,10 +49,137 @@ class PoolFacts(private val office: String, private val say: (String) -> Unit = 
     /** A view's ask: the same answer, and no journal line (Amendment 34). */
     val view: FactSource = FactSource { fact, stage -> answer(fact, stage, journal = false) }
 
-    /** [fact]'s answer for an ask about [stage], with its evidence, and the fact as it was read; null when it is not the pool's. */
+    /**
+     * [fact]'s answer for an ask about [stage], with its evidence, and the fact as it was read — a parameter left out
+     * taken as the ask's — what `just facts` prints; null when it is not the pool's. Nothing it reads throws out of it:
+     * what cannot be read is unknown, with why.
+     */
     fun observation(fact: FactRef, stage: String?): Pair<FactRef, Observation>? {
         if (fact.name !in ANSWERED) return null
-        return fact to Observation.Unknown("not answered yet")
+        val read = reading ?: return fact to Observation.Unknown("the daemon has not folded its log yet")
+        val rules = read.rules() ?: return fact to Observation.Unknown("the daemon has not read its rules yet")
+        val asked = Asked(fact, stage, read, rules)
+        return asked.fact to try {
+            asked.answer()
+        } catch (error: Exception) {
+            Observation.Unknown(error.toString())
+        }
+    }
+
+    /** One ask: [given] about [stage], read from [read] with [rules] — the pool as in force at the ask. */
+    private inner class Asked(given: FactRef, private val stage: String?, private val read: Reading, private val rules: InForceRules) {
+        private val pool = rules.ruleSet.pool
+        private val roster = pool.roster
+        private val levels = Levels(roster, rules.texts)
+        private val state by lazy { read.state() }
+        private val log by lazy { SeatLog(read.lines()) }
+
+        /** The fact as it is read: `office.computer_use` with no office asks for this one's. */
+        val fact: FactRef = if (given.name == COMPUTER_USE && OFFICE !in given.params) FactRef(given.name, given.params + (OFFICE to Datum.Text(office))) else given
+
+        private fun param(name: String): String? = (fact.params[name] as? Datum.Text)?.value
+
+        fun answer(): Observation = when (fact.name) {
+            RANK -> seat { seat, line -> Observation.Value(line.index, "$seat runs ${line.value.model} at ${line.value.effort}: ${where(ROSTER, "$ORDER.${line.index}")}") }
+            MODEL_RANK -> seat { seat, line ->
+                val first = firstOf(line.value.model)!!
+                Observation.Value(first.index, "$seat runs ${line.value.model}, whose first line is ${where(ROSTER, "$ORDER.${first.index}")}")
+            }
+            FLOOR_RANK -> firstOf(roster.reviewFloor)?.let { first ->
+                Observation.Value(first.index, "review.floor ${roster.reviewFloor} (${where(ROSTER, "review.floor")}), whose first line is ${where(ROSTER, "$ORDER.${first.index}")}")
+            } ?: Observation.Unknown("the review floor ${roster.reviewFloor} is in no line of $ROSTER's order")
+            SEAT_AVAILABLE -> available()
+            COMPUTER_USE -> computerUse()
+            else -> Observation.Unknown("not answered yet")
+        }
+
+        // ---- the roster (Amendment 44: a seat's line is the order line of the model and effort it was started with)
+
+        /** The seat the fact names — by `of` or `seat`: a seat, or a role in the asked stage, as `seat.name` names one — and its line. */
+        private fun seat(answer: (String, IndexedValue<kp.rules.Line>) -> Observation): Observation {
+            val named = param(OF) ?: param(SEAT) ?: return Observation.Unknown("no parameter of or seat names a seat")
+            val seat = if (isRole(named)) {
+                val at = stage ?: return Observation.Unknown("no stage to find the role $named in")
+                boundTo(named, at) ?: return Observation.Unknown("no seat is bound to the role $named in $at")
+            } else named
+            return when (val line = lineOf(seat)) {
+                is Lined.Of -> answer(seat, line.line)
+                is Lined.Not -> Observation.Unknown(line.why)
+            }
+        }
+
+        /** Whether [name] is a role: a persona declares it (`agents/<role>/AGENT.md`). */
+        private fun isRole(name: String): Boolean = "agents/$name/AGENT.md" in rules.texts
+
+        /** The seat bound to [role] in [stage]: the last the log started for it there that is not retired. */
+        private fun boundTo(role: String, stage: String?): String? =
+            log.known.entries.lastOrNull { (seat, known) -> known.role == role && known.stage == stage && state.machine(SEAT_MACHINE, seat)?.state != RETIRED }?.key
+
+        /**
+         * [seat]'s line: the model and the effort the daemon's seats hold it was started with; else, for a seat the log
+         * started, the line a start gives its role there — the reading a start uses (Levels).
+         */
+        private fun lineOf(seat: String): Lined {
+            read.bound(seat)?.let { (model, effort) ->
+                return roster.order.withIndex().firstOrNull { it.value.model == model && it.value.effort == effort }?.let(Lined::Of)
+                    ?: Lined.Not("$seat runs $model at $effort, which no line of $ROSTER's order holds")
+            }
+            val known = log.known[seat] ?: return Lined.Not("no seat $seat is known to the log or to the seats")
+            val role = known.role ?: return Lined.Not("the log names no role $seat was started for")
+            return when (val seated = levels.line(role, Levels.asked(role, known.stage, known.cause, state.delivered)) { other -> lineOn(other, known.stage) }) {
+                is Levels.Result.Seated -> roster.order.withIndex().firstOrNull { it.value == seated.line }?.let(Lined::Of)
+                    ?: Lined.Not("$seat would be seated on a line no line of $ROSTER's order holds")
+                is Levels.Result.Unseated -> Lined.Not("$seat cannot be seated as $role: ${seated.why}")
+            }
+        }
+
+        /** [role]'s line on [stage]: its seat's, when one is bound there; else the line the roster gives the role there. */
+        private fun lineOn(role: String, stage: String?): kp.rules.Line? =
+            boundTo(role, stage)?.let { (lineOf(it) as? Lined.Of)?.line?.value }
+                ?: (levels.line(role, Levels.asked(role, stage, null, state.delivered)) { null } as? Levels.Result.Seated)?.line
+
+        /** The first line of [model] in the order, with its index. */
+        private fun firstOf(model: String): IndexedValue<kp.rules.Line>? = roster.order.withIndex().firstOrNull { it.value.model == model }
+
+        /**
+         * `pool.seat_available` (role, level): true when a `seat.start` for the role at the level would be seated — the
+         * roster gives a line by the reading a start uses, and its model is not reserved for another role. No slot is
+         * counted here: `budget.slot_open` is asked beside it.
+         */
+        private fun available(): Observation {
+            val role = param(ROLE) ?: return Observation.Unknown("no parameter role")
+            if (!isRole(role)) return Observation.Unknown("no persona declares the role $role")
+            val level = param(LEVEL)
+            if (level != null && !levels.knows(level)) return Observation.Unknown("$ROSTER has no level $level")
+            val asked = "$role${level?.let { " at $it" } ?: ""}"
+            return when (val seated = levels.line(role, level) { other -> lineOn(other, stage) }) {
+                is Levels.Result.Unseated -> Observation.Value(false, "a start of $asked would not be seated: ${seated.why}")
+                is Levels.Result.Seated -> {
+                    val line = seated.line
+                    val at = roster.order.withIndex().firstOrNull { it.value == line }?.let { where(ROSTER, "$ORDER.${it.index}") } ?: ROSTER
+                    val reserved = roster.reserved[line.model]
+                    val free = reserved?.let { role in it } ?: true
+                    Observation.Value(free, "$asked is seated on ${line.model} ${line.effort} ($at); " +
+                        (reserved?.let { "the model is reserved for ${it.joinToString(", ")} (${where(ROSTER, "reserved.${line.model}")})" } ?: "the model is reserved for no role"))
+                }
+            }
+        }
+
+        /** `office.computer_use` (office): the office's `computer_use`, this office's when none is named. */
+        private fun computerUse(): Observation {
+            val name = param(OFFICE)!!
+            val entry = pool.offices[name] ?: return Observation.Unknown("$OFFICES names no office $name")
+            return Observation.Value(entry.computerUse, where(OFFICES, "offices.$name.computer_use"))
+        }
+
+        /** Where a value of a pool file stands: the file, its line, and the value's path in it. */
+        private fun where(file: String, path: String): String = pool.lines[file]?.get(path)?.let { "$file line $it ($path)" } ?: "$file ($path)"
+    }
+
+    /** A seat's line of the order, or why it has none. */
+    private sealed interface Lined {
+        class Of(val line: IndexedValue<kp.rules.Line>) : Lined
+        class Not(val why: String) : Lined
     }
 
     private fun answer(fact: FactRef, stage: String?, journal: Boolean): Datum? = when (val answer = observation(fact, stage)?.second) {
@@ -65,10 +192,28 @@ class PoolFacts(private val office: String, private val say: (String) -> Unit = 
     }
 
     companion object {
+        private const val RANK = "roster.rank"
+        private const val MODEL_RANK = "roster.model_rank"
+        private const val FLOOR_RANK = "roster.floor_rank"
+        private const val SEAT_AVAILABLE = "pool.seat_available"
+        private const val COMPUTER_USE = "office.computer_use"
+        private const val SLOT_OPEN = "budget.slot_open"
+        private const val SLOTS_OVER = "budget.slots_over"
+        private const val CONSUMPTION = "budget.consumption"
+        private const val VS_DAILY_MEDIAN = "budget.vs_daily_median"
+
         /** The nine (Amendment 44). */
-        val ANSWERED: Set<String> = setOf(
-            "roster.rank", "roster.model_rank", "roster.floor_rank", "pool.seat_available", "office.computer_use",
-            "budget.slot_open", "budget.slots_over", "budget.consumption", "budget.vs_daily_median",
-        )
+        val ANSWERED: Set<String> = setOf(RANK, MODEL_RANK, FLOOR_RANK, SEAT_AVAILABLE, COMPUTER_USE, SLOT_OPEN, SLOTS_OVER, CONSUMPTION, VS_DAILY_MEDIAN)
+
+        private const val ROSTER = "pool/roster.yaml"
+        private const val OFFICES = "pool/offices.yaml"
+        private const val ORDER = "order"
+        private const val OF = "of"
+        private const val SEAT = "seat"
+        private const val ROLE = "role"
+        private const val LEVEL = "level"
+        private const val OFFICE = "office"
+        private const val SEAT_MACHINE = "seat"
+        private const val RETIRED = "retired"
     }
 }

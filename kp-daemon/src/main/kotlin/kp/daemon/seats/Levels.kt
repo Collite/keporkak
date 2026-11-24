@@ -37,6 +37,9 @@ internal class Levels(private val roster: Roster, private val personas: Map<Stri
         return roster.levels[skill]?.get(size)?.let(Result::Seated) ?: Result.Unseated("the roster has no level $skill $size")
     }
 
+    /** Whether the roster knows the skill [level] names — `senior`, `senior L`, `junior/M` (S3.13: a level the pool does not know). */
+    fun knows(level: String): Boolean = parse(level).first?.let { it in roster.levels } ?: false
+
     /** The lowest line at or above [base] whose model is at least the review floor: on [base]'s effort when there is one. */
     private fun raised(base: Line): Line? {
         val rank = roster.order.indexOf(base).takeIf { it >= 0 } ?: return null
@@ -63,14 +66,30 @@ internal class Levels(private val roster: Roster, private val personas: Map<Stri
         data class Unseated(val why: String) : Result
     }
 
-    private companion object {
-        const val FENCE = "---"
-        const val LEVEL = "level"
-        const val SKILL = "skill"
-        const val THINKING = "thinking"
-        const val DEFAULT_SIZE = "M"
-        val SIZES = setOf("S", "M", "L", "XL")
-        val RELATIVE = Regex("""≥\s*the\s+([a-z][a-z-]*)'s""")
-        val ASKED = Regex("""([a-z]+)(?:[\s/,-]+(S|M|L|XL))?""")
+    companion object {
+        /**
+         * The level a request names for [role] on [stage], by the reading a start uses (contracts.md §4.4, §9): the message
+         * [cause], or one it answers, that names one; else the last delivery about [stage] that names the role and a level.
+         */
+        fun asked(role: String, stage: String?, cause: String?, delivered: Map<String, kp.engine.Delivery>): String? {
+            var at = cause
+            while (at != null) {
+                val delivery = delivered[at] ?: break
+                (delivery.args.fields[LEVEL] as? Datum.Text)?.value?.let { return it }
+                at = delivery.re
+            }
+            return delivered.values.lastOrNull { it.stage == stage && (it.args.fields[ROLE] as? Datum.Text)?.value == role && it.args.fields[LEVEL] is Datum.Text }
+                ?.let { (it.args.fields[LEVEL] as Datum.Text).value }
+        }
+
+        private const val ROLE = "role"
+        private const val FENCE = "---"
+        private const val LEVEL = "level"
+        private const val SKILL = "skill"
+        private const val THINKING = "thinking"
+        private const val DEFAULT_SIZE = "M"
+        private val SIZES = setOf("S", "M", "L", "XL")
+        private val RELATIVE = Regex("""≥\s*the\s+([a-z][a-z-]*)'s""")
+        private val ASKED = Regex("""([a-z]+)(?:[\s/,-]+(S|M|L|XL))?""")
     }
 }

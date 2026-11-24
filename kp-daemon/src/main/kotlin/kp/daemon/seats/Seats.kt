@@ -469,15 +469,7 @@ class Seats(
      */
     private fun asked(role: String, stage: String?, cause: String?): String? {
         val delivered = office?.state?.delivered ?: return null
-        var at = cause
-        while (at != null) {
-            val delivery = delivered[at] ?: break
-            (delivery.args.fields[LEVEL] as? Datum.Text)?.value?.let { return it }
-            at = delivery.re
-        }
-        return delivered.values.lastOrNull { it.stage == stage && (it.args.fields[ROLE] as? Datum.Text)?.value == role && it.args.fields[LEVEL] is Datum.Text }
-            ?.let { (it.args.fields[LEVEL] as Datum.Text).value }
-            ?: seeds.values.firstOrNull { it.role == role && it.stage == stage }?.level
+        return Levels.asked(role, stage, cause, delivered) ?: seeds.values.firstOrNull { it.role == role && it.stage == stage }?.level
     }
 
     // ---- the places (contracts.md §9, §10)
@@ -671,7 +663,6 @@ class Seats(
     companion object {
         const val SEAT = "seat"
         private const val ROLE = "role"
-        private const val LEVEL = "level"
         private const val SESSION = "session"
         private const val WINDOW = "window"
         private const val CANCEL_RESULT = "cancel"

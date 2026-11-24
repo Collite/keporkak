@@ -125,21 +125,31 @@ class GitHubWorld private constructor(
 }
 
 /**
- * The service's world (S3.1, S3.2): the project's and git's facts ([ProjectWorld]) and GitHub's ([GitHubWorld]), each
+ * The service's world (S3.1, S3.2, S3.13): the project's and git's facts ([ProjectWorld]), GitHub's ([GitHubWorld]) and the
+ * pool's and the budgets' ([kp.daemon.seats.PoolFacts] — read with the daemon's seats, so the caller hands it its fold), each
  * fact asked of the one that holds it.
  */
-class ServiceWorld(val project: ProjectWorld, val github: GitHubWorld) : FactSource {
+class ServiceWorld(val project: ProjectWorld, val github: GitHubWorld, val pool: kp.daemon.seats.PoolFacts? = null) : FactSource {
     /** Reads [office]'s fold from now on — handed over as the office is made, before its start carries a judgement again (S3.8). */
     fun reading(office: Office) {
         project.reading(office)
         github.reading(office)
     }
 
-    override fun observe(fact: FactRef, stage: String?): Datum? =
-        if (fact.name in GitHubFacts.ANSWERED) github.observe(fact, stage) else project.observe(fact, stage)
+    override fun observe(fact: FactRef, stage: String?): Datum? = when {
+        fact.name in GitHubFacts.ANSWERED -> github.observe(fact, stage)
+        pool != null && fact.name in kp.daemon.seats.PoolFacts.ANSWERED -> pool.observe(fact, stage)
+        else -> project.observe(fact, stage)
+    }
 
     /** A view's ask — `kp inbox`: each world's view, writing no journal line (Amendment 34). */
-    val view: FactSource = FactSource { fact, stage -> if (fact.name in GitHubFacts.ANSWERED) github.view.observe(fact, stage) else project.view.observe(fact, stage) }
+    val view: FactSource = FactSource { fact, stage ->
+        when {
+            fact.name in GitHubFacts.ANSWERED -> github.view.observe(fact, stage)
+            pool != null && fact.name in kp.daemon.seats.PoolFacts.ANSWERED -> pool.view.observe(fact, stage)
+            else -> project.view.observe(fact, stage)
+        }
+    }
 }
 
 /**

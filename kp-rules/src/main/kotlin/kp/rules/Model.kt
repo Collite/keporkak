@@ -267,6 +267,8 @@ data class Pool(
     val values: Map<PoolFile, List<Map<String, Literal>>>,
     /** `pool/offices.yaml`'s block `github:` (Amendment 33); null when the file has none. */
     val github: GitHub? = null,
+    /** The line each value of a pool file stands on: the file's path → dotted path → line (S3.13: a pool fact's evidence). */
+    val lines: Map<String, Map<String, Int>> = emptyMap(),
 )
 
 /**
