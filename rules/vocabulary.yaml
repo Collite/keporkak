@@ -151,7 +151,7 @@ facts:
     returns: set of blocker ids open after the last verdict or re-verdict
     source: L
   ci.state:
-    params: sha
+    params: stage, of
     returns: green · red · pending · none
     source: O
   release.state:

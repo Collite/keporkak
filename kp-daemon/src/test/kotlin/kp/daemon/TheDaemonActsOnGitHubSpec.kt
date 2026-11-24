@@ -3,7 +3,7 @@ package kp.daemon
 import io.kotest.core.spec.style.FreeSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldNotBeEmpty
-import io.kotest.matchers.maps.shouldNotContainKey
+import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.Json
 import kp.engine.Datum
@@ -12,6 +12,8 @@ import kp.facts.MOVED_HEAD
 import kp.facts.RecordedGitHub.Companion.jsonList
 import kp.facts.RecordedGitHub.Companion.recorded
 import kp.facts.TOY_HEAD
+import kp.facts.byTheReviewer
+import kp.facts.toyReviews
 import kp.facts.filedIssue
 import kp.facts.mergesOnItsHead
 import kp.facts.pull
@@ -23,7 +25,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * KP/P3/S3.9 — the daemon acts on GitHub (T1's wiring sentences; T5). The office is the service's on GitHub
+ * KP/P3/S3.9 — the daemon acts on GitHub (T1's wiring sentences; T5), on master's rules since D-108 (S3.11 T4): a `merge`
+ * reads the reviewer's review and the checks on `pr.head`, and so observes the head it merges on. The office is the service's on GitHub
  * ([ActingOffice]): a judgement through [Office] requests the operation, the daemon's [GitHubOperations] performs it with
  * `kp-ops` as `kp-merger`, in front of one local server that answers with what was recorded from `Collite/kp-toy` and as
  * GitHub's App endpoints do. Its seams are the daemon's own: a message judged, the `op` records on the log, the journal,
@@ -31,9 +34,10 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class TheDaemonActsOnGitHubSpec : FreeSpec({
     "the head a merge is asked on is the one its judgement observed, handed from the log; the `op` record carries the merge commit, and no token is in it, the journal or anything the daemon printed" {
-        ActingOffice(mapOf("TOY/P0/S0.1" to "passed"), fromGitHub = setOf("pr.head", "ci.state"), mergeReadsTheHead = true).use { office ->
+        ActingOffice(mapOf("TOY/P0/S0.1" to "passed"), fromGitHub = setOf("pr.head", "pr.review_on", "ci.state")).use { office ->
             office.github.toyPullRequests(pull("state" to "open", "closed_at" to null, "merged_at" to null))
             office.github.toyCheckRuns(TOY_HEAD, recorded("check-runs.json"))
+            office.github.toyReviews(byTheReviewer(TOY_HEAD, "APPROVED", "2026-11-22T08:30:00Z"))
             office.github.onRequests("PUT", "/repos/Collite/kp-toy/pulls/1/merge", Answer(200, recorded("merge-200.json")))
 
             val printed = printedDuring {
@@ -52,13 +56,14 @@ class TheDaemonActsOnGitHubSpec : FreeSpec({
     }
 
     "a head that moved after the judgement observed it: the merge is asked on the head handed from the log, not on the one GitHub lists when it runs, and ends `stale-ci`" {
-        ActingOffice(mapOf("TOY/P0/S0.1" to "passed"), fromGitHub = setOf("pr.head", "ci.state"), mergeReadsTheHead = true).use { office ->
+        ActingOffice(mapOf("TOY/P0/S0.1" to "passed"), fromGitHub = setOf("pr.head", "pr.review_on", "ci.state")).use { office ->
             val head = AtomicReference(TOY_HEAD)
             val listed = CopyOnWriteArrayList<String>()
             office.github.onRequest("GET", "/repos/Collite/kp-toy/pulls") {
                 Answer(200, jsonList(pull("state" to "open", "closed_at" to null, "merged_at" to null, "head.sha" to head.get().also(listed::add))))
             }
             // A push lands on the branch once the judgement has read the check runs of the head it observed.
+            office.github.toyReviews(byTheReviewer(TOY_HEAD, "APPROVED", "2026-11-22T08:30:00Z"))
             office.github.onRequest("GET", "/repos/Collite/kp-toy/commits/$TOY_HEAD/check-runs") { Answer(200, recorded("check-runs.json")).also { head.set(MOVED_HEAD) } }
             office.github.mergesOnItsHead("/repos/Collite/kp-toy/pulls/1/merge") { head.get() }
 
@@ -74,24 +79,26 @@ class TheDaemonActsOnGitHubSpec : FreeSpec({
         }
     }
 
-    "a `merge` whose judgement observed no `pr.head` — master's rules read none — is `refused`, and the local server saw no request" {
-        ActingOffice(mapOf("TOY/P0/S0.1" to "passed")).use { office ->
+    "a `merge` on a head no review of the reviewer's stands on is refused by master's rules, naming the rule: no `git.merge` is requested, and the local server saw no merge (D-108)" {
+        ActingOffice(mapOf("TOY/P0/S0.1" to "passed"), fromGitHub = setOf("pr.head", "pr.review_on", "ci.state")).use { office ->
+            office.github.toyPullRequests(pull("state" to "open", "closed_at" to null, "merged_at" to null))
+            office.github.toyCheckRuns(TOY_HEAD, recorded("check-runs.json"))
+            office.github.toyReviews()
             office.github.onRequests("PUT", "/repos/Collite/kp-toy/pulls/1/merge", Answer(200, recorded("merge-200.json")))
 
-            office.send("teamlead", MERGE_THE_TOY).status shouldBe Status.DELIVERED
-            office.awaitResult("git.merge")
+            office.send("teamlead", MERGE_THE_TOY) should refusedBy("merge", """{"fact":"pr.review_on","sha":{"fact":"pr.head"},"in":["approved","commented"]}""")
 
-            office.observedOf("merge") shouldNotContainKey "pr.head"
-            office.ops("git.merge") shouldBe listOf("requested null", "failed refused: the judgement of ${office.idOf("merge")} observed no pr.head: there is no head to merge on")
-            office.github.requests.shouldBeEmpty()
-            office.apps.requests.shouldBeEmpty()
+            office.observedOf("merge")["pr.head"] shouldBe "\"$TOY_HEAD\""
+            office.ops("git.merge").shouldBeEmpty()
+            office.github.requests.filter { it.method == "PUT" }.shouldBeEmpty()
         }
     }
 
     "a daemon killed while a held merge runs records it `failed: interrupted` at its start and sends GitHub nothing: its server saw the one merge, before the kill" {
-        ActingOffice(mapOf("TOY/P0/S0.1" to "passed"), fromGitHub = setOf("pr.head", "ci.state"), mergeReadsTheHead = true).use { office ->
+        ActingOffice(mapOf("TOY/P0/S0.1" to "passed"), fromGitHub = setOf("pr.head", "pr.review_on", "ci.state")).use { office ->
             office.github.toyPullRequests(pull("state" to "open", "closed_at" to null, "merged_at" to null))
             office.github.toyCheckRuns(TOY_HEAD, recorded("check-runs.json"))
+            office.github.toyReviews(byTheReviewer(TOY_HEAD, "APPROVED", "2026-11-22T08:30:00Z"))
             val held = office.github.hold("PUT", "/repos/Collite/kp-toy/pulls/1/merge")
             office.send("teamlead", MERGE_THE_TOY).status shouldBe Status.DELIVERED
             held.received.await(30, TimeUnit.SECONDS) shouldBe true
