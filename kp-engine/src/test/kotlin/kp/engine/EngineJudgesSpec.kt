@@ -56,7 +56,8 @@ class EngineJudgesSpec : StringSpec({
     "of two candidate transitions, the first in file order whose requirements hold is the one that fires" {
         val passed = folded(log(move("stage", STAGE, "in_review", "passed")))
         val merge = message("merge", from = "teamlead", to = "daemon")
-        val audit = arrayOf("now" to NOW, "pr.evidence_present" to true, "list.tasks_open" to 0, "project.proof_files" to 0, "list.found_untriaged" to 0)
+        val audit = arrayOf("now" to NOW, "pr.head" to "abc", "pr.review_on(sha=abc)" to "approved", "ci.state(of=abc)" to "green", "pr.evidence_present" to true,
+            "list.tasks_open" to 0, "project.proof_files" to 0, "list.found_untriaged" to 0)
         val strayChange = table(*audit, "git.stray_changes" to 1)
         val clean = table(*audit, "git.stray_changes" to 0)
         val frozenOnNoChangeToo = ruleSet(Edit("rules/stage-lifecycle.yaml", "  - fact: git.stray_changes\n    gt: 0", "  - fact: git.stray_changes\n    gte: 0"))

@@ -7,7 +7,8 @@ import kp.rules.MessageClass
 
 private val passed = folded(log(move("stage", STAGE, "in_review", "passed")))
 private val merge = Arrival(message("merge", from = "teamlead", to = "daemon"))
-private val audit = arrayOf("now" to NOW, "pr.evidence_present" to true, "list.tasks_open" to 0, "project.proof_files" to 0, "list.found_untriaged" to 0, "git.stray_changes" to 0,
+// A merge reads the reviewer's review and the checks on the head (D-108): the head reviewed and green.
+private val audit = arrayOf("now" to NOW, "pr.head" to "abc", "pr.review_on(sha=abc)" to "approved", "ci.state(of=abc)" to "green", "pr.evidence_present" to true, "list.tasks_open" to 0, "project.proof_files" to 0, "list.found_untriaged" to 0, "git.stray_changes" to 0,
     "roster.rank(of=reviewer)" to 2, "roster.rank(of=coder)" to 1, "roster.model_rank(of=reviewer)" to 2, "roster.floor_rank" to 2, "seat.name(of=coder)" to "coder-1")
 private val secondKeyHolds = table(*audit, "seat.name(of=reviewer)" to "reviewer-1")
 private val sameSeatReviewed = table(*audit, "seat.name(of=reviewer)" to "coder-1")
