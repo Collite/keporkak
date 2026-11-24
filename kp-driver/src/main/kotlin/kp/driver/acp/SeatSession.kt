@@ -85,7 +85,7 @@ internal class SeatSession(
     @Volatile private var turn: Turn? = null
     @Volatile private var loading: JsonElement? = null
     @Volatile private var replaying = false
-    val observations = Observations(seat, clock)
+    val observations = Observations(seat, clock, spec.weights)
     private val inputs = ConcurrentHashMap<String, JsonElement>()
     private val names = ConcurrentHashMap<String, String>()
     private val asking = ConcurrentHashMap.newKeySet<Deferred<Explained>>()

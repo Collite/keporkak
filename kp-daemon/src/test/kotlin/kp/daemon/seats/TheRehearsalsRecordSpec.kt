@@ -90,16 +90,17 @@ class TheRehearsalsRecordSpec : StringSpec({
             "end_turn; tokens input 6, output 205, cache read 60000, cache write 9000, thought 40, total 69211; model calls not reported",
             "end_turn; tokens input 4, output 100, cache read 69000, cache write 300, thought not reported, total 69404; model calls not reported",
         )
+        // Weighted (S3.13) by pool/budgets.yaml's usage.weights — input 1, output 5, cache write 1.25, cache read 0.1.
         parts.usage("coder-1") shouldBe listOf(
-            "| coder-1 | 1 | 6 | 205 | 60000 | 9000 | 40 | 69211 |",
-            "| coder-1 | 2 | 4 | 100 | 69000 | 300 | not reported | 69404 |",
-            "| coder-1 | 3 | 1 | 1 | not reported | not reported | not reported | 2 |",
-            "| coder-1 | 4 | 1 | 1 | not reported | not reported | not reported | 2 |",
-            "| coder-1 | 4 turns | 12 | 307 | 129000 (not reported in 2) | 9300 (not reported in 2) | 40 (not reported in 3) | 138619 |",
+            "| coder-1 | 1 | 6 | 205 | 60000 | 9000 | 40 | 69211 | 18281 |",
+            "| coder-1 | 2 | 4 | 100 | 69000 | 300 | not reported | 69404 | 7779 |",
+            "| coder-1 | 3 | 1 | 1 | not reported | not reported | not reported | 2 | 6 |",
+            "| coder-1 | 4 | 1 | 1 | not reported | not reported | not reported | 2 | 6 |",
+            "| coder-1 | 4 turns | 12 | 307 | 129000 (not reported in 2) | 9300 (not reported in 2) | 40 (not reported in 3) | 138619 | 26072 |",
         )
         parts.usage("reviewer-1") shouldBe listOf(
-            "| reviewer-1 | 1 | 3 | 30 | 50000 | 7000 | 10 | 57033 |",
-            "| reviewer-1 | 1 turn | 3 | 30 | 50000 | 7000 | 10 | 57033 |",
+            "| reviewer-1 | 1 | 3 | 30 | 50000 | 7000 | 10 | 57033 | 13903 |",
+            "| reviewer-1 | 1 turn | 3 | 30 | 50000 | 7000 | 10 | 57033 | 13903 |",
         )
         parts.close()
     }
@@ -139,7 +140,7 @@ private class Rehearsed(coder: String? = null, reviewer: String? = null, claude:
     }
 
     /** The rows of the evidence's usage table for [seat]: each turn, and the seat's sums. */
-    fun usage(seat: String): List<String> = evidence().readLines().filter { it.startsWith("| $seat | ") && it.split(" | ").size == 8 }
+    fun usage(seat: String): List<String> = evidence().readLines().filter { it.startsWith("| $seat | ") && it.split(" | ").size == 9 }
 
     fun transcript(seat: String): List<String> = hero.project.resolve("office/seats/_transcripts/$seat.log").readLines()
 

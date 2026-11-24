@@ -7,6 +7,7 @@ import kp.driver.ObservedFact
 import kp.driver.Outcome
 import kp.driver.SeatFacts
 import kp.driver.Usage
+import kp.driver.UsageWeights
 import kp.driver.UsageWindow
 import kp.model.SeatId
 import java.math.BigDecimal
@@ -25,10 +26,11 @@ import java.time.Instant
  *   tool call is open from `pending` or `in_progress` until `completed` or `failed`; a turn that ends `cancelled`
  *   and a process that ends close every one (the client marks them cancelled — the protocol's own rule).
  * - `seat.context_used`: the fraction of the context window the agent last reported in use.
- * - `seat.usage`: tokens — `turn`, the total of the last turn that ended; `session`, the sum over this session's
- *   turns that reported usage.
+ * - `seat.usage`: tokens, each turn counted by its four parts weighted (contracts.md §4.4, Amendment 44) with the weights
+ *   in force when it ended — `turn`, the count of the last turn that ended; `session`, the sum over this session's turns.
+ *   A part the agent did not report counts zero, and the evidence says so.
  */
-internal class Observations(private val seat: SeatId, private val clock: Clock) {
+internal class Observations(private val seat: SeatId, private val clock: Clock, private val weights: UsageWeights.Source = UsageWeights.Source { null }) {
     private var pid: Long? = null
     private var gone: Pair<Int, Instant>? = null
     private var closedAt: Instant? = null
@@ -36,10 +38,14 @@ internal class Observations(private val seat: SeatId, private val clock: Clock) 
     private var lastHeard: Instant? = null
     private val open = LinkedHashMap<String, Instant>()
     private var context: Triple<Long, Long, Instant>? = null
-    private var lastTurn: Pair<Usage?, Instant>? = null
+    private var lastTurn: Counted? = null
     private var sessionTokens = 0L
     private var turnsEnded = 0
     private var turnsWithUsage = 0
+    private var turnsUncounted = 0
+
+    /** A turn that ended: its usage as the agent reported it, its count — null when no weights were in force — and when. */
+    private class Counted(val usage: Usage?, val count: Long?, val weights: UsageWeights?, val at: Instant)
 
     @Synchronized fun started(pid: Long) { this.pid = pid }
 
@@ -52,11 +58,11 @@ internal class Observations(private val seat: SeatId, private val clock: Clock) 
         if (stopReason == null) return
         if (stopReason == CANCELLED) open.clear()
         turnsEnded++
-        lastTurn = usage to at
-        if (usage != null) {
-            turnsWithUsage++
-            sessionTokens += usage.total
-        }
+        val weights = weights.weights()
+        val count = weights?.count(usage)
+        lastTurn = Counted(usage, count, weights, at)
+        if (usage != null) turnsWithUsage++
+        if (count != null) sessionTokens += count else turnsUncounted++
     }
 
     @Synchronized fun update(update: SessionUpdate, at: Instant) {
@@ -100,7 +106,8 @@ internal class Observations(private val seat: SeatId, private val clock: Clock) 
         SeatFacts.USAGE -> when (window) {
             null -> Outcome.Failed("${SeatFacts.USAGE} needs a window: ${UsageWindow.entries.joinToString(" or ") { it.word }}")
             UsageWindow.TURN -> turnUsage()
-            UsageWindow.SESSION -> Outcome.Ok(fact(SeatFacts.USAGE, JsonPrimitive(sessionTokens), "$turnsEnded turns ended in this session, $turnsWithUsage with usage reported"))
+            UsageWindow.SESSION -> Outcome.Ok(fact(SeatFacts.USAGE, JsonPrimitive(sessionTokens), "$turnsEnded turns ended in this session, $turnsWithUsage with usage reported, " +
+                "each counted by its parts weighted" + (turnsUncounted.takeUnless { it == 0 }?.let { "; $it not counted: no weights were in force" } ?: "")))
         }
         else -> Outcome.Failed("the driver observes no fact named $fact")
     }
@@ -129,9 +136,9 @@ internal class Observations(private val seat: SeatId, private val clock: Clock) 
     }
 
     private fun turnUsage(): Outcome<ObservedFact> {
-        val (usage, at) = lastTurn ?: return Outcome.Failed("no turn has ended in this session")
-        if (usage == null) return Outcome.Failed("the last turn, ended at $at, reported no usage")
-        return Outcome.Ok(fact(SeatFacts.USAGE, JsonPrimitive(usage.total), "the last turn ended at $at: input ${usage.input}, output ${usage.output}, total ${usage.total}"))
+        val turn = lastTurn ?: return Outcome.Failed("no turn has ended in this session")
+        val count = turn.count ?: return Outcome.Failed("the last turn, ended at ${turn.at}, is not counted: no weights were in force")
+        return Outcome.Ok(fact(SeatFacts.USAGE, JsonPrimitive(count), "the last turn ended at ${turn.at}: ${UsageWeights.parts(turn.usage)}; weighted $count by ${turn.weights}"))
     }
 
     private fun fact(name: String, value: JsonPrimitive, evidence: String) = ObservedFact(name, seat, value, evidence)

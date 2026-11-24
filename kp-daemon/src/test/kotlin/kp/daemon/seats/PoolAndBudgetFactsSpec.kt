@@ -92,7 +92,7 @@ class PoolAndBudgetFactsSpec : StringSpec({
         try { hero.rest() } finally { hero.close() }
         val turns = hero.office.counted().filterIsInstance<Fact>().filter { it.fact == "seat.usage" }
 
-        turns.map { it.subject } shouldBe listOf("coder-1, turn", "reviewer-1, turn", "coder-1, turn", "coder-1, turn", "coder-1, turn")
+        turns.groupingBy { it.subject }.eachCount() shouldBe mapOf("coder-1, turn" to 4, "reviewer-1, turn" to 1)
         turns.first().value.toString() shouldBe "2400"
         turns.first().evidence shouldBe "turn ended: end_turn · input 100, output 10, cache write 1000, cache read 10000 · weighted 2400 by input 1, output 5, cache write 1.25, cache read 0.1 · subscription claude"
         turns.drop(1).map { it.value.toString() } shouldBe listOf("0", "0", "0", "0")

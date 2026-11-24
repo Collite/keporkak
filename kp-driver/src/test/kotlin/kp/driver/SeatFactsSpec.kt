@@ -121,9 +121,30 @@ class SeatFactsSpec : StringSpec({
             driver.prompt(seat, "one").ok()
             driver.prompt(seat, "two").ok()
 
-            driver.fact("seat.usage", UsageWindow.TURN) shouldBe """{"fact":"seat.usage","subject":"coder-1","value":55,"evidence":"the last turn ended at 2026-11-15T10:00:00Z: input 50, output 5, total 55"}"""
-            driver.fact("seat.usage", UsageWindow.SESSION) shouldBe """{"fact":"seat.usage","subject":"coder-1","value":175,"evidence":"2 turns ended in this session, 2 with usage reported"}"""
+            // Each turn counted by its parts weighted (S3.13, Amendment 44): 100 + 5 × 20 = 200, then 50 + 5 × 5 = 75.
+            driver.fact("seat.usage", UsageWindow.TURN) shouldBe """{"fact":"seat.usage","subject":"coder-1","value":75,"evidence":"the last turn ended at 2026-11-15T10:00:00Z: """ +
+                """input 50, output 5, cache write not reported (0), cache read not reported (0); weighted 75 by input 1, output 5, cache write 1.25, cache read 0.1"}"""
+            driver.fact("seat.usage", UsageWindow.SESSION) shouldBe
+                """{"fact":"seat.usage","subject":"coder-1","value":275,"evidence":"2 turns ended in this session, 2 with usage reported, each counted by its parts weighted"}"""
             driver.observe(seat, "seat.usage") shouldBe Outcome.Failed("seat.usage needs a window: turn or session")
+        }
+    }
+
+    "seat.usage counts a turn's four parts by the weights in force when it ended — a cache read a tenth of an input token — and nothing without weights" {
+        Office().use { office ->
+            val agent = office.agent("""{"turns": [[{"do": "end", "usage": {"input": 100, "output": 10, "cache_write": 1000, "cache_read": 10000, "total": 11110}}]]}""")
+            val driver = office.driver()
+            driver.start(office.session("coder-1", agent)).ok()
+
+            driver.prompt(seat, "one").ok()
+
+            driver.observe(seat, "seat.usage", UsageWindow.TURN).ok().value shouldBe JsonPrimitive(2400)
+            Office().use { other ->
+                val unweighted = other.driver()
+                unweighted.start(other.session("coder-1", other.agent("""{"turns": [[{"do": "end", "usage": {"input": 100, "output": 10, "total": 110}}]]}"""), weights = null)).ok()
+                unweighted.prompt(seat, "one").ok()
+                unweighted.observe(seat, "seat.usage", UsageWindow.TURN) shouldBe Outcome.Failed("the last turn, ended at 2026-11-15T10:00:00Z, is not counted: no weights were in force")
+            }
         }
     }
 
