@@ -1,7 +1,7 @@
 # The office — what Bora installs on the office machine
 
-Keporkak's office is **dsk** since 2026-11-24 (it was Panda, D-46; the move is the homelab's host swap D8a): Linux,
-terminal only, reached over ssh. Below, "Panda" means the office machine. Its description is in `pool/offices.yaml`.
+Keporkak's office is **dsk** since 2026-11-24 (it was Panda, D-46; the move is the homelab's host swap D8a, KP D-112):
+Linux, terminal only, reached over ssh. Its description is in `pool/offices.yaml`.
 The repository installs nothing on it. This folder holds the templates Bora installs from, and the steps below.
 
 `just office-check` (from `~/Dev/keporkak/keporkak`, as `bora`) prints one line per item:
@@ -30,8 +30,20 @@ sudo loginctl enable-linger bora
 
 Then `just office-check` ends with `RESULT: READY`.
 
-The tools come from mise on Panda (`~/.zshrc`: `mise activate`), and git, gh, jq and tmux from apt. If the check
+The tools come from mise on the office (`~/.zshrc`: `mise activate`), and git, gh, jq and tmux from apt. If the check
 reports one missing, its line gives the command.
+
+The build's own Python is made by the first recipe that needs it: `just` makes a virtual environment in
+`build/python` from the first of `python3.14` … `python3.11` on the path, and installs `requirements.txt` into it.
+Where that Python has no `venv` module — Ubuntu's `python3.14` without its `python3.14-venv` package — the recipe
+stops with one line that says so. Then either name a Python that has it for that first run, for example mise's:
+
+```sh
+KP_PYTHON=~/.local/share/mise/installs/python/3.13/bin/python3 just office-check
+```
+
+or install the system's package (`sudo apt install python3.14-venv`) and run the recipe again. `build/python` is kept
+from then on; a fresh clone, or `build/` removed, makes it again.
 
 ## 2. The `sudo` rule for `kp` (contracts.md §6, D-43)
 
@@ -44,8 +56,8 @@ sudo install -o root -g root -m 0440 office/sudoers.d/zz-keporkak-kp /etc/sudoer
 sudo -l
 ```
 
-`sudo -l` must show no `NOPASSWD` entry for `bora` at all (D-43). Panda has one, `/etc/sudoers.d/90-bora-nopasswd`.
-Look at it, and remove it:
+`sudo -l` must show no `NOPASSWD` entry for `bora` at all (D-43). Panda had one, `/etc/sudoers.d/90-bora-nopasswd`;
+where the office has one, look at it, and remove it:
 
 ```sh
 sudo cat /etc/sudoers.d/90-bora-nopasswd
@@ -67,7 +79,7 @@ The seats' compiled permissions deny `kp` and `sudo` (S2.2: the `side-channels` 
 
 ## 3. The daemon and `kp` — S1.5's steps, in order
 
-Run them on Panda, as `bora`, from the checkout the daemon is to run: the office's, `~/Dev/keporkak/keporkak`
+Run them on the office, as `bora`, from the checkout the daemon is to run: the office's, `~/Dev/keporkak/keporkak`
 (`pool/offices.yaml`: `repos.keporkak`) — or, to try a stage before it merges, that stage's worktree, then again from
 the office's checkout once it has merged. The daemon reads the rules of the checkout it was installed from.
 
@@ -199,8 +211,8 @@ line (paste it, then Ctrl-D):
 install -m 0600 /dev/stdin ~/.config/keporkak/secrets/claude-token
 ```
 
-**Before P3 — the Apps' keys.** For each of the four Apps, generate its private key on GitHub and copy it to Panda
-(Panda has no browser; for example `scp` it from the Mac), then:
+**Before P3 — the Apps' keys.** For each of the four Apps, generate its private key on GitHub and copy it to the office
+(for example `scp` it from the Mac), then:
 
 ```sh
 mkdir -p -m 0700 ~/.config/keporkak/secrets/apps
@@ -210,7 +222,7 @@ install -m 0600 <the copied key>.pem ~/.config/keporkak/secrets/apps/kp-merger.p
 and the same for `kp-coder`, `kp-reviewer` and `kp-gardener`. Delete the copies on both machines afterwards.
 
 **`just apps merge` — the live proof of the daemon's operations on GitHub (S3.9; contracts.md §12, Amendment 37).**
-Run it on Panda, in the keporkak checkout, when you want to see a merge, a close and an issue work as `kp-merger`; it
+Run it on the office, in the keporkak checkout, when you want to see a merge, a close and an issue work as `kp-merger`; it
 needs no daemon and spends none of the seats' tokens. It acts on `Collite/kp-toy` only:
 
 - it reads which rules hold the toy's default branch and whom — and stops, having made nothing, if no rule holds the
@@ -266,7 +278,7 @@ says `git@github.com:`, and never to prompt; `gh` runs the office's own `gh` wit
 environment. Nothing is installed for it, and no `gh auth login` is needed for a seat: your own `gh` login and
 `~/.gitconfig` stay yours, and a seat's `git` uses no helper they name.
 
-**`just apps prove`** (from `~/Dev/keporkak/keporkak`, on Panda, where the Apps' keys are) is the live proof of it, on
+**`just apps prove`** (from `~/Dev/keporkak/keporkak`, on the office, where the Apps' keys are) is the live proof of it, on
 `Collite/kp-toy`, with no agent and none of the seats' Claude tokens. It builds a home for the coder's persona and one
 for the reviewer's in a throwaway folder (`build/apps-prove/`), and a listener of its own answers their asks. Then, on
 GitHub:

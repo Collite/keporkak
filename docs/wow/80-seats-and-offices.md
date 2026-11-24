@@ -24,11 +24,11 @@
   × thinking size to a pair. V1 uses Claude only; a reviewer is a different seat in a fresh session, ranks at or above
   the coder’s pair, and meets the model review floor. The roster holds the actual CLI model names. `KP C3.3, D-44, D-45`
 - **SE-9 An office** has git, the Claude CLI, the daemon and roots for worktrees, scratch, seat homes and secrets.
-  V1’s one office is Panda: Linux, terminal only, reached by Bora over ssh. The Mac runs no daemon or seat; its watcher
-  carries class-B notices and an ssh port forward exposes the board. The live target remains bp-dsk. Each office
-  keeps its roster; the project repo is the channel between offices. `D-27 m, D-46`
+  V1’s one office is dsk — Panda until 2026-11-24: Linux, terminal only, reached by Bora over ssh. The Mac runs no
+  daemon or seat; its watcher carries class-B notices and an ssh port forward exposes the board. The live target
+  remains bp-dsk. Each office keeps its roster; the project repo is the channel between offices. `D-27 m, D-46, D-112`
 - **SE-10 Conformance before a seat.** A new vendor or version runs the sandbox probes (`06b`) and the handshake test
-  before it gets a seat. V1 is the Claude-only Panda office, with Bora present for the tail. The office check verifies
+  before it gets a seat. V1 is the Claude-only office, with Bora present for the tail. The office check verifies
   root-peer command authentication; the OS-user split remains v1.1 work. `D-19, D-43, D-44, D-46`
 
 - **SE-11 One QA seat per office,** with the live target's context, the stored credentials and a browser profile of its
@@ -55,7 +55,7 @@
 - **SE-17 Do not poll.** `gh run watch`, `gh pr checks --watch`; never a loop of status calls. `D-36`
 - **SE-18 A skill is a seat's procedure;** a skill no mode names is not installed. `D-36`
 - **SE-19 Browser work is scripted** (Playwright, QA's own profile) and needs no approval; **computer use** is the
-  fallback and has a class per office. Panda is terminal only: computer use is `off` and QA uses headless Playwright.
+  fallback and has a class per office. The office is terminal only: computer use is `off` and QA uses headless Playwright.
   The class-B Mac policy belongs to a later Mac office. `D-36 c, D-46`
 - **SE-20 Credentials are injected, never handled.** A seat obtains no token by itself: no copied headers, no
   clipboard, no "sign in for me". It names an identity; `kp-cred` puts a short-lived token into the command's
@@ -71,6 +71,6 @@
   files are an accepted v1 risk; user separation is v1.1 work. `D-46, D-47, D-50`
 
 ## Implementation boundaries
-S0.3 supplies the Panda configuration and bootstrap templates. The roster uses actual CLI model strings. S2.2
+S0.3 supplied the office's configuration — Panda's, then — and bootstrap templates. The roster uses actual CLI model strings. S2.2
 packages Claude seat homes and defines the stop-gate requirements against a real hook; S0.1 declares its empty block
 and cap only. The engine evaluates rules data while the daemon supplies observations and operations. `D-41, D-49, D-50`

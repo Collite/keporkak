@@ -33,7 +33,7 @@ SECRETS = (
     (["claude-token"], None, "claude setup-token, then: install -m 0600 /dev/stdin {folder}/claude-token (office/README.md)"),
     (["apps/kp-merger.pem", "apps/kp-coder.pem", "apps/kp-reviewer.pem", "apps/kp-gardener.pem"], "S3.2", "the four GitHub Apps' keys"),
 )
-TOOLS = (  # name, version command, Bora's command when it is missing (Panda: apt for system tools, mise for the rest)
+TOOLS = (  # name, version command, Bora's command when it is missing (apt for system tools, mise for the rest)
     ("git", ["git", "--version"], "sudo apt install git"),
     ("gh", ["gh", "--version"], "sudo apt install gh"),
     ("just", ["just", "--version"], "mise use -g just"),
