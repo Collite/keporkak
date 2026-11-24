@@ -29,6 +29,7 @@ import kp.driver.PermissionRequest
 import kp.driver.SeatFacts
 import kp.driver.SessionSpec
 import kp.driver.SessionToken
+import kp.driver.SubscriptionReport
 import kp.driver.Usage
 import kp.driver.UsageWeights
 import kp.driver.UsageWindow
@@ -135,9 +136,13 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
         if ("kp-allowed" in input || LONG in input) Answer.ALLOW else Answer.DENY
     }
 
+    /** What the vendor said of the subscription beside a `usage_update`, through any seat of the run (S3.13 T6): the seat and its report. */
+    private val subscription: MutableList<Pair<SeatId, SubscriptionReport>> = Collections.synchronizedList(mutableListOf())
+
     private val listener = object : Listener {
         override fun observed(fact: ObservedFact) { facts += fact }
         override fun tokenDead(seat: SeatId, token: SessionToken) {}
+        override fun reported(seat: SeatId, report: SubscriptionReport) { subscription += seat to report }
     }
 
     suspend fun run(): Boolean {
@@ -574,6 +579,20 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
                 personaTurns.forEach { (role, turn, usage) -> appendLine("| $role | $turn | ${parts(usage).joinToString(" | ")} | ${weights?.count(usage) ?: "-"} |") }
                 appendLine()
             }
+            appendLine("## What the vendor reported of the subscription (S3.13)")
+            appendLine()
+            if (subscription.isEmpty()) {
+                appendLine("Nothing: no `usage_update` of this run carried the vendor's words on the subscription (the pinned adapter's `_meta[\"_claude/rateLimit\"]`).")
+            } else {
+                appendLine("Each report as the driver heard it beside a `usage_update`, in order; `budget.consumption` is the last of each window, the fullest for `subscription`.")
+                appendLine()
+                appendLine("| seat | heard | window | fraction used | resets | status |")
+                appendLine("|---|---|---|---|---|---|")
+                subscription.forEach { (seat, report) ->
+                    appendLine("| ${seat.value} | ${report.heard} | ${report.window} | ${report.fraction.toPlainString()} | ${report.resets ?: "not said"} | ${report.status ?: "not said"} |")
+                }
+            }
+            appendLine()
             val personaSeats = personaTurns.map { "$PERSONA_SEAT-${it.first}" }.distinct()
             for (name in listOf(MODELS_SEAT, seat.value, HOOKS_SEAT) + personaSeats) {
                 val lines = transcript(name)

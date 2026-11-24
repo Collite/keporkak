@@ -131,7 +131,11 @@ class Seats(
         override fun tokenDead(seat: SeatId, token: SessionToken) = tokens.revoke(token.value)
 
         override fun observed(fact: ObservedFact) = this@Seats.observed(fact)
+
+        override fun reported(seat: SeatId, report: kp.driver.SubscriptionReport) = this@Seats.reported(seat.value, report)
     }
+    /** The vendor's last report of each window of each subscription, through any seat: the last stands for all (Amendment 44). */
+    private val subscriptions = ConcurrentHashMap<Pair<String, String>, kp.facts.VendorReport>()
     private val driver: Driver = driver(listener, time)
 
     /**
@@ -674,7 +678,14 @@ class Seats(
     fun binding(seat: String): Binding? = held[seat]?.binding
 
     /** What the vendor last reported of each subscription's windows through any seat (contracts.md §4.4, Amendment 44). */
-    fun reports(): List<kp.facts.VendorReport> = emptyList()
+    fun reports(): List<kp.facts.VendorReport> = subscriptions.values.toList()
+
+    /** The vendor said, through [seat]'s agent, how much of a window of the seat's subscription is used: it stands for every seat of it. */
+    private fun reported(seat: String, report: kp.driver.SubscriptionReport) {
+        val binding = held[seat]?.binding ?: return
+        val subscription = subscription(binding)
+        subscriptions[subscription to report.window] = kp.facts.VendorReport(subscription, report.window, report.fraction, report.resets, report.heard, seat)
+    }
 
     /** The session [seat] has now, or had last. */
     fun session(seat: String): String? = held[seat]?.session

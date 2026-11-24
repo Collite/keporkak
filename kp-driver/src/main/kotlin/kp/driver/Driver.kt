@@ -230,4 +230,14 @@ interface Listener {
     fun tokenMinted(seat: SeatId, token: SessionToken) {}
     fun observed(fact: ObservedFact) {}
     fun tokenDead(seat: SeatId, token: SessionToken) {}
+
+    /** What the vendor said of the seat's subscription, beside the protocol's fields, as the agent passed it (contracts.md §4.4, Amendment 44). */
+    fun reported(seat: SeatId, report: SubscriptionReport) {}
 }
+
+/**
+ * The vendor's own words on a subscription, as a seat's agent passes them beside the protocol's fields (contracts.md §4.4,
+ * Amendment 44): a window as the vendor names it, the fraction of it used, when it resets — when the vendor says — and
+ * its status, as given; and when it was heard. The driver derives nothing from them.
+ */
+data class SubscriptionReport(val window: String, val fraction: BigDecimal, val resets: java.time.Instant?, val status: String?, val heard: java.time.Instant)

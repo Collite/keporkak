@@ -6,7 +6,15 @@ import kp.daemon.Office
 import kp.engine.Datum
 import kp.engine.FactRef
 import kp.engine.State
+import kp.facts.BudgetFacts
 import kp.facts.Observation
+import kp.facts.TurnEnded
+import kp.driver.SeatFacts
+import kp.driver.UsageWindow
+import kp.model.Fact
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.longOrNull
 import kp.mailroom.FactSource
 import kp.model.Envelope
 import java.time.Instant
@@ -92,7 +100,36 @@ class PoolFacts(private val office: String, private val say: (String) -> Unit = 
             COMPUTER_USE -> computerUse()
             SLOT_OPEN -> rooms { rooms -> Observation.Value(slotOpen(rooms), rooms.joinToString("; ") { it.told }) }
             SLOTS_OVER -> rooms { rooms -> Observation.Value(slotsOver(rooms), rooms.joinToString("; ") { it.told }) }
+            CONSUMPTION -> subscription { subscription ->
+                val window = param(WINDOW) ?: return@subscription Observation.Unknown("no parameter window")
+                BudgetFacts.consumption(read.reports(), subscription, window, read.now())
+            }
+            VS_DAILY_MEDIAN -> subscription { subscription ->
+                val (span, least) = pool.budgets.usage.median
+                val leastAt = pool.lines[BUDGETS]?.get(LEAST)?.let { "$BUDGETS line $it, $LEAST" } ?: "$BUDGETS, $LEAST"
+                BudgetFacts.vsDailyMedian(read.lines().filterIsInstance<Fact>().mapNotNull(::turnEnded), subscription, read.now(), span, least, leastAt)
+            }
             else -> Observation.Unknown("not answered yet")
+        }
+
+        // ---- the budgets (Amendment 44: what the vendor itself says, and the turns' own records)
+
+        /** The subscription the fact names: one of the roster's vendors. */
+        private fun subscription(answer: (String) -> Observation): Observation {
+            val subscription = param(SUBSCRIPTION) ?: return Observation.Unknown("no parameter subscription")
+            if (subscription !in roster.vendors) return Observation.Unknown("$ROSTER names no subscription $subscription")
+            return answer(subscription)
+        }
+
+        /**
+         * A turn's end, as its record says it (Seats): `seat.usage` of the window `turn` whose evidence begins as a turn's end
+         * does — its weighted count, when it ended, its seat's subscription. The watch's reports of a turn in flight are none.
+         */
+        private fun turnEnded(fact: Fact): TurnEnded? {
+            if (fact.fact != SeatFacts.USAGE || (fact.params?.get(WINDOW) as? JsonPrimitive)?.contentOrNull != UsageWindow.TURN.word) return null
+            val evidence = fact.evidence?.takeIf { it.startsWith(Seats.TURN_ENDED) } ?: return null
+            val count = (fact.value as? JsonPrimitive)?.longOrNull ?: return null
+            return TurnEnded(evidence.substringAfterLast(SUBSCRIBED), Instant.parse(fact.at.value), count)
         }
 
         // ---- the slots (Amendment 44: a seat is in use from the judgement that requests its start until it is retired)
@@ -297,6 +334,10 @@ class PoolFacts(private val office: String, private val say: (String) -> Unit = 
         private const val SUBSCRIPTION = "subscription"
         private const val EFFORT = "effort"
         private const val STAGE_MACHINE = "stage"
+        private const val WINDOW = "window"
+        private const val LEAST = "usage.median.least"
+        /** How a turn's end names its seat's subscription, last in its evidence (Seats). */
+        private const val SUBSCRIBED = " · subscription "
         private const val ORDER = "order"
         private const val OF = "of"
         private const val SEAT = "seat"

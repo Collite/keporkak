@@ -275,6 +275,7 @@ internal class SeatSession(
                 is Item.Update -> {
                     val update = runCatching { ACPJson.decodeFromJsonElement(SessionUpdate.serializer(), item.update) }.getOrNull()
                     if (!item.replay) update?.let { observations.update(it, item.at) }
+                    if (!item.replay && update is SessionUpdate.UsageUpdate) (item.update as? JsonObject)?.let { subscription(it, item.at) }
                     // A tool's result is hidden, then cut (S3.6 T6, issue #49): Lines hides the seat's secrets before it shortens.
                     val line = update?.let { Lines.of(it, transcript::hidden) } ?: "update not understood: ${item.update}"
                     transcript.write(if (item.replay) "replay $line" else line, item.at)
@@ -296,6 +297,22 @@ internal class SeatSession(
         } finally {
             item.written?.complete(Unit)
         }
+    }
+
+    /**
+     * What the vendor says of the subscription beside a `usage_update`, where the pinned adapter puts it (S3.13 T1: its
+     * `rate_limit_event`, passed as `_meta["_claude/rateLimit"]`): `rateLimitType` the window, `utilization` the fraction
+     * used, `resetsAt` in seconds since the epoch, `status`. Written to the transcript as it came; reported to the listener
+     * when it names a window and a fraction. Nothing is derived from it.
+     */
+    private fun subscription(update: JsonObject, at: Instant) {
+        val said = ((update["_meta"] as? JsonObject)?.get(RATE_LIMIT) as? JsonObject) ?: return
+        transcript.write("the vendor on the subscription: $said", at)
+        val window = (said["rateLimitType"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return
+        val fraction = (said["utilization"] as? JsonPrimitive)?.takeUnless { it.isString }?.content?.toBigDecimalOrNull() ?: return
+        val resets = (said["resetsAt"] as? JsonPrimitive)?.takeUnless { it.isString }?.content?.toBigDecimalOrNull()?.toLong()?.let(Instant::ofEpochSecond)
+        val status = (said["status"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        if (handedOut) listener.reported(seat, kp.driver.SubscriptionReport(window, fraction, resets, status, at))
     }
 
     /** The protocol closed: the fact is reported at once, and the session ends. */
@@ -421,6 +438,8 @@ internal class SeatSession(
     }
 
     companion object {
+        /** Where the pinned adapter puts the vendor's words on the subscription, beside a `usage_update` (S3.13 T1). */
+        private const val RATE_LIMIT = "_claude/rateLimit"
         const val DEFAULT_MODE = "default"
         /** The model value that names no model: the agent's own choice, which moves with the agent (§9). */
         const val DEFAULT_MODEL = "default"
