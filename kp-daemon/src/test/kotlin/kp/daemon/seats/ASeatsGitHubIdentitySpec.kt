@@ -186,10 +186,12 @@ class ASeatsGitHubIdentitySpec : StringSpec({
         val files = listOf("office/seats/_transcripts", "mail", "office/fake").flatMap { folder -> office.project.resolve(folder).walk().filter { it.isRegularFile() }.map { it.readText() } }
         val seen = files + office.said + printed
         minted.flatMap { it.windowed(12) }.filter { piece -> seen.any { piece in it } } shouldBe emptyList()
-        // The seat's environment holds no GitHub token: its variables, every one.
+        // The seat's environment holds no GitHub token: its variables, every one — Amendment 43's among them (S3.11).
         office.received("coder-1").first { it.text("event") == "start" }["env"].toString() shouldBe
-            """["CLAUDE_CODE_OAUTH_TOKEN","CLAUDE_CONFIG_DIR","GIT_ASKPASS","GIT_CONFIG_COUNT","GIT_CONFIG_KEY_0","GIT_CONFIG_KEY_1","GIT_CONFIG_KEY_2",""" +
-            """"GIT_CONFIG_KEY_3","GIT_CONFIG_VALUE_0","GIT_CONFIG_VALUE_1","GIT_CONFIG_VALUE_2","GIT_CONFIG_VALUE_3","GIT_TERMINAL_PROMPT","KP_HOOK_URL","KP_SESSION_TOKEN","LANG","PATH"]"""
+            """["CLAUDE_CODE_OAUTH_TOKEN","CLAUDE_CONFIG_DIR","GH_CONFIG_DIR","GIT_ASKPASS","GIT_AUTHOR_EMAIL","GIT_AUTHOR_NAME","GIT_COMMITTER_EMAIL",""" +
+            """"GIT_COMMITTER_NAME","GIT_CONFIG_COUNT","GIT_CONFIG_GLOBAL","GIT_CONFIG_KEY_0","GIT_CONFIG_KEY_1","GIT_CONFIG_KEY_2","GIT_CONFIG_KEY_3","GIT_CONFIG_KEY_4","GIT_CONFIG_KEY_5","GIT_CONFIG_KEY_6","GIT_CONFIG_KEY_7","GIT_CONFIG_KEY_8","GIT_CONFIG_KEY_9",""" +
+            """"GIT_CONFIG_NOSYSTEM","GIT_CONFIG_VALUE_0","GIT_CONFIG_VALUE_1","GIT_CONFIG_VALUE_2","GIT_CONFIG_VALUE_3","GIT_CONFIG_VALUE_4","GIT_CONFIG_VALUE_5","GIT_CONFIG_VALUE_6","GIT_CONFIG_VALUE_7","GIT_CONFIG_VALUE_8","GIT_CONFIG_VALUE_9",""" +
+            """"GIT_SSH_COMMAND","GIT_SSH_VARIANT","GIT_TERMINAL_PROMPT","KP_HOOK_URL","KP_SESSION_TOKEN","LANG","PATH","SSH_ASKPASS"]"""
         office.delete()
     }
 

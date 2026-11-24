@@ -138,10 +138,10 @@ class Seats(
     /**
      * A seat's GitHub identity (contracts.md §4.4, Amendment 35), when the seats have [github]: `token.mint` performed for a
      * seat, and the seat API's answer to its ask — with the Apps' keys in the office's secrets folder. A token handed to a
-     * seat is hidden in its transcript before it is handed over.
+     * seat is hidden in its transcript by its prefix, as every installation token is: none is kept for it (S3.11).
      */
     val identity: GitHubIdentity? = github?.let { api ->
-        GitHubIdentity(officeName, ::inForce, log, roots.secrets.resolve("apps"), api, say) { seat, token -> this.driver.hide(SeatId(seat), token) }
+        GitHubIdentity(officeName, ::inForce, log, roots.secrets.resolve("apps"), api, say)
     }
 
     /** What hears how a turn ended. */
@@ -353,7 +353,7 @@ class Seats(
             is Outcome.Failed -> return OperationResult.Failed("the home of $seat cannot be built: ${built.reason}")
         }
         val spec = SessionSpec(SeatId(seat), agent.command(seat, binding.role), workingDirectory, home.path, binding.model, binding.effort, home.servers,
-            SeatEnvironment.of(agent.environment(seat), home.programs), hookUrl)
+            SeatEnvironment.of(agent.environment(seat), home.path, rules.pool.github?.seats?.get(binding.role)?.app ?: binding.role), hookUrl)
         minting[seat] = binding
         val started = try {
             val loaded = session?.let { blocking { driver.load(spec, it) } }

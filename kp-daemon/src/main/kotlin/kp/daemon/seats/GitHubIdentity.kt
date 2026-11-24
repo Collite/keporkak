@@ -27,8 +27,9 @@ import java.nio.file.Path
  * office's entry are those of the rules in force, read at each ask; the Apps' keys are in [keys], the office's
  * `<roots.secrets>/apps`; [api] is GitHub's REST root. Nothing is kept from one ask for the next.
  *
- * An ask ([ask]) is answered with the token, which [hide] is told before it is handed over — the seat's transcript hides
- * it from then on — and leaves one journal line through [say]: the seat, the App, the repositories; never a token.
+ * An ask ([ask]) is answered with the token — the seat's transcript hides it by its prefix, as every installation token,
+ * and keeps nothing of it (S3.11) — and leaves one journal line through [say]: the seat, the App, the repositories; never
+ * a token.
  * `token.mint` ([mint]) mints as an ask would and throws the token away.
  */
 class GitHubIdentity(
@@ -38,7 +39,6 @@ class GitHubIdentity(
     private val keys: Path,
     private val api: URI = GitHubApps.GITHUB,
     private val say: (String) -> Unit,
-    private val hide: (seat: String, secret: String) -> Unit,
 ) : GitHubTokens {
     override fun ask(binding: Binding): TokenAnswer {
         val who = "github-token: ${binding.seat} (${binding.role})"
@@ -47,7 +47,6 @@ class GitHubIdentity(
             is Mint.Failed -> TokenAnswer.Failed(minted.reason).also { say("$who${minted.asked} failed: ${minted.reason}") }
             is Mint.Ok -> {
                 val token = minted.token.authorization().removePrefix(BEARER)
-                hide(binding.seat, token)
                 say("$who as ${minted.app} for ${minted.repositories.joinToString(", ")}: handed, until ${minted.token.expiresAt}")
                 TokenAnswer.Handed(token, minted.token.expiresAt)
             }

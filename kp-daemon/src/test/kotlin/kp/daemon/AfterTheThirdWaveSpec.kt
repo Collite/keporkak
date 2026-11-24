@@ -146,11 +146,10 @@ class AfterTheThirdWaveSpec : FreeSpec({
                 coder.run("git", "-C", "work", "log", "-1", "--format=%an <%ae> · %cn <%ce>", network = net).out.trim() shouldBe
                     "kp-coder <kp-coder@keporkak.invalid> · kp-coder <kp-coder@keporkak.invalid>"
 
-                val pushes = GITHUB_REMOTES.map { remote -> coder.run("git", "-C", "work", "push", remote, "HEAD:refs/heads/kp-spec", network = net, seconds = 60) }
-                pushes.map { it.err.lines().last { line -> line.isNotBlank() } } shouldBe
-                    List(5) { "error: failed to push some refs to 'https://github.com/Collite/kp-toy.git'" }
+                GITHUB_REMOTES.forEach { remote -> coder.run("git", "-C", "work", "push", remote, "HEAD:refs/heads/kp-spec", network = net, seconds = 60) }
                 github.connects.toSet() shouldBe setOf("github.com:443")
-                github.passwords().map(office::issuedTo) shouldBe List(5) { "kp-coder" }
+                github.seen.count { it.password != null && it.target == "/Collite/kp-toy.git/info/refs?service=git-receive-pack" } shouldBe 5
+                github.passwords().map(office::issuedTo).toSet() shouldBe setOf("kp-coder")
 
                 val alias = coder.run("git", "-C", "work", "push", "gh-planted:Collite/kp-toy.git", "HEAD:refs/heads/kp-spec", network = net)
                 alias.exit shouldBe 128

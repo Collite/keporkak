@@ -218,7 +218,7 @@ class RecordedOffice(made: WorktreeMade = WorktreeMade.OK) : AutoCloseable {
 
         /** A seat's GitHub identity as the service makes it for [office]. */
         private fun identity(office: RecordedOffice) =
-            GitHubIdentity("panda", { office.office.rules }, OfficeLog().also { it.office = office.office }, office.secrets.resolve("apps"), office.github.api, { office.journal += it }) { _, _ -> }
+            GitHubIdentity("panda", { office.office.rules }, OfficeLog().also { it.office = office.office }, office.secrets.resolve("apps"), office.github.api) { office.journal += it }
 
         /** The records [project]'s log starts with — the stage `building`, its `worktree.create` as [made] says, the messages GitHub's facts read. */
         private fun records(project: Path, made: WorktreeMade, worktree: Path) {

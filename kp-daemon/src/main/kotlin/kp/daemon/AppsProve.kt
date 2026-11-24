@@ -33,7 +33,6 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteRecursively
@@ -46,8 +45,10 @@ import kotlin.io.path.writeText
  * reviewer's, and their `git` and `gh` run as processes in each seat's environment. From the coder's home it pushes a
  * branch, is refused a push to the default branch, and opens a pull request; from the reviewer's it reviews that pull
  * request; the coder's approval of its own is refused; then it closes the pull request and deletes the branch — also
- * when a step before went otherwise. It prints each step's outcome, and never a token: each token handed is hidden in
- * whatever it prints. What GitHub lets through that it must refuse is `SC-10` (S3.7): the proof says so and goes on to
+ * when a step before went otherwise. Before them, the office's `gh` run by its full path in the coder's environment finds
+ * no login (Amendment 43). A step GitHub must refuse passes only on GitHub's own refusal, in GitHub's words; failing for
+ * another reason it says so and the proof is not green. It prints each step's outcome, and never a token: every
+ * installation token is hidden in whatever it prints by its prefix, as a seat's transcript hides it. What GitHub lets through that it must refuse is `SC-10` (S3.7): the proof says so and goes on to
  * remove what it made. Its throwaway folder, under the checkout's `build/apps-prove/`, is removed at its end.
  */
 object AppsProve {
@@ -71,19 +72,18 @@ object AppsProve {
         val project = folder.resolve("project").createDirectories()
         val list = project.resolve("$effort/tasks-p0-s0.1-apps-prove.md").also { it.parent.createDirectories() }
         list.writeText("# $EFFORT-$TOY-P0 · S0.1 — just apps prove            (PR: $branch)\n")
-        val hidden = CopyOnWriteArraySet<String>()
-        fun say(text: String) = print(hidden.fold(text) { said, token -> said.replace(token, HIDDEN) })
+        fun say(text: String) = print(INSTALLATION_TOKEN.replace(text, HIDDEN))
         val tokens = Tokens()
         placed(project, office, branch, folder.resolve("work/$TOY"))
         val mailroom = Office.start(office, project, root, FactSource { _, _ -> null }, Operations { _, done -> done(OperationResult.Failed("apps prove performs nothing")) },
             NoDeliveries, serviceClock)
-        val identity = GitHubIdentity(office, { mailroom.rules }, OfficeLog().also { it.office = mailroom }, keys, api, say = {}) { _, token -> hidden += token }
+        val identity = GitHubIdentity(office, { mailroom.rules }, OfficeLog().also { it.office = mailroom }, keys, api, say = {})
         val listener = mailroom.seatApi(tokens, "127.0.0.1:0", identity)
         try {
             val url = "http://127.0.0.1:${listener.address.port}"
             val work = folder.resolve("work").createDirectories()
             val defaults = (PermissionDefaults.of(rules.ruleSet.engagement.permissions) as? Outcome.Ok)?.value ?: return 1.also { say("engagement.yaml:permissions cannot be read") }
-            fun seat(name: String, role: String): Seat? {
+            fun seat(name: String, role: String, app: String): Seat? {
                 val places = Places(work, folder.resolve("scratch/$name").createDirectories(), project, list, listOf(work), "127.0.0.1:${listener.address.port}")
                 val home = when (val built = ConfigHomes(root, folder.resolve("seats")).build(SeatId(name), role, PROFILE, places, defaults)) {
                     is Outcome.Ok -> built.value
@@ -91,11 +91,11 @@ object AppsProve {
                 }
                 val session = ByteArray(32).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
                 tokens.register(session, Binding(name, role, office, STAGE, "none", "none"))
-                val environment = SeatEnvironment.of(BASE, home.programs) + IDENTITY + mapOf("KP_HOOK_URL" to url, "KP_SESSION_TOKEN" to session)
+                val environment = SeatEnvironment.of(BASE, home.path, app) + mapOf("KP_HOOK_URL" to url, "KP_SESSION_TOKEN" to session)
                 return Seat(name, environment)
             }
-            val coder = seat("coder-apps-prove", CODER) ?: return 1
-            val reviewer = seat("reviewer-apps-prove", REVIEWER) ?: return 1
+            val coder = seat("coder-apps-prove", CODER, coderApp) ?: return 1
+            val reviewer = seat("reviewer-apps-prove", REVIEWER, reviewerApp) ?: return 1
             return Proof(block.organization, branch, time, work, coderName, reviewerName, coder, reviewer, ::say).run()
         } finally {
             listener.close()
@@ -160,6 +160,11 @@ object AppsProve {
         }
 
         private fun prove() {
+            // The office's own gh, by its full path — the first on the agent's path — finds no login of the office user's.
+            val officeGh = BASE.getValue("PATH").split(':').map { Path.of(it, "gh") }.firstOrNull { Files.isExecutable(it) }
+            val status = officeGh?.let { coder.run(work, it.toString(), "auth", "status") }
+            outcome("0. the office's gh, by its full path ${officeGh ?: "(none on the path)"}, finds no login", status != null && noLogin(status.exit, status.out + status.err),
+                "no login: ${status?.said()}", "SC-10: it found a login, or did not run: ${status?.said()}")
             val cloned = coder.run(work, "git", "clone", "--quiet", "--single-branch", "--branch", DEFAULT_BRANCH, "git@github.com:$repository.git", TOY)
             val remote = if (cloned.exit == 0) coder.run(clone, "git", "ls-remote", "--get-url", "origin").out.trim() else ""
             if (!outcome("the coder clones git@github.com:$repository.git", cloned.exit == 0, "cloned over $remote", "not cloned: ${cloned.said()}")) return
@@ -174,7 +179,8 @@ object AppsProve {
             if (!outcome("1. the coder pushes $branch", pushed, "pushed", "not pushed: ${push.said()}")) return
 
             val master = coder.run(clone, "git", "push", "--quiet", "origin", "HEAD:refs/heads/$DEFAULT_BRANCH")
-            outcome("2. the coder pushes $DEFAULT_BRANCH", master.exit != 0, "refused: ${master.said()}", "SC-10: GitHub let $coderName push $DEFAULT_BRANCH")
+            outcome("2. the coder pushes $DEFAULT_BRANCH", refusedByGitHub(PUSH_REFUSED, master.exit, master.err + master.out), "refused by GitHub: ${master.said()}",
+                if (master.exit == 0) "SC-10: GitHub let $coderName push $DEFAULT_BRANCH" else "failed for another reason than GitHub's refusal: ${master.said()}")
 
             val created = coder.run(clone, "gh", "pr", "create", "--repo", repository, "--base", DEFAULT_BRANCH, "--head", branch, "--title", "just apps prove $time",
                 "--body", "Opened by `just apps prove` (contracts.md §12), which closes it and deletes its branch.")
@@ -193,7 +199,8 @@ object AppsProve {
                 "no review by $reviewerName: ${reviewed.said()}")
 
             val approved = coder.run(clone, "gh", "pr", "review", opened, "--repo", repository, "--approve", "--body", "`just apps prove`: the coder approves its own.")
-            outcome("5. the coder approves its own #$opened", approved.exit != 0, "refused: ${approved.said()}", "SC-10: GitHub let $coderName approve its own pull request")
+            outcome("5. the coder approves its own #$opened", refusedByGitHub(APPROVAL_REFUSED, approved.exit, approved.err + approved.out), "refused by GitHub: ${approved.said()}",
+                if (approved.exit == 0) "SC-10: GitHub let $coderName approve its own pull request" else "failed for another reason than GitHub's refusal: ${approved.said()}")
         }
 
         /** The pull request closed and the branch deleted, whatever went before: what the proof made, removed. */
@@ -237,6 +244,27 @@ object AppsProve {
         private fun login(text: String): String = text.trim().removePrefix("app/").removeSuffix("[bot]")
     }
 
+    /**
+     * Whether a step GitHub must refuse was refused by GitHub (Collite/keporkak#63, 2): it ended otherwise than 0 and [said]
+     * holds one of GitHub's own words for that refusal, [words]. Any other failure — a credential, the network, a push
+     * that is no fast-forward — is not GitHub's refusal.
+     */
+    internal fun refusedByGitHub(words: List<String>, exit: Int, said: String): Boolean = exit != 0 && words.any { it in said }
+
+    /** Whether `gh auth status` found no login (Amendment 43): it ended otherwise than 0, saying so in gh's words. */
+    internal fun noLogin(exit: Int, said: String): Boolean = exit != 0 && NO_LOGIN in said
+
+    /** GitHub's words for a push to a branch its rules protect: the rule-violation code, or the protected-branch hook's (recorded on #14). */
+    internal val PUSH_REFUSED = listOf("GH013", "protected branch hook declined", "Cannot update this protected ref")
+
+    /** GitHub's words when an author approves its own pull request (recorded on #14). */
+    internal val APPROVAL_REFUSED = listOf("Can not approve your own pull request")
+
+    private const val NO_LOGIN = "You are not logged into any GitHub hosts"
+
+    /** A GitHub App's installation token, as a seat's transcript knows it: its prefix and what follows, up to a space, a quote or a backslash. */
+    private val INSTALLATION_TOKEN = Regex("""ghs_[^\s"'\\]+""")
+
     /** Nothing is delivered: the proof's mailroom carries no message. */
     private object NoDeliveries : Deliveries {
         override fun idle(seat: String) = false
@@ -256,9 +284,4 @@ object AppsProve {
     private val PULL = Regex("/pull/([0-9]+)")
     /** What a seat's agent gives it (ClaudeAgent): a path, the office user's home, a locale. */
     private val BASE = mapOf("PATH" to "/usr/local/bin:/usr/bin:/bin", "HOME" to System.getProperty("user.home"), "LANG" to "C.UTF-8")
-    /** Who the proof's one commit is by: no person's name or address. */
-    private val IDENTITY = mapOf(
-        "GIT_AUTHOR_NAME" to "just apps prove", "GIT_AUTHOR_EMAIL" to "apps-prove@keporkak.invalid",
-        "GIT_COMMITTER_NAME" to "just apps prove", "GIT_COMMITTER_EMAIL" to "apps-prove@keporkak.invalid",
-    )
 }
