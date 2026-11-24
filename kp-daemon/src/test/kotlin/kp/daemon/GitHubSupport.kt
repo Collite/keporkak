@@ -43,15 +43,18 @@ private val REPOSITORIES get() = listOf("keporkak", "kp-toy", "project")
  * master's rules but for `pool/offices.yaml`, which names that checkout and a secrets folder of the spec's. GitHub is one
  * local server: the responses recorded from `Collite/kp-toy` ([github]) and the App endpoints ([apps]), where the four
  * Apps are made with keys of the spec's, PKCS#1, in `<secrets>/apps`. With [up] false the daemon asks a port nothing
- * listens on. Its world is the service's ([ServiceWorld]), and its journal is kept.
+ * listens on. With [made], the log holds the stage's `worktree.create`, ended `ok` on that branch in `kp-toy` (S3.11).
+ * Its world is the service's ([ServiceWorld]), and its journal is kept.
  */
-class GitHubOffice(states: Map<String, String> = mapOf(TOY_STAGE to "building"), up: Boolean = true) : AutoCloseable {
+class GitHubOffice(states: Map<String, String> = mapOf(TOY_STAGE to "building"), up: Boolean = true, made: Boolean = true) : AutoCloseable {
     private val folder: Path = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "github-")
     val project: Path = repository(folder.resolve("project")).also { project ->
         write(project, "toy/tasks-p0-s0.1-skeleton.md", LIST)
         git(project, "add", "-A")
         git(project, "commit", "--quiet", "-m", "cut S0.1")
         seed(project, states)
+        // The stage's worktree was made on the list's branch in kp-toy: what its repository and branch are read from (S3.11).
+        if (made) placed(project, TOY_STAGE, "kp-toy", TOY_BRANCH)
     }
     val secrets: Path = folder.resolve("secrets").createDirectories()
     private val server = RecordedGitHub.local()

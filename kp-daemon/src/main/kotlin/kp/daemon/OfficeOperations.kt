@@ -15,6 +15,7 @@ import kp.ops.ProjectPush
 import kp.ops.Register
 import kp.ops.StageWorktree
 import kp.ops.Worktrees
+import kp.facts.noWorktreeRecord
 import kp.rules.Office as OfficeEntry
 import java.net.URI
 import java.nio.file.Files
@@ -27,9 +28,10 @@ import kotlin.io.path.name
 /**
  * The office's performers (architecture.md §2, `kp-ops`; contracts.md §7, Amendment 36): `worktree.create`,
  * `worktree.remove`, `register.rebuild` and `project.commit_push`, each on the checkout the rules in force name for the
- * office [office] — the project checkout [project], the main checkout of the stage's repository, its worktree. A
- * stage's repository and branch are its list's title and first line, as `kp-facts` reads them (Amendment 32); its
- * default branch is the profile's. `notify.bora` ends `ok` at once: the inbox is the notification. Every other
+ * office [office] — the project checkout [project], the main checkout of the stage's repository, its worktree.
+ * `worktree.create` reads a stage's repository and branch from its list's title and first line, as the list Bora approved
+ * names them now, and its record names them (Amendment 40); every later operation takes them from that record —
+ * `worktree.remove` removes what it names. Its default branch is the profile's. `notify.bora` ends `ok` at once: the inbox is the notification. Every other
  * operation without a performer answers `failed`, naming itself. [keporkak] is the checkout whose `scripts/` and
  * `docs/profiles/` it reads; [api] is GitHub's REST root; [say] is the journal.
  */
@@ -52,7 +54,7 @@ class OfficeOperations(
         done(when (request.operation) {
             NOTIFY_BORA -> OperationResult.Ok()
             WORKTREE_CREATE -> worktree(request) { placed -> Worktrees(git).create(placed.worktree).named(placed) }
-            WORKTREE_REMOVE -> worktree(request) { placed -> Worktrees(git).remove(placed.worktree) }
+            WORKTREE_REMOVE -> removed(request)
             REGISTER_REBUILD -> entry()?.let { entry -> Register(keporkak.resolve(REGISTER_SCRIPT)).rebuild(project, entry.project.efforts.toList()).answer() }
                 ?: OperationResult.Failed(noOffice())
             PROJECT_COMMIT_PUSH -> ProjectPush(project, ::mint, git).commitPush(cause(request)).answer()
@@ -66,7 +68,8 @@ class OfficeOperations(
      */
     override fun on(request: OperationRequest): String? {
         val stage = stageOf(request)
-        return checkout(request, stage, stage?.let { runCatching { place(it) }.getOrNull()?.worktree?.main })
+        val main = stage?.let { runCatching { if (request.operation == WORKTREE_REMOVE) recorded(it) else place(it) }.getOrNull()?.worktree?.main }
+        return checkout(request, stage, main)
     }
 
     /**
@@ -75,7 +78,10 @@ class OfficeOperations(
      */
     override fun left(request: OperationRequest): String? = when (request.operation) {
         WORKTREE_CREATE, WORKTREE_REMOVE -> stageOf(request)?.let { stage ->
-            val worktree = runCatching { place(stage).worktree.worktree }.getOrElse { return "${it.message}; nothing touches it" }
+            val worktree = runCatching {
+                if (request.operation == WORKTREE_REMOVE) (recorded(stage) ?: return "${noWorktreeRecord(stage)}; nothing touches it").worktree.worktree
+                else place(stage).worktree.worktree
+            }.getOrElse { return "${it.message}; nothing touches it" }
             "${Worktrees(git).describe(worktree)}; nothing touches it"
         }
         PROJECT_COMMIT_PUSH -> "${ProjectPush(project, ::mint, git).describe()}; nothing touches it"
@@ -115,7 +121,39 @@ class OfficeOperations(
         return Placed(repo, StageWorktree(main, defaultBranch, branch, roots.worktrees.resolve(name), roots.scratch.resolve(name)))
     }
 
-    /** A stage's worktree, placed, and its [repository]: the `<repo>` of its list's title (Amendment 32). */
+    /**
+     * `worktree.remove` (contracts.md §7, Amendments 36, 43): it removes the worktree and the scratch folder the stage's
+     * `worktree.create` record names — never what its list names now. With no record nothing was made: there is nothing to
+     * remove, and it is `ok`, the journal saying so.
+     */
+    private fun removed(request: OperationRequest): OperationResult {
+        val stage = stageOf(request) ?: return OperationResult.Failed("${request.operation} names no stage")
+        val place = try {
+            recorded(stage)
+        } catch (missing: Missing) {
+            return OperationResult.Failed(missing.message)
+        } ?: return OperationResult.Ok().also { say("worktree.remove for $stage: ${noWorktreeRecord(stage)} — there is nothing to remove") }
+        return Worktrees(git).remove(place.worktree).answer()
+    }
+
+    /**
+     * The stage's worktree as its `worktree.create` record names it (Amendment 40): the main checkout of the repository it
+     * names, its branch, the worktree's path, and the scratch folder of the stage's name; null when the log holds no record.
+     */
+    private fun recorded(stage: String): Placed? {
+        val office = reading ?: throw Missing("the daemon has not read its log yet")
+        val made = worktreeOf(office.counted(), stage) ?: return null
+        val entry = entry() ?: throw Missing(noOffice())
+        val name = Seats.worktree(stage) ?: throw Missing("$stage is no stage id")
+        val main = entry.repos[made.repository]?.let(Seats::home) ?: throw Missing("the office holds no repository '${made.repository}'")
+        val roots = Roots.of(entry.roots)
+        val worktree = made.worktree.takeIf { it.isNotEmpty() }?.let { Path.of(it) } ?: roots.worktrees.resolve(name)
+        // A removal fetches nothing: the default branch is the profile's when it names one.
+        val effort = stage.substringBefore('/')
+        return Placed(made.repository, StageWorktree(main, defaultBranch(effort).orEmpty(), made.branch, worktree, roots.scratch.resolve(name)))
+    }
+
+    /** A stage's worktree, placed, and its [repository]: the `<repo>` of its list's title (Amendment 32), or its record's (Amendment 40). */
     private class Placed(val repository: String, val worktree: StageWorktree)
 
     /**

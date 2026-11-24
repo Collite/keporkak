@@ -1,13 +1,9 @@
 package kp.daemon
 
 import kp.daemon.seats.Roots
-import kp.daemon.seats.Seats
 import kp.engine.Datum
-import kp.facts.Checkouts
 import kp.facts.GitHub
-import kp.facts.GitHubAccess
 import kp.facts.GitHubFacts
-import kp.facts.Handed
 import kp.facts.Located
 import kp.mailroom.OperationRequest
 import kp.mailroom.OperationResult
@@ -22,22 +18,20 @@ import kp.ops.PrClose
 import kp.ops.StageOnGitHub
 import java.math.BigDecimal
 import java.net.URI
-import java.nio.file.Path
 import java.util.concurrent.Executors
 
 /**
  * The service's operations on GitHub (contracts.md §7, Amendment 37; S3.9): `git.merge`, `pr.close` and `issue.file`,
  * each performed once by `kp-ops` as `kp-merger`, on a thread of its own — the mailroom judges the result when it comes,
  * and holds no lock meanwhile. The stage is the request's `with.stage`, else its cause's; its repository and branch are
- * read from its list as the facts read them (Amendment 33); the block `github:`, the office's checkouts and its secrets
- * folder are those of the rules in force. A merge's head is the `pr.head` the judgement of its `merge` observed, read from
+ * those of its `worktree.create` record, as the facts read them (Amendment 40) — with none, the operation `failed`; the
+ * block `github:` and the office's secrets folder are those of the rules in force. A merge's head is the `pr.head` the judgement of its `merge` observed, read from
  * the log ([observedHead]) and never from GitHub. A request with no result at a start is the mailroom's to end
  * `failed: interrupted`: nothing here is performed again. Every other operation is [other]'s. [say] is the journal: it
  * hears each failure's reason, never a token — no token reaches this class.
  */
 class GitHubOperations private constructor(
     private val office: String,
-    private val project: Path,
     private val api: URI,
     private val other: Operations,
     private val say: (String) -> Unit,
@@ -80,8 +74,7 @@ class GitHubOperations private constructor(
         val ids = block.apps[MERGER] ?: return failed(request, "github.apps holds no App $MERGER")
         val stage = (request.with.fields[STAGE] as? Datum.Text)?.value ?: office.state.delivered[request.cause]?.stage
             ?: return failed(request, "neither the request nor its cause ${request.cause} names a stage")
-        val checkouts = Checkouts(this.office, project, entry.project.efforts, entry.repos.toSortedMap().mapValues { (_, checkout) -> Seats.home(checkout) })
-        val where = when (val located = GitHubFacts(checkouts, OfficeLog().also { it.office = office }, GitHub(block.organization, api), NO_ACCESS).located(stage)) {
+        val where = when (val located = GitHubFacts.located(OfficeLog().also { it.office = office }, GitHub(block.organization, api), stage)) {
             is Located.At -> StageOnGitHub(stage, located.repository, located.branch)
             is Located.Unknown -> return failed(request, "where $stage acts on GitHub is unknown: ${located.missing}")
         }
@@ -117,15 +110,9 @@ class GitHubOperations private constructor(
         private const val FOUND = "found"
         private const val FOLLOW_UPS = "follow_ups"
 
-        /** Where a stage acts is read from its list alone: nothing is minted for it. */
-        private val NO_ACCESS = object : GitHubAccess {
-            override fun token(repository: String) = Handed.Withheld("an operation's place is read from its list, not from GitHub")
-            override fun reviewer() = Handed.Withheld("an operation's place is read from its list, not from GitHub")
-        }
-
-        /** The operations on GitHub of [office], on the project checkout [project]; [other] performs the rest; [say] is the journal. */
-        fun of(office: String, project: Path, other: Operations, api: URI = GitHubApps.GITHUB, say: (String) -> Unit = Journal::say): GitHubOperations =
-            GitHubOperations(office, project, api, other, say)
+        /** The operations on GitHub of [office]; [other] performs the rest; [say] is the journal. */
+        fun of(office: String, other: Operations, api: URI = GitHubApps.GITHUB, say: (String) -> Unit = Journal::say): GitHubOperations =
+            GitHubOperations(office, api, other, say)
 
         /** A performer's answer as the mailroom records it: a text, or a list of numbers, per field of the result. */
         private fun Performed.result(): OperationResult = when (this) {

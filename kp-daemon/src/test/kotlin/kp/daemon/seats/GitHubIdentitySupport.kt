@@ -53,7 +53,7 @@ class IdentityOffice(
     val tokens = Tokens()
     val journal = CopyOnWriteArrayList<String>()
     val hidden = CopyOnWriteArrayList<String>()
-    val identity = GitHubIdentity("panda", github.project, { github.office.rules }, github.secrets.resolve("apps"), github.apps.api, journal::add) { _, token -> hidden += token }
+    val identity = GitHubIdentity("panda", { github.office.rules }, kp.daemon.OfficeLog().also { it.office = github.office }, github.secrets.resolve("apps"), github.apps.api, journal::add) { _, token -> hidden += token }
     private var api: SeatApi? = github.office.seatApi(tokens, "127.0.0.1:0", identity)
     private val port = api!!.address.port
     /** The office user's home, as a seat's process sees it: its own git configuration is there. */

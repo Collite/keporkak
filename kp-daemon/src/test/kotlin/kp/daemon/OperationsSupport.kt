@@ -51,7 +51,11 @@ class OfficeOnDisk(states: Map<String, String> = emptyMap(), worktree: Boolean =
         "STATUS.md" to status("KP — Keporkak", "2026-11-22") + "- **2026-11-22 — S3.3 merged.** #60\n",
         "toy/STATUS.md" to status("TOY — the toy project", "2026-11-14"),
     ))
-    val project: Path = projectRemote.clone("project").also { seed(it, states) }
+    val project: Path = projectRemote.clone("project").also { project ->
+        seed(project, states)
+        // A worktree made is one its worktree.create recorded: what worktree.remove reads (S3.11, Amendment 40).
+        if (worktree) placed(project, OFFICE_STAGE, "keporkak", OFFICE_BRANCH, folder.resolve("worktrees").resolve(OFFICE_WORKTREE).toString())
+    }
     val keporkakRemote = Remote("keporkak.git", mapOf("README.md" to "keporkak\n"))
     val keporkak: Path = keporkakRemote.clone("keporkak").also { keporkakRemote.moves(mapOf("CHANGELOG.md" to "moved after the clone\n")) }
     val worktrees: Path = folder.resolve("worktrees").createDirectories()

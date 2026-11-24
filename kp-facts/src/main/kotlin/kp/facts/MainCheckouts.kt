@@ -21,18 +21,17 @@ internal fun Reading.strayChanges(): Observation {
 }
 
 /**
- * `git.branch_exists`: whether the branch the list's first line names — `(PR: <branch>)` — is a local or a
- * remote-tracking branch in the main checkout of the stage's repository: the `repo` parameter, else the `<repo>` of the
- * list's title `# <EFFORT>-<repo>-P<n>`. A repository the office does not hold: unknown.
+ * `git.branch_exists`: whether the stage's branch is a local or a remote-tracking branch in the main checkout of the
+ * stage's repository: the `repo` parameter, else the repository. Both are those of its `worktree.create` record
+ * (Amendment 40), never its list's first line; with no record, unknown. A repository the office does not hold: unknown.
  */
 internal fun Reading.branchExists(): Observation {
-    val stage = stage()
-    val heading = stageList(stage).heading(stage)
-    val branch = heading.branch()
-    val repo = asked.optionalText("repo") ?: heading.repo()
+    val made = made(stage())
+    val branch = made.branch
+    val repo = asked.optionalText("repo") ?: made.repository
     val dir = where.repos[repo] ?: throw Missing("the office holds no repository '$repo'")
     val refs = git.run(git.root(dir), "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes").output.lines()
     val ref = refs.firstOrNull { it == "refs/heads/$branch" }
         ?: refs.firstOrNull { it.startsWith("refs/remotes/") && it.removePrefix("refs/remotes/").substringAfter('/') == branch }
-    return Observation.Value(ref != null, "${heading.line}; $repo: ${ref ?: "no ref of $branch"}")
+    return Observation.Value(ref != null, "${made.record}; $repo: ${ref ?: "no ref of $branch"}")
 }

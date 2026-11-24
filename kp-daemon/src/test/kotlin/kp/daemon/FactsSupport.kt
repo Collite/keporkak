@@ -68,6 +68,8 @@ class FactsOffice(
         git(project, "add", "-A")
         git(project, "commit", "--quiet", "-m", "cut S3.1")
         seed(project, states)
+        // S3.1's worktree was made on its list's branch in keporkak: what `git.branch_exists` reads (S3.11).
+        placed(project, "KP/P3/S3.1", "keporkak", "feat/kp-keporkak-p3-s3.1-project-and-git-facts")
     }
     val keporkak: Path = repository(folder.resolve("keporkak")).also { main ->
         write(main, "README.md", "keporkak\n")

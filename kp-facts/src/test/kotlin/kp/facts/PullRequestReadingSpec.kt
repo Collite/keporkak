@@ -61,10 +61,11 @@ class PullRequestReadingSpec : FreeSpec({
             toy.github.on("/repos/Collite/kp-toy/commits/$TOY_HEAD/check-runs", answer = Answer(200, recorded("pulls-none.json")))
             toy.observe("ci.state", "sha" to TOY_HEAD).missing shouldBe "GitHub's answer to GET repos/Collite/kp-toy/commits/$TOY_HEAD/check-runs is no list in 'check_runs'"
 
-            toy.office.project.write("toy/tasks-p0-s0.1-skeleton.md", "# TOY · S0.1 — The skeleton\n")
-            toy.observe("pr.ready").missing shouldBe "toy/tasks-p0-s0.1-skeleton.md#L1 names no branch '(PR: <branch>)'"
-            toy.office.project.write("toy/tasks-p0-s0.1-skeleton.md", "# TOY · S0.1 — The skeleton (PR: $TOY_BRANCH)\n")
-            toy.observe("pr.ready").missing shouldBe "toy/tasks-p0-s0.1-skeleton.md#L1 names no repository '# TOY-<repo>-P0'"
+            // Where the stage acts is its worktree.create record's (Amendment 40): none, or one naming no repository GitHub gives.
+            toy.log.made.remove(TOY_STAGE)
+            toy.observe("pr.ready").missing shouldBe noWorktreeRecord(TOY_STAGE)
+            toy.log.placed(TOY_STAGE, "kp toy", TOY_BRANCH)
+            toy.observe("pr.ready").missing shouldBe "'Collite/kp toy' is no repository name GitHub gives"
         }
     }
 

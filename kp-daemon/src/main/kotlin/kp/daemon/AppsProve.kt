@@ -5,15 +5,20 @@ package kp.daemon
 import kp.daemon.seats.GitHubIdentity
 import kp.daemon.seats.Roots
 import kp.daemon.seats.SeatEnvironment
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import kp.driver.Outcome
 import kp.driver.home.ConfigHomes
 import kp.driver.home.PermissionDefaults
 import kp.driver.home.Places
+import kp.log.LogWriter
 import kp.mailroom.Deliveries
 import kp.mailroom.FactSource
 import kp.mailroom.OperationResult
 import kp.mailroom.Operations
 import kp.model.Message
+import kp.model.OfficeId
+import kp.model.StageId
 import kp.model.SeatId
 import kp.ops.App
 import kp.ops.Asked
@@ -69,9 +74,10 @@ object AppsProve {
         val hidden = CopyOnWriteArraySet<String>()
         fun say(text: String) = print(hidden.fold(text) { said, token -> said.replace(token, HIDDEN) })
         val tokens = Tokens()
+        placed(project, office, branch, folder.resolve("work/$TOY"))
         val mailroom = Office.start(office, project, root, FactSource { _, _ -> null }, Operations { _, done -> done(OperationResult.Failed("apps prove performs nothing")) },
             NoDeliveries, serviceClock)
-        val identity = GitHubIdentity(office, project, { mailroom.rules }, keys, api, say = {}) { _, token -> hidden += token }
+        val identity = GitHubIdentity(office, { mailroom.rules }, OfficeLog().also { it.office = mailroom }, keys, api, say = {}) { _, token -> hidden += token }
         val listener = mailroom.seatApi(tokens, "127.0.0.1:0", identity)
         try {
             val url = "http://127.0.0.1:${listener.address.port}"
@@ -95,6 +101,23 @@ object AppsProve {
             listener.close()
             mailroom.close()
             folder.deleteRecursively()
+        }
+    }
+
+    /**
+     * The proof's stage has its place as a stage's worktree gives it (contracts.md §4.4, Amendment 40): its throwaway log
+     * starts with a `worktree.create` of [STAGE] that ended `ok`, naming the toy and [branch] — what the seats' tokens are
+     * narrowed by. [worktree] is the coder's clone.
+     */
+    private fun placed(project: Path, office: String, branch: String, worktree: Path) {
+        val at = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString()
+        LogWriter.open(project, OfficeId(office)).use { log ->
+            val judgement = log.judgement()
+            listOf(
+                """{"v":1,"at":"$at","event":"op","op":"worktree.create","phase":"requested","cause":"apps-prove","with":{"stage":"$STAGE"}}""",
+                """{"v":1,"at":"$at","event":"op","op":"worktree.create","phase":"ok","cause":"apps-prove","result":{"repository":"$TOY","branch":"$branch","worktree":"$worktree"}}""",
+            ).forEach { judgement.add(Json.parseToJsonElement(it).jsonObject, StageId(STAGE)) }
+            judgement.close(at)
         }
     }
 

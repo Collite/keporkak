@@ -2,6 +2,7 @@ package kp.daemon
 
 import kp.engine.FactRef
 import kp.engine.fold
+import kp.facts.MadeWorktree
 import kp.facts.Observation
 import kp.facts.ProjectFacts
 import kp.facts.StageState
@@ -32,6 +33,7 @@ object StageFacts {
             override fun activeStates(): Set<String> = rules.ruleSet.lifecycle.activeStates.toSet()
             override fun observedHead(message: String): String? = observedHead(counted, message)
             override fun lastDelivered(stage: String, kinds: Set<String>): String? = state.lastDelivered(stage, kinds)
+            override fun worktree(stage: String): MadeWorktree? = worktreeOf(counted, stage)
         })
         val known = state.machine(STAGE, stage)
         val facts = (ProjectFacts.ANSWERED.keys + ProjectFacts.NOT_READ_YET.keys).map { name -> world.observation(FactRef(name, emptyMap()), stage)!! }

@@ -71,6 +71,8 @@ class SeatsOffice(
 
     init {
         if (prepared == null) script.seed(project, OFFICE, clock)
+        // With the seats' GitHub identity, the stage's worktree was made in kp-toy: what its seats' tokens are narrowed to (S3.11).
+        if (prepared == null && github) kp.daemon.placed(project, script.stageId(script.walk.stage), "kp-toy", "feat/kp-kp-toy-p2-s2.4-seats")
         val fake = project.resolve("office/fake").createDirectories()
         scripts.forEach { (seat, text) ->
             val given = kotlinx.serialization.json.Json.parseToJsonElement(text) as JsonObject

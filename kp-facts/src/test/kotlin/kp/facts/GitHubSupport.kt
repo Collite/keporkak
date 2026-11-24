@@ -20,6 +20,8 @@ class Toy(folder: File) : AutoCloseable {
 
     init {
         office.project.write("toy/tasks-p0-s0.1-skeleton.md", "# TOY-kp-toy-P0 · S0.1 — The skeleton            (PR: $TOY_BRANCH)\nrolls: none · live: none · touches: none\n")
+        // Its worktree was made on that branch in kp-toy: what its repository and branch are read from (Amendment 40).
+        office.log.placed(TOY_STAGE, "kp-toy", TOY_BRANCH)
     }
 
     fun facts(): GitHubFacts = GitHubFacts(office.checkouts, office.log, GitHub("Collite", github.api), object : GitHubAccess {

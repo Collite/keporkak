@@ -4,6 +4,7 @@ import kp.engine.Datum
 import kp.engine.FactRef
 import kp.facts.Checkouts
 import kp.facts.Git
+import kp.facts.MadeWorktree
 import kp.facts.Observation
 import kp.facts.ProjectFacts
 import kp.facts.StageState
@@ -35,6 +36,7 @@ class ProjectWorld private constructor(
         override fun activeStates(): Set<String> = folded().activeStates()
         override fun observedHead(message: String): String? = folded().observedHead(message)
         override fun lastDelivered(stage: String, kinds: Set<String>): String? = folded().lastDelivered(stage, kinds)
+        override fun worktree(stage: String): MadeWorktree? = folded().worktree(stage)
     }
     private val project = facts(log)
 

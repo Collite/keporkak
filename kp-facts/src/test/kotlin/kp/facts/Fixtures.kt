@@ -79,7 +79,8 @@ fun runGit(dir: Path, args: List<String>, dated: String? = null): String {
 
 /**
  * What the log knows, as a spec sets it: each stage's state, the exits it dates, the states the rules call active; the
- * head each message's judgement observed (S3.2), and when each stage's messages of a kind were delivered.
+ * head each message's judgement observed (S3.2), when each stage's messages of a kind were delivered, and where each
+ * stage's worktree was made (S3.11).
  */
 class KnownLog(
     val states: MutableMap<String, String> = mutableMapOf(),
@@ -93,6 +94,15 @@ class KnownLog(
     override fun activeStates(): Set<String> = active
     override fun observedHead(message: String): String? = heads[message]
     override fun lastDelivered(stage: String, kinds: Set<String>): String? = delivered.lastOrNull { it.first == stage && it.second in kinds }?.third
+    override fun worktree(stage: String): MadeWorktree? = made[stage]
+
+    /** Each stage's `worktree.create` that ended `ok`, as the log would hold it (Amendment 40). */
+    val made: MutableMap<String, MadeWorktree> = mutableMapOf()
+
+    /** [stage]'s worktree was made in [repository] on [branch], as its record names them. */
+    fun placed(stage: String, repository: String, branch: String) {
+        made[stage] = MadeWorktree(repository, branch, "/nowhere", "the log's worktree.create of $stage: $repository, $branch")
+    }
 
     /** A message of [kind] about [stage] was delivered [at]. */
     fun delivered(stage: String, kind: String, at: String) {

@@ -112,7 +112,7 @@ class RecordedOffice(made: WorktreeMade = WorktreeMade.OK) : AutoCloseable {
     private val rules = InForceRules.of(RuleFiles(root).read()).let { (rules, load) -> rules ?: error("the rules do not load: ${load.problems.joinToString("; ")}") }
     val world = ServiceWorld(ProjectWorld.of(rules, "panda", project) { journal += it }, GitHubWorld.of("panda", project, github.api) { journal += it })
     private val onTheOffice = OfficeOperations(root, "panda", project, api = github.api) { journal += it }
-    private val operations = GitHubOperations.of("panda", project, onTheOffice, github.api) { journal += it }
+    private val operations = GitHubOperations.of("panda", onTheOffice, github.api) { journal += it }
     val office: Office
     val identity: GitHubIdentity
     private val tokens = Tokens()
@@ -218,7 +218,7 @@ class RecordedOffice(made: WorktreeMade = WorktreeMade.OK) : AutoCloseable {
 
         /** A seat's GitHub identity as the service makes it for [office]. */
         private fun identity(office: RecordedOffice) =
-            GitHubIdentity("panda", office.project, { office.office.rules }, office.secrets.resolve("apps"), office.github.api, { office.journal += it }) { _, _ -> }
+            GitHubIdentity("panda", { office.office.rules }, OfficeLog().also { it.office = office.office }, office.secrets.resolve("apps"), office.github.api, { office.journal += it }) { _, _ -> }
 
         /** The records [project]'s log starts with — the stage `building`, its `worktree.create` as [made] says, the messages GitHub's facts read. */
         private fun records(project: Path, made: WorktreeMade, worktree: Path) {
@@ -245,6 +245,22 @@ class RecordedOffice(made: WorktreeMade = WorktreeMade.OK) : AutoCloseable {
                 judgement.close(RECORDED_AT)
             }
         }
+    }
+}
+
+/**
+ * [stage]'s worktree made, as the office's performer records it (contracts.md §4.4, §7; Amendment 40): a `worktree.create`
+ * requested for it and ended `ok`, naming [repository] — its key in `repos:` — [branch] and [worktree]. What every reader
+ * of a stage's repository and branch takes them from (S3.11).
+ */
+fun placed(project: Path, stage: String, repository: String, branch: String, worktree: String = "/nowhere/${stage.lowercase().replace('/', '-')}") {
+    LogWriter.open(project, OfficeId("panda")).use { log ->
+        val judgement = log.judgement()
+        listOf(
+            """{"v":1,"at":"$RECORDED_AT","event":"op","op":"worktree.create","phase":"requested","cause":"m-panda-900000","with":{"stage":"$stage"}}""",
+            """{"v":1,"at":"$RECORDED_AT","event":"op","op":"worktree.create","phase":"ok","cause":"m-panda-900000","result":{"repository":"$repository","branch":"$branch","worktree":"$worktree"}}""",
+        ).forEach { judgement.add(Json.parseToJsonElement(it).jsonObject, StageId(stage)) }
+        judgement.close(RECORDED_AT)
     }
 }
 

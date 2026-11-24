@@ -113,6 +113,8 @@ class Seats(
     private val minted: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val compacts = ConcurrentHashMap<String, MutableList<(OperationResult) -> Unit>>()
     @Volatile private var office: Office? = null
+    /** What the log knows, from the office this reports to: a stage's `worktree.create` record among it (Amendment 40). */
+    private val log = kp.daemon.OfficeLog()
     @Volatile private var hookUrl: String? = null
     @Volatile private var listen: String? = null
     @Volatile private var closing = false
@@ -139,7 +141,7 @@ class Seats(
      * seat is hidden in its transcript before it is handed over.
      */
     val identity: GitHubIdentity? = github?.let { api ->
-        GitHubIdentity(officeName, project, ::inForce, roots.secrets.resolve("apps"), api, say) { seat, token -> this.driver.hide(SeatId(seat), token) }
+        GitHubIdentity(officeName, ::inForce, log, roots.secrets.resolve("apps"), api, say) { seat, token -> this.driver.hide(SeatId(seat), token) }
     }
 
     /** What hears how a turn ended. */
@@ -160,6 +162,7 @@ class Seats(
      */
     fun attach(office: Office, listen: String) {
         this.office = office
+        log.office = office
         this.listen = listen
         this.hookUrl = "http://$listen"
     }

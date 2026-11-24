@@ -14,11 +14,14 @@ import kp.facts.GitHub
 import kp.facts.GitHubAccess
 import kp.facts.GitHubFacts
 import kp.facts.Handed
+import kp.facts.MadeWorktree
 import kp.facts.Observation
 import kp.facts.StageState
 import kp.facts.WhatTheLogKnows
 import kp.mailroom.FactSource
 import kp.model.Envelope
+import kp.model.Message
+import kp.model.Op
 import kp.model.Record
 import kp.ops.App
 import kp.ops.Asked
@@ -163,10 +166,43 @@ class OfficeLog : WhatTheLogKnows {
 
     override fun lastDelivered(stage: String, kinds: Set<String>): String? = folded().lastDelivered(stage, kinds)
 
+    override fun worktree(stage: String): MadeWorktree? = worktreeOf(folded().counted(), stage)
+
     private companion object {
         const val STAGE = "stage"
     }
 }
+
+/**
+ * Where [stage]'s worktree was made, from the log's lines as they count, [counted] (contracts.md §4.4, §7; Amendments 40,
+ * 43): its last `worktree.create` that ended `ok` — the stage being the one its request named (`with.stage`), else its
+ * cause's — as that record names the repository, the branch and the worktree; null when there is none. One that `failed`
+ * is none; the fold does not keep a result, so the log is read back, as for [observedHead].
+ */
+internal fun worktreeOf(counted: List<Envelope>, stage: String): MadeWorktree? {
+    val about = HashMap<String, String>()
+    counted.filterIsInstance<Message>().forEach { message -> message.stage?.let { about[message.id.value] = it.value } }
+    var made: MadeWorktree? = null
+    for (op in counted.filterIsInstance<Op>()) {
+        if (op.op != WORKTREE_CREATE) continue
+        if (op.phase == REQUESTED) (op.with?.get(STAGE_FIELD) as? JsonPrimitive)?.takeIf { it.isString }?.let { about[op.cause] = it.content }
+        if (op.phase != OK || about[op.cause] != stage) continue
+        fun text(name: String) = (op.result?.get(name) as? JsonPrimitive)?.takeIf { it.isString }?.content
+        val repository = text(REPOSITORY) ?: continue
+        val branch = text(BRANCH) ?: continue
+        made = MadeWorktree(repository, branch, text(WORKTREE).orEmpty(),
+            "the log's worktree.create of $stage, ok at ${op.at.value} (asked by ${op.cause}): $repository, $branch")
+    }
+    return made
+}
+
+private const val WORKTREE_CREATE = "worktree.create"
+private const val REQUESTED = "requested"
+private const val OK = "ok"
+private const val STAGE_FIELD = "stage"
+private const val REPOSITORY = "repository"
+private const val BRANCH = "branch"
+private const val WORKTREE = "worktree"
 
 /**
  * The `pr.head` the judgement of [message] observed: the `observed` of the record that judged it — `delivered` or

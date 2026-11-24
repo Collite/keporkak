@@ -43,7 +43,24 @@ interface WhatTheLogKnows {
 
     /** When the last message of [stage] whose kind is one of [kinds] was delivered (RFC 3339), as the log dates it; null when none was. */
     fun lastDelivered(stage: String, kinds: Set<String>): String?
+
+    /**
+     * Where [stage]'s worktree was made (contracts.md §4.4, §7; Amendments 40, 43): its last `worktree.create` that ended
+     * `ok`, as that record names the repository, the branch and the worktree; null when the log holds none — one that
+     * `failed` is none. The one reading of a stage's repository and branch: no reader takes them from the list again.
+     */
+    fun worktree(stage: String): MadeWorktree?
 }
+
+/**
+ * A stage's worktree as its `worktree.create` record names it (Amendment 40): the [repository] by its key in the office's
+ * `repos:`, the [branch], the [worktree]'s path — and the record itself, as evidence cites it ([record]).
+ */
+data class MadeWorktree(val repository: String, val branch: String, val worktree: String, val record: String)
+
+/** What every reader of a stage's repository and branch says when [stage] has no `worktree.create` record (Amendments 40, 43). */
+fun noWorktreeRecord(stage: String): String =
+    "$stage has no worktree.create that ended ok: no repository and no branch are fixed for it (contracts.md §4.4, Amendment 40)"
 
 /** A stage's state in the log, and the time it entered it (RFC 3339), as the log dates it. */
 data class StageState(val state: String, val since: String)
@@ -117,7 +134,7 @@ class ProjectFacts(private val where: Checkouts, private val log: WhatTheLogKnow
             Fact("register.fresh", emptyList()),
             Fact("project.clean_and_pushed", emptyList()),
             Fact("project.proof_files", listOf("stage")),
-            Fact("git.branch_exists", listOf("repo", "stage")),
+            Fact("git.branch_exists", listOf("repo", "stage"), readsTheLog = true),
             Fact("git.stray_changes", listOf("office")),
         ).associateBy { it.name }
 
@@ -242,4 +259,7 @@ internal class Reading(val where: Checkouts, val log: WhatTheLogKnows, val git: 
     fun stage(): StageId = StageId.of(asked.text("stage"))
 
     fun phase(): PhaseId = PhaseId.of(asked.text("phase"))
+
+    /** Where [stage]'s worktree was made, from the log's record of it (Amendment 40); with none, what is missing. */
+    fun made(stage: StageId): MadeWorktree = log.worktree(stage.id) ?: throw Missing(noWorktreeRecord(stage.id))
 }

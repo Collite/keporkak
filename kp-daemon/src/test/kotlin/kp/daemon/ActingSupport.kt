@@ -49,6 +49,8 @@ class ActingOffice(
         git(project, "add", "-A")
         git(project, "commit", "--quiet", "-m", "cut S0.1")
         seed(project, states)
+        // The stage's worktree was made on the list's branch in kp-toy: where it acts on GitHub is read from that (S3.11).
+        placed(project, TOY_STAGE, "kp-toy", kp.facts.TOY_BRANCH)
     }
     private val secrets: Path = folder.resolve("secrets").createDirectories()
     private val server = RecordedGitHub.local()
@@ -80,7 +82,7 @@ class ActingOffice(
         server.start()
     }
 
-    private fun operations() = GitHubOperations.of("panda", project, Operations { _, done -> done(OperationResult.Ok()) }, github.api) { journal += it }
+    private fun operations() = GitHubOperations.of("panda", Operations { _, done -> done(OperationResult.Ok()) }, github.api) { journal += it }
 
     private fun start(): Office = Office.start("panda", project, root, facts, operations, NoSeats, Clock { Instant.parse("2026-11-22T09:00:00Z") }) {
         world.reading(it)
