@@ -53,4 +53,16 @@ class PoolFactsSpec : StringSpec({
         asked.evidence("budget.slot_open", "dimension" to "effort", stage = "KP/P3/S3.1") shouldBe
             "effort KP: in flight 1 — KP/P3/S3.1 building — of pool/budgets.yaml line 2 (slots.stages_in_flight_per_effort: 2)"
     }
+
+    "the daemon's load refuses a block usage: with a weight missing or negative, or median.least above median.days, as check-rules.py does" {
+        val rules = fixtureRules(budgets = BUDGETS.replace("weights: {input: 1, output: 5, cache_write: 1.25, cache_read: 0.1}", "weights: {input: 1, output: 5, cache_read: -0.1}")
+            .replace("median: {days: 14, least: 3}", "median: {days: 2, least: 3}"))
+
+        kp.daemon.daemonLoad(rules) shouldBe listOf(
+            "pool/budgets.yaml: usage.weights.cache_write must be a number, not negative",
+            "pool/budgets.yaml: usage.weights.cache_read must be a number, not negative",
+            "pool/budgets.yaml: usage.median.least must be a positive integer at most usage.median.days",
+        )
+        kp.daemon.checkRules(rules) shouldBe kp.daemon.daemonLoad(rules)
+    }
 })

@@ -81,12 +81,18 @@ val ROSTER = """
     role_models: {principal: {model: claude-gamma-1, effort: high}, qa: {model: acme-omega-1, effort: high}}
 """.trimIndent() + "\n"
 
-/** Fixture budgets: two seats per office and for claude, one for acme, two stages in flight per effort. */
+/**
+ * Fixture budgets: two seats per office and for claude, one for acme, two stages in flight per effort; a turn's parts
+ * weighted 1, 5, 1.25 and 0.1, the daily median over 14 days with at least 3.
+ */
 val BUDGETS = """
     version: 1
     slots: {total: 9, per_subscription: {claude: 2, acme: 1}, per_office: {panda: 2, dsk: 2}, stages_in_flight_per_effort: 2}
     warn: [0.7, 0.9]
     on_cap: pause_provisioning
+    usage:
+      weights: {input: 1, output: 5, cache_write: 1.25, cache_read: 0.1}
+      median: {days: 14, least: 3}
 """.trimIndent() + "\n"
 
 /** A copy of master's rules whose `pool/roster.yaml` is [roster] and `pool/budgets.yaml` is [budgets]. */

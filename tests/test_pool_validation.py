@@ -100,6 +100,20 @@ class PoolValidationTests(unittest.TestCase):
         self.edit("budgets.yaml", "warn: [0.7, 0.9]", "warn: [0.9, 0.7]")
         self.assertEqual(self.failures(), ["pool/budgets.yaml: warn must be ascending fractions between 0 and 1"])
 
+    def test_a_budgets_file_without_its_block_usage_fails(self):
+        path = self.pool / "budgets.yaml"
+        path.write_text(path.read_text().split("# how a turn's tokens are counted")[0])
+        self.assertEqual(self.failures(), ["pool/budgets.yaml: usage must say how a turn's tokens are counted: its weights and its median"])
+
+    def test_a_weight_missing_or_negative_fails(self):
+        self.edit("budgets.yaml", "weights: {input: 1, output: 5, cache_write: 1.25, cache_read: 0.1}", "weights: {input: 1, output: 5, cache_read: -0.1}")
+        self.assertEqual(self.failures(), ["pool/budgets.yaml: usage.weights.cache_write must be a number, not negative",
+                                           "pool/budgets.yaml: usage.weights.cache_read must be a number, not negative"])
+
+    def test_the_least_days_of_the_median_above_its_days_fails(self):
+        self.edit("budgets.yaml", "median: {days: 14, least: 3}", "median: {days: 2, least: 3}")
+        self.assertEqual(self.failures(), ["pool/budgets.yaml: usage.median.least must be a positive integer at most usage.median.days"])
+
     def test_a_pool_value_the_rules_use_must_resolve(self):
         self.edit("budgets.yaml", "warn: [0.7, 0.9]", "warn: [0.7]")
         self.assertEqual(self.failures(), ["pool: {budget: warn.1} used by the rules does not resolve"])

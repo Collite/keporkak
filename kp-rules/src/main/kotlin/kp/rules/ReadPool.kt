@@ -231,9 +231,36 @@ internal fun readBudgets(doc: Doc, node: Node, vendors: Set<String>?, offices: S
     }
     val onCap = doc.textOrNull(fields["on_cap"])
     if (onCap != "pause_provisioning") doc.problem(null, "on_cap must be pause_provisioning (a running seat is never stopped)")
+    val usage = doc.usage(fields["usage"])
     fields.close()
     return Budgets(Slots(single["total"] ?: 0, limits.getValue("per_subscription"), limits.getValue("per_office"), single["stages_in_flight_per_effort"] ?: 0),
-        fractions.orEmpty(), onCap ?: "")
+        fractions.orEmpty(), onCap ?: "", usage ?: return null)
+}
+
+/** A turn's four parts, as `usage.weights` names them. */
+private val usageParts = listOf("input", "output", "cache_write", "cache_read")
+
+/**
+ * The block `usage:` of pool/budgets.yaml (contracts.md §9, Amendment 44): each part of a turn's tokens weighted against
+ * an input token — all four, none negative — and DEP-6's baseline, the daily median over `median.days` days with at least
+ * `median.least` of them. A file without the block is refused, like a broken one. Null when it is not whole.
+ */
+private fun Doc.usage(node: Node?): Usage? {
+    val block = (node as? Node.Mapping)?.entries ?: return null.also { problem(null, "usage must say how a turn's tokens are counted: its weights and its median") }
+    (block.keys - setOf("weights", "median")).sorted().forEach { problem(null, "unknown field 'usage.$it'") }
+    val weightNodes = (block["weights"] as? Node.Mapping)?.entries.orEmpty()
+    (weightNodes.keys - usageParts.toSet()).sorted().forEach { problem(null, "unknown field 'usage.weights.$it'") }
+    val weights = usageParts.associateWith { part ->
+        ((weightNodes[part] as? Node.Scalar)?.literal as? Literal.Number)?.value?.takeIf { it.signum() >= 0 }
+            .also { if (it == null) problem(null, "usage.weights.$part must be a number, not negative") }
+    }
+    val median = (block["median"] as? Node.Mapping)?.entries.orEmpty()
+    (median.keys - setOf("days", "least")).sorted().forEach { problem(null, "unknown field 'usage.median.$it'") }
+    val days = positive(median["days"]).also { if (it == null) problem(null, "usage.median.days must be a positive integer") }
+    val least = positive(median["least"])?.takeIf { days == null || it <= days }
+    if (least == null) problem(null, "usage.median.least must be a positive integer at most usage.median.days")
+    val (input, output, cacheWrite, cacheRead) = usageParts.map { weights[it] ?: return null }
+    return Usage(Weights(input, output, cacheWrite, cacheRead), Median(days ?: return null, least ?: return null))
 }
 
 private fun show(literal: Literal): String = when (literal) {
