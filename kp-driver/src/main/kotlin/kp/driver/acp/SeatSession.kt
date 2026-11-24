@@ -300,19 +300,28 @@ internal class SeatSession(
     }
 
     /**
-     * What the vendor says of the subscription beside a `usage_update`, where the pinned adapter puts it (S3.13 T1: its
-     * `rate_limit_event`, passed as `_meta["_claude/rateLimit"]`): `rateLimitType` the window, `utilization` the fraction
-     * used, `resetsAt` in seconds since the epoch, `status`. Written to the transcript as it came; reported to the listener
-     * when it names a window and a fraction. Nothing is derived from it.
+     * What the vendor says of the subscription beside a `usage_update`, where the pinned adapter puts it (S3.13 T1, T6): its
+     * `rate_limit_event`, passed as `_meta["_claude/rateLimit"]`. Each window of `unifiedWindows` — `five_hour`,
+     * `seven_day` — with its `utilization`, the fraction used, `resetsAt` in seconds since the epoch, and `status`; and the
+     * top level's window (`rateLimitType`) where it carries a `utilization` of its own and `unifiedWindows` does not name
+     * it. As the handshake of 2026-11-24 heard it, the top level names the window and no fraction, and the fractions stand
+     * under `unifiedWindows`. Written to the transcript as it came; each window with a fraction reported to the listener.
+     * Nothing is derived from it.
      */
     private fun subscription(update: JsonObject, at: Instant) {
         val said = ((update["_meta"] as? JsonObject)?.get(RATE_LIMIT) as? JsonObject) ?: return
         transcript.write("the vendor on the subscription: $said", at)
-        val window = (said["rateLimitType"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return
-        val fraction = (said["utilization"] as? JsonPrimitive)?.takeUnless { it.isString }?.content?.toBigDecimalOrNull() ?: return
-        val resets = (said["resetsAt"] as? JsonPrimitive)?.takeUnless { it.isString }?.content?.toBigDecimalOrNull()?.toLong()?.let(Instant::ofEpochSecond)
-        val status = (said["status"] as? JsonPrimitive)?.takeIf { it.isString }?.content
-        if (handedOut) listener.reported(seat, kp.driver.SubscriptionReport(window, fraction, resets, status, at))
+        val windows = (said[WINDOWS] as? JsonObject).orEmpty().mapNotNull { (window, given) -> (given as? JsonObject)?.let { window(window, it, at) } }
+        val top = (said["rateLimitType"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeUnless { named -> windows.any { it.window == named } }?.let { window(it, said, at) }
+        if (handedOut) (windows + listOfNotNull(top)).forEach { listener.reported(seat, it) }
+    }
+
+    /** One window as the vendor gives it: its fraction used, its reset and its status; null without a fraction. */
+    private fun window(window: String, given: JsonObject, at: Instant): kp.driver.SubscriptionReport? {
+        val fraction = (given["utilization"] as? JsonPrimitive)?.takeUnless { it.isString }?.content?.toBigDecimalOrNull() ?: return null
+        val resets = (given["resetsAt"] as? JsonPrimitive)?.takeUnless { it.isString }?.content?.toBigDecimalOrNull()?.toLong()?.let(Instant::ofEpochSecond)
+        val status = (given["status"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        return kp.driver.SubscriptionReport(window, fraction, resets, status, at)
     }
 
     /** The protocol closed: the fact is reported at once, and the session ends. */
@@ -440,6 +449,8 @@ internal class SeatSession(
     companion object {
         /** Where the pinned adapter puts the vendor's words on the subscription, beside a `usage_update` (S3.13 T1). */
         private const val RATE_LIMIT = "_claude/rateLimit"
+        /** Where the windows stand, each with its fraction, in the vendor's words as the pinned adapter passes them. */
+        private const val WINDOWS = "unifiedWindows"
         const val DEFAULT_MODE = "default"
         /** The model value that names no model: the agent's own choice, which moves with the agent (§9). */
         const val DEFAULT_MODEL = "default"

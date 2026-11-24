@@ -582,7 +582,8 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             appendLine("## What the vendor reported of the subscription (S3.13)")
             appendLine()
             if (subscription.isEmpty()) {
-                appendLine("Nothing: no `usage_update` of this run carried the vendor's words on the subscription (the pinned adapter's `_meta[\"_claude/rateLimit\"]`).")
+                appendLine("No window with a fraction was heard. Every time the vendor's words came beside a `usage_update` (the pinned adapter's " +
+                    "`_meta[\"_claude/rateLimit\"]`), a transcript below shows them as they came: `the vendor on the subscription: …`.")
             } else {
                 appendLine("Each report as the driver heard it beside a `usage_update`, in order; `budget.consumption` is the last of each window, the fullest for `subscription`.")
                 appendLine()

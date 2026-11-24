@@ -28,4 +28,22 @@ class SubscriptionReportsSpec : StringSpec({
             office.transcript("coder-1").filter { it.endsWith("""coder-1 the vendor on the subscription: {"status":"allowed"}""") }.size shouldBe 1
         }
     }
+
+    "the vendor's windows as the pinned adapter passed them on the office (the handshake of 2026-11-24): each window of unifiedWindows reported with its own fraction, reset and status; the top level names a window and no fraction of its own" {
+        // The line the handshake's transcript holds, word for word (~/Dev/_scratch/handshakes/handshake-0.106.0-2026-11-24T193913Z.md).
+        val said = """{"status":"allowed","resetsAt":1795549800,"rateLimitType":"five_hour","overageStatus":"allowed","overageResetsAt":1796083200,"isUsingOverage":false,""" +
+            """"unifiedWindows":{"five_hour":{"utilization":0.46,"resetsAt":1795549800,"status":"allowed"},"seven_day":{"utilization":0.23,"resetsAt":1795950000,"status":"allowed"}}}"""
+        Office().use { office ->
+            val agent = office.agent("""{"turns": [[{"do": "usage", "used": 1000, "size": 200000, "rate_limit": $said}, {"do": "end"}]]}""")
+            val driver = office.driver()
+            driver.start(office.session("coder-1", agent)).ok()
+
+            driver.prompt(seat, "one").ok()
+
+            office.reports shouldBe listOf(
+                SubscriptionReport("five_hour", BigDecimal("0.46"), Instant.parse("2026-11-24T19:50:00Z"), "allowed", Instant.parse("2026-11-15T10:00:00Z")),
+                SubscriptionReport("seven_day", BigDecimal("0.23"), Instant.parse("2026-11-29T11:00:00Z"), "allowed", Instant.parse("2026-11-15T10:00:00Z")),
+            )
+        }
+    }
 })

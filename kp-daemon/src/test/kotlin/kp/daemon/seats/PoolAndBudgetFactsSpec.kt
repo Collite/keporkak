@@ -127,11 +127,13 @@ class PoolAndBudgetFactsSpec : StringSpec({
     }
 
     "budget.consumption is the fullest window the vendor reported, a named window when one is asked, and unknown before any report and past a window's reset" {
-        // The vendor's words, as the pinned adapter passes them beside `usage_update` (`_meta["_claude/rateLimit"]`): resets at 12:00 and on the 21st.
-        val five = """{"status": "allowed", "rateLimitType": "five_hour", "utilization": 0.42, "resetsAt": 1795003200}"""
-        val week = """{"status": "allowed_warning", "rateLimitType": "seven_day", "utilization": 0.81, "resetsAt": 1795219200}"""
-        SeatsOffice(scripts = mapOf("coder-1" to """{"turns": [[{"do": "usage", "used": 1000, "size": 200000, "rate_limit": $five},
-            {"do": "usage", "used": 2000, "size": 200000, "rate_limit": $week}, {"do": "end"}]]}""")).use { office ->
+        // The vendor's words, as the pinned adapter passes them beside `usage_update` (`_meta["_claude/rateLimit"]`, in the shape the
+        // office's handshake heard on 2026-11-24): the top level names a window, each window of `unifiedWindows` its fraction —
+        // five hours resetting at 12:00, a week on the 21st.
+        val said = """{"status": "allowed", "resetsAt": 1795003200, "rateLimitType": "five_hour", "unifiedWindows": {
+            "five_hour": {"utilization": 0.42, "resetsAt": 1795003200, "status": "allowed"},
+            "seven_day": {"utilization": 0.81, "resetsAt": 1795219200, "status": "allowed_warning"}}}"""
+        SeatsOffice(scripts = mapOf("coder-1" to """{"turns": [[{"do": "usage", "used": 1000, "size": 200000, "rate_limit": $said}, {"do": "end"}]]}""")).use { office ->
             val pool = PoolFacts("panda").also { it.reading(office.office, office.seats) }
             fun consumption(window: String): Any? = plain(pool.observe(FactRef("budget.consumption", mapOf("subscription" to Datum.Text("claude"), "window" to Datum.Text(window))), null))
 
