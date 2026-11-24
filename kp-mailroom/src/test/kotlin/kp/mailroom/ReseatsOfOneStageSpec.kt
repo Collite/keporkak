@@ -45,11 +45,14 @@ class ReseatsOfOneStageSpec : FreeSpec({
         office.mailroom.state.unread("coder-1").first() shouldBe copy.id.value
         office.wakesOf("coder-1") shouldBe emptyList()
 
-        // The replay's turn ends: the seat is idle with the copy unread, and is woken with it, the oldest.
+        // The replay's turn ends: the seat is idle with the copy unread, and is woken with it, the oldest — then, its turn
+        // ending at once, with its own `re-seated`'s copy, the next.
+        val own = office.reSeated().single { it.args!!.text("seat") == "coder-1" }
         office.seats.busy -= "coder-1"
         office.mailroom.idle("coder-1")
         office.mailroom.settle()
-        office.wakesOf("coder-1").map { it.cause } shouldBe listOf(copy.id.value)
+        office.wakesOf("coder-1").map { it.cause } shouldBe listOf(copy.id.value, own.id.value)
+        office.mailroom.state.unread("coder-1") shouldBe emptyList()
     }
 })
 

@@ -2,6 +2,7 @@
 
 One line per change: date · rule ids · what · the decision. Newest first.
 
+- 2026-11-24 · POOL-14, T-60, SEAT-07 · A re-seat's `ok` is the word that the inbox was replayed: `POOL-14`'s `if`, the kind `re-seated`'s `require`, `T-60` and `SEAT-07` no longer ask `seat.inbox_replayed`. A message that reaches a seat while its re-seat runs stays unread and wakes the seat when the replay's turn ends; the fact stays the stop gate's. · KP D-107 (Amendment 39)
 - 2026-11-21 · RW-15 · Moved to stand after RW-14, as its number orders it; its text is unchanged (review-026's follow-up, Collite/keporkak#53). · KP D-98
 - 2026-11-21 · — · `pool/offices.yaml` gains the block `github:` — the organization, each App's id and its installation's id, and for each role the App it acts as and what its token may do; `check-rules.py` and the daemon's load validate it. · KP D-96 (D-38, D-95)
 - 2026-11-20 · — · The `handoff-pr` skill: a mutant is a wrong implementation at the edge of the class a DONE item names — the last or the second case dropped, the other order, a timer, a join or a literal added; removing one's own line does not count. · KP D-90 (retro of P2, candidate 1)
