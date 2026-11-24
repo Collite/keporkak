@@ -51,8 +51,8 @@ class OfficeOperations(
     override fun perform(request: OperationRequest, done: (OperationResult) -> Unit) {
         done(when (request.operation) {
             NOTIFY_BORA -> OperationResult.Ok()
-            WORKTREE_CREATE -> worktree(request) { Worktrees(git).create(it) }
-            WORKTREE_REMOVE -> worktree(request) { Worktrees(git).remove(it) }
+            WORKTREE_CREATE -> worktree(request) { placed -> Worktrees(git).create(placed.worktree).named(placed) }
+            WORKTREE_REMOVE -> worktree(request) { placed -> Worktrees(git).remove(placed.worktree) }
             REGISTER_REBUILD -> entry()?.let { entry -> Register(keporkak.resolve(REGISTER_SCRIPT)).rebuild(project, entry.project.efforts.toList()).answer() }
                 ?: OperationResult.Failed(noOffice())
             PROJECT_COMMIT_PUSH -> ProjectPush(project, ::mint, git).commitPush(cause(request)).answer()
@@ -66,7 +66,7 @@ class OfficeOperations(
      */
     override fun on(request: OperationRequest): String? {
         val stage = stageOf(request)
-        return checkout(request, stage, stage?.let { runCatching { place(it) }.getOrNull()?.main })
+        return checkout(request, stage, stage?.let { runCatching { place(it) }.getOrNull()?.worktree?.main })
     }
 
     /**
@@ -75,7 +75,7 @@ class OfficeOperations(
      */
     override fun left(request: OperationRequest): String? = when (request.operation) {
         WORKTREE_CREATE, WORKTREE_REMOVE -> stageOf(request)?.let { stage ->
-            val worktree = runCatching { place(stage).worktree }.getOrElse { return "${it.message}; nothing touches it" }
+            val worktree = runCatching { place(stage).worktree.worktree }.getOrElse { return "${it.message}; nothing touches it" }
             "${Worktrees(git).describe(worktree)}; nothing touches it"
         }
         PROJECT_COMMIT_PUSH -> "${ProjectPush(project, ::mint, git).describe()}; nothing touches it"
@@ -84,7 +84,7 @@ class OfficeOperations(
 
     // ---- a stage's places (contracts.md §7, Amendment 36; §4.4, Amendment 32)
 
-    private fun worktree(request: OperationRequest, perform: (StageWorktree) -> Performed): OperationResult {
+    private fun worktree(request: OperationRequest, perform: (Placed) -> Performed): OperationResult {
         val stage = stageOf(request) ?: return OperationResult.Failed("${request.operation} names no stage")
         val place = try {
             place(stage)
@@ -94,8 +94,11 @@ class OfficeOperations(
         return perform(place).answer()
     }
 
-    /** The stage's worktree as the office places it: its repository's main checkout, its branches, its two folders. */
-    private fun place(stage: String): StageWorktree {
+    /**
+     * The stage's worktree as the office places it — its repository's main checkout, its branches, its two folders — and
+     * its repository as the list's title names it.
+     */
+    private fun place(stage: String): Placed {
         val entry = entry() ?: throw Missing(noOffice())
         val name = Seats.worktree(stage) ?: throw Missing("$stage is no stage id")
         val (effort, phase, number) = STAGE_FORM.matchEntire(stage)!!.destructured
@@ -109,7 +112,19 @@ class OfficeOperations(
         val main = entry.repos[repo]?.let(Seats::home) ?: throw Missing("the office holds no repository '$repo'")
         val defaultBranch = defaultBranch(effort) ?: throw Missing("no profile in docs/profiles names the effort $effort and its default_branch")
         val roots = Roots.of(entry.roots)
-        return StageWorktree(main, defaultBranch, branch, roots.worktrees.resolve(name), roots.scratch.resolve(name))
+        return Placed(repo, StageWorktree(main, defaultBranch, branch, roots.worktrees.resolve(name), roots.scratch.resolve(name)))
+    }
+
+    /** A stage's worktree, placed, and its [repository]: the `<repo>` of its list's title (Amendment 32). */
+    private class Placed(val repository: String, val worktree: StageWorktree)
+
+    /**
+     * `worktree.create`'s `ok`, naming the repository and the branch as the stage's list named them now, and the worktree's
+     * path (contracts.md §4.4, §7; Amendment 40): the record a stage's repository and branch are read from ever after.
+     */
+    private fun Performed.named(placed: Placed): Performed = when (this) {
+        is Performed.Ok -> Performed.Ok(mapOf(REPOSITORY to placed.repository, BRANCH to placed.worktree.branch, WORKTREE to placed.worktree.worktree.toString()))
+        is Performed.Failed -> this
     }
 
     /** The `default_branch` of the profile whose frontmatter names [effort] (contracts.md §10). */
@@ -155,6 +170,9 @@ class OfficeOperations(
         private const val PROJECT_COMMIT_PUSH = "project.commit_push"
         private const val BOARD_REGENERATE = "board.regenerate"
         private const val STAGE = "stage"
+        private const val REPOSITORY = "repository"
+        private const val BRANCH = "branch"
+        private const val WORKTREE = "worktree"
         private const val FENCE = "---"
         private const val DEFAULT_BRANCH = "default_branch:"
         private const val MERGER = "kp-merger"
