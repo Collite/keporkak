@@ -28,12 +28,12 @@ class WorktreePaths(@get:Input val name: String, @get:Internal val paths: () -> 
 }
 
 // The specs start the scripted fake agent as a child JVM on the test classpath (S2.1 T1). They also read the
-// checkout's renders, skills, profiles and hooks (S2.2): a change there runs them again. The personas and their
+// checkout's renders, skills, profiles and hooks (S2.2), and the seat's two programs (S3.7): a change there runs them again. The personas and their
 // packaging data are every test task's inputs (the root convention, S2.8).
 tasks.named<Test>("test") {
     val classpath = sourceSets["test"].runtimeClasspath
     jvmArgumentProviders.add(WorktreePaths("kp.driver.fake.classpath") { classpath.asPath }) // the test classpath: an input already
-    for (folder in listOf("renders", "skills", "docs/profiles", "hooks")) {
+    for (folder in listOf("renders", "skills", "docs/profiles", "hooks", "seat")) {
         inputs.files(rootProject.fileTree(folder)).withPropertyName("checkout_" + folder.replace("/", "_")).withPathSensitivity(PathSensitivity.RELATIVE)
     }
 }

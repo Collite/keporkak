@@ -202,7 +202,7 @@ class Rehearsal private constructor(
  * their steps are their own ([OwnSteps]) and the play's evidence goes to [evidence] — by default the office's scratch
  * root, `rehearsals/`.
  */
-sealed class LiveSeating(val tmux: String, val panes: String, val profile: String, val watchEvery: java.time.Duration?, val evidence: Path?) {
+sealed class LiveSeating(val tmux: String, val panes: String, val profile: String, val watchEvery: java.time.Duration?, val evidence: Path?, val github: java.net.URI? = null) {
     /** The agent the seats run; [home] is the throwaway project's `office/`. */
     internal abstract fun agent(root: Path, home: Path): Agent
 
@@ -244,13 +244,13 @@ sealed class LiveSeating(val tmux: String, val panes: String, val profile: Strin
         }
         lateinit var made: Seats
         val seated = Seated.start(office, project, root, script.facts, script.operations, clock, LOOPBACK) { rules ->
-            Seats(root, office, project, roots, agent, clock, Panes(tmux, panes, out), out, rules, seeds, profileOf = { profile }, moreEfforts = mapOf(script.effort to "."), turns = own) { listener, time ->
+            Seats(root, office, project, roots, agent, clock, Panes(tmux, panes, out), out, rules, seeds, profileOf = { profile }, moreEfforts = mapOf(script.effort to "."), turns = own, github = github) { listener, time ->
                 ClaudeAdapter.driver(roots.secrets.resolve("claude-token"), roots.seats, time, CompiledAnswerer(roots.seats), listener)
             }.also { made = it; own?.driven = it }
         }
         own?.attach(seated.office)
         script.live = object : LiveSeats {
-            override fun performs(operation: String) = operation in Seats.OPERATIONS
+            override fun performs(operation: String) = made.performs(operation)
             override fun die(seat: String) = die(seat, made, agent)
             override val own: OwnSteps? get() = own
         }
@@ -284,8 +284,8 @@ sealed class LiveSeating(val tmux: String, val panes: String, val profile: Strin
  */
 class FakeSeating(
     val classpath: String, tmux: String = "tmux", panes: String = Panes.SESSION, profile: String = "keporkak", watchEvery: java.time.Duration? = null,
-    val scripts: Map<String, String> = emptyMap(), evidence: Path? = null,
-) : LiveSeating(tmux, panes, profile, watchEvery, evidence) {
+    val scripts: Map<String, String> = emptyMap(), evidence: Path? = null, github: java.net.URI? = null,
+) : LiveSeating(tmux, panes, profile, watchEvery, evidence, github) {
     @Volatile private var walk: Walk? = null
 
     /** The seats of [script]'s walk on [project], as [LiveSeating.seated] seats them, with their fake agents. */

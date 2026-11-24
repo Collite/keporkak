@@ -14,6 +14,9 @@ dependencies {
     // GitHub's answers are JSON (contracts.md §4.4, Amendment 33); HTTP and signing are the JDK's.
     implementation(libs.serialization.json)
     testImplementation(libs.kotest)
+    // The local GitHub server of S3.2's specs and the answers recorded from Collite/kp-toy — S3.9's among them: the
+    // performers are asked in front of it (S3.9 T1). A test dependency only; `kp-ops` itself depends on `kp-model`.
+    testImplementation(testFixtures(project(":kp-facts")))
     testImplementation(libs.kotest.assertions)
     testRuntimeOnly(libs.junit.platform.launcher)
     testFixturesImplementation(libs.serialization.json)

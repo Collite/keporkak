@@ -1,0 +1,53 @@
+#!/bin/sh
+# gh — a seat's gh (contracts.md §4.4, Amendment 35). A seat holds no GitHub token: this program asks the daemon for one
+# at each use, minted then for the seat's App and narrowed to its stage's repository, then runs the office's gh — the
+# first `gh` on the path outside this program's folder — with every argument as given and the token in that one
+# process's environment (GH_TOKEN). Its exit code is the office's gh's. The builder puts it into the seat's home (`bin/`),
+# whose folder is first on the seat's path.
+#
+# The ask is POST $KP_HOOK_URL/hook/github-token with KP_SESSION_TOKEN as the bearer — read by curl from its standard
+# input, never from its arguments. The token is written nowhere. With no token, or no office's gh, it says why on
+# standard error and ends, waiting for no input.
+set -u
+limit=45
+
+none() {
+	printf 'gh (keporkak): %s\n' "$1" >&2
+	exit 1
+}
+
+here=$(cd "$(dirname "$0")" && pwd -P)
+office=
+set -f
+saved=$IFS
+IFS=:
+for folder in ${PATH:-}; do
+	[ -n "$folder" ] || continue
+	[ "$(cd "$folder" 2>/dev/null && pwd -P)" = "$here" ] && continue
+	if [ -f "$folder/gh" ] && [ -x "$folder/gh" ]; then
+		office="$folder/gh"
+		break
+	fi
+done
+IFS=$saved
+set +f
+[ -n "$office" ] || none "no gh of the office's on the path beside this one"
+
+[ -n "${KP_HOOK_URL:-}" ] && [ -n "${KP_SESSION_TOKEN:-}" ] || none "no GitHub token: KP_HOOK_URL and KP_SESSION_TOKEN are not set: this is no seat's environment"
+# The answer's body, then a last line: the HTTP status and curl's own error, if any.
+answer=$(printf 'header = "Authorization: Bearer %s"\n' "$KP_SESSION_TOKEN" \
+	| curl --silent --max-time "$limit" --config - --request POST --write-out '\n%{http_code} %{errormsg}' "$KP_HOOK_URL/hook/github-token" 2>/dev/null)
+last=$(printf '%s\n' "$answer" | tail -n 1)
+body=$(printf '%s\n' "$answer" | sed '$d')
+status=${last%% *}
+case $status in
+	200) ;;
+	000) none "no GitHub token: the daemon did not answer: ${last#* }" ;;
+	*) why=$(printf '%s' "$body" | jq -r 'if (.error | type) == "string" then .error elif (.error.message | type) == "string" then .error.message else empty end' 2>/dev/null)
+	   none "no GitHub token: the daemon answered $status: ${why:-no reason given}" ;;
+esac
+token=$(printf '%s' "$body" | jq -er '.token | select(type == "string" and . != "")' 2>/dev/null) || none "no GitHub token: the daemon's answer holds no token"
+
+GH_TOKEN=$token
+export GH_TOKEN
+exec "$office" "$@"

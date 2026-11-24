@@ -70,11 +70,11 @@ tasks.named<Test>("test") {
 }
 
 // The seats' specs and the heroes start S2.1's fake agent as a child JVM on the test classpath (S2.4); the seats' homes
-// are built from the checkout's renders, skills, profiles and hooks.
+// are built from the checkout's renders, skills, profiles, hooks and the seat's two programs (S3.7).
 tasks.withType<Test>().configureEach {
     val classpath = sourceSets["test"].runtimeClasspath
     jvmArgumentProviders.add(WorktreePaths("kp.driver.fake.classpath") { classpath.asPath }) // the test classpath: an input already
-    for (folder in listOf("renders", "skills", "docs/profiles", "hooks")) {
+    for (folder in listOf("renders", "skills", "docs/profiles", "hooks", "seat")) {
         inputs.files(rootProject.fileTree(folder)).withPropertyName("seats_" + folder.replace("/", "_")).withPathSensitivity(PathSensitivity.RELATIVE)
     }
 }

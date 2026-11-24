@@ -7,9 +7,11 @@ import kp.daemon.seats.Seated
 import kp.daemon.seats.Seats
 import kp.driver.claude.ClaudeAdapter
 import kp.driver.home.CompiledAnswerer
+import kp.ops.GitHubApps
 import kp.mailroom.Clock
 import kp.log.LogRefusal
 import kp.mailroom.MailroomRefusal
+import kp.mailroom.Operations
 import java.net.InetAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -22,8 +24,10 @@ import kotlin.system.exitProcess
 private const val USAGE = """kp-daemon run [--root DIR] [--office NAME] [--project DIR] [--socket PATH] [--listen HOST:PORT]
 kp-daemon rehearse <walk.yaml> [--root DIR] [--office NAME] [--socket PATH] [--seats scripted|fake --fake-classpath CP|real]
 kp-daemon facts <stage> [--root DIR] [--office NAME] [--project DIR]
-kp-daemon apps [--root DIR] [--office NAME]
+kp-daemon apps [merge | prove] [--root DIR] [--office NAME]
   apps: what GitHub says of each App of pool/offices.yaml's block github: (`just apps`); it prints no token
+  apps merge: the live proof of a merge, a close and an issue on the toy repository (`just apps merge`); it prints no token
+  apps prove: the live proof of a seat's GitHub identity on the toy repository (`just apps prove`); it prints no token
   --root: the keporkak checkout whose rules are in force (default: the working folder)
   --seats: the walk's seats scripted (default), S2.1's fake agent run from --fake-classpath (`just rehearse <walk> --seats fake`),
            or Claude seats on the pinned adapter and the office's token (`just rehearse <walk> --seats real`: it spends tokens)
@@ -56,9 +60,18 @@ fun main(args: Array<String>) {
         return
     }
     if (command == "apps") {
-        if (words.isNotEmpty()) fail("unknown words: $words")
+        val merge = words == listOf("merge")
+        val prove = words == listOf("prove")
+        if (words.isNotEmpty() && !merge && !prove) fail("unknown words: $words")
         val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
-        exitProcess(Apps.run(rules ?: fail("the rules are not valid:\n" + loaded.problems.joinToString("\n")), office) { println(it) })
+        val inForce = rules ?: fail("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
+        exitProcess(
+            when {
+                merge -> AppsMerge.run(inForce, office) { println(it) }
+                prove -> AppsProve.run(root, inForce, office) { println(it) }
+                else -> Apps.run(inForce, office) { println(it) }
+            },
+        )
     }
     try {
         val running: AutoCloseable = when (command) {
@@ -133,13 +146,17 @@ internal fun projectOf(root: Path, office: String): Path {
  * `watch.every`, and the panes. Its world is `kp-facts` over the project checkout it runs on and the office's main
  * checkouts, with the fold (S3.1, [ProjectWorld]), and GitHub read as `kp-merger` (S3.2, [GitHubWorld]) — both handed
  * the fold before the start carries any judgement again, and a view's ask writing no journal line (S3.8, Amendment 34);
- * beside it, Bora's presence. Its performers (S3.3, [OfficeOperations]) make and remove a stage's worktree, rebuild the
- * register and commit and push the project, outside the mailroom's lock (Amendment 36); they end `notify.bora` at once —
- * the inbox is the notification, and `kp inbox --follow` raises it — and every other operation that is not a seat's
- * `failed`, saying no performer exists for it yet.
+ * beside it, Bora's presence. The seats perform `token.mint` and answer a seat's ask for a GitHub token as its role's
+ * App (S3.7, Amendment 35). It acts on GitHub as `kp-merger` — `git.merge`, `pr.close`, `issue.file` (S3.9,
+ * [GitHubOperations]), handed the fold as the world is. Its other performers (S3.3, [OfficeOperations]) make and remove
+ * a stage's worktree, rebuild the register and commit and push the project, outside the mailroom's lock (Amendment 36);
+ * they end `notify.bora` at once — the inbox is the notification, and `kp inbox --follow` raises it — and every other
+ * operation that is not a seat's `failed`, saying no performer exists for it yet.
  */
 private fun service(root: Path, office: String, project: Path, socket: Path, listening: String?): Daemon {
-    val operations = OfficeOperations(root, office, project)
+    val performers = OfficeOperations(root, office, project)
+    val github = GitHubOperations.of(office, project, performers)
+    val operations: Operations = github
     val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
     val entry = rules?.ruleSet?.pool?.offices?.get(office)
         ?: fail(if (rules == null) "the rules are not valid:\n" + loaded.problems.joinToString("\n") else "pool/offices.yaml names no office '$office'")
@@ -147,8 +164,8 @@ private fun service(root: Path, office: String, project: Path, socket: Path, lis
     val listen = listening ?: entry.listen["mcp"] ?: fail("pool/offices.yaml gives office '$office' no listen.mcp")
     val clock = serviceClock
     val world = ServiceWorld(ProjectWorld.of(checkNotNull(rules), office, project), GitHubWorld.of(office, project))
-    val seated = Seated.start(office, project, root, world, operations, clock, listen, folded = { folded -> world.reading(folded); operations.reading(folded) }) { starting ->
-        Seats(root, office, project, roots, ClaudeAgent(root.resolve("office/adapter")), clock, Panes(say = Journal::say), Journal::say, starting) { listener, time ->
+    val seated = Seated.start(office, project, root, world, operations, clock, listen, folded = { folded -> world.reading(folded); github.reading(folded); performers.reading(folded) }) { starting ->
+        Seats(root, office, project, roots, ClaudeAgent(root.resolve("office/adapter")), clock, Panes(say = Journal::say), Journal::say, starting, github = GitHubApps.GITHUB) { listener, time ->
             ClaudeAdapter.driver(roots.secrets.resolve("claude-token"), roots.seats, time, CompiledAnswerer(roots.seats), listener)
         }
     }

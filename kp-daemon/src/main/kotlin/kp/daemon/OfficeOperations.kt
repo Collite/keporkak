@@ -176,8 +176,8 @@ class OfficeOperations(
     }
 }
 
-/** A performer's answer as the mailroom takes it. */
+/** A performer's answer as the mailroom takes it: what these performers give back is text — a push's `sha`. */
 private fun Performed.answer(): OperationResult = when (this) {
-    is Performed.Ok -> OperationResult.Ok(Datum.Fields(result.mapValues { Datum.Text(it.value) }))
+    is Performed.Ok -> OperationResult.Ok(Datum.Fields(result.mapValues { Datum.Text(it.value.toString()) }))
     is Performed.Failed -> OperationResult.Failed(reason)
 }

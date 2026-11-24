@@ -13,6 +13,40 @@
 # The words for a conclusion about a seat: no name, literal or comment of the driver or the seat API holds one.
 conclusions: [stall, stalled, stalling, done, idle, hung, stuck]
 exceptions:
+  kp-daemon/src/main/kotlin/kp/daemon/AppsMerge.kt:
+  - shape: timer
+    in: AppsMerge.Proof.mergeable
+    code: sleep(MERGEABLE_EVERY)
+    line: Thread.sleep(MERGEABLE_EVERY)
+    reason: '`just apps merge` (contracts.md §12, Amendment 37), a proof Bora runs by hand: GitHub tells whether a pull request can be merged some time after a push, and the proof asks again after this rest — a minute at most — before it shows a conflict or a merge; it is no performer''s, and the daemon never runs it'
+  - shape: timer
+    in: AppsMerge.MERGEABLE_EVERY
+    code: private const val MERGEABLE_EVERY = 2000L
+    line: private const val MERGEABLE_EVERY = 2000L
+    reason: '`just apps merge`: the rest between two asks whether GitHub has computed a pull request''s mergeability — the proof''s, run by hand, never the daemon''s'
+  kp-daemon/src/main/kotlin/kp/daemon/AppsProve.kt:
+  - shape: kind
+    in: AppsProve.Proof.remove
+    code: '"close"'
+    line: val closed = coder.run(clone, "gh", "pr", "close", opened, "--repo", repository)
+    reason: '`just apps prove` (S3.7): gh''s own subcommand `pr close`, which the coder''s home runs on the pull request the
+      proof opened — no message of the kind `close`'
+  - shape: timer
+    in: AppsProve.Proof.run
+    code: waitFor(WAIT_SECONDS, TimeUnit.SECONDS)
+    line: if (!process.waitFor(WAIT_SECONDS, TimeUnit.SECONDS)) {
+    reason: '`just apps prove` (S3.7), Bora''s live proof and no part of the daemon''s running: how long it waits for a git
+      or gh it started, so that a hung one ends the proof with its step — nothing is concluded about a seat'
+  - shape: timer
+    in: AppsProve.Proof.run
+    code: WAIT_SECONDS
+    line: return Ran(-1, "", "$name's ${command.first()} did not end in ${WAIT_SECONDS}s")
+    reason: '`just apps prove` (S3.7): the wait above, named in what the proof prints of a git or gh that did not end'
+  - shape: timer
+    in: AppsProve.WAIT_SECONDS
+    code: private const val WAIT_SECONDS = 120L
+    line: private const val WAIT_SECONDS = 120L
+    reason: '`just apps prove` (S3.7): the wait above, two minutes for one git or gh run on GitHub'
   kp-daemon/src/main/kotlin/kp/daemon/Check.kt:
   - shape: comparison
     in: Check.run
@@ -248,6 +282,11 @@ exceptions:
     code: truncatedTo(ChronoUnit.SECONDS)
     line: internal val serviceClock = Clock { Instant.now().truncatedTo(ChronoUnit.SECONDS) }
     reason: 'the service''s clock — a time written to the second: no wait'
+  - shape: kind
+    in: main
+    code: '"merge"'
+    line: val merge = words == listOf("merge")
+    reason: '`kp-daemon apps merge` — `just apps merge` (contracts.md §12, Amendment 37): the word of the command line that asks for the live proof, not the kind `merge`'
   kp-daemon/src/main/kotlin/kp/daemon/Office.kt:
   - shape: timer
     in: Changes.await
@@ -1082,6 +1121,17 @@ exceptions:
     code: timeout(TIMEOUT)
     line: 'val request = HttpRequest.newBuilder(url) .timeout(TIMEOUT) .header("Accept", "application/vnd.github+json") .header("X-GitHub-Api-Version", API_VERSION) .header("Authorization", authorization) .method(method, if (body == null) HttpRequest.BodyPublishers.noBody() else HttpRequest.BodyPublishers.ofString(body)) .apply { if (body != null) header("Content-Type", "application/json") } .build()'
     reason: 'GitHub''s Apps (Amendment 33, Amendment 38): each request is bounded by TIMEOUT, the entry above — past it the request fails, the token or name it asked for is not had and the fact asked is unknown with that reason, which the rules judge; S3.10 made `HttpRequest.Builder.timeout` a timer the check names (issue #59)'
+  kp-ops/src/main/kotlin/kp/ops/GitHubRest.kt:
+  - shape: comparison
+    in: GitHubRest.stagePull
+    code: maxWith(compareBy<PullRequest> { it.created }.thenBy { it.number })
+    line: else -> Looked.Found(all.maxWith(compareBy<PullRequest> { it.created }.thenBy { it.number }))
+    reason: 'the stage''s pull request, as Amendment 33 names it: with none open, "the one made last" — GitHub''s creation times, then its numbers, ordered to find which pull request the contract means; nothing is compared with a cap or a rule''s value'
+  - shape: timer
+    in: GitHubRest.send
+    code: timeout(GitHubApps.TIMEOUT)
+    line: 'val request = HttpRequest.newBuilder(url) .timeout(GitHubApps.TIMEOUT) .header("Accept", "application/vnd.github+json") .header("X-GitHub-Api-Version", GitHubApps.API_VERSION) .header("Authorization", token.authorization()) .method(method, if (body == null) HttpRequest.BodyPublishers.noBody() else HttpRequest.BodyPublishers.ofString(body.toString())) .apply { if (body != null) header("Content-Type", "application/json") } .build()'
+    reason: 'an operation on GitHub (Amendment 37): each request is bounded by GitHubApps.TIMEOUT, the entry for GitHubApps.kt — past it the request fails as not reached and the operation is `failed` with that reason (a merge `refused`), asked once and never again; S3.10 made `HttpRequest.Builder.timeout` a timer the check names (issue #59)'
   kp-ops/src/main/kotlin/kp/ops/Keys.kt:
   - shape: comparison
     in: Keys.signed
@@ -1098,6 +1148,17 @@ exceptions:
     code: it > 0
     line: val bytes = generateSequence(n) { it ushr 8 }.takeWhile { it > 0 }.map { (it and 0xff).toByte() }.toList().reversed().toByteArray()
     reason: 'an App''s PEM key wrapped in PKCS#8: a DER length''s bytes in the long form, taken while the length shifted right is not yet zero (X.690 8.1.3) — an encoding''s rule'
+  kp-ops/src/main/kotlin/kp/ops/OperationsOnGitHub.kt:
+  - shape: kind
+    in: GitMerge.perform
+    code: '"/repos/${where.repository}/pulls/${pull.number}/merge"'
+    line: val path = "/repos/${where.repository}/pulls/${pull.number}/merge"
+    reason: '`git.merge` (Amendment 37): GitHub''s path for merging a pull request, `PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge` — GitHub''s word, not the kind `merge`'
+  - shape: kind
+    in: GitMerge.perform
+    code: '"merge"'
+    line: put("merge_method", "merge")
+    reason: '`git.merge` (Amendment 37): "with a merge commit" is GitHub''s `merge_method: merge` — GitHub''s word, not the kind `merge`'
   kp-ops/src/main/kotlin/kp/ops/ProjectPush.kt:
   - shape: kind
     in: ProjectPush.merged

@@ -23,8 +23,8 @@ import java.net.InetSocketAddress
 
 /**
  * The seat API (architecture.md §2, `kp-seat-api`; contracts.md §5, §11): the five seat tools as an MCP server over
- * streamable HTTP at `/mcp`, and the stop hook's `/hook/stop`, on one listener bound to the loopback address and
- * nothing else. Every call is bound to one seat by its session token, read from the `Authorization` header only; a call
+ * streamable HTTP at `/mcp`, the stop hook's `/hook/stop`, and `/hook/github-token`, where a seat's `git` and `gh` ask for
+ * a GitHub token (§4.4, Amendment 35), on one listener bound to the loopback address and nothing else. Every call is bound to one seat by its session token, read from the `Authorization` header only; a call
  * without a live one is answered 401 before any tool runs — the mailroom never hears of it. No token is written to a
  * log line, an error or a tool's answer.
  */
@@ -37,10 +37,11 @@ class SeatApi private constructor(private val server: EmbeddedServer<CIOApplicat
     companion object {
         /**
          * Starts the listener on [listen] (`listen.mcp` of `pool/offices.yaml`, `host:port`; port 0 picks one), in front of
-         * [mailroom], with [tokens] as its registry. A host that is not a loopback address is refused: the API is
-         * bound to the loopback address and nothing else (contracts.md §5).
+         * [mailroom], with [tokens] as its registry; [github] answers a seat's ask for a GitHub token (Amendment 35). A
+         * host that is not a loopback address is refused: the API is bound to the loopback address and nothing else
+         * (contracts.md §5).
          */
-        fun start(mailroom: Mailroom, tokens: Tokens, listen: String): SeatApi {
+        fun start(mailroom: Mailroom, tokens: Tokens, listen: String, github: GitHubTokens = GitHubTokens.NONE): SeatApi {
             val host = listen.substringBeforeLast(':', "")
             val port = requireNotNull(listen.substringAfterLast(':').toIntOrNull()) { "listen.mcp '$listen' names no port" }
             require(host.isNotEmpty() && InetAddress.getByName(host.removeSurrounding("[", "]")).isLoopbackAddress) {
@@ -48,7 +49,8 @@ class SeatApi private constructor(private val server: EmbeddedServer<CIOApplicat
             }
             val tools = Tools(mailroom)
             val gate = StopGate(mailroom)
-            val server = embeddedServer(CIO, host = host, port = port) { module(tokens, tools, gate) }
+            val token = GitHubTokenRoute(github)
+            val server = embeddedServer(CIO, host = host, port = port) { module(tokens, tools, gate, token) }
             return SeatApi(server.start(wait = false))
         }
     }
@@ -59,13 +61,14 @@ internal class Bound(val binding: Binding, val session: String)
 
 internal val BOUND = AttributeKey<Bound>("kp.seat")
 
-private fun Application.module(tokens: Tokens, tools: Tools, gate: StopGate) {
+private fun Application.module(tokens: Tokens, tools: Tools, gate: StopGate, token: GitHubTokenRoute) {
     install(tokenGate(tokens))
     // Stateless (contracts.md §5): each POST is served by a server made for the seat the call's token names, so a
     // call is bound to the token it carries — not to one an earlier call carried. The pinned Claude Code speaks it
     // (S2.1's handshake: the stand-in answered the same way).
     mcpStatelessStreamableHttp(path = MCP) { tools.server(call.attributes[BOUND].binding) }
     gate.route(this)
+    token.route(this)
 }
 
 /**

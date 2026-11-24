@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
+import kp.driver.home.ConfigHomes
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -13,6 +14,34 @@ import kotlin.io.path.exists
 import kotlin.io.path.isExecutable
 import kotlin.io.path.readLines
 import kotlin.io.path.writeText
+
+/**
+ * A seat's environment for GitHub (contracts.md §4.4, Amendment 35), over its agent's: the folder of its home's two
+ * programs first on its path — so that its `gh` is the home's — and `git` told, through git's own environment, to use the
+ * home's credential helper and no other (the helpers the office's configuration names are emptied first), to reach
+ * GitHub over https where a remote is written for ssh, and never to prompt — no terminal prompt, no askpass program. No
+ * GitHub token is in it: the two programs ask the daemon for one at each use.
+ */
+object SeatEnvironment {
+    /** [base] — the agent's environment — with the home's programs in [programs]. */
+    fun of(base: Map<String, String>, programs: Path): Map<String, String> {
+        val config = listOf(
+            "credential.helper" to "",
+            "credential.helper" to programs.resolve(ConfigHomes.HELPER).toString(),
+            "url.https://github.com/.insteadOf" to "git@github.com:",
+            "url.https://github.com/.insteadOf" to "ssh://git@github.com/",
+        )
+        return base + mapOf(
+            "PATH" to "$programs:${base["PATH"] ?: DEFAULT_PATH}",
+            "GIT_TERMINAL_PROMPT" to "0",
+            "GIT_ASKPASS" to "",
+            "GIT_CONFIG_COUNT" to config.size.toString(),
+        ) + config.flatMapIndexed { index, (key, value) -> listOf("GIT_CONFIG_KEY_$index" to key, "GIT_CONFIG_VALUE_$index" to value) }
+    }
+
+    /** The path of an agent whose environment names none. */
+    private const val DEFAULT_PATH = "/usr/local/bin:/usr/bin:/bin"
+}
 
 /**
  * The Claude adapter as a seat's agent (contracts.md §9, §10; architecture.md §5): `node` running the pinned adapter
