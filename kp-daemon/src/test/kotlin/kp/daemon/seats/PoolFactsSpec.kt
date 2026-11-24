@@ -42,4 +42,15 @@ class PoolFactsSpec : StringSpec({
         asked.unknown("roster.rank", "of" to "coder") shouldBe "no stage to find the role coder in"
         asked.unknown("roster.rank", "of" to "coder", stage = "KP/P3/S3.2") shouldBe "no seat is bound to the role coder in KP/P3/S3.2"
     }
+
+    "a subscription slot is unknown while a seat in use has no line to read its vendor from; an effort slot is unknown for an effort the office's project does not name; each names its evidence" {
+        val asked = PoolAsked(log = FixtureLog(listOf(SeatAt("coder-1", "coder", "KP/P3/S3.1", null, "busy")), stages = mapOf("KP/P3/S3.1" to "building")))
+
+        asked.unknown("budget.slot_open", "dimension" to "subscription") shouldBe
+            "the subscription of coder-1 is not known: coder-1 cannot be seated as coder: the level of coder is per assignment, and no request about it names one"
+        asked.ask("budget.slot_open", "dimension" to "office") shouldBe true
+        asked.unknown("budget.slot_open", "dimension" to "effort", "effort" to "ACME") shouldBe "the project of office panda names no effort ACME"
+        asked.evidence("budget.slot_open", "dimension" to "effort", stage = "KP/P3/S3.1") shouldBe
+            "effort KP: in flight 1 — KP/P3/S3.1 building — of pool/budgets.yaml line 2 (slots.stages_in_flight_per_effort: 2)"
+    }
 })

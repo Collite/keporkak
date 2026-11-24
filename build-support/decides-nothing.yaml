@@ -784,6 +784,17 @@ exceptions:
     code: private const val WAIT_SECONDS = 10L
     line: private const val WAIT_SECONDS = 10L
     reason: 'a tmux command: how long the panes wait for it to answer'
+  kp-daemon/src/main/kotlin/kp/daemon/seats/PoolFacts.kt:
+  - shape: comparison
+    in: PoolFacts.Asked.slotOpen
+    code: it.used < it.limit
+    line: 'private fun slotOpen(rooms: List<Room>): Boolean = rooms.all { it.used < it.limit }'
+    reason: '`budget.slot_open` holds a count against a limit of the pool by its definition (contracts.md §4.4, Amendment 44; D-116): fewer seats in use, or stages in flight, than `pool/budgets.yaml` allows. The daemon computes the fact; what a closed slot means is the rules'' (`T-01`, `SEAT-01`, `session-request`)'
+  - shape: comparison
+    in: PoolFacts.Asked.slotsOver
+    code: max()
+    line: 'private fun slotsOver(rooms: List<Room>): Int = rooms.map { it.used - it.limit }.plus(0).max()'
+    reason: '`budget.slots_over` holds a count against a limit of the pool by its definition (contracts.md §4.4, Amendment 44; D-116): the number in use above the limit, zero at or under it, and of several limits the largest. The daemon computes the fact; what a slot over means is the rules'' (`retire`, POOL-16)'
   kp-daemon/src/main/kotlin/kp/daemon/seats/Seated.kt:
   - shape: timer
     in: Seated.watchEvery

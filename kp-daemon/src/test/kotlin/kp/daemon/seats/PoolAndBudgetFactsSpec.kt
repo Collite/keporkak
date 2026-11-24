@@ -71,7 +71,7 @@ class PoolAndBudgetFactsSpec : StringSpec({
         all.map { it.ask("budget.slot_open", "dimension" to "effort", stage = S31) } shouldBe listOf(true, false, false)
         all.map { it.ask("budget.slots_over", "dimension" to "effort", stage = S31) } shouldBe listOf(0, 0, 1)
         over.evidence("budget.slots_over", "dimension" to "office") shouldBe
-            "office panda: 3 seats in use (coder-1 busy, coder-2 gone, coder-3 provisioned) of pool/budgets.yaml line 2 (slots.per_office.panda: 2)"
+            "office panda: in use 3 — coder-1 busy, coder-2 gone, coder-3 provisioned — of pool/budgets.yaml line 2 (slots.per_office.panda: 2)"
 
         // claude is full and acme is not; KP is full and TOY is not.
         over.ask("budget.slot_open", "dimension" to "subscription", "subscription" to "acme") shouldBe true
@@ -171,17 +171,20 @@ class PoolAndBudgetFactsSpec : StringSpec({
             office.send("teamlead", "assignment-proposal", """{"role": "coder", "level": "junior", "seat": "coder-2"}""").status shouldBe Status.DELIVERED
             office.observedOf("assignment-proposal").filterValues { it == """{"unknown":"not supplied"}""" } shouldBe emptyMap()
             office.observedOf("assignment-proposal").keys shouldContain "budget.slot_open(dimension=effort)"
-            val request = office.send("teamlead", "session-request", """{"action": "add", "role": "reviewer", "seat": "reviewer-1"}""").id
-            office.send("pool", "session-report", """{"seat": "reviewer-1", "role": "reviewer"}""", re = request).status shouldBe Status.DELIVERED
+            val first = office.send("teamlead", "session-request", """{"action": "add", "role": "reviewer", "seat": "reviewer-1"}""").id
+            val second = office.send("teamlead", "session-request", """{"action": "add", "role": "coder", "seat": "coder-3"}""").id
+            office.send("pool", "session-report", """{"seat": "reviewer-1", "role": "reviewer"}""", re = first).status shouldBe Status.DELIVERED
 
             // Two seats in use, two the limit: full.
-            val second = office.send("teamlead", "session-request", """{"action": "remove", "seat": "coder-1"}""").id
             office.send("pool", "session-report", """{"seat": "coder-3", "role": "coder"}""", re = second) should refusedBy("SEAT-01", """{"fact":"budget.slot_open","dimension":"office"}""")
             office.budgets(BUDGETS.replace("per_office: {panda: 2, dsk: 2}", "per_office: {panda: 1, dsk: 2}"))
             office.ask("budget.slot_open", "dimension" to "office") shouldBe false
             office.ask("budget.slots_over", "dimension" to "office") shouldBe 1
             office.budgets(BUDGETS)
-            office.send("pool", "retire", """{"seat": "coder-1"}""", to = "coder-1", re = second).status shouldBe Status.DELIVERED
+
+            // The Team Lead asks for coder-1's removal: POOL-8 retires it, and the report finds its slot.
+            office.send("teamlead", "session-request", """{"action": "remove", "seat": "coder-1"}""")
+            office.office.state.machine("seat", "coder-1")!!.state shouldBe "retired"
             office.send("pool", "session-report", """{"seat": "coder-3", "role": "coder"}""", re = second).status shouldBe Status.DELIVERED
         }
     }

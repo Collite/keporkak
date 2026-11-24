@@ -90,8 +90,84 @@ class PoolFacts(private val office: String, private val say: (String) -> Unit = 
             } ?: Observation.Unknown("the review floor ${roster.reviewFloor} is in no line of $ROSTER's order")
             SEAT_AVAILABLE -> available()
             COMPUTER_USE -> computerUse()
+            SLOT_OPEN -> rooms { rooms -> Observation.Value(slotOpen(rooms), rooms.joinToString("; ") { it.told }) }
+            SLOTS_OVER -> rooms { rooms -> Observation.Value(slotsOver(rooms), rooms.joinToString("; ") { it.told }) }
             else -> Observation.Unknown("not answered yet")
         }
+
+        // ---- the slots (Amendment 44: a seat is in use from the judgement that requests its start until it is retired)
+
+        /** `budget.slot_open`: every limit read has room — fewer in use than it allows. A count held against a limit of the pool by its definition (Amendment 44). */
+        private fun slotOpen(rooms: List<Room>): Boolean = rooms.all { it.used < it.limit }
+
+        /** `budget.slots_over`: the number in use above the limit, zero at or under it; of several limits read, the largest (Amendment 44). */
+        private fun slotsOver(rooms: List<Room>): Int = rooms.map { it.used - it.limit }.plus(0).max()
+
+        /** The limits the asked dimension reads, each with what is counted against it; unknown with why when one cannot be read. */
+        private fun rooms(answer: (List<Room>) -> Observation): Observation {
+            val dimension = param(DIMENSION) ?: return Observation.Unknown("no parameter dimension")
+            val counted = when (dimension) {
+                OFFICE -> officeRooms()
+                SUBSCRIPTION -> subscriptionRooms()
+                EFFORT -> effortRooms()
+                else -> Counted.Not("no dimension $dimension: office, subscription or effort")
+            }
+            return when (counted) {
+                is Counted.Of -> answer(counted.rooms)
+                is Counted.Not -> Observation.Unknown(counted.why)
+            }
+        }
+
+        /** The seats in use: every seat the fold holds in a state but `retired` — `gone` too, whose re-seat comes back into the same slot. */
+        private val inUse: List<Pair<String, String>> by lazy {
+            state.machines[SEAT_MACHINE].orEmpty().filterValues { it.state != RETIRED }.map { (seat, machine) -> seat to machine.state }
+        }
+
+        private fun told(seats: List<Pair<String, String>>): String = "in use ${seats.size} — ${seats.joinToString(", ") { (seat, at) -> "$seat $at" }.ifEmpty { "none" }} —"
+
+        /** `office`: the seats in use, against `slots.per_office` of this office. */
+        private fun officeRooms(): Counted {
+            val limit = pool.budgets.slots.perOffice[office] ?: return Counted.Not("$BUDGETS gives the office $office no limit")
+            return Counted.Of(listOf(Room(inUse.size, limit, "office $office: ${told(inUse)} of ${limitAt("slots.per_office.$office", limit)}")))
+        }
+
+        /**
+         * `subscription`: the seats in use of a subscription — the vendor of its line — against `slots.per_subscription` of
+         * the subscription the rule passes, else of every subscription the pool names.
+         */
+        private fun subscriptionRooms(): Counted {
+            val vendors = inUse.associate { (seat, _) ->
+                when (val line = lineOf(seat)) {
+                    is Lined.Of -> seat to line.line.value.vendor
+                    is Lined.Not -> return Counted.Not("the subscription of $seat is not known: ${line.why}")
+                }
+            }
+            val subscriptions = param(SUBSCRIPTION)?.let(::listOf) ?: pool.budgets.slots.perSubscription.keys.toList()
+            return Counted.Of(subscriptions.map { subscription ->
+                val limit = pool.budgets.slots.perSubscription[subscription] ?: return Counted.Not("$BUDGETS gives the subscription $subscription no limit")
+                val counted = inUse.filter { (seat, _) -> vendors[seat] == subscription }
+                Room(counted.size, limit, "subscription $subscription: ${told(counted)} of ${limitAt("slots.per_subscription.$subscription", limit)}")
+            })
+        }
+
+        /**
+         * `effort`: the stages of an effort in an active state (§4.1) against `slots.stages_in_flight_per_effort` — the
+         * effort the rule passes, else the asked stage's, else every effort of the office's project.
+         */
+        private fun effortRooms(): Counted {
+            val known = pool.offices[office]?.project?.efforts ?: return Counted.Not("$OFFICES names no office $office")
+            val efforts = param(EFFORT)?.let(::listOf) ?: stage?.substringBefore('/')?.let(::listOf) ?: known.keys.toList()
+            efforts.firstOrNull { it !in known }?.let { return Counted.Not("the project of office $office names no effort $it") }
+            val active = rules.ruleSet.lifecycle.activeStates
+            val limit = pool.budgets.slots.stagesInFlightPerEffort
+            return Counted.Of(efforts.map { effort ->
+                val stages = state.machines[STAGE_MACHINE].orEmpty().filter { (id, machine) -> id.substringBefore('/') == effort && machine.state in active }.map { (id, machine) -> id to machine.state }
+                Room(stages.size, limit, "effort $effort: ${told(stages).replace("in use", "in flight")} of ${limitAt("slots.stages_in_flight_per_effort", limit)}")
+            })
+        }
+
+        /** A limit of `pool/budgets.yaml`: its line, its path and its value. */
+        private fun limitAt(path: String, limit: Int): String = pool.lines[BUDGETS]?.get(path)?.let { "$BUDGETS line $it ($path: $limit)" } ?: "$BUDGETS ($path: $limit)"
 
         // ---- the roster (Amendment 44: a seat's line is the order line of the model and effort it was started with)
 
@@ -176,6 +252,15 @@ class PoolFacts(private val office: String, private val say: (String) -> Unit = 
         private fun where(file: String, path: String): String = pool.lines[file]?.get(path)?.let { "$file line $it ($path)" } ?: "$file ($path)"
     }
 
+    /** A limit of the pool and the count held against it — of one office, subscription or effort — with what was counted. */
+    private class Room(val used: Int, val limit: Int, val told: String)
+
+    /** The limits a dimension reads, or why one cannot be read. */
+    private sealed interface Counted {
+        class Of(val rooms: List<Room>) : Counted
+        class Not(val why: String) : Counted
+    }
+
     /** A seat's line of the order, or why it has none. */
     private sealed interface Lined {
         class Of(val line: IndexedValue<kp.rules.Line>) : Lined
@@ -207,6 +292,11 @@ class PoolFacts(private val office: String, private val say: (String) -> Unit = 
 
         private const val ROSTER = "pool/roster.yaml"
         private const val OFFICES = "pool/offices.yaml"
+        private const val BUDGETS = "pool/budgets.yaml"
+        private const val DIMENSION = "dimension"
+        private const val SUBSCRIPTION = "subscription"
+        private const val EFFORT = "effort"
+        private const val STAGE_MACHINE = "stage"
         private const val ORDER = "order"
         private const val OF = "of"
         private const val SEAT = "seat"
