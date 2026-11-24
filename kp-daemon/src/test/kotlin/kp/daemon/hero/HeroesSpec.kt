@@ -339,7 +339,7 @@ class HeroesSpec : FreeSpec({
             "seat.wake of coder-1 for triage", // S1.10's: the resume
             "seat.wake of coder-1 for re-seated",
             "seat.wake of coder-1 for triage", // S1.10's: the found-batch's triage
-            "seat.wake of reviewer-1 for review-bind, seat.wake of coder-1 for review-bind", // S1.10's: two wakes in flight
+            "seat.wake of coder-1 for review-bind, seat.wake of reviewer-1 for review-bind", // S1.10's: two wakes in flight
             ONE_OF_REVIEW_BINDS, // one of the two judged, the other still in flight
             "seat.wake of coder-1 for verdict", // S1.10's
             "seat.wake of reviewer-1 for repair-done", // S1.10's
