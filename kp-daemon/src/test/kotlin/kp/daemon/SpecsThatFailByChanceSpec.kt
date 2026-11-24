@@ -27,13 +27,16 @@ import kotlin.io.path.writeText
  */
 class SpecsThatFailByChanceSpec : StringSpec({
     "a role under `github.seats` that no persona declares is refused by check-rules.py and by the daemon's load — one such role among good ones, and a block of nothing else" {
+        // Each line as the copy's file holds it.
         val among = poolWith("    coder: {app: kp-coder,", "    codr: {app: kp-coder,")
-        checkRules(among) shouldBe listOf("pool/offices.yaml: github: seats.codr: no persona declares the role 'codr' (line 36)")
-        daemonLoad(among) shouldContain "pool/offices.yaml: github: seats.codr: no persona declares the role 'codr' (line 36)"
+        val amongLine = lineOf(among.resolve("pool/offices.yaml"), "    codr: {app: kp-coder,")
+        checkRules(among) shouldBe listOf("pool/offices.yaml: github: seats.codr: no persona declares the role 'codr' (line $amongLine)")
+        daemonLoad(among) shouldContain "pool/offices.yaml: github: seats.codr: no persona declares the role 'codr' (line $amongLine)"
 
-        val alone = poolWith(Regex("(?s)  seats:\n.*"), "  seats:\n    codr: {app: kp-coder, permissions: {contents: write}}\n")
-        checkRules(alone) shouldBe listOf("pool/offices.yaml: github: seats.codr: no persona declares the role 'codr' (line 36)")
-        daemonLoad(alone) shouldContain "pool/offices.yaml: github: seats.codr: no persona declares the role 'codr' (line 36)"
+        val alone = poolWith { withSeats(it, "    codr: {app: kp-coder, permissions: {contents: write}}") }
+        val aloneLine = lineOf(alone.resolve("pool/offices.yaml"), "    codr: {app: kp-coder,")
+        checkRules(alone) shouldBe listOf("pool/offices.yaml: github: seats.codr: no persona declares the role 'codr' (line $aloneLine)")
+        daemonLoad(alone) shouldContain "pool/offices.yaml: github: seats.codr: no persona declares the role 'codr' (line $aloneLine)"
 
         // Master's block: each of its seven roles is a persona's.
         val master = poolWith("  seats:", "  seats:")
@@ -71,22 +74,8 @@ private fun poolWith(old: String, new: String): Path = TestOffice.copyOfTheRules
     offices.writeText(offices.readText().replaceFirst(old, new))
 }
 
-private fun poolWith(old: Regex, new: String): Path = TestOffice.copyOfTheRules().also { rules ->
-    val offices = rules.resolve("pool/offices.yaml")
-    offices.writeText(offices.readText().replaceFirst(old, new))
-}
-
-/** `check-rules.py --pool` on the copy's pool, beside the checkout's rules and personas: its `FAIL` lines. */
-private fun checkRules(rules: Path): List<String> {
-    val process = ProcessBuilder(checkout.resolve("build/python/bin/python").toString(), "scripts/check-rules.py", "--pool", rules.resolve("pool").toString())
-        .directory(checkout.toFile()).redirectErrorStream(true).start()
-    val lines = process.inputStream.bufferedReader().readLines()
-    process.waitFor()
-    return lines.filter { it.startsWith("FAIL ") }.map { it.removePrefix("FAIL ") }
-}
-
-/** The daemon's load of the copy: the problems that keep its rules out of force. */
-private fun daemonLoad(rules: Path): List<String> = InForceRules.of(RuleFiles(rules).read()).second.problems.map { it.toString() }
+/** A copy of the checkout's rules, robots, pool and personas whose `pool/offices.yaml` is [change]d. */
+private fun poolWith(change: (String) -> String): Path = TestOffice.copyOfTheRules().also { it.resolve("pool/offices.yaml").rewrite(change) }
 
 /** The thin thread with fake seats, [coder] its coder's script, its evidence and record going to [scratch]. */
 private class Rehearsing(coder: String) : AutoCloseable {

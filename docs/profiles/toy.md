@@ -19,7 +19,7 @@ demo_context: null
 - **Project repo:** `~/Dev/keporkak/project` → `Collite/keporkak-project`, under `toy/` (plan, STATUS, the stage
   lists, reviews); its log is `mail/TOY/` in the same checkout (contracts.md §3). `PL-1, ST-4`
 - **Repos (folder → GitHub):** `kp-toy` → `Collite/kp-toy` — one Gradle build: `lib` (the library) and, from S1.2,
-  `consumer` (uses the library as a published release). Checkout `~/Dev/keporkak/kp-toy` on Panda; a stage's
+  `consumer` (uses the library as a published release). Checkout `~/Dev/keporkak/kp-toy` on the office; a stage's
   worktree is `~/Dev/keporkak/_wt/kp-toy-<stage>`.
 - **Streams and lanes (PL-7):** the values of `keporkak.md`. TOY's efforts are `dev` / `coding`.
 - **Live target (PL-9 `live:`; only QA touches it, EX-16):** **`bp-dsk`**, and only for the demo of S1.3: QA's temp

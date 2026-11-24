@@ -28,6 +28,21 @@ fun problemsAfter(file: String, from: String, to: String): List<String> {
     return Rules.load(files + (file to text.replaceFirst(from, to))).problems.map { it.toString() }
 }
 
+/** The number, from 1, of the one line of [text] that begins with [start]: the line a problem about it names (S3.12). */
+fun lineOf(text: String, start: String): Int {
+    val lines = text.lines().withIndex().filter { it.value.startsWith(start) }
+    check(lines.size == 1) { "${lines.size} lines begin with '$start', not one" }
+    return lines.single().index + 1
+}
+
+/** [offices] without its block `github:`, wherever the block stands: its key's line and every line under it (S3.12). */
+fun withoutTheGitHubBlock(offices: String): String {
+    val lines = offices.lines()
+    val first = lines.indexOf("github:").also { check(it >= 0) { "no top-level 'github:'" } }
+    val end = (first + 1 until lines.size).firstOrNull { lines[it].isNotEmpty() && !lines[it].startsWith(" ") } ?: lines.size
+    return (lines.take(first) + lines.drop(end)).joinToString("\n")
+}
+
 data class Scenario(val name: String, val fixture: File, val index: Int, val given: YamlMap)
 
 fun sharedFixtureScenarios(): List<Scenario> =

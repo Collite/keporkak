@@ -22,16 +22,20 @@ class GitHubBlockSpec : StringSpec({
 
     "a file with no block loads, with none" {
         val files = filesOnMaster()
-        val offices = files.getValue("pool/offices.yaml")
-        val without = offices.substring(0, offices.indexOf("# GitHub (contracts.md §9"))
+        val without = withoutTheGitHubBlock(files.getValue("pool/offices.yaml"))
 
         (Rules.load(files + ("pool/offices.yaml" to without)) as Loaded.Valid).ruleSet.pool.github shouldBe null
     }
 
     "no organization, no installation id, an unknown field: each a problem naming its line" {
-        problemsAfter("pool/offices.yaml", "  organization: Collite\n", "") shouldBe listOf("pool/offices.yaml: github: organization must be a name (line 29)")
+        // The lines as master's file holds them: the block's first, which the organization opens, and the coder's App.
+        val organization = lineOf(filesOnMaster().getValue("pool/offices.yaml"), "  organization: Collite")
+        val coder = lineOf(filesOnMaster().getValue("pool/offices.yaml"), "    kp-coder: {app: 5849303, installation: 184046595}")
+
+        problemsAfter("pool/offices.yaml", "  organization: Collite\n", "") shouldBe listOf("pool/offices.yaml: github: organization must be a name (line $organization)")
         problemsAfter("pool/offices.yaml", "    kp-coder: {app: 5849303, installation: 184046595}", "    kp-coder: {app: 5849303, installation: 0}") shouldBe
-            listOf("pool/offices.yaml: github: apps.kp-coder has no installation id (line 32)")
-        problemsAfter("pool/offices.yaml", "  organization: Collite\n", "  organization: Collite\n  owner: bora\n") shouldBe listOf("pool/offices.yaml: github: unknown field 'owner' (line 30)")
+            listOf("pool/offices.yaml: github: apps.kp-coder has no installation id (line $coder)")
+        problemsAfter("pool/offices.yaml", "  organization: Collite\n", "  organization: Collite\n  owner: bora\n") shouldBe
+            listOf("pool/offices.yaml: github: unknown field 'owner' (line ${organization + 1})")
     }
 })

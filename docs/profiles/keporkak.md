@@ -21,13 +21,14 @@ demo_context: null
   No register yet: S3.3 brings it. `PL-1, ST-4`
 - **Repos (folder → GitHub):** `keporkak` → `Collite/keporkak` (the platform: one Gradle build, the rules, robots,
   personas, skills, scripts, `pool/`, `office/`) · `kp-toy` → `Collite/kp-toy` (see `toy.md`). All checkouts are
-  under `~/Dev/keporkak/` on Panda; a stage's worktree is `~/Dev/keporkak/_wt/<repo>-<stage>`.
+  under `~/Dev/keporkak/` on the office — dsk since 2026-11-24, Panda before it (D-112); a stage's worktree is
+  `~/Dev/keporkak/_wt/<repo>-<stage>`.
 - **Streams and lanes (PL-7):** `stream: dev | project`; lanes `coding` · `junior` · `bora-unblock` (dev) and
   `bora-legal` · `bora-support` · `claude-support` (project). KP's efforts are `dev` / `coding`.
 - **Live target (PL-9 `live:`; only QA touches it, EX-16):** Keporkak's own stages have `live: none` until P4. From
-  S4.1 the live target is **`bp-dsk`** (kube-context `bp-dsk` on Panda, delivered for P4 — plan.md §4.3; always pass
+  S4.1 the live target is **`bp-dsk`** (kube-context `bp-dsk` on the office, delivered for P4 — plan.md §4.3; always pass
   `--context`), and only the QA seat touches it, through `kp-qa` on temp pods in `qa-<stage>` namespaces (EN-11).
-  Computer use is `off` on Panda; QA's browser work is headless Playwright (D-46). `R7`
+  Computer use is `off` on the office; QA's browser work is headless Playwright (D-46). `R7`
 - **Floors (PL-14):** none yet. Keporkak parses no model text and has no wire readers of its own.
 - **Pins live in** `gradle/libs.versions.toml` (Kotlin, the ACP and MCP SDKs, their libraries; each with where it was
   checked) · `gradle/wrapper/gradle-wrapper.properties` (Gradle, with its checksum) · `requirements.txt` (the Python
@@ -35,7 +36,7 @@ demo_context: null
   `vendors.claude.adapter_version` (the Claude adapter, from S2.1; `office/adapter/package-lock.json` names the same
   version, and `just office-check` compares the two) · the SDKs' pins are the catalog's alone (contracts.md §9,
   Amendment 10) (EX-4).
-- **Releases:** none in v1. The daemon is upgraded on Panda only at a phase exit, by Bora (`just install`), never by a
+- **Releases:** none in v1. The daemon is upgraded on the office only at a phase exit, by Bora (`just install`), never by a
   merge (plan.md §4.2).
 - **Library references (PL-12):** context7 — the ACP Kotlin SDK `/websites/deepwiki_agentclientprotocol_kotlin-sdk`,
   the protocol `/websites/agentclientprotocol`, the MCP Kotlin SDK `/modelcontextprotocol/kotlin-sdk`. The spike in

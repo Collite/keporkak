@@ -65,7 +65,9 @@ class GitHubOffice(states: Map<String, String> = mapOf(TOY_STAGE to "building"),
             .replace(Regex("(?m)^      secrets: .*$"), "      secrets: \"$secrets\""))
     }
     val journal = CopyOnWriteArrayList<String>()
-    val world = ServiceWorld(ProjectWorld.of(InForceRules.of(RuleFiles(root).read()).first!!, "panda", project) { journal += it }, GitHubWorld.of("panda", project, api) { journal += it })
+    // Rules that do not load stop the office here with their problems, each naming its line (S3.12).
+    private val rules = InForceRules.of(RuleFiles(root).read()).let { (rules, load) -> rules ?: error("the rules do not load: ${load.problems.joinToString("; ")}") }
+    val world = ServiceWorld(ProjectWorld.of(rules, "panda", project) { journal += it }, GitHubWorld.of("panda", project, api) { journal += it })
     val office: Office = Office.start("panda", project, root, world, Operations { _, done -> done(OperationResult.Ok()) }, NoSeats, Clock { Instant.parse("2026-11-21T09:00:00Z") })
         .also(world::reading)
 

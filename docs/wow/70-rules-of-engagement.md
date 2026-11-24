@@ -88,7 +88,7 @@ reports `deploy-done` — or rolls back to the previous pin by itself and report
 is Bora's. QA's browser work is scripted (Playwright, its own profile) and needs no approval. Only **computer use** has a class per
 office (`A | B | C | off`); on Bora's own machine it is **B**: every `computer-use-session` waits for him. QA never edits code, plans or lists, and never echoes a credential. This exclusivity is
 a rule of the way of working, not a fence (D-31): it is held by the role borders, by deny lists where a vendor makes
-them cheap, and by the retro. In the Claude-only v1 Panda office, computer use is off and QA uses headless
+them cheap, and by the retro. In the Claude-only v1 office, computer use is off and QA uses headless
 Playwright; the Mac is a remote watcher and board client. This office policy overrides generic headed-browser
 guidance in a persona. `D-44, D-46`
 

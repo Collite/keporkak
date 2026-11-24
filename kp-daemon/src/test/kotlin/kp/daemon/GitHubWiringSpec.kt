@@ -67,7 +67,7 @@ class GitHubWiringSpec : FreeSpec({
     "with no block `github:` in force, every GitHub fact is unknown and the journal says why; a fact it does not hold is not its to answer" {
         GitHubOffice().use { office ->
             val offices = office.root.resolve("pool/offices.yaml")
-            offices.writeText(offices.readText().substringBefore("# GitHub (contracts.md §9"))
+            offices.writeText(withoutTheGitHubBlock(offices.readText()))
             office.office.reloadIfChanged()
 
             office.observe("pr.ready") shouldBe null

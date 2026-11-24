@@ -21,7 +21,8 @@ class GitHubBlockReloadSpec : FreeSpec({
             val refused = office.office.reloadIfChanged()
 
             refused.shouldBeInstanceOf<Reload.Rejected>()
-            refused.problems.map { it.toString() } shouldContain "pool/offices.yaml: github: seats.coder names the App 'kp-coders', which github.apps does not hold (line 36)"
+            refused.problems.map { it.toString() } shouldContain
+                "pool/offices.yaml: github: seats.coder names the App 'kp-coders', which github.apps does not hold (line ${lineOf(offices, "    coder: {app: kp-coders,")})"
             office.office.rules.hash shouldBe before
             office.office.rules.ruleSet.pool.github!!.seats.getValue("coder").app shouldBe "kp-coder"
 

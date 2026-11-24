@@ -94,12 +94,16 @@ class TheDaemonReadsGitHubSpec : FreeSpec({
             return InForceRules.of(RuleFiles(rules).read()).second.problems.map { it.toString() }
         }
 
+        // The lines as master's file holds them: each change keeps its line where it is.
+        val merger = lineOf(checkout.resolve("pool/offices.yaml"), "    kp-merger: {app: 5849229, installation: 184045472}")
+        val coder = lineOf(checkout.resolve("pool/offices.yaml"), "    coder: {app: kp-coder,")
+
         problemsWith("    kp-merger: {app: 5849229, installation: 184045472}", "    kp-merger: {installation: 184045472}") shouldContain
-            "pool/offices.yaml: github: apps.kp-merger has no app id (line 31)"
+            "pool/offices.yaml: github: apps.kp-merger has no app id (line $merger)"
         problemsWith("    coder: {app: kp-coder,", "    coder: {app: kp-coders,") shouldContain
-            "pool/offices.yaml: github: seats.coder names the App 'kp-coders', which github.apps does not hold (line 36)"
+            "pool/offices.yaml: github: seats.coder names the App 'kp-coders', which github.apps does not hold (line $coder)"
         problemsWith("    coder: {app: kp-coder, permissions: {contents: write,", "    coder: {app: kp-coder, permissions: {contents: admin,") shouldContain
-            "pool/offices.yaml: github: seats.coder gives contents 'admin', which is neither read nor write (line 36)"
+            "pool/offices.yaml: github: seats.coder gives contents 'admin', which is neither read nor write (line $coder)"
     }
 })
 
