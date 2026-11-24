@@ -1,6 +1,7 @@
 package kp.rules
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 
 /**
@@ -9,7 +10,11 @@ import io.kotest.matchers.shouldBe
  */
 class GitHubBlockSpec : StringSpec({
     "master's block loads typed: the organization, the four Apps' ids, and each role's App and permissions" {
-        val github = (Rules.load(filesOnMaster()) as Loaded.Valid).ruleSet.pool.github!!
+        // Rules that do not load stop here with their problems, each naming its line — not a bare ClassCastException (Collite/keporkak#69, 4).
+        val github = when (val loaded = Rules.load(filesOnMaster())) {
+            is Loaded.Valid -> loaded.ruleSet.pool.github!!
+            else -> error("master's rules do not load: ${loaded.problems.joinToString("; ")}")
+        }
 
         github.organization shouldBe "Collite"
         github.apps shouldBe mapOf(
@@ -37,5 +42,19 @@ class GitHubBlockSpec : StringSpec({
             listOf("pool/offices.yaml: github: apps.kp-coder has no installation id (line $coder)")
         problemsAfter("pool/offices.yaml", "  organization: Collite\n", "  organization: Collite\n  owner: bora\n") shouldBe
             listOf("pool/offices.yaml: github: unknown field 'owner' (line ${organization + 1})")
+    }
+
+    "a problem of an entry that is not its block's first names that entry's line, not the block's: the reviewer's seat, the gardener's App (Collite/keporkak#69, 5)" {
+        // In a YAML block map the map's node starts on its first entry's line: `seats` on the coder's, `apps` on kp-merger's.
+        val offices = filesOnMaster().getValue("pool/offices.yaml")
+        val reviewer = "    reviewer: {app: kp-reviewer, permissions: {contents: read, pull_requests: write, checks: read}}"
+        val gardener = "    kp-gardener: {app: 5849393, installation: 184048423}"
+
+        problemsAfter("pool/offices.yaml", reviewer, reviewer.replace("app: kp-reviewer", "app: kp-reviewr")) shouldBe
+            listOf("pool/offices.yaml: github: seats.reviewer names the App 'kp-reviewr', which github.apps does not hold (line ${lineOf(offices, reviewer)})")
+        problemsAfter("pool/offices.yaml", gardener, gardener.replace("app: 5849393", "app: 0")) shouldBe
+            listOf("pool/offices.yaml: github: apps.kp-gardener has no app id (line ${lineOf(offices, gardener)})")
+        lineOf(offices, reviewer) shouldBeGreaterThan lineOf(offices, "  seats:") + 1
+        lineOf(offices, gardener) shouldBeGreaterThan lineOf(offices, "  apps:") + 1
     }
 })

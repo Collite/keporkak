@@ -15,7 +15,7 @@ import kotlin.io.path.readText
  * whose pool is such a copy. The office check and the build's Python are `tests/test_s3_12_the_office_is_dsk.py`'s.
  */
 class TheOfficeIsDskSpec : StringSpec({
-    "a spec that names a line of the real pool reads that line from the file: with an office added above the block `github:`, one added below it, and a comment line added inside it, each still passes and still fails when the block is broken" {
+    "check-rules.py and the daemon's load name the line of the pool a problem stands on as the file holds it: with an office added above the block `github:`, one added below it, and a comment line added inside it, each copy passes, and with a role misspelled both name the line that copy holds it on (Collite/keporkak#69, 1)" {
         val above = rulesWith { withOfficeAdded(it, "mac") }
         val below = rulesWith { withOfficeAdded(withTheGitHubBlockFirst(it), "mac") }
         val inside = rulesWith { it.replace("\ngithub:\n", "\ngithub:\n  # a comment inside the block\n") }

@@ -1,0 +1,16 @@
+diff --git a/kp-mailroom/src/main/kotlin/kp/mailroom/Mailroom.kt b/kp-mailroom/src/main/kotlin/kp/mailroom/Mailroom.kt
+--- a/kp-mailroom/src/main/kotlin/kp/mailroom/Mailroom.kt
++++ b/kp-mailroom/src/main/kotlin/kp/mailroom/Mailroom.kt
+@@ -587,7 +587,11 @@
+     private fun effects(decision: Decision, cause: String, now: String) = decision.effects.forEach { effect ->
+         when (effect) {
+             is Requested.Emit -> emit(effect, declaredBy(effect), cause)
+-            is Requested.Do -> request(effect.operation, cause, Datum.Fields(effect.with), now)
++            is Requested.Do -> {
++                request(effect.operation, cause, Datum.Fields(effect.with), now)
++                // The mutant (S3.11 T8; Collite/keporkak#67, 2): one operation more beside every re-seat, which no transition of its cause's kind names.
++                if (effect.operation == "seat.reseat") request("worktree.remove", cause, Datum.Fields(effect.with), now)
++            }
+             is Requested.Report -> Unit
+         }
+     }

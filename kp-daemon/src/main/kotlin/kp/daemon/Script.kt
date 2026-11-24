@@ -330,11 +330,7 @@ class Player internal constructor(private val script: Script, val office: Office
             // a record that cannot be written is said beside the play's own failure, after it, never in its place
             // (Amendment 38, S3.10 T6).
             val said = failure.message ?: failure.toString()
-            val written = try {
-                own.ended(this, said)
-            } catch (unwritten: Exception) {
-                throw WalkFailure("$said — and its record could not be written: $unwritten").apply { initCause(failure) }
-            }
+            val written = recordOf(failure, said) { own.ended(this, said) }
             evidence = written.evidence
             throw if (failure is WalkFailure) WalkFailure(written.pointed(said)).apply { initCause(failure) } else failure
         }
@@ -809,4 +805,15 @@ class Player internal constructor(private val script: Script, val office: Office
         const val WAIT_MILLIS = 120_000L
         const val POLL_MILLIS = 1_000L
     }
+}
+
+/**
+ * The record of a play that failed with [failure] — [said] — as [write] writes it; one that cannot be written, whatever
+ * stops it — an `Error` too — is said beside the play's failure, after it, never in its place (Amendment 38; S3.11 T8,
+ * Collite/keporkak#67, 5).
+ */
+internal fun <T> recordOf(failure: Throwable, said: String, write: () -> T): T = try {
+    write()
+} catch (unwritten: Throwable) {
+    throw WalkFailure("$said — and its record could not be written: $unwritten").apply { initCause(failure) }
 }

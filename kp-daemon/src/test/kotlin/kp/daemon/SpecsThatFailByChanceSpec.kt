@@ -62,6 +62,16 @@ class SpecsThatFailByChanceSpec : StringSpec({
             rehearsal.scratch.listDirectoryEntries() shouldBe emptyList()
         }
     }
+
+    "a record that cannot be written by an Error, not only an Exception, is said after the play's failure, which it keeps as its cause (S3.11 T8, Collite/keporkak#67, 5)" {
+        val play = WalkFailure("walk thin-thread step 5 (started · coder-1 · started): coder-1 sent stop, not started")
+
+        val failure = shouldThrow<WalkFailure> { recordOf(play, play.message!!) { throw StackOverflowError("the record's writer ran out of stack") } }
+
+        failure.message shouldBe "walk thin-thread step 5 (started · coder-1 · started): coder-1 sent stop, not started — " +
+            "and its record could not be written: java.lang.StackOverflowError: the record's writer ran out of stack"
+        failure.cause shouldBe play
+    }
 })
 
 /** A coder that sends `stop` where the thin thread waits for its `started`: the play fails at step 5. */

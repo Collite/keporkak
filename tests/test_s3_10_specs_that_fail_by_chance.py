@@ -36,7 +36,7 @@ SLOWED = f"{FIXTURES}/the-agent-slowed.patch"
 THE_FOUR = {
     "kp-daemon:TheSeatsSpec/a seat whose process dies*": ("the-replay-not-waited-for.patch", "a-replay-without-its-unread-mail.patch"),
     "kp-daemon:TheSeatsSpec/after the daemon is started again*": ("the-copy-after-a-start-not-waited-for.patch", "a-start-that-tells-no-seat-it-is-re-seated.patch"),
-    "kp-daemon:TheSeatsSpec/`pause`, `kill` and `retire`*": ("the-cancel-not-waited-for.patch", "a-cancel-never-sent.patch"),
+    "kp-daemon:TheSeatsSpec/*and each leaves its*": ("the-cancel-not-waited-for.patch", "a-cancel-never-sent.patch"),
     "kp-daemon:TheThinThreadSpec/a step that reports a seat gone*": ("the-thin-threads-replay-not-waited-for.patch", "a-replay-that-says-nothing-of-its-mail.patch"),
 }
 WAITS_OF_THE_THREE = {

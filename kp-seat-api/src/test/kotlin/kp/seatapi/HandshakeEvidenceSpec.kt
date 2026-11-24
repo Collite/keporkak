@@ -33,15 +33,19 @@ class HandshakeEvidenceSpec : StringSpec({
         Files.createFile(token, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
         token.writeText(ByteArray(24).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) } + "\n")
 
+        // A root of its own: the checkout's folders, and a pool whose office keeps its scratch root in the run's folder — so the
+        // evidence is written there and nowhere of the office's own (S3.11 T8, Collite/keporkak#67, 4).
+        val scratch = run.resolve("scratch-root")
+        val own = rootOfItsOwn(run.resolve("root"), scratch)
         val process = ProcessBuilder(java(), "-cp", System.getProperty("kp.handshake.classpath"), "kp.seatapi.handshake.ToolsHandshakeKt",
-            "--root", root.absolutePath, "--office", "panda", "--agent", agent.absolutePathString(), "--token-file", token.absolutePathString())
+            "--root", own.absolutePathString(), "--office", "panda", "--agent", agent.absolutePathString(), "--token-file", token.absolutePathString())
             .redirectErrorStream(true).start()
         val said = process.inputStream.bufferedReader().readText()
         process.waitFor(5, TimeUnit.MINUTES) shouldBe true
         val evidence = Path.of(said.lines().last { it.startsWith("RESULT:") }.substringAfter("evidence: ").trim())
         val text = evidence.readText().also { evidence.deleteIfExists() }
-        // Under the office's scratch root — panda's, `~/Dev/_scratch` — as every handshake's evidence is (S3.10 T6).
-        evidence.parent shouldBe Path.of(System.getProperty("user.home"), "Dev/_scratch/handshakes")
+        // Under the office's scratch root, `handshakes/`, as every handshake's evidence is (S3.10 T6) — here the spec's own.
+        evidence.parent shouldBe scratch.resolve("handshakes")
         val log = text.substringAfter("## The throwaway log\n```\n").substringBefore("```").lines().filter(String::isNotBlank).map(::json)
 
         log.mapNotNull { it["kind"]?.jsonPrimitive?.content ?: it["event"]?.jsonPrimitive?.content } shouldContainAll listOf("transition", "judged", "assign", "delivered")
@@ -51,6 +55,24 @@ class HandshakeEvidenceSpec : StringSpec({
 })
 
 private fun java(): String = Path.of(System.getProperty("java.home"), "bin", "java").absolutePathString()
+
+/**
+ * A keporkak root at [at] for one run: each folder of the checkout linked in, but `pool/`, which is copied, its offices'
+ * scratch root set to [scratch] — read from the file, wherever its lines stand.
+ */
+private fun rootOfItsOwn(at: Path, scratch: Path): Path {
+    val checkout = root.toPath().toAbsolutePath()
+    at.createDirectories()
+    Files.list(checkout).use { entries ->
+        entries.filter { !it.fileName.toString().startsWith(".") && it.fileName.toString() !in setOf("pool", "build") }
+            .forEach { Files.createSymbolicLink(at.resolve(it.fileName), it) }
+    }
+    val pool = at.resolve("pool").createDirectories()
+    Files.list(checkout.resolve("pool")).use { files -> files.forEach { Files.copy(it, pool.resolve(it.fileName)) } }
+    val offices = pool.resolve("offices.yaml")
+    offices.writeText(offices.readText().replace(Regex("(?m)^(\\s+scratch: ).*$"), "$1\"$scratch\""))
+    return at
+}
 
 /** The driver's scripted fake agent (kp-driver's test fixtures), as a command: its classpath is the one the build hands this task. */
 private fun fakeAgent(script: Path): List<String> = listOf(java(), "-Xshare:auto", "-XX:TieredStopAtLevel=1",

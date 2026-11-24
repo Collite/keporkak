@@ -120,11 +120,23 @@ def path_value(root, path):
         else: return MISSING
     return value
 
+PERSONA_FRONTMATTERS = {}
+
+def persona_frontmatter(source):
+    """A persona's frontmatter, read once; one without a frontmatter block is a FAIL that names its file, and reads as
+    empty, so every other check still runs (S3.11 T8, Collite/keporkak#67, 6)."""
+    if source not in PERSONA_FRONTMATTERS:
+        found = re.match(r"---\n(.*?)\n---", source.read_text(), re.S)
+        if found is None:
+            fail(f"{source.relative_to(ROOT)}: no frontmatter — the persona's first line is not '---', or no '---' line closes it")
+        PERSONA_FRONTMATTERS[source] = (load_yaml(found.group(1)) if found else {}) or {}
+    return PERSONA_FRONTMATTERS[source]
+
 def persona_modes(role):
     source = ROOT / "agents" / role / "AGENT.md"
     if not source.is_file():
         return {}
-    return load_yaml(re.match(r"---\n(.*?)\n---", source.read_text(), re.S).group(1)).get("modes", {}) or {}
+    return persona_frontmatter(source).get("modes", {}) or {}
 ALL_MODES = {mode for persona in sorted((ROOT / "agents").glob("*/AGENT.md")) for mode in persona_modes(persona.parent.name)}
 
 def sender_thresholds(senders):
@@ -1510,7 +1522,7 @@ def check_offices(offices, vendors):
 # for each role the App it acts as and what its token may do — `read` or `write` — each role one a persona declares
 # (Amendment 38, S3.10: a role misspelled there would get no token, and nobody would be told). Each failure names its line.
 PERMISSION_LEVELS = ("read", "write")
-PERSONA_ROLES = {load_yaml(re.match(r"---\n(.*?)\n---", persona.read_text(), re.S).group(1)).get("role") for persona in sorted((ROOT / "agents").glob("*/AGENT.md"))}
+PERSONA_ROLES = {persona_frontmatter(persona).get("role") for persona in sorted((ROOT / "agents").glob("*/AGENT.md"))}
 
 def yaml_lines(path):
     """Each node of the YAML file at [path] by its path of keys, with the line it starts on (from 1)."""
