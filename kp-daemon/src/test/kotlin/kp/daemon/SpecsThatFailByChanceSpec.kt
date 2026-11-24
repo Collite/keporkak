@@ -76,18 +76,6 @@ private fun poolWith(old: Regex, new: String): Path = TestOffice.copyOfTheRules(
     offices.writeText(offices.readText().replaceFirst(old, new))
 }
 
-/** `check-rules.py --pool` on the copy's pool, beside the checkout's rules and personas: its `FAIL` lines. */
-private fun checkRules(rules: Path): List<String> {
-    val process = ProcessBuilder(checkout.resolve("build/python/bin/python").toString(), "scripts/check-rules.py", "--pool", rules.resolve("pool").toString())
-        .directory(checkout.toFile()).redirectErrorStream(true).start()
-    val lines = process.inputStream.bufferedReader().readLines()
-    process.waitFor()
-    return lines.filter { it.startsWith("FAIL ") }.map { it.removePrefix("FAIL ") }
-}
-
-/** The daemon's load of the copy: the problems that keep its rules out of force. */
-private fun daemonLoad(rules: Path): List<String> = InForceRules.of(RuleFiles(rules).read()).second.problems.map { it.toString() }
-
 /** The thin thread with fake seats, [coder] its coder's script, its evidence and record going to [scratch]. */
 private class Rehearsing(coder: String) : AutoCloseable {
     val scratch: Path = Files.createTempDirectory("kp-s3.10-scratch-")
