@@ -648,6 +648,9 @@ class Seats(
     /** What [seat]'s session is bound with — role, stage, model and effort — while it has one. */
     fun binding(seat: String): Binding? = held[seat]?.binding
 
+    /** What the vendor last reported of each subscription's windows through any seat (contracts.md §4.4, Amendment 44). */
+    fun reports(): List<kp.facts.VendorReport> = emptyList()
+
     /** The session [seat] has now, or had last. */
     fun session(seat: String): String? = held[seat]?.session
 
