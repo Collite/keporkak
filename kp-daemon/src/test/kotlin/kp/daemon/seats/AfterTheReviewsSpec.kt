@@ -1,6 +1,7 @@
 package kp.daemon.seats
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -110,14 +111,16 @@ class AfterTheReviewsSpec : StringSpec({
             val bind = office.send("teamlead", "review-bind", """{"reviewer": "reviewer-1"}""").id
             office.until("both wakes answered") { office.ops("seat.wake").count { it.cause == bind && it.phase == "ok" } == 2 }
 
-            // Each record of a wake names its seat: the request and its result alike.
-            office.ops("seat.wake").filter { it.cause == bind }.map { "${it.phase} ${it.with?.text("seat")}" } shouldBe
-                listOf("requested reviewer-1", "requested coder-1", "ok reviewer-1", "ok coder-1")
-            // The first result ends its own seat's wake: through its judgement, the coder's is still in flight.
+            // Each record of a wake names its seat: the request and its result alike. The two seats are woken side by side,
+            // and their results come in either order (contracts.md §7, Amendment 36).
+            val wakes = office.ops("seat.wake").filter { it.cause == bind }.map { "${it.phase} ${it.with?.text("seat")}" }
+            wakes.take(2) shouldBe listOf("requested reviewer-1", "requested coder-1")
+            wakes.drop(2) shouldContainExactlyInAnyOrder listOf("ok reviewer-1", "ok coder-1")
+            // The first result ends its own seat's wake: through its judgement, the other's is still in flight.
             val first = office.ops("seat.wake").first { it.cause == bind && it.phase == "ok" }
             val judged = office.lines().first { it is Judged && it.seq > first.seq }
             fold(office.lines().filter { it.seq <= judged.seq }).operations.filter { it.op == "seat.wake" }
-                .map { (it.with.fields["seat"] as Datum.Text).value } shouldBe listOf("coder-1")
+                .map { (it.with.fields["seat"] as Datum.Text).value } shouldBe listOf("reviewer-1", "coder-1") - first.with!!.text("seat")!!
         }
     }
 

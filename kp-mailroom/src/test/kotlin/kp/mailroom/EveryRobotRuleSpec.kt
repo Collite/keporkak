@@ -116,7 +116,7 @@ class EveryRobotRuleSpec : StringSpec() {
         rule("POOL-13", "a seat's protocol closed at the stage's cap of seat-gone events: pause to the seat") {
             night(counters = """{"seat_gone_events": 3}""").apply { changed("seat.protocol_closed", true, stage = STAGE, params = mapOf("seat" to "coder-1")) }
         }
-        rule("POOL-14", "a re-seat that is ok, the seat's inbox replayed: re-seated to the TeamLead") {
+        rule("POOL-14", "a re-seat that is ok — its prompt replayed the inbox (D-107): re-seated to the TeamLead") {
             night().apply { changed("seat.process_gone", true, stage = STAGE, params = mapOf("seat" to "coder-1")) }
         }
         rule("POOL-2", "a seat silent past the watchdog, no tool call open: kill to the seat") {

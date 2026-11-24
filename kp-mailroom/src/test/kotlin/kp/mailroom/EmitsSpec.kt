@@ -1,6 +1,7 @@
 package kp.mailroom
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
 import kp.model.Delivered
 import kotlin.time.Duration.Companion.hours
@@ -19,8 +20,11 @@ class EmitsSpec : StringSpec({
             listOf("found-batch", "mailroom", "principal", "effect:T-17", request.id.value, request.thread.value, STAGE)
         office.readBack().records<Delivered>().map { it.id } shouldBe listOf(request.id.value, batch.id.value)
         office.readBack().records<Delivered>().last().observed!!.keys shouldBe setOf("list.found_untriaged")
-        // The teamlead and the principal it copies are woken with the review-request; the principal then with the found-batch (S2.4).
-        office.seats.woken shouldBe listOf("teamlead" to request.id.value, "principal" to request.id.value, "principal" to batch.id.value)
+        // The teamlead and the principal it copies are woken with the review-request; the principal then with the found-batch (S2.4)
+        // — two seats side by side, one seat's wakes in the order requested (contracts.md §7, Amendment 36).
+        office.readBack()
+        office.seats.woken shouldContainExactlyInAnyOrder listOf("teamlead" to request.id.value, "principal" to request.id.value, "principal" to batch.id.value)
+        office.seats.woken.filter { it.first == "principal" } shouldBe listOf("principal" to request.id.value, "principal" to batch.id.value)
     }
 
     "with no Found line untriaged, no found-batch is sent" {

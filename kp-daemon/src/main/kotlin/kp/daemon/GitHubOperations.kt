@@ -50,6 +50,15 @@ class GitHubOperations private constructor(
         reading = office
     }
 
+    /**
+     * What an operation works on, its lane (Amendment 36): one on GitHub works on no checkout of the office's, and runs on
+     * its own; the rest, as [other] says.
+     */
+    override fun on(request: OperationRequest): String? = if (request.operation in PERFORMED) null else other.on(request)
+
+    /** What an interrupted operation left: one on GitHub leaves nothing on the office's disk; the rest, as [other] says. */
+    override fun left(request: OperationRequest): String? = if (request.operation in PERFORMED) null else other.left(request)
+
     override fun perform(request: OperationRequest, done: (OperationResult) -> Unit) {
         if (request.operation !in PERFORMED) return other.perform(request, done)
         work.execute {

@@ -108,6 +108,9 @@ class Script(val walk: Walk, val effort: String = EFFORT) {
             if (player?.awaits(request) != false) synchronized(waiting) { waiting += request to done } else done(OperationResult.Ok())
         }
 
+        /** What an operation works on, as the office's performers say it (contracts.md §7, Amendment 36); a rehearsal holds no repository. */
+        override fun on(request: OperationRequest): String? = OfficeOperations.checkout(request, player?.office?.state?.delivered?.get(request.cause)?.stage, null)
+
         /** [player] plays the walk from now on: what waits and no step of it still to come names ends `ok`. */
         fun attach(player: Player) {
             this.player = player
@@ -270,6 +273,9 @@ class Player internal constructor(private val script: Script, val office: Office
             else -> null to null
         }
         step.id?.let { id -> message?.let { ids[id] = it } }
+        // What the step asked for that ends at once has ended, its result judged, before the step is checked and the next
+        // one played: the walk names an operation that ends later (contracts.md §7, Amendment 36).
+        office.settle()
         office.changes.signal()
         if (inGroup != null && walk.steps.getOrNull(next)?.text(Walk.UNORDERED_IN) != inGroup) named(inGroup)
         return Played(index + 1, step, script.stageId(stage), message, outcome, first, last()).also { played ->

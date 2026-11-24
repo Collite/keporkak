@@ -130,6 +130,8 @@ class Mailroom private constructor(
      * judged (contracts.md §3, Amendment 29). No caller hears of it.
      */
     private val journal: (String) -> Unit,
+    /** Told each time a result has been judged, on the thread that gave it: what the daemon signals its watchers with. */
+    private val resulted: () -> Unit,
 ) : AutoCloseable {
     /** The rule set every judgement reads: one per message, replaced only between two (architecture.md §3). */
     private val rules: RuleSet get() = inForce.ruleSet
@@ -150,7 +152,9 @@ class Mailroom private constructor(
     /** Results that arrived, each to be judged in a judgement of its own: what it is, and its judgement. */
     private val arrivals = ArrayDeque<Pair<String, () -> Unit>>()
     private var draining = false
-    private var closed = false
+    @Volatile private var closed = false
+    /** Where operations are performed: outside the lock, one after another per checkout and per seat (contracts.md §7, Amendment 36). */
+    private val lanes = Lanes()
 
     /** The fold of the log as the mailroom works from it. */
     val state: State @Synchronized get() = folded
@@ -328,9 +332,17 @@ class Mailroom private constructor(
     private fun recordRules() =
         write(line(now(), EVENT to text("rules"), HASH to text(inForce.hash), FILES to JsonObject(inForce.files.mapValues { JsonPrimitive(it.value) })))
 
+    /**
+     * Waits, at most [millis], until every operation handed to its performer has been performed — or waits for an answer
+     * its performer gives later — and every result that arrived is judged: what a harness that plays its world step by
+     * step waits for before its next step (S3.3). True when it did.
+     */
+    fun settle(millis: Long = SETTLE_MILLIS): Boolean = lanes.settle(millis)
+
     @Synchronized
     override fun close() {
         closed = true
+        lanes.close()
         writer.close()
     }
 
@@ -658,21 +670,47 @@ class Mailroom private constructor(
      * Hands the request to the performer once; a result it gives twice is taken once. A wake of a seat — `seat.wake`
      * with a `seat` — is the seats' to perform: the seat is prompted with the message that is its cause. A robot's own
      * seat woken in a mode is the performer's (S4.6).
+     *
+     * Outside the lock (contracts.md §7, Amendment 36): the operation begins once the judgement that requested it is on
+     * disk — this runs only then — and the lock is free, on a lane of its own: its seat's, when it names one, else the
+     * checkout the performer says it works on. The next operation of that lane begins once its result is judged. A
+     * performer that throws has failed.
      */
     private fun perform(request: OperationRequest) {
-        val answered = AtomicBoolean(false)
-        val seat = (request.with.fields[SEAT] as? Datum.Text)?.value?.takeIf { request.operation == SEAT_WAKE }
+        val seat = (request.with.fields[SEAT] as? Datum.Text)?.value
+        val woken = seat?.takeIf { request.operation == SEAT_WAKE }
         val message = request.cause.let(messages::get)
-        if (seat != null && message != null) return finished(request, deliveries.prompt(seat, message))
-        operations.perform(request) { result -> if (answered.compareAndSet(false, true)) finished(request, result) }
+        val lane = seat?.let { "$SEAT $it" } ?: runCatching { operations.on(request) }.getOrNull()?.let { "$CHECKOUT $it" }
+        lanes.hand(lane) { ended ->
+            val answered = AtomicBoolean(false)
+            val answer: (OperationResult) -> Unit = { result ->
+                if (answered.compareAndSet(false, true)) lanes.answering {
+                    try {
+                        finished(request, result)
+                    } finally {
+                        ended()
+                    }
+                }
+            }
+            // It begins once the lock is free: the judgement that requested it, and the drain that handed it over, are done.
+            synchronized(this) {}
+            if (closed) return@hand
+            try {
+                if (woken != null && message != null) answer(deliveries.prompt(woken, message)) else operations.perform(request, answer)
+            } catch (error: Exception) {
+                answer(OperationResult.Failed("${request.operation} failed: ${error.message ?: error.javaClass.simpleName}"))
+            }
+        }
     }
 
     /** A result — now, from inside [perform], or later, from the performer's own thread — arrives: it is judged in its turn. */
-    @Synchronized
     private fun finished(request: OperationRequest, result: OperationResult) {
-        if (closed) return
-        arrivals += "the result of ${request.operation} for ${request.cause}" to { complete(request, result) }
-        drain()
+        synchronized(this) {
+            if (closed) return
+            arrivals += "the result of ${request.operation} for ${request.cause}" to { complete(request, result) }
+            drain()
+        }
+        resulted()
     }
 
     /**
@@ -708,7 +746,11 @@ class Mailroom private constructor(
      * another firing of its kind.
      */
     private fun interrupted(flights: List<InFlight>) = flights.forEach { flight ->
-        judged { complete(OperationRequest(flight.op, flight.cause, flight.with), OperationResult.Failed(INTERRUPTED)) }
+        val request = OperationRequest(flight.op, flight.cause, flight.with)
+        // What it left on disk is said, and touched by nothing (contracts.md §7, Amendment 36).
+        runCatching { operations.left(request) }.onFailure { journal("${flight.op} for ${flight.cause} was interrupted; what it left could not be read: ${it.message}") }
+            .getOrNull()?.let { journal("${flight.op} for ${flight.cause} was interrupted: $it") }
+        judged { complete(request, OperationResult.Failed(INTERRUPTED)) }
     }
 
     // ---- a start (contracts.md §3, Amendments 23 and 24)
@@ -741,7 +783,10 @@ class Mailroom private constructor(
             when (standing) {
                 is Message -> arrived(standing, now()) { stand(it) }
                 is Op -> if (standing.phase == REQUESTED) stand(voided) else {
-                    val flight = folded.operations.firstOrNull { it.op == standing.op && it.cause == standing.cause && standing.with?.get(SEAT).let { seat -> seat == null || it.with.fields[SEAT]?.element() == seat } }
+                    // Paired as the fold pairs it: by its seat, or — naming none — with a request that names none first.
+                    val mine = folded.operations.filter { it.op == standing.op && it.cause == standing.cause }
+                    val seat = standing.with?.get(SEAT)
+                    val flight = if (seat != null) mine.firstOrNull { it.with.fields[SEAT]?.element() == seat } else mine.firstOrNull { SEAT !in it.with.fields } ?: mine.firstOrNull()
                     val with = flight?.with ?: Datum.Fields(emptyMap())
                     val returned = (Datum.of(standing.plain()[RESULT] ?: emptyMap<String, Any?>()) as? Datum.Fields) ?: Datum.Fields(emptyMap())
                     complete(OperationRequest(standing.op, standing.cause, with),
@@ -956,12 +1001,13 @@ class Mailroom private constructor(
          * Opens the log, folds it, puts the rules in force and records what start-up records (contracts.md §2.2, §4.4).
          * The writer reaches the disk through [disk]. [whenFolded] is told the mailroom once the log is folded and the rules
          * are in force, before the start carries anything again: what reads the fold reads it from then on (contracts.md
-         * §4.4, Amendment 34).
+         * §4.4, Amendment 34). [resulted] is told each time an operation's result has been judged: it arrives from the
+         * operation's own thread (Amendment 36), not through a way in whose caller signals.
          */
         fun start(
             project: Path, office: OfficeId, rules: RuleTexts, facts: FactSource, operations: Operations, deliveries: Deliveries, clock: Clock,
             robots: Boolean = false, disk: Channels = Channels.files, journal: (String) -> Unit = { System.err.println(it) },
-            whenFolded: (Mailroom) -> Unit = {},
+            resulted: () -> Unit = {}, whenFolded: (Mailroom) -> Unit = {},
         ): Mailroom {
             val writer = LogWriter.open(project, office, disk)
             try {
@@ -971,7 +1017,7 @@ class Mailroom private constructor(
                 if (inForce == null) throw MailroomRefusal("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
                 // Under the mailroom's lock, as every other step: a performer that answers from its own thread while the
                 // start is carrying its queue waits for it (issue #21).
-                return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce, robots, journal).apply {
+                return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce, robots, journal, resulted).apply {
                     synchronized(this) {
                         val entries = read.lines.map { it.entry }
                         // The judgement the log ends in begins after the last `judged` line — at the `voided` record after it, when
@@ -1006,6 +1052,10 @@ private fun partyName(element: JsonElement?): String? =
 
 private const val BORA = "bora"
 private const val MAILROOM = "mailroom"
+/** How long [Mailroom.settle] waits by default. */
+private const val SETTLE_MILLIS = 60_000L
+/** The lane of an operation on a checkout, beside a seat's (contracts.md §7, Amendment 36). */
+private const val CHECKOUT = "checkout"
 /** The kind that tells a sender of a refusal, and the guard it names (`message-kinds.yaml`: `nudge`). */
 private const val NUDGE = "nudge"
 private const val FAILED_GUARD = "failed_guard"

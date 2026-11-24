@@ -98,6 +98,12 @@ class Office private constructor(
     fun seatApi(tokens: kp.seatapi.Tokens, listen: String, github: kp.seatapi.GitHubTokens = kp.seatapi.GitHubTokens.NONE): kp.seatapi.SeatApi =
         kp.seatapi.SeatApi.start(mailroom, tokens, listen, github)
 
+    /**
+     * Waits until the operations handed to their performers are performed — or wait for an answer given later — and every
+     * result is judged (contracts.md §7, Amendment 36): what a walk's next step, or a spec, waits for. True when they are.
+     */
+    fun settle(): Boolean = mailroom.settle().also { changes.signal() }
+
     /** Fires the deadlines that have passed. */
     fun tick() {
         mailroom.tick()
@@ -157,7 +163,9 @@ class Office private constructor(
             val presence = Presence(clock)
             val facts = FactSource { fact, stage -> presence.observe(fact) ?: world.observe(fact, stage) }
             var office: Office? = null
-            Mailroom.start(project, OfficeId(name), files, facts, operations, deliveries, clock, robots = true, journal = Journal::say) { mailroom ->
+            // A result is judged on its operation's thread (contracts.md §7, Amendment 36): its change is signalled there.
+            Mailroom.start(project, OfficeId(name), files, facts, operations, deliveries, clock, robots = true, journal = Journal::say,
+                resulted = { office?.changes?.signal() }) { mailroom ->
                 val rules = InForceRules.of(files.lastRead).first ?: error("the mailroom started on rules kp-rules refuses")
                 presence.seed(mailroom.state)
                 presence.state = { mailroom.state }

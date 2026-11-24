@@ -2,11 +2,13 @@ package kp.mailroom
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.should
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import kp.model.Refused
 import kp.model.Judged
+import kp.model.Message
 import kp.model.Rules
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -84,7 +86,11 @@ class RulesInForceSpec : StringSpec({
 
         reloadedWhileJudging shouldBe null
         answer!!.status shouldBe Status.DELIVERED
-        office.readBack().lines.last { it !is Judged }::class.simpleName shouldBe "Rules"
+        // The reload's record follows the message's judgement; the results of what it requested are judged in their turn,
+        // before or after it (contracts.md §7, Amendment 36).
+        val lines = office.readBack().lines
+        val proposal = lines.filterIsInstance<Message>().single { it.kind == "assignment-proposal" }.seq.toLong()
+        lines.indexOfLast { it is Rules } shouldBeGreaterThan lines.indexOfFirst { it is Judged && it.first == proposal }
         office.send("teamlead", twoLines) should refusedBy("assignment-proposal", "caps.body_lines: 1")
         office.readBack().records<Refused>().size shouldBe 1
         office.readBack().records<Rules>().size shouldBe 3 // two starts and the reload

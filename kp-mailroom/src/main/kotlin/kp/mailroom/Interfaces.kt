@@ -18,6 +18,21 @@ fun interface FactSource {
 fun interface Operations {
     /** Performs [request] and reports its result through [done] — now or later, once. */
     fun perform(request: OperationRequest, done: (OperationResult) -> Unit)
+
+    /**
+     * What [request] works on (contracts.md §7, Amendment 36): a checkout — a stage's worktree, a main checkout, the
+     * project checkout — named as the performer names it. Operations on one checkout are performed one after another,
+     * in the order requested; on two, side by side. Null: on no checkout another operation works on. A seat's
+     * operation — its wake among them — works on its seat, whatever this says.
+     */
+    fun on(request: OperationRequest): String? = null
+
+    /**
+     * What [request] — requested, with no result when the mailroom starts — left on disk, as the journal says it: a
+     * half-made worktree, a merge in progress. Only read: nothing touches it (contracts.md §4.4, §7). Null: nothing to
+     * say.
+     */
+    fun left(request: OperationRequest): String? = null
 }
 
 /** One operation, for the message whose judgement requested it ([cause]), with its resolved `with:`. */

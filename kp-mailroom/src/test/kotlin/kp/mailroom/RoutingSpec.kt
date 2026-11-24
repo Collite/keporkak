@@ -1,6 +1,7 @@
 package kp.mailroom
 
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
 import kp.model.Delivered
 import kp.model.Message
@@ -21,8 +22,9 @@ class RoutingSpec : StringSpec({
         // A delivery to an idle seat wakes it (S2.4, Amendment 22): the addressee and the seat it copies, each a wake of its own.
         val delivered = office.readBack().records<Delivered>().single { it.id == bind.id }
         listOf(delivered.to, delivered.woke) shouldBe listOf(listOf("reviewer-1", "coder-1"), listOf("reviewer-1", "coder-1"))
-        office.seats.woken shouldBe listOf("reviewer-1" to bind.id, "coder-1" to bind.id)
-        office.readBack().records<Read>().map { it.seat to it.ids } shouldBe listOf("reviewer-1" to listOf(bind.id), "coder-1" to listOf(bind.id))
+        // Two seats' wakes are performed side by side (contracts.md §7, Amendment 36): in either order.
+        office.readBack().records<Read>().map { it.seat to it.ids } shouldContainExactlyInAnyOrder listOf("reviewer-1" to listOf(bind.id), "coder-1" to listOf(bind.id))
+        office.seats.woken shouldContainExactlyInAnyOrder listOf("reviewer-1" to bind.id, "coder-1" to bind.id)
         office.mailroom.state.unread shouldBe emptyMap()
     }
 
@@ -60,7 +62,7 @@ class RoutingSpec : StringSpec({
 
     "a seat is woken only once its message's lines are on disk" {
         val office = Office(seed = "ready_for_review")
-        val onDisk = ArrayList<List<String>>()
+        val onDisk: MutableList<List<String>> = java.util.concurrent.CopyOnWriteArrayList() // two seats are woken side by side
         office.stop()
         office.mailroom = Mailroom.start(office.project, panda, office.texts, office.facts, office.operations, object : Deliveries {
             override fun idle(seat: String) = true
@@ -72,8 +74,10 @@ class RoutingSpec : StringSpec({
 
         office.send("teamlead", BIND)
 
-        // The wake is requested in the judgement that delivers, and performed once that judgement is on disk (S2.4).
-        onDisk shouldBe List(2) { listOf("Message", "Delivered", "Transition", "Op", "Op", "Judged") }
+        // The wake is requested in the judgement that delivers, and performed once that judgement is on disk (S2.4) — the
+        // other seat's wake, performed side by side, may have ended before it (contracts.md §7, Amendment 36).
+        office.readBack()
+        onDisk.map { it.take(6) } shouldBe List(2) { listOf("Message", "Delivered", "Transition", "Op", "Op", "Judged") }
     }
 
     "a class-B delivery raises a ticket — the seq of the record that carries it — and requests notify.bora for it; a party is never woken" {

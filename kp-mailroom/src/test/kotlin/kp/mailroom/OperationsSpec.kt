@@ -15,7 +15,7 @@ class OperationsSpec : StringSpec({
 
     "an operation is performed only once its request is on disk, after the lines of the judgement that requested it" {
         val office = Office(seed = "proposed")
-        val onDisk = ArrayList<List<String>>()
+        val onDisk: MutableList<List<String>> = java.util.concurrent.CopyOnWriteArrayList() // written on the operation's own thread
         office.stop()
         office.mailroom = Mailroom.start(office.project, panda, office.texts, office.facts, { request, done ->
             onDisk += office.readBack().lines.dropWhile { it !is kp.model.Message }.map { (it as? Op)?.let { op -> "${op.op} ${op.phase}" } ?: it::class.simpleName!! }
@@ -25,8 +25,9 @@ class OperationsSpec : StringSpec({
         office.bora(APPROVAL)
 
         // Bora's own approval waits for no one: no notify.bora (S1.8, contracts.md §2.2). The judgement is closed — and
-        // only then are its operation performed and its addressee woken, in the order it asked for them (S1.10).
-        onDisk.first() shouldBe listOf("Message", "Delivered", "Transition", "worktree.create requested", "seat.wake requested", "Judged")
+        // only then are its operation performed and its addressee woken (S1.10), each on a lane of its own, side by side:
+        // the wake may have ended first (contracts.md §7, Amendment 36).
+        onDisk.first().take(6) shouldBe listOf("Message", "Delivered", "Transition", "worktree.create requested", "seat.wake requested", "Judged")
     }
 
     "a failed result is recorded with its reason and judged: nothing fires for worktree.create failed, and the stage stays assigned" {

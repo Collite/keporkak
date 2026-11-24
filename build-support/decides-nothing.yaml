@@ -324,6 +324,17 @@ exceptions:
     code: ChronoUnit.SECONDS
     line: IDLE_FOR -> Datum.of(ChronoUnit.SECONDS.between(signed, clock.now()))
     reason: '`bora.idle_for` as the vocabulary defines it: the time since his last signed command, reported; the rules compare'
+  kp-daemon/src/main/kotlin/kp/daemon/OfficeOperations.kt:
+  - shape: comparison
+    in: OfficeOperations.place
+    code: 'sortedBy { it.name }'
+    line: 'val lists = folder.takeIf { it.isDirectory() }?.listDirectoryEntries("tasks-p$phase-s$number-*.md").orEmpty().sortedBy { it.name }'
+    reason: 'a stage''s list files in the order of their names, so that a refusal naming two of them names them the same way each time (contracts.md §7, Amendment 36)'
+  - shape: comparison
+    in: OfficeOperations.defaultBranch
+    code: 'sortedBy { it.name }'
+    line: 'return profiles.listDirectoryEntries("*.md").sortedBy { it.name }.firstNotNullOfOrNull { file -> … }'
+    reason: 'the profiles in the order of their names: the first that names the effort gives its default_branch, as Seats.profile picks a profile (contracts.md §10)'
   kp-daemon/src/main/kotlin/kp/daemon/OwnSteps.kt:
   - shape: comparison
     in: SeatsAtPlay.Evidence.text
@@ -1077,6 +1088,23 @@ exceptions:
     code: i < glob.length
     line: while (i < glob.length) {
     reason: a glob's characters, read one by one into an expression (S2.2)
+  kp-ops/src/main/kotlin/kp/ops/Command.kt:
+  - shape: timer
+    in: runOnce
+    code: 'waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)'
+    line: 'val ended = process.waitFor(limit.toMillis(), TimeUnit.MILLISECONDS)'
+    reason: 'a command — git, the register''s script — waits at most its caller''s limit, then is ended and fails: a performer that never answers would hold its checkout''s lane (contracts.md §7, Amendment 36); nothing is tried again'
+  - shape: timer
+    in: runOnce
+    code: 'join(limit)'
+    line: 'reader.join(limit)'
+    reason: 'the reader of an ended command''s output, waited for at most the same limit: the output ends with the process'
+  kp-ops/src/main/kotlin/kp/ops/GitCommand.kt:
+  - shape: timer
+    in: GitCommand.Companion.LIMIT
+    code: 'Duration.ofMinutes(5)'
+    line: 'val LIMIT: Duration = Duration.ofMinutes(5)'
+    reason: 'how long one git command may take — a fetch or a push reaches a network — before it is ended and its operation fails; no rule reads it'
   kp-ops/src/main/kotlin/kp/ops/GitHubApps.kt:
   - shape: timer
     in: GitHubApps.Companion.TIMEOUT
@@ -1131,6 +1159,23 @@ exceptions:
     code: '"merge"'
     line: put("merge_method", "merge")
     reason: '`git.merge` (Amendment 37): "with a merge commit" is GitHub''s `merge_method: merge` — GitHub''s word, not the kind `merge`'
+  kp-ops/src/main/kotlin/kp/ops/ProjectPush.kt:
+  - shape: kind
+    in: ProjectPush.merged
+    code: '"merge"'
+    line: 'val merging = run("merge", "--no-edit", "--no-stat", "--message", "${PROJECT}merges $upstream — $cause", upstream)'
+    reason: 'git''s subcommand that merges the upstream into the project checkout (contracts.md §7, Amendment 36), not the message kind `merge`'
+  - shape: kind
+    in: ProjectPush.merged
+    code: '"merge"'
+    line: 'if (inProgress()) run("merge", "--abort")'
+    reason: 'git''s subcommand that gives up a merge that conflicts, not the message kind `merge`'
+  kp-ops/src/main/kotlin/kp/ops/Register.kt:
+  - shape: timer
+    in: Register.Companion.LIMIT
+    code: 'Duration.ofMinutes(1)'
+    line: 'val LIMIT: Duration = Duration.ofMinutes(1)'
+    reason: 'how long the register''s script may take before it is ended and register.rebuild fails; it reads a few STATUS files, and no rule reads the limit'
   kp-seat-api/src/main/kotlin/kp/seatapi/StopGate.kt:
   - shape: number
     in: StopGate.route

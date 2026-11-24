@@ -109,11 +109,12 @@ class FakeFacts : FactSource {
  * keeps it until the spec gives its answer ([answer]).
  */
 class FakeOperations : Operations {
-    val requested = ArrayList<OperationRequest>()
-    var holding = false
-    var keeping = false
-    val failing = HashMap<String, String>()
-    private val kept = ArrayList<Pair<OperationRequest, (OperationResult) -> Unit>>()
+    // Performed on the mailroom's lanes, side by side (contracts.md §7, Amendment 36).
+    val requested: MutableList<OperationRequest> = java.util.concurrent.CopyOnWriteArrayList()
+    @Volatile var holding = false
+    @Volatile var keeping = false
+    val failing: MutableMap<String, String> = java.util.concurrent.ConcurrentHashMap()
+    private val kept: MutableList<Pair<OperationRequest, (OperationResult) -> Unit>> = java.util.Collections.synchronizedList(ArrayList())
 
     override fun perform(request: OperationRequest, done: (OperationResult) -> Unit) {
         requested += request
@@ -122,15 +123,19 @@ class FakeOperations : Operations {
         done(failing[request.operation]?.let { OperationResult.Failed(it) } ?: OperationResult.Ok())
     }
 
-    /** The first kept request of [operation] ends with [result], now. */
-    fun answer(operation: String, result: OperationResult = OperationResult.Ok()) =
-        kept.removeAt(kept.indexOfFirst { it.first.operation == operation }.also { check(it >= 0) { "no $operation is kept" } }).second(result)
+    /** The first kept request of [operation] — of [seat], when one is named — ends with [result], now. */
+    fun answer(operation: String, result: OperationResult = OperationResult.Ok(), seat: String? = null) =
+        synchronized(kept) {
+            kept.removeAt(kept.indexOfFirst { (request, _) ->
+                request.operation == operation && (seat == null || (request.with.fields["seat"] as? Datum.Text)?.value == seat)
+            }.also { check(it >= 0) { "no $operation${seat?.let { " of $it" }.orEmpty()} is kept" } })
+        }.second(result)
 }
 
 /** Seats that are idle unless [busy]; every wake is noted. */
 class FakeSeats : Deliveries {
-    val busy = HashSet<String>()
-    val woken = ArrayList<Pair<String, String>>()
+    val busy: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    val woken: MutableList<Pair<String, String>> = java.util.concurrent.CopyOnWriteArrayList()
 
     override fun idle(seat: String) = seat !in busy
     override fun wake(seat: String, message: Message): Boolean = (seat !in busy).also { if (it) woken += seat to message.id.value }
@@ -343,7 +348,7 @@ class Office(
         start()
     }
 
-    fun start() { mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, journal = journal::add) }
+    fun start() { mailroom = Mailroom.start(project, panda, texts, facts, operations, seats, clock, robots = robots, journal = journal::add).also { it.settle() } }
     fun stop() = mailroom.close()
     fun restart() { stop(); start() }
 
@@ -381,16 +386,18 @@ class Office(
             state.unread.flatMap { (seat, ids) -> ids.map { "unread $seat ${kind(it)}" } }.sorted()
     }
 
-    fun send(seat: String, input: String): Answer = mailroom.submit(Sender.Seat(seat), json(input)).answered().also { submitted += it.id }
-    fun bora(input: String, signed: Boolean = true): Answer = mailroom.submit(Sender.Bora(signed), json(input)).answered().also { submitted += it.id }
+    // Each entry waits until the operations it caused are performed and their results judged (contracts.md §7, Amendment 36).
+    fun send(seat: String, input: String): Answer = mailroom.submit(Sender.Seat(seat), json(input)).answered().also { submitted += it.id; mailroom.settle() }
+    fun bora(input: String, signed: Boolean = true): Answer = mailroom.submit(Sender.Bora(signed), json(input)).answered().also { submitted += it.id; mailroom.settle() }
 
     /** Bora runs a command that is no message (`kp status`): signed when he ran it with `sudo` (contracts.md §6). */
-    fun command(signed: Boolean) = mailroom.command(signed)
+    fun command(signed: Boolean) = mailroom.command(signed).also { mailroom.settle() }
 
     /** The world reports that [fact] changed — about [params], for [stage] — with [value]; the fact table says so from now on. */
     fun changed(fact: String, value: Any?, stage: String? = null, params: Map<String, String> = emptyMap()) {
         if (stage != null) facts.set(stage, fact, value) else facts.set(fact, value)
         mailroom.changed(FactRef(fact, params.mapValues { Datum.Text(it.value) }), Datum.of(value), stage)
+        mailroom.settle()
     }
 
     /** Sets the clock to [time] (`HH:MM`) on the day it shows, or the next day when that time has passed. */
@@ -433,7 +440,11 @@ class Office(
     /** A stage's state as its log gives it: every line of every file, folded. */
     fun stage(id: String = STAGE): String? = fold(readBack().lines).stage(id)
 
-    fun readBack() = ReadBack(project)
+    /** The log read back, once the operations in hand are performed and their results judged (contracts.md §7, Amendment 36). */
+    fun readBack(): ReadBack {
+        if (::mailroom.isInitialized) mailroom.settle()
+        return ReadBack(project)
+    }
 
     companion object {
         /** Every office a spec opened, so that its log is checked and its writer released when the spec ends. */

@@ -240,8 +240,19 @@ class Seats(
 
     // ---- the operations (contracts.md §4.4)
 
-    /** The seat operations performed here; any other — a robot's own seat woken in a mode among them — by [other]. */
-    fun operations(other: Operations): Operations = Operations { request, done ->
+    /**
+     * The seat operations performed here; any other — a robot's own seat woken in a mode among them — by [other], which
+     * also says what each works on and what one interrupted left (contracts.md §7, Amendment 36).
+     */
+    fun operations(other: Operations): Operations = object : Operations {
+        override fun perform(request: OperationRequest, done: (OperationResult) -> Unit) = perform(request, done, other)
+
+        override fun on(request: OperationRequest): String? = other.on(request)
+
+        override fun left(request: OperationRequest): String? = other.left(request)
+    }
+
+    private fun perform(request: OperationRequest, done: (OperationResult) -> Unit, other: Operations) {
         val seat = (request.with.fields[SEAT] as? Datum.Text)?.value
         when {
             seat == null || !performs(request.operation) -> other.perform(request, done)

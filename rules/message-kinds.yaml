@@ -1846,9 +1846,6 @@ kinds:
         required: true
     window: stage
     require:
-    - fact: seat.inbox_replayed
-      seat:
-        arg: seat
     - counter: seat_gone_events
       lte:
         cap: seat_gone_events_per_stage

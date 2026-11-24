@@ -136,10 +136,7 @@ rules:
   'on':
     op: seat.reseat
     eq: ok
-  if:
-  - fact: seat.inbox_replayed
-    seat:
-      trigger: seat
+  if: []
   then:
   - send: re-seated
     to: teamlead
