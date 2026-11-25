@@ -90,8 +90,12 @@ class AfterTheFirstWaveSpec : FreeSpec({
     }
 })
 
-/** The lines of a journal that say a fact is unknown — as the daemon wrote them, after its time and its name. */
-private fun Iterable<String>.unknown(): List<String> = filter { " is unknown — " in it }.map { it.substringAfter(" kp-daemon: ") }
+/**
+ * The lines of a journal that say a fact is unknown — as the daemon wrote them, after its time and its name — but the
+ * mailroom's asks of `seat.name` for each role a message names: no seat holds one here, and each judgement says so (S3.14,
+ * Amendment 47).
+ */
+private fun Iterable<String>.unknown(): List<String> = filter { " is unknown — " in it }.map { it.substringAfter(" kp-daemon: ") }.filterNot { it.startsWith("facts: seat.name(") }
 
 private fun String.unknown(): List<String> = lines().unknown()
 

@@ -1,0 +1,13 @@
+diff --git a/kp-mailroom/src/main/kotlin/kp/mailroom/Mailroom.kt b/kp-mailroom/src/main/kotlin/kp/mailroom/Mailroom.kt
+index 07a6aa1..b3c9627 100644
+--- a/kp-mailroom/src/main/kotlin/kp/mailroom/Mailroom.kt
++++ b/kp-mailroom/src/main/kotlin/kp/mailroom/Mailroom.kt
+@@ -754,7 +754,7 @@ class Mailroom private constructor(
+         })
+         val returned = (result as? OperationResult.Ok)?.let { seated(request, it.result) } ?: Datum.Fields(emptyMap())
+         // A seat woken with a message has seen it (contracts.md §2.2, `read`): its `read` record follows the wake's `ok`.
+-        val woken = (request.with.fields[SEAT] as? Datum.Text)?.value?.takeIf { request.operation == SEAT_WAKE && result is OperationResult.Ok }
++        val woken = (request.with.fields[SEAT] as? Datum.Text)?.value?.takeIf { request.operation == SEAT_WAKE }
+         if (woken != null && request.cause in folded.unread(woken)) write(line(now, EVENT to text("read"), SEAT to text(woken), IDS to texts(listOf(request.cause))))
+         val trigger = Trigger.Result(request.cause, request.operation, result is OperationResult.Ok, request.with, returned)
+         val engine = Engine(rules)

@@ -11,8 +11,9 @@ import kp.model.Transition
 /**
  * What the log says of the seats (contracts.md §2.2, §4.4): which the state holds live — the seat machine moved them to
  * `ready`, `busy` or `idle`, or a `seat.start` or `seat.reseat` ended `ok` for them, and nothing moved them to `gone` or
- * `retired` since — and, for each seat it started, the role and the stage it was started for and the last session a
- * start or a re-seat named. Read from the lines as they count (a voided judgement's left out).
+ * `retired` since — and, for each seat it started, in the order of their last starts, the role and the stage it was last
+ * started for and the last session a start or a re-seat named. Read from the lines as they count (a voided judgement's
+ * left out).
  */
 internal class SeatLog(lines: List<Envelope>) {
     /**
@@ -39,8 +40,9 @@ internal class SeatLog(lines: List<Envelope>) {
                     val with = line.with?.text(SEAT)
                     val result = line.result?.text(SEAT) ?: with
                     when {
+                        // A seat started again is known from its last start, and comes last: the order is the starts' (Amendment 47).
                         line.op == START && line.phase == REQUESTED && with != null ->
-                            seats[with] = Known(line.with?.text(ROLE), stages[line.cause], seats[with]?.session, line.cause)
+                            seats[with] = Known(line.with?.text(ROLE), stages[line.cause], seats.remove(with)?.session, line.cause)
                         line.op in SEATING && line.phase == OK && result != null -> {
                             alive += result
                             seats[result] = (seats[result] ?: Known(null, null, null)).copy(session = line.result?.text(SESSION) ?: seats[result]?.session)
@@ -70,3 +72,18 @@ internal class SeatLog(lines: List<Envelope>) {
         val DOWN = setOf("gone", "retired")
     }
 }
+
+/**
+ * A seat a `session-report` being judged asks to start (contracts.md §4.4, Amendment 47): what the report names — the
+ * role — its stage, and the request it answers, whose level a start reads. Before any seat is held, this is the seat.
+ */
+internal data class Reported(val role: String?, val stage: String?, val request: String?)
+
+/** What [arriving] — the message being judged — names of [seat], when it is a `session-report` that asks to start it; else null. */
+internal fun reported(arriving: Message?, seat: String): Reported? = arriving
+    ?.takeIf { it.kind == SESSION_REPORT && (it.args?.get(REPORTED_SEAT) as? JsonPrimitive)?.contentOrNull == seat }
+    ?.let { Reported((it.args?.get(REPORTED_ROLE) as? JsonPrimitive)?.contentOrNull, it.stage?.value, it.re?.value) }
+
+private const val SESSION_REPORT = "session-report"
+private const val REPORTED_SEAT = "seat"
+private const val REPORTED_ROLE = "role"

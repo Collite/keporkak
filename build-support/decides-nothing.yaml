@@ -801,6 +801,12 @@ exceptions:
     code: max()
     line: 'private fun slotsOver(rooms: List<Room>): Int = rooms.map { it.used - it.limit }.plus(0).max()'
     reason: '`budget.slots_over` holds a count against a limit of the pool by its definition (contracts.md §4.4, Amendment 44; D-116): the number in use above the limit, zero at or under it, and of several limits the largest. The daemon computes the fact; what a slot over means is the rules'' (`retire`, POOL-16)'
+  kp-daemon/src/main/kotlin/kp/daemon/seats/SeatLog.kt:
+  - shape: kind
+    in: SESSION_REPORT
+    code: '"session-report"'
+    line: private const val SESSION_REPORT = "session-report"
+    reason: 'what a seat''s facts read of the message being judged (contracts.md §4.4, Amendment 47): a `session-report` names a seat not yet started — its role, and the request whose level its start will read; the kind is named to find that report, and nothing is concluded from it: SEAT-01 judges the report'
   kp-daemon/src/main/kotlin/kp/daemon/seats/Seated.kt:
   - shape: timer
     in: Seated.watchEvery

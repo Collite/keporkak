@@ -126,6 +126,37 @@ class PoolAndBudgetFactsSpec : StringSpec({
         }
     }
 
+    "a weight changed while the daemon runs counts the next turn, and no turn before it (S3.14, issue #72)" {
+        // Two turns of the same usage — 100 input, 10 output, 1 000 cache write, 10 000 cache read — with cache_read 0.1, then 0.2.
+        val usage = """{"do": "end", "usage": {"input": 100, "output": 10, "cache_write": 1000, "cache_read": 10000, "total": 11110}}"""
+        val root = fixtureRoot { it }
+        SeatsOffice(root = root, scripts = mapOf("coder-1" to """{"turns": [[$usage], [$usage]]}""")).use { office ->
+            office.send("principal", "triage", """{"outcome": "issue", "found": "0", "since": "m-panda-000001"}""")
+            office.until("coder-1's first turn recorded") { office.usages("coder-1").size == 1 }
+            root.resolve("pool/budgets.yaml").rewrite { it.replace("cache_read: 0.1}", "cache_read: 0.2}") }
+            checkNotNull(office.office.reloadIfChanged()) { "the office did not reload its pool" }
+            office.send("principal", "triage", """{"outcome": "issue", "found": "1", "since": "m-panda-000001"}""")
+            office.until("coder-1's second turn recorded") { office.usages("coder-1").size == 2 }
+
+            office.usages("coder-1").map { it.value.toString() } shouldBe listOf("2400", "3400")
+            office.usages("coder-1")[1].evidence!! shouldContain "weighted 3400 by input 1, output 5, cache write 1.25, cache read 0.2"
+            office.seats.facts { _, _ -> null }.observe(FactRef("seat.usage", mapOf("seat" to Datum.Text("coder-1"), "window" to Datum.Text("session"))), null) shouldBe Datum.of(5800)
+        }
+    }
+
+    "one of the nine asked through a view — `kp inbox`'s — is answered as a judgement's ask is, and leaves no journal line when unknown (S3.14, issue #72)" {
+        ServiceOffice(mapOf("KP/P3/S3.2" to "assigned")).use { office ->
+            val consumption = FactRef("budget.consumption", mapOf("subscription" to Datum.Text("claude"), "window" to Datum.Text("five_hour")))
+
+            office.world.view.observe(consumption, "KP/P3/S3.2") shouldBe null
+            office.journal.filter { "budget.consumption" in it } shouldBe emptyList()
+
+            office.world.observe(consumption, "KP/P3/S3.2") shouldBe null
+            office.journal.filter { "budget.consumption" in it } shouldBe
+                listOf("facts: budget.consumption(subscription=claude, window=five_hour) for KP/P3/S3.2 is unknown — the vendor has reported no window of claude")
+        }
+    }
+
     "budget.consumption is the fullest window the vendor reported, a named window when one is asked, and unknown before any report and past a window's reset" {
         // The vendor's words, as the pinned adapter passes them beside `usage_update` (`_meta["_claude/rateLimit"]`, in the shape the
         // office's handshake heard on 2026-11-24): the top level names a window, each window of `unifiedWindows` its fraction —

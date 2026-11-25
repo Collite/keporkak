@@ -284,6 +284,13 @@ says `git@github.com:`, and never to prompt; `gh` runs the office's own `gh` wit
 environment. Nothing is installed for it, and no `gh auth login` is needed for a seat: your own `gh` login and
 `~/.gitconfig` stay yours, and a seat's `git` uses no helper they name.
 
+**Your `~/.netrc` names no `github.com`** (contracts.md §4.4, Amendment 47). A seat runs as you, with your `HOME`, and
+`git` reads `$HOME/.netrc` for every https request before it asks the seat's helper — nothing in a seat's environment
+turns that off. An entry for `github.com` there, or a `default` entry, which `git` takes for any machine, would reach
+GitHub as you, not as the seat's App. `just office-check` says "to do" when `~/.netrc` names either, and nothing when it
+names neither or there is none; it reads the machines' names only and prints no login and no password. On dsk there is
+none. Keep a token you need there for another machine; take a `github.com` or `default` entry out.
+
 **`just apps prove`** (from `~/Dev/keporkak/keporkak`, on the office, where the Apps' keys are) is the live proof of it, on
 `Collite/kp-toy`, with no agent and none of the seats' Claude tokens. It builds a home for the coder's persona and one
 for the reviewer's in a throwaway folder (`build/apps-prove/`), and a listener of its own answers their asks. Then, on

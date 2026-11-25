@@ -112,11 +112,23 @@ data class SeatAt(val seat: String, val role: String, val stage: String?, val le
  * machine's move, `seat.start` requested and ok — then moved to its state; each stage of [stages] moved from `planned` to
  * its state; each turn's end of [turns] as the daemon records it. Every line at [at], unless the turn's end says when.
  */
-class FixtureLog(seats: List<SeatAt> = emptyList(), stages: Map<String, String> = emptyMap(), turns: List<TurnEnd> = emptyList(), private val at: String = "2026-11-20T08:00:00Z") {
+class FixtureLog(
+    seats: List<SeatAt> = emptyList(), stages: Map<String, String> = emptyMap(), turns: List<TurnEnd> = emptyList(), private val at: String = "2026-11-20T08:00:00Z",
+    reports: List<Reported> = emptyList(),
+) {
     /** A turn's end as its record leaves it: a `fact` of `seat.usage`, window `turn`, its count and its evidence. */
     data class TurnEnd(val seat: String, val at: String, val count: Long, val evidence: String)
 
+    /**
+     * S3.14: the Team Lead's request for [seat] as [role] at [level] about [requested] — on the log, delivered — and the
+     * Pool Manager's report on it about [stage], which is not: a report being judged is not on the log yet ([arriving]).
+     */
+    data class Reported(val seat: String, val role: String, val stage: String?, val level: String? = null, val requested: String? = null)
+
+    private val requests = reports.mapIndexed { n, report -> report to "m-panda-8${"%05d".format(n + 1)}" }
+
     val judgements: List<List<JsonObject>> = seats.mapIndexed { n, seat -> started(seat, "m-panda-9${"%05d".format(n + 1)}") } +
+        requests.map { (report, request) -> requested(report, request) } +
         listOfNotNull(stages.takeIf { it.isNotEmpty() }?.map { (stage, state) -> record("transition", "machine" to "stage", "subject" to stage, "from" to "planned", "to" to state, "cause" to "fixture") }) +
         turns.map { turn ->
             listOf(record("fact", "fact" to "seat.usage", "subject" to "${turn.seat}, turn", "value" to turn.count, "evidence" to turn.evidence,
@@ -162,6 +174,28 @@ class FixtureLog(seats: List<SeatAt> = emptyList(), stages: Map<String, String> 
         )
     }
 
+    /** The Pool Manager's report of [seats]'s entry for [seat], answering its request, as the mailroom judges it: not on the log. */
+    fun arriving(seat: String): kp.model.Message {
+        val (report, request) = requests.single { it.first.seat == seat }
+        return parseLine(JsonObject(message("m-panda-800999", request, "pool", "teamlead", "session-report", report.stage, request,
+            mapOf("seat" to report.seat, "role" to report.role)) + ("seq" to JsonPrimitive(999))).toString()) as kp.model.Message
+    }
+
+    private fun requested(report: Reported, request: String): List<JsonObject> {
+        val asked = mapOf("action" to "add", "seat" to report.seat, "role" to report.role) + (report.level?.let { mapOf("level" to it) } ?: emptyMap())
+        return listOf(
+            message(request, request, "teamlead", "pool", "session-request", report.requested, null, asked),
+            record("delivered", "id" to request, "to" to listOf("pool"), "class" to "A"),
+        )
+    }
+
+    private fun message(id: String, thread: String, from: String, to: String, kind: String, stage: String?, re: String?, args: Map<String, String>) = buildJsonObject {
+        put("v", 1); put("at", at); put("id", id); put("thread", thread); put("from", from); put("to", to); put("kind", kind)
+        stage?.let { put("stage", it) }
+        re?.let { put("re", it) }
+        put("subject", kind); put("created", at); put("by", "seat:$from"); put("args", element(args))
+    }
+
     private fun record(event: String, vararg fields: Pair<String, Any>, when_: String = at): JsonObject =
         JsonObject(mapOf("v" to JsonPrimitive(1), "at" to JsonPrimitive(when_), "event" to JsonPrimitive(event)) + fields.associate { (key, value) -> key to element(value) })
 }
@@ -187,12 +221,14 @@ class PoolAsked(
     now: String = "2026-11-20T09:00:00Z",
     live: Map<String, Pair<String, String>> = emptyMap(),
     reports: List<VendorReport> = emptyList(),
+    /** S3.14: the message being judged, not on the log yet — a `session-report` among them. */
+    arriving: kp.model.Message? = null,
 ) {
     val journal = java.util.concurrent.CopyOnWriteArrayList<String>()
     private val inForce = inForce(rules)
     private val state = fold(log.lines)
     val facts = PoolFacts("panda") { journal += it }.also { facts ->
-        facts.reading(PoolFacts.Reading({ inForce }, { state }, { log.lines }, { Instant.parse(now) }, bound = { live[it] }, reports = { reports }))
+        facts.reading(PoolFacts.Reading({ inForce }, { state }, { log.lines }, { Instant.parse(now) }, bound = { live[it] }, reports = { reports }, arriving = { arriving }))
     }
 
     /** [name] with [params], about [stage]: its value — a boolean, a whole number, a decimal or a text — or null when unknown. */

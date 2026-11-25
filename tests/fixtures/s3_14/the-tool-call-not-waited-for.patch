@@ -1,0 +1,12 @@
+diff --git a/kp-daemon/src/test/kotlin/kp/daemon/seats/AfterTheReviewsSpec.kt b/kp-daemon/src/test/kotlin/kp/daemon/seats/AfterTheReviewsSpec.kt
+index ea7360d..b4e4fc1 100644
+--- a/kp-daemon/src/test/kotlin/kp/daemon/seats/AfterTheReviewsSpec.kt
++++ b/kp-daemon/src/test/kotlin/kp/daemon/seats/AfterTheReviewsSpec.kt
+@@ -89,7 +89,6 @@ class AfterTheReviewsSpec : StringSpec({
+             // The driver has heard the tool call open — its transcript, written after the observation, says so — before the clock
+             // moves: heard after, it would be open since the moved clock, for no time at all, and the seat re-seated by POOL-12
+             // (S3.14 T4: the case that failed by chance).
+-            awaitWritten(office.transcript("coder-1"), "coder-1's transcript with its open tool call") { office.transcript("coder-1").readText().contains("tool t1 pending: a long build") }
+             office.clock.now = office.clock.now.plus(Duration.ofMinutes(1))
+             office.release("before-hangup")
+             office.until("coder-1's turn ended with its protocol") { office.seats.idle("coder-1") }
