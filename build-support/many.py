@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""`just many <spec> <times> [patch]` — does a spec pass every time, or only by chance? (S3.10 T1; D-106)
+"""`just many <spec> <times> [patch…]` — does a spec pass every time, or only by chance? (S3.10 T1; D-106)
 
 Runs one spec <times> times alone, then <times> times in its module's whole run, each run with a second build busy
-beside it, on a throwaway copy of the working tree (`build/many/`, removed at the end) — with [patch] applied to the copy
-when one is given. The working tree is not touched, as `just mutant` leaves it.
+beside it, on a throwaway copy of the working tree (`build/many/`, removed at the end) — with each [patch] applied to the
+copy, in the order given (S3.11 T2: a wait taken out, and the slowed agent beside it). The working tree is not touched, as
+`just mutant` leaves it.
 
 <spec> is a Kotlin spec — `<module>:<SpecClass>`, or `<module>:<SpecClass>/<case>` to keep to its cases whose name
 <case> matches (`*` a wildcard; Kotest's `kotest_filter_tests`) — or a test of the Python suite,
@@ -17,10 +18,10 @@ Each run is reported as it ends — `many: alone 3 of 20 — passed`, or `failed
 failure — and the last line counts them: `many: <spec> — alone 20 of 20 passed · in its module's whole run 20 of 20
 passed · a second build busy beside each run`. A run that has not ended within <limit> minutes (KP_MANY_LIMIT, 30) is
 ended and counts as failed.
-Exit: 0 every run passed · 1 a run failed · 2 the patch does not apply · 3 <spec> names no spec, or a run ran none of its
+Exit: 0 every run passed · 1 a run failed · 2 a patch does not apply · 3 <spec> names no spec, or a run ran none of its
 cases · 4 the copy does not build. Killed — SIGTERM, SIGINT, SIGHUP — it ends its runs and the busy build and removes
 its copies, 128 and the signal's number.
-Usage: python3 build-support/many.py [--from DIR] <spec> <times> [patch]
+Usage: python3 build-support/many.py [--from DIR] <spec> <times> [patch…]
 """
 import os
 from pathlib import Path
@@ -161,14 +162,15 @@ def busy(copy):
 def main(arguments):
     origin = Path(arguments.pop(arguments.index("--from") + 1)) if "--from" in arguments else Path.cwd()
     arguments = [a for a in arguments if a != "--from"]
-    if len(arguments) not in (2, 3) or not arguments[1].isdigit() or int(arguments[1]) < 1:
+    if len(arguments) < 2 or not arguments[1].isdigit() or int(arguments[1]) < 1:
         say(__doc__.strip().splitlines()[-1])
         return RUNS_NOTHING
     spec, times = Spec(arguments[0]), int(arguments[1])
-    patch = (origin / arguments[2]).resolve() if len(arguments) == 3 else None
-    if patch is not None and not patch.is_file():
-        say(f"error: no patch at {patch} — nothing was run (exit {DOES_NOT_APPLY})")
-        return DOES_NOT_APPLY
+    patches = [(origin / each).resolve() for each in arguments[2:]]
+    for patch in patches:
+        if not patch.is_file():
+            say(f"error: no patch at {patch} — nothing was run (exit {DOES_NOT_APPLY})")
+            return DOES_NOT_APPLY
     if not spec.names_one(ROOT):
         say(f"error: '{spec.text}' names no spec, or more than one module's — nothing was run (exit {RUNS_NOTHING})")
         return RUNS_NOTHING
@@ -190,10 +192,11 @@ def main(arguments):
         # A repository of its own, as `just mutant`'s copy: git applies a patch here, and a spec that lists the working tree
         # with git (the Python suite's copies) lists this copy's, not the checkout's around it.
         subprocess.run(["git", "init", "--quiet"], cwd=copy, check=True)
-        if patch is not None:
+        for patch in patches:
             applies = subprocess.run(["git", "apply", "--check", str(patch)], cwd=copy, capture_output=True, text=True)
             if applies.returncode != 0:
-                say(f"error: the patch does not apply to the working tree — nothing was run (exit {DOES_NOT_APPLY})\n" + applies.stderr.strip())
+                said = "the patch does not apply to the working tree" if len(patches) == 1 else f"the patch {patch.name} does not apply after those before it"
+                say(f"error: {said} — nothing was run (exit {DOES_NOT_APPLY})\n" + applies.stderr.strip())
                 return DOES_NOT_APPLY
             subprocess.run(["git", "apply", str(patch)], cwd=copy, check=True)
         if spec.python is None:
@@ -205,7 +208,7 @@ def main(arguments):
                 say(f"error: the copy does not build — nothing was run (exit {DOES_NOT_BUILD})")
                 return DOES_NOT_BUILD
         say(f"many: {spec.text} — {times} {'time' if times == 1 else 'times'} alone, then as often in its module's whole run ({spec.module()}), "
-            f"a second build busy beside each run{f'; {patch.name} applied' if patch else ''}")
+            f"a second build busy beside each run{'; ' + ', '.join(p.name for p in patches) + ' applied' if patches else ''}")
         beside = busy(second)
         counts = {}
         for whole in (False, True):

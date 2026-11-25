@@ -13,26 +13,29 @@ import kotlin.io.path.createDirectories
  * it.
  */
 class GitFactsSpec : FreeSpec({
-    "`git.branch_exists` is true when the branch the list's first line names is a local or a remote-tracking branch of the stage's repository's main checkout" {
+    "`git.branch_exists` is true when the branch the stage's `worktree.create` record names is a local or a remote-tracking branch of the main checkout of the repository it names (Amendment 40)" {
         val office = Office(tempdir())
         office.project.write("tasks-p3-s3.1-facts.md", "# KP-keporkak-P3 · S3.1 — Facts    (PR: feat/kp-keporkak-p3-s3.1-facts)\n")
+        office.log.placed("KP/P3/S3.1", "keporkak", "feat/kp-keporkak-p3-s3.1-facts")
+        val record = "the log's worktree.create of KP/P3/S3.1: keporkak, feat/kp-keporkak-p3-s3.1-facts"
 
-        office.observe("git.branch_exists", "stage" to "KP/P3/S3.1") shouldBe value(false, "tasks-p3-s3.1-facts.md#L1; keporkak: no ref of feat/kp-keporkak-p3-s3.1-facts")
+        office.observe("git.branch_exists", "stage" to "KP/P3/S3.1") shouldBe value(false, "$record; keporkak: no ref of feat/kp-keporkak-p3-s3.1-facts")
         office.keporkak.git("branch", "feat/kp-keporkak-p3-s3.1-facts")
-        office.observe("git.branch_exists", "stage" to "KP/P3/S3.1") shouldBe
-            value(true, "tasks-p3-s3.1-facts.md#L1; keporkak: refs/heads/feat/kp-keporkak-p3-s3.1-facts")
+        office.observe("git.branch_exists", "stage" to "KP/P3/S3.1") shouldBe value(true, "$record; keporkak: refs/heads/feat/kp-keporkak-p3-s3.1-facts")
         office.observe("git.branch_exists", "stage" to "KP/P3/S3.1", "repo" to "kp-toy").value shouldBe false
         office.toy.git("update-ref", "refs/remotes/origin/feat/kp-keporkak-p3-s3.1-facts", "HEAD")
         office.observe("git.branch_exists", "stage" to "KP/P3/S3.1", "repo" to "kp-toy").value shouldBe true
     }
 
-    "`git.branch_exists` is unknown for a repository the office does not hold, and for a list that names no branch" {
+    "`git.branch_exists` is unknown for a repository the office does not hold, and for a stage with no `worktree.create` record, whatever its list names (Amendments 40, 43)" {
         val office = Office(tempdir())
-        office.project.write("tasks-p3-s3.1-facts.md", "# KP-other-P3 · S3.1 — Facts    (PR: feat/other)\n")
-            .write("toy/tasks-p0-s0.2-smoke.md", "# TOY-kp-toy-P0 · S0.2 — Smoke\n")
+        office.project.write("tasks-p3-s3.1-facts.md", "# KP-keporkak-P3 · S3.1 — Facts    (PR: feat/kp-keporkak-p3-s3.1-facts)\n")
+            .write("toy/tasks-p0-s0.2-smoke.md", "# TOY-kp-toy-P0 · S0.2 — Smoke    (PR: feat/toy-kp-toy-p0-s0.2-smoke)\n")
+        office.log.placed("KP/P3/S3.1", "other", "feat/kp-keporkak-p3-s3.1-facts")
 
         office.observe("git.branch_exists", "stage" to "KP/P3/S3.1").missing shouldBe "the office holds no repository 'other'"
-        office.observe("git.branch_exists", "stage" to "TOY/P0/S0.2").missing shouldBe "toy/tasks-p0-s0.2-smoke.md#L1 names no branch '(PR: <branch>)'"
+        office.observe("git.branch_exists", "stage" to "TOY/P0/S0.2").missing shouldBe
+            "TOY/P0/S0.2 has no worktree.create that ended ok: no repository and no branch are fixed for it (contracts.md §4.4, Amendment 40)"
     }
 
     "`git.stray_changes` is unknown when a main checkout is no repository, or for another office" {

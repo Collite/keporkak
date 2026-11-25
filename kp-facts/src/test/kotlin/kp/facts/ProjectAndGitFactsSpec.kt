@@ -115,6 +115,7 @@ class ProjectAndGitFactsSpec : FreeSpec({
     "with no `git` on the path, a fact read through git is unknown and says so; nothing is thrown" {
         val office = Office(tempdir(), path = "")
         office.project.write("tasks-p3-s3.1-facts.md", "# KP-keporkak-P3 · S3.1 — facts (PR: feat/facts)\n")
+        office.log.placed("KP/P3/S3.1", "keporkak", "feat/facts")
 
         office.observe("git.branch_exists", "stage" to "KP/P3/S3.1").missing!! shouldContain "no `git` on the path"
         office.observe("git.stray_changes", "office" to "panda").missing!! shouldContain "no `git` on the path"

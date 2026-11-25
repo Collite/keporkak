@@ -140,7 +140,9 @@ class Restarts private constructor(val cuts: List<Cut>, private val seeds: Long)
                     val kept = run.lines.filter { it.seq.toLong() <= cut }
                     val carried = minOf(cut, (kept.filterIsInstance<Judged>().maxOfOrNull { it.seq.toLong() } ?: 0L) + 1)
                     val kinds = kept.filterIsInstance<Message>().associate { it.id.value to it.kind }
+                    // Listed by name, not in the order the operations happened to end (S3.3's Found line): two runs report alike.
                     val left = fold(kept.filter { it.seq.toLong() <= carried }).settled().operations.map { Flight(it.op, woken(it.with), kinds[it.cause] ?: it.cause) }
+                        .sortedBy { it.toString() }
                     ending(hero, run, cut, arrivals) to left
                 }
             } finally {
@@ -154,7 +156,7 @@ class Restarts private constructor(val cuts: List<Cut>, private val seeds: Long)
             hero.player.resume(kept)
             val started = hero.office.state
             val flights = hero.office.lines().counted().map { it.entry }.filterIsInstance<Op>().filter { it.seq.toLong() > cut && it.reason == INTERRUPTED }
-            val inFlight = flights.joinToString { op -> "${op.op} → ${where(hero, started, op.cause)}" }.let { "$IN_FLIGHT: $it" }
+            val inFlight = flights.map { op -> "${op.op} → ${where(hero, started, op.cause)}" }.sorted().joinToString().let { "$IN_FLIGHT: $it" }
             try {
                 hero.player.rest()
             } catch (failure: WalkFailure) {

@@ -125,6 +125,8 @@ class TheSeatsSpec : StringSpec({
                     // The re-seat's one prompt replayed every one of them and marked them read; what is unread now came after it.
                     office.office.state.unread("coder-1").filter { it in unread } shouldBe emptyList()
                     office.unread("coder-1").map { it.substringBefore(' ') } shouldBe listOf("re-seated")
+                    // The re-seat is `ok` once its prompt is on the wire; the fake agent records it once it has read it (S3.11 T2).
+                    office.prompted("coder-1", "the replay after death $death") { prompt -> unread.all { it in prompt } }
                     office.prompts("coder-1").last().also { prompt -> unread.forEach { prompt shouldContain it } }
                 } else {
                     office.until("the pause at the cap") { office.lines().any { it.seq.toLong() > before && it is Message && it.kind == "pause" } }
@@ -155,6 +157,8 @@ class TheSeatsSpec : StringSpec({
 
                 office.lines().filterIsInstance<Fact>().filter { it.fact == "seat.process_gone" }.map { it.subject }.sorted() shouldBe listOf("coder-1", "coder-2")
                 office.ops("seat.reseat").filter { it.phase == "ok" }.mapNotNull { it.result?.text("seat") }.sorted() shouldBe listOf("coder-1", "coder-2")
+                // Its wake's `ok` is written once the prompt is on the wire; the fake agent records it once it has read it (S3.11 T2).
+                office.prompted("coder-1", "the copy of its re-seated") { "re-seated" in it }
                 office.prompts("coder-1").last() shouldContain "re-seated"
                 office.seats.live() shouldBe setOf("coder-1", "coder-2")
             }
@@ -173,6 +177,8 @@ class TheSeatsSpec : StringSpec({
             val pause = office.send("pool", "pause", """{"seat": "coder-1", "cause": "frozen"}""", stage = office.stage("S2.5")).id
             office.until("the cancel done") { office.ops("seat.cancel").any { it.phase != "requested" } }
             office.ops("seat.cancel").map { it.phase } shouldBe listOf("requested", "ok")
+            // The cancel is `ok` once it is on the wire; the fake agent records it once it has read it (S3.11 T2).
+            awaitWritten(office.agents.record("coder-1"), "coder-1's cancel") { office.received("coder-1").any { it.text("event") == "cancel" } }
             office.received("coder-1").map { it.text("event") } shouldContain "cancel"
             office.until("coder-1 in its next turn, on the pause") { office.prompts("coder-1").any { pause in it } }
 

@@ -672,6 +672,16 @@ transitions:
   'on': message
   require:
   - fact: bora.present
+  - fact: pr.review_on
+    sha:
+      fact: pr.head
+    in:
+    - approved
+    - commented
+  - fact: ci.state
+    of:
+      fact: pr.head
+    eq: green
   - fact: pr.evidence_present
   - fact: list.tasks_open
     eq: 0

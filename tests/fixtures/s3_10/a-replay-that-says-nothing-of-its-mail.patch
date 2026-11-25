@@ -1,0 +1,12 @@
+diff --git a/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt b/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
+--- a/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
++++ b/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
+@@ -326,7 +326,7 @@
+             append("You are ${binding.seat}, re-seated: your session was lost and is given back to you. ")
+             append("Your list: ${layout.list?.let { "project:${project.relativize(it)}" } ?: "none found for ${binding.stage ?: "your work"}"}. ")
+             append("STATUS: ${layout.status?.let { "project:${project.relativize(it)}" } ?: "none found"}. ")
+-            if (unread.isEmpty()) append("You have no unread mail.") else {
++            if (unread.isEmpty()) append("Nothing more.") else {
+                 append("Your unread mail, oldest first:")
+                 unread.forEach { append("\n").append(mail(it)) }
+             }

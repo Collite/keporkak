@@ -156,7 +156,7 @@ internal fun projectOf(root: Path, office: String): Path {
  */
 private fun service(root: Path, office: String, project: Path, socket: Path, listening: String?): Daemon {
     val performers = OfficeOperations(root, office, project)
-    val github = GitHubOperations.of(office, project, performers)
+    val github = GitHubOperations.of(office, performers)
     val operations: Operations = github
     val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
     val entry = rules?.ruleSet?.pool?.offices?.get(office)

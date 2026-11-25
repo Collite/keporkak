@@ -1,0 +1,11 @@
+diff --git a/kp-daemon/src/test/kotlin/kp/daemon/seats/TheSeatsSpec.kt b/kp-daemon/src/test/kotlin/kp/daemon/seats/TheSeatsSpec.kt
+--- a/kp-daemon/src/test/kotlin/kp/daemon/seats/TheSeatsSpec.kt
++++ b/kp-daemon/src/test/kotlin/kp/daemon/seats/TheSeatsSpec.kt
+@@ -158,7 +158,6 @@
+                 office.lines().filterIsInstance<Fact>().filter { it.fact == "seat.process_gone" }.map { it.subject }.sorted() shouldBe listOf("coder-1", "coder-2")
+                 office.ops("seat.reseat").filter { it.phase == "ok" }.mapNotNull { it.result?.text("seat") }.sorted() shouldBe listOf("coder-1", "coder-2")
+                 // Its wake's `ok` is written once the prompt is on the wire; the fake agent records it once it has read it (S3.11 T2).
+-                office.prompted("coder-1", "the copy of its re-seated") { "re-seated" in it }
+                 office.prompts("coder-1").last() shouldContain "re-seated"
+                 office.seats.live() shouldBe setOf("coder-1", "coder-2")
+             }

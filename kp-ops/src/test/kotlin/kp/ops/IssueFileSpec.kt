@@ -27,7 +27,7 @@ class IssueFileSpec : FreeSpec({
 
             github.pullsOf(MERGED_BRANCH)
             file.perform(at, "m-7", listOf(Issue.found("one"))) shouldBe Performed.Ok(mapOf("numbers" to listOf(12)))
-            Json.parseToJsonElement(github.requests.last().body).jsonObject["body"]?.jsonPrimitive?.content shouldBe "Filed for TOY/P0/S0.9 · asked by m-7 · pull request none"
+            Json.parseToJsonElement(github.requests.last().body).jsonObject["body"]?.jsonPrimitive?.content shouldBe "one\n\nFiled for TOY/P0/S0.9 · asked by m-7 · pull request none"
 
             file.perform(at, "m-8", listOf(Issue.found(""))) shouldBe
                 Performed.Failed("issue 1 of 1 was not filed, nor any after it: GitHub answered 422 to POST /repos/Collite/kp-toy/issues: Validation Failed — filed: none")

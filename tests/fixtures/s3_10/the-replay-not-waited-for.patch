@@ -1,0 +1,11 @@
+diff --git a/kp-daemon/src/test/kotlin/kp/daemon/seats/TheSeatsSpec.kt b/kp-daemon/src/test/kotlin/kp/daemon/seats/TheSeatsSpec.kt
+--- a/kp-daemon/src/test/kotlin/kp/daemon/seats/TheSeatsSpec.kt
++++ b/kp-daemon/src/test/kotlin/kp/daemon/seats/TheSeatsSpec.kt
+@@ -126,7 +126,6 @@
+                     office.office.state.unread("coder-1").filter { it in unread } shouldBe emptyList()
+                     office.unread("coder-1").map { it.substringBefore(' ') } shouldBe listOf("re-seated")
+                     // The re-seat is `ok` once its prompt is on the wire; the fake agent records it once it has read it (S3.11 T2).
+-                    office.prompted("coder-1", "the replay after death $death") { prompt -> unread.all { it in prompt } }
+                     office.prompts("coder-1").last().also { prompt -> unread.forEach { prompt shouldContain it } }
+                 } else {
+                     office.until("the pause at the cap") { office.lines().any { it.seq.toLong() > before && it is Message && it.kind == "pause" } }

@@ -84,9 +84,10 @@ spec filter: _python-env
     exec build/python/bin/python build-support/spec.py "$1"
 
 # Does a spec pass every time, or only by chance? (S3.10 T1) Runs <spec> <times> times alone, then <times> times in its
-# module's whole run, a second build busy beside each run, on a throwaway copy of the working tree — [patch] applied to the
-# copy when given. <spec>: `<module>:<SpecClass>[/<case>]`, or a test of the Python suite, `python:<module>.<Class>.<test>`.
-# Prints each run as it ends and the counts. Exit 0 every run passed · 1 one failed · 2 the patch does not apply · 3 it
+# module's whole run, a second build busy beside each run, on a throwaway copy of the working tree — each [patch] applied to
+# the copy in the order given (S3.11: a wait taken out, and the slowed agent). <spec>: `<module>:<SpecClass>[/<case>]`, or
+# a test of the Python suite, `python:<module>.<Class>.<test>`.
+# Prints each run as it ends and the counts. Exit 0 every run passed · 1 one failed · 2 a patch does not apply · 3 it
 # names no spec · 4 the copy does not build.
 many spec times *patch: _python-env
     build/python/bin/python build-support/many.py --from "{{invocation_directory()}}" "$@"

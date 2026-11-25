@@ -1,0 +1,23 @@
+diff --git a/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt b/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
+--- a/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
++++ b/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
+@@ -235,8 +235,8 @@
+         ((driver.observe(SeatId(seat), SeatFacts.USAGE, UsageWindow.TURN) as? Outcome.Ok)?.value?.value as? JsonPrimitive)?.content?.toLongOrNull()
+ 
+     /** A message as the prompt that wakes a seat with it (contracts.md §4.4: the prompt is that message). */
+-    private fun mail(message: Message): String = "Mail ${message.id.value}: ${message.kind} from ${message.from.value}" +
+-        (message.stage?.let { " about ${it.value}" } ?: "") + ".\n" + message.json
++    private fun mail(message: Message): String = "Mail ${message.id.value}: from ${message.from.value}" +
++        (message.stage?.let { " about ${it.value}" } ?: "") + "."
+ 
+     // ---- the operations (contracts.md §4.4)
+ 
+@@ -323,7 +323,7 @@
+     private fun replay(binding: Binding, unread: List<Message>): String {
+         val layout = layout(binding.stage)
+         return buildString {
+-            append("You are ${binding.seat}, re-seated: your session was lost and is given back to you. ")
++            append("You are ${binding.seat}: your session was lost and is given back to you. ")
+             append("Your list: ${layout.list?.let { "project:${project.relativize(it)}" } ?: "none found for ${binding.stage ?: "your work"}"}. ")
+             append("STATUS: ${layout.status?.let { "project:${project.relativize(it)}" } ?: "none found"}. ")
+             if (unread.isEmpty()) append("You have no unread mail.") else {

@@ -50,7 +50,11 @@ class ProjectAndGitFactsSpec : FreeSpec({
     }
 
     "a judgement whose rule names no phase, effort or office reads them from the message's stage and the daemon's own office — a merge's stray changes, a stage exit's STATUS entries, a phase exit's last stage, chart and entries: each the fixture's, none unknown" {
-        val walk = TableFacts(Walk.read(checkout.resolve("rules/walks/h1-prime.yaml")).facts)
+        // A merge reads the reviewer's review and the checks on the head (D-108): the head reviewed and green.
+        val walk = TableFacts(Walk.read(checkout.resolve("rules/walks/h1-prime.yaml")).facts).also { table ->
+            table.set(mapOf("pr.head" to kp.engine.Datum.Text("028e9e2dece9c94f65f3c0da144e6f2ce3c9f013"), "pr.review_on" to kp.engine.Datum.Text("approved"),
+                "ci.state" to kp.engine.Datum.Text("green")))
+        }
         FactsOffice(beside = walk, states = mapOf("KP/P3/S3.1" to "passed")).use { office ->
             office.edit(office.project, "tasks-p3-s3.1-facts.md") { it.replace(Regex("(?m)^- \\[ \\] (T[0-9]+ .*)$"), "- [x] $1\n      done 1a2b3c4") }
             office.edit(office.keporkak, "README.md") { "$it changed\n" }

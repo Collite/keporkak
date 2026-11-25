@@ -1,0 +1,11 @@
+diff --git a/kp-daemon/src/test/kotlin/kp/daemon/seats/TheThinThreadSpec.kt b/kp-daemon/src/test/kotlin/kp/daemon/seats/TheThinThreadSpec.kt
+--- a/kp-daemon/src/test/kotlin/kp/daemon/seats/TheThinThreadSpec.kt
++++ b/kp-daemon/src/test/kotlin/kp/daemon/seats/TheThinThreadSpec.kt
+@@ -116,7 +116,6 @@
+             thread.lines().filterIsInstance<Fact>().first { it.subject == "coder-1" }.evidence!! shouldContain Regex("^(the agent's process ended with exit code|the protocol closed at)")
+             thread.lines().filterIsInstance<Op>().filter { it.op == "seat.reseat" }.map { it.phase } shouldBe listOf("requested", "ok")
+             // The re-seat is `ok` once its prompt is on the wire; the fake agent records it once it has read it (S3.11 T2).
+-            thread.prompted("coder-1", 2)
+             thread.prompts("coder-1")[1] shouldBe "You are coder-1, re-seated: your session was lost and is given back to you. " +
+                 "Your list: project:tasks-p2-s2.5-thin-thread.md. STATUS: project:STATUS.md. You have no unread mail."
+         }

@@ -1,0 +1,11 @@
+diff --git a/kp-daemon/src/test/kotlin/kp/daemon/seats/TheThinThreadSpec.kt b/kp-daemon/src/test/kotlin/kp/daemon/seats/TheThinThreadSpec.kt
+--- a/kp-daemon/src/test/kotlin/kp/daemon/seats/TheThinThreadSpec.kt
++++ b/kp-daemon/src/test/kotlin/kp/daemon/seats/TheThinThreadSpec.kt
+@@ -47,7 +47,6 @@
+ 
+             // Both are what coder-1's fake agent sent through the seat API, answered by the mailroom's judgement. The step
+             // returns once the judgement is on the log; the fake agent records the answer once it has reached it (S3.10 T2).
+-            thread.answered("coder-1", 2)
+             thread.sent("coder-1").map { it.text("result") } shouldBe listOf(
+                 """{"status":"delivered","id":"${started.message}","transition":"T-08"}""",
+                 """{"status":"refused","id":"${outside.message}","rule":"verdict","requirement":"from: reviewer","refusals_today":1}""",

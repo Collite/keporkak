@@ -263,10 +263,10 @@ class HeroesSpec : FreeSpec({
         sweep.onMaster shouldBe requirements.size
         sweep.swept shouldBe (requirements - sweep.exceptions.map { it.requirement }.toSet()).size
         sweep.reasons() shouldBe listOf(
-            "68 · written the same way as a requirement of its kind, which is judged first: breaking it breaks the kind's, and the refusal names the kind: " +
+            "70 · written the same way as a requirement of its kind, which is judged first: breaking it breaks the kind's, and the refusal names the kind: " +
                 "T-01#1-6 (assignment-proposal), T-02#1 (approval), T-04#1-3 (queued-approval), T-06#1 (decline), T-08#1 (started), T-09#1 (stop), T-10#1 (stop), " +
                 "T-11#1 (stop), T-12#1 (stop), T-13#4 (triage), T-15#4-5 (qa-report), T-16#1-4 (review-request), T-17#1-4 (review-request), T-18#1-3 (review-bind), " +
-                "T-30#1 (ruling), T-31#1 (ruling), T-35#1-5 (merge), T-40#1 (release), T-44#1,3 (stage-exit), T-47#1 (deploy-done), T-48#1,3 (stage-exit), " +
+                "T-30#1 (ruling), T-31#1 (ruling), T-35#1-7 (merge), T-40#1 (release), T-44#1,3 (stage-exit), T-47#1 (deploy-done), T-48#1,3 (stage-exit), " +
                 "T-50#3 (deploy-failed), T-51#1,3 (stage-exit), T-53#1 (ruling), T-54#1 (ruling), T-55#1 (ruling), T-56#1 (ruling), T-59#1-2 (seat-gone), " +
                 "T-60#1 (re-seated), T-80#1-2 (seat-gone), FLAG_THREAD-01#1 (ruling), FLAG_THREAD-02#1 (hold), FLAG_THREAD-03#1 (ruling), SEAT-03#1 (assign), SEAT-06#1-2 (seat-gone), " +
                 "SEAT-07#1 (re-seated), PHASE-01#1-5 (phase-exit-request), PHASE-02#1 (approval)",
@@ -276,7 +276,7 @@ class HeroesSpec : FreeSpec({
             "15 · a later candidate from the same state: when none fires, the refusal names the first candidate's first failure (contracts.md §4.1): " +
                 "T-14#1 (T-13), T-20#1-3 (T-19), T-23#1-2 (T-21), T-24#1-2 (T-21), T-29#1-2 (T-21), T-31#2 (T-30), T-34#1-2 (T-21), T-54#2 (T-53), T-56#2 (T-55)",
             "10 · it tells two candidates from the same state apart: breaking it fires the other: T-21#3 (T-24), T-24#3 (T-29), T-25#1 (T-26), T-26#1 (T-25), " +
-                "T-29#3 (T-34), T-34#3 (T-29), T-35#6 (T-38), T-38#1 (T-35), T-70#1 (T-72), T-72#1 (T-70)",
+                "T-29#3 (T-34), T-34#3 (T-29), T-35#8 (T-38), T-38#1 (T-35), T-70#1 (T-72), T-72#1 (T-70)",
             "5 · judged when a deadline passes, which no message carries: nothing is refused — an expiry that breaks it fires nothing: T-32#1, FLAG_THREAD-04#1-2, FLAG_THREAD-05#1-2",
             "4 · the kind's args declaration accepts no value that breaks it: what would is refused as args first: T-47#2 (smoke), T-50#1 (outcome), T-50#2 (rollback), triage#1 (outcome)",
             "2 · another machine moves on the same message from any state: it is delivered: T-59#3 (SEAT-06), T-80#3 (SEAT-06)",
@@ -339,7 +339,7 @@ class HeroesSpec : FreeSpec({
             "seat.wake of coder-1 for triage", // S1.10's: the resume
             "seat.wake of coder-1 for re-seated",
             "seat.wake of coder-1 for triage", // S1.10's: the found-batch's triage
-            "seat.wake of reviewer-1 for review-bind, seat.wake of coder-1 for review-bind", // S1.10's: two wakes in flight
+            "seat.wake of coder-1 for review-bind, seat.wake of reviewer-1 for review-bind", // S1.10's: two wakes in flight
             ONE_OF_REVIEW_BINDS, // one of the two judged, the other still in flight
             "seat.wake of coder-1 for verdict", // S1.10's
             "seat.wake of reviewer-1 for repair-done", // S1.10's

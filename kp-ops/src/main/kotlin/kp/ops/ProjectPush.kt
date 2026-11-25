@@ -11,16 +11,25 @@ import java.nio.file.Path
  * to `git` through its environment. A merge that conflicts is given up: `failed(conflict)`. After any failure the
  * checkout holds every change it held and no merge in progress. `ok` carries the pushed sha.
  *
- * It reads no configuration of the office user's or the system's: no hook, signing or credential of theirs takes part.
+ * A merge it finds in progress — one an earlier run was cut off in — is given up before anything is added or committed,
+ * and [say], the journal, hears it: no conflict marker, and nothing of a half-made merge, is ever committed (Amendment 43;
+ * Collite/keporkak#65, 1). It reads no configuration of the office user's or the system's, and its git runs no hook of the
+ * checkout's (GitCommand): no hook, signing or credential of anyone's takes part.
  */
 class ProjectPush(
     private val checkout: Path,
     private val mint: (repository: String) -> Minted,
     private val git: GitCommand = GitCommand(),
+    private val say: (String) -> Unit = {},
 ) {
     /** One commit, fetch, merge and push, the commit's message naming its [cause]. */
     fun commitPush(cause: String): Performed {
         val branch = read("symbolic-ref", "--quiet", "--short", "HEAD") ?: return Performed.Failed("the project checkout ${checkout} is on no branch")
+        if (inProgress()) {
+            val given = run("merge", "--abort")
+            if (!given.ok || inProgress()) return Performed.Failed("the project checkout $checkout has a merge in progress that could not be given up: ${given.output.trim()}")
+            say("project.commit_push for $cause: the project checkout had a merge in progress — an earlier run's, cut off in it; it was given up before anything was added or committed")
+        }
         val added = run("add", "--all", ".")
         if (!added.ok) return Performed.Failed("git add failed: ${added.output.trim()}")
         if (!run("diff", "--cached", "--quiet").ok) {

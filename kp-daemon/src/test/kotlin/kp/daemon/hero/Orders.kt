@@ -34,8 +34,10 @@ class Orders(val walk: String, val played: List<Played>) {
     /**
      * An end, as the walker's `END` holds it (S3.10 T5; Collite/keporkak#56): each stage's state, by its name in the walk,
      * and each of the walk's seats'; the counters that are not zero, by stage name — an effort's under `effort`; the
-     * messages delivered and refused, counted by kind; the operations a transition's `do:` requested, `<op> (<kind>
-     * <seat>)` by the message that asked it, and those of them still waiting for their result.
+     * messages delivered and refused, counted by kind; every operation the mailroom requested, `<op> (<kind> <seat>)` by
+     * the message that asked it, whatever kind that is (S3.11 T8, Collite/keporkak#67, 2) — but the mailroom's own, which
+     * no walk's step asks: `notify.bora`, a robot's wake of its own seat in a mode, and a seat's wake for a delivery or a
+     * turn's end, a `seat.wake` no transition of its cause's kind names — and those of them still waiting for their result.
      *
      * What the walker's end holds beside, and this leaves out: a stage's flag thread, the state it returns to, its Found
      * lines and its facts; the seats' bindings; Bora's presence and the phase; how often a kind fired in its window; each
@@ -77,6 +79,9 @@ class Orders(val walk: String, val played: List<Played>) {
     }
 
     companion object {
+        private const val NOTIFY_BORA = "notify.bora"
+        private const val SEAT_WAKE = "seat.wake"
+
         /** [name] — a walk of `rules/walks/`, or of the specs' own walks — in each of its orders. */
         fun of(name: String): Orders = of(Hero.walkFile(name))
 
@@ -104,10 +109,15 @@ class Orders(val walk: String, val played: List<Played>) {
             // not counted here either.
             val expectedRefused = hero.player.played.filter { it.step.expect["refused"] == Datum.Bool(true) }.mapNotNull { it.message }.toSet()
             val asked = asked(rules)
-            // A transition's `do:` — the operations of the transitions of the kind of the message that asked; with no message, of
-            // any transition. A wake the mailroom asks of its own, for a delivery to an idle seat, is no transition's.
+            // Every operation requested, whatever kind caused it — an operation no transition of that kind names is counted, and
+            // the walker's end has none of it (S3.11 T8) — but the mailroom's own, known by their source: Bora's notification,
+            // a robot's wake of its own seat in a mode (`with.role`), and a seat's wake no transition of its cause's kind names.
             val requested = lines.filterIsInstance<Op>().filter { op ->
-                op.phase == "requested" && op.op in (messages[op.cause]?.let { asked[it.kind].orEmpty() } ?: asked.values.flatten().toSet())
+                op.phase == "requested" && when (op.op) {
+                    NOTIFY_BORA -> false
+                    SEAT_WAKE -> op.with?.get("role") == null && messages[op.cause]?.let { SEAT_WAKE in asked[it.kind].orEmpty() } == true
+                    else -> true
+                }
             }
             val answered = lines.filterIsInstance<Op>().filter { it.phase != "requested" }.map { it.op to it.cause }.toSet()
             fun named(op: Op) = described(op.op, messages[op.cause]?.let { it.kind to (it.args?.get("seat") as? JsonPrimitive)?.contentOrNull }, op.cause)

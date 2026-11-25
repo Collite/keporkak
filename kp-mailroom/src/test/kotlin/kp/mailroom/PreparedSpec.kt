@@ -48,6 +48,8 @@ class PreparedSpec : StringSpec({
     "an interrupted operation's failure is judged as its result: a merge interrupted is a merge failed, T-37" {
         val office = Office(seed = "passed")
         office.facts.set("pr.head", "head-2")
+        office.facts.set("pr.review_on", "approved")
+        office.facts.set("ci.state", "green")
         office.facts.set("list.found_untriaged", 0)
         office.facts.set("list.tasks_open", 0)
         office.operations.holding = true

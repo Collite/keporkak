@@ -66,6 +66,20 @@ class ASeatsGitHubIdentitySpec : StringSpec({
         }
     }
 
+    "a seat started for a stage with no `worktree.create` record is ready: its `token.mint` is `ok`, minted as for a seat with no stage — for the office's `repos:` — and its ask is refused, 403 (S3.11; Amendment 43)" {
+        SeatsOffice(github = true, made = false).use { office ->
+            val request = office.send("teamlead", "session-request", """{"action": "add", "role": "coder", "seat": "coder-3"}""").id
+            office.send("pool", "session-report", """{"seat": "coder-3", "role": "coder"}""", re = request)
+            office.until("coder-3's token.mint ended") { office.ops("token.mint").any { it.phase != "requested" } }
+
+            office.ops("token.mint").filter { it.phase != "requested" }.map { "${it.phase} ${it.result ?: it.reason}" } shouldBe
+                listOf("""ok {"app":"kp-coder","repositories":["Collite/keporkak","Collite/kp-toy"],"permissions":{"contents":"write","pull_requests":"write"}}""")
+            office.until("coder-3 ready") { office.office.state.machine("seat", "coder-3")?.state == "ready" }
+            office.seated.seats.identity!!.ask(kp.seatapi.Binding("coder-3", "coder", "panda", office.stage(), "claude-opus-5-5", "medium")) shouldBe
+                kp.seatapi.TokenAnswer.Withheld("${office.stage()} has no worktree.create that ended ok: no repository and no branch are fixed for it (contracts.md §4.4, Amendment 40)")
+        }
+    }
+
     "`token.mint` at a seat's start: `ok` makes the seat ready and names the App, the repositories and the permissions; `failed` leaves it provisioned, with GitHub's reason; a role with no entry is `ok` with nothing minted; with two seats of one stage each result is its own seat's" {
         SeatsOffice(github = true).use { office ->
             office.project.resolve("tasks-p2-s2.4-seats.md").writeText("# KP-kp-toy-P2 · S2.4 — Seats            (PR: feat/kp-kp-toy-p2-s2.4-seats)\n")
@@ -186,10 +200,12 @@ class ASeatsGitHubIdentitySpec : StringSpec({
         val files = listOf("office/seats/_transcripts", "mail", "office/fake").flatMap { folder -> office.project.resolve(folder).walk().filter { it.isRegularFile() }.map { it.readText() } }
         val seen = files + office.said + printed
         minted.flatMap { it.windowed(12) }.filter { piece -> seen.any { piece in it } } shouldBe emptyList()
-        // The seat's environment holds no GitHub token: its variables, every one.
+        // The seat's environment holds no GitHub token: its variables, every one — Amendment 43's among them (S3.11).
         office.received("coder-1").first { it.text("event") == "start" }["env"].toString() shouldBe
-            """["CLAUDE_CODE_OAUTH_TOKEN","CLAUDE_CONFIG_DIR","GIT_ASKPASS","GIT_CONFIG_COUNT","GIT_CONFIG_KEY_0","GIT_CONFIG_KEY_1","GIT_CONFIG_KEY_2",""" +
-            """"GIT_CONFIG_KEY_3","GIT_CONFIG_VALUE_0","GIT_CONFIG_VALUE_1","GIT_CONFIG_VALUE_2","GIT_CONFIG_VALUE_3","GIT_TERMINAL_PROMPT","KP_HOOK_URL","KP_SESSION_TOKEN","LANG","PATH"]"""
+            """["CLAUDE_CODE_OAUTH_TOKEN","CLAUDE_CONFIG_DIR","GH_CONFIG_DIR","GIT_ASKPASS","GIT_AUTHOR_EMAIL","GIT_AUTHOR_NAME","GIT_COMMITTER_EMAIL",""" +
+            """"GIT_COMMITTER_NAME","GIT_CONFIG_COUNT","GIT_CONFIG_GLOBAL","GIT_CONFIG_KEY_0","GIT_CONFIG_KEY_1","GIT_CONFIG_KEY_2","GIT_CONFIG_KEY_3","GIT_CONFIG_KEY_4","GIT_CONFIG_KEY_5","GIT_CONFIG_KEY_6","GIT_CONFIG_KEY_7","GIT_CONFIG_KEY_8","GIT_CONFIG_KEY_9",""" +
+            """"GIT_CONFIG_NOSYSTEM","GIT_CONFIG_VALUE_0","GIT_CONFIG_VALUE_1","GIT_CONFIG_VALUE_2","GIT_CONFIG_VALUE_3","GIT_CONFIG_VALUE_4","GIT_CONFIG_VALUE_5","GIT_CONFIG_VALUE_6","GIT_CONFIG_VALUE_7","GIT_CONFIG_VALUE_8","GIT_CONFIG_VALUE_9",""" +
+            """"GIT_SSH_COMMAND","GIT_SSH_VARIANT","GIT_TERMINAL_PROMPT","KP_HOOK_URL","KP_SESSION_TOKEN","LANG","PATH","SSH_ASKPASS"]"""
         office.delete()
     }
 

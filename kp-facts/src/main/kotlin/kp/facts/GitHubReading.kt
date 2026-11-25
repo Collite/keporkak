@@ -18,18 +18,19 @@ import java.time.format.DateTimeParseException
 
 /**
  * One observation of GitHub (Amendment 33): the stage's repository and pull request, read with the token handed over
- * for it. What it reads is read once, here, and kept nowhere after.
+ * for it. The repository and the branch are those of the stage's `worktree.create` record (Amendment 40), never its
+ * list's first line. What it reads is read once, here, and kept nowhere after.
  */
 internal class GitHubReading(private val reading: Reading, private val github: GitHub, private val access: GitHubAccess, private val http: HttpClient) {
     private val asked: Asked get() = reading.asked
     private val stage: StageId by lazy { reading.stage() }
-    private val heading: Heading by lazy { reading.stageList(stage).heading(stage) }
+    private val made: MadeWorktree by lazy { reading.made(stage) }
 
-    /** `<organization>/<repo>`: the repository of the list's title (Amendment 32), in the organization of §9's block. */
-    private val repository: String by lazy { repositoryOf(heading, github) }
+    /** `<organization>/<repo>`: the repository its worktree was made in (Amendment 40), in the organization of §9's block. */
+    private val repository: String by lazy { repositoryOf(made.repository, github) }
 
-    /** Where the stage acts on GitHub (Amendment 37): its repository, and its branch — the head of its pull request. */
-    fun located(): Located = Located.At(repository, heading.branch())
+    /** Where the stage acts on GitHub (Amendments 37, 40): its repository, and its branch — the head of its pull request. */
+    fun located(): Located = Located.At(repository, made.branch)
 
     private val authorization: String by lazy {
         when (val handed = access.token(repository)) {
@@ -38,9 +39,9 @@ internal class GitHubReading(private val reading: Reading, private val github: G
         }
     }
 
-    /** The stage's pull request — the one whose head is the list's branch: the open one, else the one made last — or null when there is none. */
+    /** The stage's pull request — the one whose head is the stage's branch: the open one, else the one made last — or null when there is none. */
     private val pull: PullRequest? by lazy {
-        val branch = heading.branch()
+        val branch = made.branch
         val path = "repos/$repository/pulls"
         val all = pages(path, mapOf("head" to "${github.organization}:$branch", "state" to "all")).map { PullRequest.of(it, path) }
         val open = all.filter { it.state == "open" }
@@ -51,7 +52,7 @@ internal class GitHubReading(private val reading: Reading, private val github: G
         }
     }
 
-    private fun none(): String = "$repository holds no pull request whose head is ${heading.branch()}"
+    private fun none(): String = "$repository holds no pull request whose head is ${made.branch}"
 
     private fun pullRequest(): PullRequest = pull ?: throw Missing(none())
 
@@ -307,9 +308,8 @@ internal class GitHubReading(private val reading: Reading, private val github: G
 
         private fun next(link: String?): String? = link?.let { LINK_NEXT.find(it)?.groupValues?.get(1) }
 
-        /** `<organization>/<repo>` for the repository [heading] names, in [github]'s organization; what is wrong when GitHub gives no such name. */
-        fun repositoryOf(heading: Heading, github: GitHub): String {
-            val repo = heading.repo()
+        /** `<organization>/<repo>` for the repository [repo] — its key in `repos:` — in [github]'s organization; what is wrong when GitHub gives no such name. */
+        fun repositoryOf(repo: String, github: GitHub): String {
             if (!NAME.matches(repo) || !NAME.matches(github.organization)) throw Missing("'${github.organization}/$repo' is no repository name GitHub gives")
             return "${github.organization}/$repo"
         }

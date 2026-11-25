@@ -2,6 +2,7 @@
 
 One line per change: date · rule ids · what · the decision. Newest first.
 
+- 2026-11-24 · EV-6, T-35 · A merge reads the head: the kind `merge` and `T-35` require the reviewer's review on `pr.head` — `approved` or `commented` — and `ci.state` of `pr.head` green, so commits pushed after the review are not merged and `git.merge` has its head; H-2′'s stage `tail` holds its review. `vocabulary.yaml`'s `ci.state` takes `stage, of`, as every rule passes it. · KP D-108 (D-116)
 - 2026-11-24 · BU-2 · How a turn is counted: its four parts — input, output, cache write, cache read — weighted by `usage.weights` of `pool/budgets.yaml` against an input token and summed, rounded; a part not reported counts zero; that count is `seat.usage`, a walk's `tokens` and the daily median's. A subscription's fullness is what the vendor itself says through the agent: no endpoint of the vendor's is asked. · KP D-116 (D-92)
 - 2026-11-24 · — · `pool/budgets.yaml` gains the block `usage:` — the weights of a turn's four parts (input 1, output 5, cache write 1.25, cache read 0.1) and DEP-6's baseline, the daily median over 14 days with at least 3; `check-rules.py` and the daemon's load refuse a file without it. · KP D-117 (D-116)
 - 2026-11-24 · SE-9, SE-10, SE-19 · The office is dsk: `80-seats-and-offices.md` and `70-rules-of-engagement.md` name it where they say what the office is, and keep Panda where they tell what happened there. · KP D-112 (D-46)

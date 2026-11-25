@@ -116,6 +116,8 @@ class TheThinThreadSpec : StringSpec({
             // The driver's own observation of the end it reported first: the process gone, or the protocol closed with it.
             thread.lines().filterIsInstance<Fact>().first { it.subject == "coder-1" }.evidence!! shouldContain Regex("^(the agent's process ended with exit code|the protocol closed at)")
             thread.lines().filterIsInstance<Op>().filter { it.op == "seat.reseat" }.map { it.phase } shouldBe listOf("requested", "ok")
+            // The re-seat is `ok` once its prompt is on the wire; the fake agent records it once it has read it (S3.11 T2).
+            thread.prompted("coder-1", 2)
             thread.prompts("coder-1")[1] shouldBe "You are coder-1, re-seated: your session was lost and is given back to you. " +
                 "Your list: project:tasks-p2-s2.5-thin-thread.md. STATUS: project:STATUS.md. You have no unread mail."
         }
@@ -172,6 +174,9 @@ private class ThinThread(coder: String? = null, reviewer: String? = null) : Auto
 
     /** Waits until [seat]'s fake agents have recorded [count] tools' results: by that record, never a time (S3.10 T2). */
     fun answered(seat: String, count: Int) = awaitWritten(agents.record(seat), "$count results of $seat's tools") { sent(seat).size >= count }
+
+    /** Waits until [seat]'s fake agents have recorded [count] prompts: by that record, never a time (S3.11 T2). */
+    fun prompted(seat: String, count: Int) = awaitWritten(agents.record(seat), "$count prompts of $seat") { prompts(seat).size >= count }
 
     /** The texts [seat]'s fake agents were prompted with, in order, across its processes. */
     fun prompts(seat: String): List<String> = agents.received(seat).filter { it.text("event") == "session/prompt" }.map { it.text("text")!! }

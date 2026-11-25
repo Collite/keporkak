@@ -12,10 +12,11 @@ import java.util.concurrent.CopyOnWriteArraySet
 /**
  * A seat's readable transcript, `<roots.seats>/_transcripts/<seat>.log` (contracts.md §10): one line per event,
  * `<time> <seat> <event>`, appended across the seat's sessions. Every secret the seat's sessions held — the agent's
- * token, each session token, each GitHub token handed to the seat (Amendment 35) — is replaced before a line is written,
- * and in every reason the driver returns. A GitHub token is replaced by its prefix as well ([INSTALLATION_TOKEN]): one
- * handed by an earlier daemon, which this driver was never told of, is hidden when the seat's loaded session replays it
- * or the seat prints it again (review-030 B1). Nothing of a token is kept for that: no token, no digest of one.
+ * token, each session token, any secret the driver is told of ([hide]) — is replaced before a line is written, and in
+ * every reason the driver returns. A GitHub installation token is replaced by its prefix ([INSTALLATION_TOKEN]) — the
+ * ones handed to the seat (Amendment 35), and one handed by an earlier daemon, which this driver was never told of, when
+ * the seat's loaded session replays it or the seat prints it again (review-030 B1). Nothing of a token is kept for that:
+ * no token, no digest of one — the daemon tells the driver of no GitHub token it hands (S3.11, Collite/keporkak#63, 5).
  */
 internal class Transcript(private val file: Path, private val seat: SeatId, private val clock: Clock) {
     private val secrets = CopyOnWriteArraySet<String>()

@@ -10,7 +10,7 @@ just test           # Python checks and Kotlin unit/component specs
 just rules          # check S0.1 rules and regenerate the seat personas
 just check          # all of the above plus schema and version checks; CI entry point
 just schema-check /path/to/project/contracts.md
-just office-check   # on Panda: what the office has, and what Bora must still do (reads only)
+just office-check   # on the office: what it has, and what Bora must still do (reads only)
 ```
 
 The office is described in `pool/` (roster, offices, budgets; `check-rules.py` validates them), Bora's install steps

@@ -88,11 +88,17 @@ object AppsMerge {
                 print("SC-10: no rule of $default holds ${coder.identity} to `update` — its merge would not be refused; nothing was made")
                 return 1
             }
-            try {
+            // A stop is said where it comes, and the clean-up runs after it whole: the first stop's message is never lost to
+            // the clean-up's own (Collite/keporkak#64, 4).
+            val stopped = try {
                 prove(prefix, default, pushing, mergerHeld)
-            } finally {
-                tidy(pushing, default, before)
+                null
+            } catch (stopped: Stopped) {
+                print("  stopped: ${stopped.message}")
+                stopped
             }
+            tidy(pushing, default, before)
+            if (stopped != null) return 1
             print(if (notAsGiven == 0) "apps merge: every step as §12 gives it" else "apps merge: steps not as §12 gives them: $notAsGiven")
             return if (notAsGiven == 0) 0 else 1
         }
@@ -163,25 +169,48 @@ object AppsMerge {
             if (early is Performed.Ok) throw Stopped("SC-10: GitHub merged #$into into its default branch before its checks were green")
         }
 
-        /** Leaves the toy as it was: the issue closed, the pull requests closed, the branches deleted — and says so, with the default branch's sha. */
+        /**
+         * Leaves the toy as it was: the issue closed, the pull requests closed, the branches deleted — and says so, with the
+         * default branch's sha. Each step is tried whatever became of the one before: one GitHub stops is said, not
+         * left to stop the rest.
+         */
         private fun tidy(pushing: Token, default: String, before: String) {
             issue?.let { number ->
-                val closing = mint(merger, mapOf("issues" to "write"))
-                val reply = ask("PATCH", "/repos/$repository/issues/$number", closing, buildJsonObject { put("state", "closed"); put("state_reason", "not_planned") })
-                says("issue #$number is closed", reply.status == GitHubRest.OK && text(reply, "state") == "closed", "GitHub answered ${reply.status}")
+                attempt("issue #$number is closed") {
+                    val closing = mint(merger, mapOf("issues" to "write"))
+                    val reply = ask("PATCH", "/repos/$repository/issues/$number", closing, buildJsonObject { put("state", "closed"); put("state_reason", "not_planned") })
+                    says("issue #$number is closed", reply.status == GitHubRest.OK && text(reply, "state") == "closed", "GitHub answered ${reply.status}")
+                }
             }
             for (number in pulls) {
-                val state = text(ask("GET", "/repos/$repository/pulls/$number", pushing), "state")
-                if (state == "open") ask("PATCH", "/repos/$repository/pulls/$number", pushing, buildJsonObject { put("state", "closed") })
+                attempt("#$number is closed") {
+                    val state = text(ask("GET", "/repos/$repository/pulls/$number", pushing), "state")
+                    if (state == "open") ask("PATCH", "/repos/$repository/pulls/$number", pushing, buildJsonObject { put("state", "closed") })
+                }
             }
             for (branch in made) {
-                val reply = ask("DELETE", "/repos/$repository/git/refs/heads/$branch", pushing)
-                says("the branch $branch is deleted", reply.status == NO_CONTENT, "GitHub answered ${reply.status}")
+                attempt("the branch $branch is deleted") {
+                    val reply = ask("DELETE", "/repos/$repository/git/refs/heads/$branch", pushing)
+                    says("the branch $branch is deleted", reply.status == NO_CONTENT, "GitHub answered ${reply.status}")
+                }
             }
-            val after = sha(pushing, default)
-            says("the default branch $default is where it was", after == before, "at $after")
-            val open = pulls.filter { text(ask("GET", "/repos/$repository/pulls/$it", pushing), "state") != "closed" }
-            says("no pull request the proof made is open", open.isEmpty(), if (open.isEmpty()) "#${pulls.joinToString(", #")} closed" else "open: #${open.joinToString(", #")}")
+            attempt("the default branch $default is where it was") {
+                val after = sha(pushing, default)
+                says("the default branch $default is where it was", after == before, "at $after")
+            }
+            attempt("no pull request the proof made is open") {
+                val open = pulls.filter { text(ask("GET", "/repos/$repository/pulls/$it", pushing), "state") != "closed" }
+                says("no pull request the proof made is open", open.isEmpty(), if (open.isEmpty()) "#${pulls.joinToString(", #")} closed" else "open: #${open.joinToString(", #")}")
+            }
+        }
+
+        /** One step of the clean-up, [what]: when GitHub stops it, that is said — not as given — and the clean-up goes on. */
+        private fun attempt(what: String, step: () -> Unit) {
+            try {
+                step()
+            } catch (stopped: Stopped) {
+                says(what, false, "stopped: ${stopped.message}")
+            }
         }
 
         private fun says(what: String, asGiven: Boolean, outcome: Any) {

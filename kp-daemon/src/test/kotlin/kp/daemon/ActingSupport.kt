@@ -29,9 +29,8 @@ import kotlin.io.path.writeText
 /**
  * An office that acts on GitHub (S3.9): a project checkout the spec builds with the real `git`, holding the toy's stage
  * `TOY/P0/S0.1` — its list names `kp-toy` and the branch of the toy's pull request #1, its one task done — in [states];
- * master's rules but for `pool/offices.yaml`, which names that checkout and a secrets folder of the spec's — and, with
- * [mergeReadsTheHead], a `merge` that asks `ci.state` of `pr.head`, so that its judgement observes a head: master's
- * `merge` reads none (a Found line of S3.9). GitHub is one local server: the recorded answers ([github]) and the App
+ * master's rules but for `pool/offices.yaml`, which names that checkout and a secrets folder of the spec's: since D-108 a
+ * `merge` reads the reviewer's review and the checks on `pr.head`, so its judgement observes a head. GitHub is one local server: the recorded answers ([github]) and the App
  * endpoints ([apps]), the four Apps made with keys of the spec's. Its operations are the service's on GitHub
  * ([GitHubOperations]) before any other, which ends `ok`; the facts [fromGitHub] names are read from GitHub as the service
  * reads them ([GitHubWorld]), every other from the table of `h1-prime.yaml`'s walk with this stage's list ticked and its
@@ -40,7 +39,6 @@ import kotlin.io.path.writeText
 class ActingOffice(
     states: Map<String, String>,
     private val fromGitHub: Set<String> = emptySet(),
-    mergeReadsTheHead: Boolean = false,
     table: Map<String, Datum> = emptyMap(),
 ) : AutoCloseable {
     private val folder: Path = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "acting-")
@@ -49,6 +47,8 @@ class ActingOffice(
         git(project, "add", "-A")
         git(project, "commit", "--quiet", "-m", "cut S0.1")
         seed(project, states)
+        // The stage's worktree was made on the list's branch in kp-toy: where it acts on GitHub is read from that (S3.11).
+        placed(project, TOY_STAGE, "kp-toy", kp.facts.TOY_BRANCH)
     }
     private val secrets: Path = folder.resolve("secrets").createDirectories()
     private val server = RecordedGitHub.local()
@@ -59,12 +59,6 @@ class ActingOffice(
         offices.writeText(offices.readText()
             .replace(Regex("(?m)^    project: \\{checkout: [^,]+,"), "    project: {checkout: \"$project\",")
             .replace(Regex("(?m)^      secrets: .*$"), "      secrets: \"$secrets\""))
-        if (mergeReadsTheHead) {
-            val kinds = root.resolve("rules/message-kinds.yaml")
-            val expiry = "    expiry:\n    - transition: T-77\n"
-            check(kinds.readText().split(expiry).size == 2) { "the merge kind's expiry is not where S3.9's spec looks for it" }
-            kinds.writeText(kinds.readText().replace(expiry, "    - fact: ci.state\n      of:\n        fact: pr.head\n      eq: green\n$expiry"))
-        }
     }
     val journal = CopyOnWriteArrayList<String>()
     private val walk = TableFacts(Walk.read(checkout.resolve("rules/walks/h1-prime.yaml")).facts).also { walk ->
@@ -80,7 +74,7 @@ class ActingOffice(
         server.start()
     }
 
-    private fun operations() = GitHubOperations.of("panda", project, Operations { _, done -> done(OperationResult.Ok()) }, github.api) { journal += it }
+    private fun operations() = GitHubOperations.of("panda", Operations { _, done -> done(OperationResult.Ok()) }, github.api) { journal += it }
 
     private fun start(): Office = Office.start("panda", project, root, facts, operations, NoSeats, Clock { Instant.parse("2026-11-22T09:00:00Z") }) {
         world.reading(it)

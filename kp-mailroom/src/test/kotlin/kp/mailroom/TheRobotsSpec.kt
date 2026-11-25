@@ -47,6 +47,9 @@ class TheRobotsSpec : StringSpec({
         night.at("03:50").send("coder-1", """{"kind": "review-request", "stage": "$S22", "args": {"attest": ["done_lines_hold"]}}""")
         night.at("04:00").send("teamlead", """{"kind": "review-bind", "stage": "$S22", "args": {"reviewer": "reviewer-1"}}""")
         night.at("04:40").send("reviewer-1", """{"kind": "classify-request", "stage": "$S22", "args": {"question": "blocker or follow-up?", "default": "follow-up"}}""")
+        // The tail's head is reviewed and green, as H-2′'s stage `tail` holds it (D-108).
+        night.facts.set(TAIL, "pr.review_on", "approved")
+        night.facts.set(TAIL, "ci.state", "green")
         night.at("05:20").send("teamlead", """{"kind": "merge", "stage": "$TAIL"}""")
         val firstFix = night.at("05:40").send("reviewer-1", """{"kind": "verdict", "stage": "$S23",
             "args": {"verdict": "FIX FIRST", "sha": "head-1", "blockers": [{"id": "B1"}], "follow_ups": []}}""")

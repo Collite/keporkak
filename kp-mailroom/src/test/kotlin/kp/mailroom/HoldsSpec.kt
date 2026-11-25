@@ -22,6 +22,9 @@ class HoldsSpec : StringSpec({
 
     "what the Deputy kept is let go in the order it was kept, after the digest, and a merge only then meets its deadman" {
         val office = absent()
+        // A merge reads the reviewer's review and the checks on the head (D-108): the head reviewed and green.
+        office.facts.set(STAGE, "pr.review_on", "approved")
+        office.facts.set(STAGE, "ci.state", "green")
 
         val first = office.send("reviewer-1", """{"kind": "classify-request", "stage": "$STAGE", "args": {"question": "one?", "default": "follow-up"}}""")
         val merge = office.send("teamlead", """{"kind": "merge", "stage": "$STAGE"}""")
