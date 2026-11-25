@@ -261,6 +261,7 @@ class Seats(
         val evidence = "$TURN_ENDED$how · $parts · $counted · subscription ${subscription(session.binding)}"
         office.recorded(FactRef(SeatFacts.USAGE, mapOf(SEAT to Datum.Text(seat), WINDOW to Datum.Text(UsageWindow.TURN.word))),
             count?.let { Datum.of(it) } ?: Datum.Null, session.binding.stage, evidence)
+        office.reports?.turnEnded()
     }
 
     /** The weights in force (contracts.md §9, `usage.weights`): how a turn's tokens are counted when it ends. */
@@ -614,7 +615,8 @@ class Seats(
 
     /**
      * The watch (contracts.md §4.4, §9): for each seat with a turn in flight, its silence, its open tool call, the context
-     * it has used and its usage, as the driver observes them now — reported; the robots' rules compare.
+     * it has used and its usage, as the driver observes them now — reported; the robots' rules compare. Then the office's
+     * stray paths, which are read every `watch.every` too ([kp.daemon.Reports], Amendment 45).
      */
     fun watch() {
         val office = office ?: return
@@ -625,6 +627,7 @@ class Seats(
                 datum(observed.value.value)?.let { office.changed(FactRef(name, params), it, session.binding.stage, observed.value.evidence) }
             }
         }
+        office.reports?.watched()
     }
 
     /**
@@ -689,6 +692,7 @@ class Seats(
         val binding = held[seat]?.binding ?: return
         val subscription = subscription(binding)
         subscriptions[subscription to report.window] = kp.facts.VendorReport(subscription, report.window, report.fraction, report.resets, report.heard, seat)
+        office?.takeUnless { closing }?.reports?.vendorReported()
     }
 
     /** The session [seat] has now, or had last. */

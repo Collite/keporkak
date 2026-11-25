@@ -1,9 +1,13 @@
 package kp.facts
 
+/** How many of a main checkout's changed paths the evidence of `git.stray_changes` names. */
+private const val SHOWN = 10
+
 /**
  * `git.stray_changes`: the number of changed paths — tracked or not, not ignored — summed over the office's main
  * checkouts (Amendment 32). The project checkout is not one: the daemon and the seats write there. A main checkout that
- * cannot be read makes the fact unknown, naming it.
+ * cannot be read makes the fact unknown, naming it. The evidence names each main checkout with its count and, of one
+ * with changed paths, up to ten of them (Amendment 45: what the daemon's report holds).
  */
 internal fun Reading.strayChanges(): Observation {
     val office = asked.optionalText("office") ?: where.office
@@ -11,13 +15,16 @@ internal fun Reading.strayChanges(): Observation {
     if (where.repos.isEmpty()) throw Missing("the office ${where.office} holds no main checkout")
     val counts = where.repos.toSortedMap().map { (repo, dir) ->
         val changed = try {
-            git.changedPaths(git.root(dir))
+            git.changed(git.root(dir))
         } catch (missing: Missing) {
             throw Missing("$repo: ${missing.message}")
         }
         repo to changed
     }
-    return Observation.Value(counts.sumOf { it.second }, counts.joinToString("; ") { (repo, changed) -> "$repo: $changed changed ${if (changed == 1) "path" else "paths"}" })
+    return Observation.Value(counts.sumOf { it.second.size }, counts.joinToString("; ") { (repo, changed) ->
+        "$repo: ${changed.size} changed ${if (changed.size == 1) "path" else "paths"}" +
+            if (changed.isEmpty()) "" else " — " + changed.take(SHOWN).joinToString(", ") + if (changed.size > SHOWN) ", …" else ""
+    })
 }
 
 /**

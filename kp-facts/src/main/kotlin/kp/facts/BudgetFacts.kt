@@ -69,4 +69,25 @@ object BudgetFacts {
         val ratio = BigDecimal.valueOf(sum).divide(median, 4, RoundingMode.HALF_UP).stripTrailingZeros()
         return Observation.Value(ratio, "$subscription today ($today): $sum; the median of its daily sums on $days: ${median.toPlainString()}")
     }
+
+    /**
+     * The tenth a reported `budget.consumption` stands in — 0.69 in the sixth, 0.71 in the seventh, 1 in the tenth — for
+     * the daemon, which reports it when a vendor's report moves it into another (contracts.md §4.4, Amendment 45). Null
+     * for a value that is no number. Arithmetic on the vendor's own fraction; no threshold of the pool's.
+     */
+    fun tenth(value: Any?): Int? = number(value)?.movePointRight(1)?.setScale(0, RoundingMode.FLOOR)?.toInt()
+
+    /**
+     * The whole part of a reported `budget.vs_daily_median` — 1.96 is 1, 2.04 is 2 — for the daemon, which reports it when
+     * that changes (Amendment 45). Null for a value that is no number.
+     */
+    fun whole(value: Any?): Long? = number(value)?.setScale(0, RoundingMode.FLOOR)?.toLong()
+
+    private fun number(value: Any?): BigDecimal? = when (value) {
+        is BigDecimal -> value
+        is Int -> BigDecimal.valueOf(value.toLong())
+        is Long -> BigDecimal.valueOf(value)
+        is Double -> BigDecimal.valueOf(value)
+        else -> null
+    }
 }

@@ -86,7 +86,9 @@ class AfterTheFirstWaveSpec : FreeSpec({
         inboxes.forEach { it shouldNotContain "deadline passed" }
         inboxes.map { it.lines().count { line -> line == "   rolls: unknown · live: unknown · touches: unknown" } } shouldBe listOf(1, 1, 1)
         firstTime.unknown() shouldContainExactly listOf("facts: stage.live for KP/P3/S3.8 is unknown — tasks-p3-s3.8-after-the-first-wave.md has no line that begins 'rolls:'")
-        journal.unknown() shouldContainExactly listOf("facts: stage.live for KP/P3/S3.8 is unknown — tasks-p3-s3.8-after-the-first-wave.md has no line that begins 'rolls:'")
+        // The started daemon also reports the facts Amendment 45 names (S3.4), and one that takes no stage is judged about none:
+        // what that judgement asks is about no stage. The asks about S3.8 are this case's.
+        journal.unknown().filter { "KP/P3/S3.8" in it } shouldContainExactly listOf("facts: stage.live for KP/P3/S3.8 is unknown — tasks-p3-s3.8-after-the-first-wave.md has no line that begins 'rolls:'")
     }
 })
 
