@@ -11,6 +11,7 @@ import kp.model.Envelope
 import kp.model.Expired
 import kp.model.Held
 import kp.model.Message
+import kp.model.Op
 
 /**
  * What `kp inbox` and `kp status` print (contracts.md §6), read from the folded state — and, for what the state does
@@ -40,7 +41,9 @@ internal class Views(private val office: Office, private val world: FactSource) 
         val itemClass = when (raised) {
             is Delivered -> raised.deliveryClass
             is Expired -> raised.deliveryClass ?: "-"
-            is Held -> "held by ${raised.by}"
+            // A robot kept it for Bora: its class is B when the ticket asked `notify.bora`, which the mailroom asks for a
+            // class-B item only — what `kp-notify` raises on the Mac (contracts.md §12, Amendment 45; S3.4 T6).
+            is Held -> (if (lines.notified(number)) "B, " else "") + "held by ${raised.by}"
             else -> "-"
         }
         val stage = message?.stage?.value
@@ -94,7 +97,10 @@ internal class Views(private val office: Office, private val world: FactSource) 
     private class Index(lines: List<LogLine>) {
         val seq: Map<Long, Envelope> = lines.associate { it.entry.seq.toLong() to it.entry }
         private val messages: Map<String, Message> = lines.mapNotNull { it.entry as? Message }.associateBy { it.id.value }
+        /** The tickets whose `notify.bora` was requested: its cause is `#<ticket>`. */
+        private val notified: Set<String> = lines.mapNotNull { it.entry as? Op }.filter { it.op == NOTIFY_BORA && it.phase == REQUESTED }.map { it.cause }.toSet()
         fun message(id: String): Message? = messages[id]
+        fun notified(ticket: Long): Boolean = "#$ticket" in notified
     }
 
     private companion object {
@@ -105,5 +111,7 @@ internal class Views(private val office: Office, private val world: FactSource) 
         const val PRESENCE = "presence"
         const val BORA = "bora"
         const val HASH = 12
+        const val NOTIFY_BORA = "notify.bora"
+        const val REQUESTED = "requested"
     }
 }

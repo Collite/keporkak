@@ -195,6 +195,19 @@ the office's checkout once it has merged. The daemon reads the rules of the chec
 `kp` without `sudo` reads (`kp inbox`, `kp status`, `kp check`); with `sudo` it answers (`approve`, `decline`,
 `rule`, `reverse`, `queue`, `away`) — and any command run with `sudo` counts as you acting. `kp help` lists them.
 
+**`tools/kp-notify` — your inbox on the Mac** (contracts.md §12, Amendment 45). On your Mac, in a terminal you leave
+open, from a checkout of this repository there:
+
+    tools/kp-notify dsk        # dsk: the office, as your ~/.ssh/config names it
+
+It holds `ssh dsk kp inbox --follow` and raises one notification for every class-B item as it comes — one `kp inbox`
+marks `B`, or `B, held by …` when the Deputy kept it for you: the ticket and kind as its title, the stage under it,
+and the first of the list's three lines (`rolls: …`). Nothing else of the message is shown; `kp inbox` on the office
+has the rest. What waited when it started is raised once, as a count. When the connection ends it says so once and
+tries again, waiting longer each time up to a minute. It reads no secret, writes no file and needs nothing macOS does
+not ship; Ctrl-C ends it. The first notification may ask you to allow notifications from Script Editor (System
+Settings → Notifications). `notify.bora` on the office stays `ok` at once: the inbox is the notification.
+
 ## 4. The secrets directory
 
 Outside every repository; the directory is `0700` and every file `0600`, owned by `bora` (architecture.md §4).
