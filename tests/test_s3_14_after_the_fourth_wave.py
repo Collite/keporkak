@@ -22,6 +22,9 @@ _spec = importlib.util.spec_from_file_location("office_specs", Path(__file__).wi
 _specs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_specs)
 FakeMachine = _specs.FakeMachine
+_check = importlib.util.spec_from_file_location("office_check", ROOT / "scripts/office-check.py")
+OFFICE_CHECK = importlib.util.module_from_spec(_check)
+_check.loader.exec_module(OFFICE_CHECK)
 
 COUNT = int(os.environ.get("KP_MANY", "0"))
 FIFTH = "kp-daemon:AfterTheReviewsSpec/a wake that fails*"
@@ -56,6 +59,17 @@ class AfterTheFourthWave(unittest.TestCase):
             output = run(machine, text)
             self.assertNotIn(LOGIN, output)
             self.assertNotIn(PASSWORD, output)
+
+
+class TheNetrcReading(unittest.TestCase):
+    """The slices behind the office check's line: how `~/.netrc` is read, by the machines' names only."""
+    def test_a_name_is_read_quoted_and_in_any_case_a_macros_body_and_a_value_are_passed_over_and_default_is_seen(self):
+        names = OFFICE_CHECK.netrc_names
+        self.assertEqual(names('machine "GitHub.com" login a password b'), (["github.com"], False))
+        self.assertEqual(names("macdef init\nmachine github.com login x\n\nmachine example.org"), (["example.org"], False))
+        self.assertEqual(names("machine example.org password machine"), (["example.org"], False))
+        self.assertEqual(names("machine example.org login a password b default login c password d"), (["example.org"], True))
+        self.assertEqual(names(""), ([], False))
 
 
 class TheFifthCase(unittest.TestCase):
