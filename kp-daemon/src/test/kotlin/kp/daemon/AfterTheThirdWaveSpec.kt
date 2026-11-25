@@ -99,6 +99,20 @@ class AfterTheThirdWaveSpec : FreeSpec({
         }
     }
 
+    "the record is the stage's last `worktree.create` that ended `ok` — two such records, a failed one after them: every reader reads the second (S3.14, issue #73)" {
+        // The earlier record names keporkak and a branch neither main checkout holds; the last, kp-toy and the toy's branch.
+        RecordedOffice(WorktreeMade.TWICE).use { office ->
+            val readers = office.everyReader()
+
+            readers.filterValues { it is Observation.Unknown }.keys.shouldBeEmpty()
+            readers["git.branch_exists"] shouldBe Observation.Value(true, readers.getValue("git.branch_exists").evidence)
+            office.mint("coder") shouldBe """ok {"app":"kp-coder","repositories":["Collite/kp-toy"],"permissions":{"contents":"write","pull_requests":"write"}}"""
+            office.perform("worktree.remove", RecordedOffice.MERGE) shouldStartWith "ok"
+            office.listsWorktree(office.worktree) shouldBe false
+            office.asked().filterNot { it.contains(" /repos/Collite/kp-toy/") }.shouldBeEmpty()
+        }
+    }
+
     "a `merge` on a head with no review of the reviewer's, a review that asks for changes, or checks not green is refused by master's rules, naming the rule; on a reviewed green head the daemon merges it" {
         val reviewed = """{"fact":"pr.review_on","sha":{"fact":"pr.head"},"in":["approved","commented"]}"""
         val green = """{"fact":"ci.state","of":{"fact":"pr.head"},"eq":"green"}"""
@@ -158,6 +172,22 @@ class AfterTheThirdWaveSpec : FreeSpec({
                 planted.ran().shouldBeEmpty()
                 planted.credentials.exists() shouldBe false
             }
+        }
+    }
+
+    "a seat's `git` reads no system configuration, though it is planted where git reads the system's — `GIT_CONFIG_SYSTEM`, set after the seat's environment as `/etc/gitconfig` would be read: `GIT_CONFIG_NOSYSTEM` alone keeps it out (S3.14, issue #73)" {
+        val planted = PlantedHome(kotlin.io.path.createTempDirectory("kp-planted-home-"))
+        IdentityOffice(base = mapOf("HOME" to planted.home.toString())).use { office ->
+            val coder = office.seat("coder-1", "coder", TOY_STAGE)
+
+            val scopes = coder.run("git", "config", "--list", "--show-scope", network = planted.system())
+            val helper = coder.run("git", "config", "--get-all", "credential.helper", network = planted.system())
+
+            scopes.exit shouldBe 0
+            scopes.out.lines().filter { it.startsWith("system\t") }.shouldBeEmpty()
+            scopes.out shouldNotContain "Planted System"
+            helper.out shouldNotContain planted.home.toString()
+            planted.ran().shouldBeEmpty()
         }
     }
 

@@ -1,0 +1,13 @@
+diff --git a/kp-daemon/src/main/kotlin/kp/daemon/GitHubWorld.kt b/kp-daemon/src/main/kotlin/kp/daemon/GitHubWorld.kt
+index c441cde..607ceb6 100644
+--- a/kp-daemon/src/main/kotlin/kp/daemon/GitHubWorld.kt
++++ b/kp-daemon/src/main/kotlin/kp/daemon/GitHubWorld.kt
+@@ -200,7 +200,7 @@ internal fun worktreeOf(counted: List<Envelope>, stage: String): MadeWorktree? {
+         fun text(name: String) = (op.result?.get(name) as? JsonPrimitive)?.takeIf { it.isString }?.content
+         val repository = text(REPOSITORY) ?: continue
+         val branch = text(BRANCH) ?: continue
+-        made = MadeWorktree(repository, branch, text(WORKTREE).orEmpty(),
++        if (made == null) made = MadeWorktree(repository, branch, text(WORKTREE).orEmpty(),
+             "the log's worktree.create of $stage, ok at ${op.at.value} (asked by ${op.cause}): $repository, $branch")
+     }
+     return made

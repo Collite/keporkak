@@ -43,14 +43,15 @@ fun closedPull(vararg changes: Pair<String, Any?>): JsonObject = recordedItem("p
 fun filedIssue(vararg changes: Pair<String, Any?>): String = recordedItem("issue-201.json", "", *changes).toString()
 
 /**
- * `PUT [path]` answers as GitHub merges a pull request: on the condition that the `sha` its body names is the head
- * [head] gives at that moment — merged, `merge-200.json`; on any other sha, or none, `merge-409.json`, "Head branch was
- * modified" (GitHub's REST documentation for `sha`; both answers recorded from the toy, S3.9 T1). A merge asked on the
+ * `PUT [path]` answers as GitHub merges a pull request: `sha` is a condition the merge may carry (GitHub's REST
+ * documentation) — a body that names the head [head] gives at that moment is merged, `merge-200.json`; one that names
+ * any other sha, `merge-409.json`, "Head branch was modified" (both answers recorded from the toy, S3.9 T1); one that names
+ * none is merged on the head GitHub holds then, as GitHub does (S3.14; issue #64's re-review item). A merge asked on the
  * head GitHub lists now is merged by it; one asked on a head that has moved since is not.
  */
 fun RecordedGitHub.mergesOnItsHead(path: String, head: () -> String) = onRequest("PUT", path) { request ->
     val sha = runCatching { (Json.parseToJsonElement(request.body) as? JsonObject)?.get("sha") as? JsonPrimitive }.getOrNull()?.takeIf { it.isString }?.content
-    if (sha == head()) Answer(200, recorded("merge-200.json")) else Answer(409, recorded("merge-409.json"))
+    if (sha == null || sha == head()) Answer(200, recorded("merge-200.json")) else Answer(409, recorded("merge-409.json"))
 }
 
 /** GitHub lists [pulls] as the pull requests of `Collite/kp-toy` whose head is [branch]. */
