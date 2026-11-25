@@ -238,6 +238,7 @@ steps:
     state: recut
     transitions:
     - T-84
+    - FLAG_THREAD-01
 - id: retire-5
   who: pool
   kind: retire

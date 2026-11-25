@@ -634,11 +634,18 @@ class Player internal constructor(private val script: Script, val office: Office
         return if (same) named else fired
     }
 
-    /** Two robots' rules on a seat's two ends, with live seats: either may be the one that heard it first (S2.9 T3). */
+    /**
+     * A robot's rule on one of a seat's ends and its twin on the other — the same `if` and `then`, the other end's fact —
+     * with live seats: either may be the one that heard it first (S2.9 T3). No other rule stands for it: past the cap a
+     * death is heard by POOL-11 or POOL-13, under it by POOL-1 or POOL-12, and one is not the other (S3.4 T4, review-023).
+     */
     private fun twins(by: String, other: String): Boolean {
         if (script.live == null) return false
-        val ends = office.rules.ruleSet.robots.values.flatMap { it.rules }.filter { (it.on as? RobotTrigger.Fact)?.name in DEATHS }.map { ROBOT + it.id }.toSet()
-        return by in ends && other in ends
+        val rules = office.rules.ruleSet.robots.values.flatMap { it.rules }.associateBy { ROBOT + it.id }
+        val one = rules[by] ?: return false
+        val two = rules[other] ?: return false
+        fun end(rule: kp.rules.RobotRule) = (rule.on as? RobotTrigger.Fact)?.name
+        return end(one) in DEATHS && end(two) in DEATHS && end(one) != end(two) && one.condition == two.condition && one.then == two.then
     }
 
     private fun fail(played: Played, expected: String, actual: String, key: String = "outcome"): Nothing {

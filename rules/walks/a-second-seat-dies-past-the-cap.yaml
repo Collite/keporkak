@@ -2,8 +2,8 @@
 # asks Bora (T-81, POOL-11); the reviewer's death while it is paused asks him again (T-82): one ruling-request per death.
 # Each death past the cap is reported twice — the process gone and the protocol closed — in an order the world does not
 # fix (contracts.md §4.4, Amendment 30): whichever report comes first sends seat-gone and the ruling-request, and the
-# second finds the seat gone and sends nothing. Bora's two rulings re-seat both seats (SEAT-43); the first re-seat
-# returns the stage (T-60), the second moves its seat only (SEAT-07). Walked in S3.4, which the folder of D-118 left open.
+# second finds the seat gone and sends nothing. Bora's two rulings re-seat both seats (SEAT-43), each on a thread of its
+# own (FLAG_THREAD-01; D-124); the first re-seat returns the stage (T-60), the second moves its seat only (SEAT-07). Walked in S3.4, which the folder of D-118 left open.
 # Supplied observations and fake operation results; this walk never runs external actions.
 name: a-second-seat-dies-past-the-cap
 stage: S9.10
@@ -219,6 +219,7 @@ steps:
   expect:
     state: building
     transitions:
+    - FLAG_THREAD-01
     - SEAT-43
 - operation: seat.reseat
   request: rule-reviewer
