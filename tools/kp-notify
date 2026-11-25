@@ -1,0 +1,116 @@
+#!/bin/sh
+# kp-notify <ssh host> — Bora's Mac hears his inbox (contracts.md §12, Amendment 45; S3.4 T6).
+#
+# It holds `ssh <host> kp inbox --follow` and raises one macOS notification for every class-B item as it comes — one
+# `kp inbox` marks `B`, or `B, held by …` when a robot kept it for Bora: those its daemon asked `notify.bora` for — its
+# ticket and kind as the title, its stage as the subtitle, and the first of its three lines (`rolls: …`) — nothing else
+# of the message. The items already waiting when it starts are raised once, together, as a count. When the connection
+# ends it tries again, waiting longer each time up to a minute, and says so once. It reads no secret, writes no file and
+# needs nothing macOS does not ship: sh, ssh, osascript and sleep. Ctrl-C ends it.
+#
+# KP_NOTIFY_FIRST_WAIT: the first wait after a connection ends, in seconds (default 1); each next one twice the last.
+set -u
+
+host=${1:-}
+if [ -z "$host" ] || [ $# -ne 1 ]; then
+    echo "usage: kp-notify <ssh host>" >&2
+    exit 2
+fi
+first_wait=${KP_NOTIFY_FIRST_WAIT:-1}
+longest_wait=60
+
+# A notification: [title] [subtitle] [message], handed to osascript as arguments, so nothing in them is read as script.
+raise() {
+    osascript - "$1" "$2" "$3" >/dev/null 2>&1 <<'SCRIPT'
+on run argv
+    display notification (item 3 of argv) with title (item 1 of argv) subtitle (item 2 of argv)
+end run
+SCRIPT
+}
+
+# The fields of an item's first line, `#<ticket> · <class> · <kind> · <stage> · from <sender>`: sets ticket, class, kind, stage.
+fields() {
+    rest=$1
+    ticket=${rest%% · *}; rest=${rest#* · }
+    class=${rest%% · *}; rest=${rest#* · }
+    kind=${rest%% · *}; rest=${rest#* · }
+    stage=${rest%% · *}
+}
+
+# The inbox as it stands: each class-B item counted, every ticket noted as seen. Prints the count, then the tickets seen.
+waiting() {
+    count=0
+    seen=" "
+    while IFS= read -r line; do
+        case $line in
+            '#'*)
+                fields "$line"
+                seen="$seen$ticket "
+                case $class in B | "B, held by "*) count=$((count + 1)) ;; esac
+                ;;
+        esac
+    done
+    printf '%s\n%s\n' "$count" "$seen"
+}
+
+# The inbox followed: each class-B item not seen yet is raised as it comes — once its line of the three is read, or at once
+# for an item of no stage, which has none. [$1]: the tickets seen. Prints whether a line came, then the tickets seen.
+follow() {
+    seen=$1
+    came=no
+    pending=no
+    while IFS= read -r line; do
+        came=yes
+        case $line in
+            '#'*)
+                pending=no
+                fields "$line"
+                case $seen in *" $ticket "*) continue ;; esac
+                seen="$seen$ticket "
+                case $class in B | "B, held by "*) ;; *) continue ;; esac
+                if [ "$stage" = "no stage" ]; then raise "$ticket $kind" "" ""; else pending=yes; fi
+                ;;
+            '   rolls: '*)
+                if [ "$pending" = yes ]; then
+                    three=${line#   }
+                    raise "$ticket $kind" "$stage" "${three%% · *}"
+                    pending=no
+                fi
+                ;;
+        esac
+    done
+    printf '%s\n%s\n' "$came" "$seen"
+}
+
+seen=""
+wait=$first_wait
+said=no
+while :; do
+    if [ -z "$seen" ]; then
+        # What waits at the start: raised once, as a count.
+        if listed=$(ssh "$host" kp inbox </dev/null 2>/dev/null); then
+            counted=$(printf '%s\n' "$listed" | waiting)
+            count=$(printf '%s\n' "$counted" | sed -n 1p)
+            seen=$(printf '%s\n' "$counted" | sed -n 2p)
+            if [ "$count" -gt 0 ]; then
+                if [ "$count" -eq 1 ]; then raise "Keporkak" "$host" "1 item waits for you"; else raise "Keporkak" "$host" "$count items wait for you"; fi
+            fi
+        fi
+    fi
+    if [ -n "$seen" ]; then
+        followed=$(ssh "$host" kp inbox --follow </dev/null 2>/dev/null | follow "$seen")
+        came=$(printf '%s\n' "$followed" | sed -n 1p)
+        seen=$(printf '%s\n' "$followed" | sed -n 2p)
+        if [ "$came" = yes ]; then
+            wait=$first_wait
+            said=no
+        fi
+    fi
+    if [ "$said" = no ]; then
+        echo "kp-notify: the connection to $host ended; trying again, waiting longer each time up to a minute" >&2
+        said=yes
+    fi
+    sleep "$wait"
+    wait=$((wait * 2))
+    [ "$wait" -gt "$longest_wait" ] && wait=$longest_wait
+done

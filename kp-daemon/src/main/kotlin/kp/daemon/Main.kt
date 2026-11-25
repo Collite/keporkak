@@ -175,6 +175,8 @@ private fun service(root: Path, office: String, project: Path, socket: Path, lis
     }
     Journal.say(world.project.reads)
     try {
+        // The four facts reported when they change (Amendment 45): once each as they read at the start, then as they change.
+        Reports(seated.office, world.project, pool).also { seated.office.reports = it }.started()
         seated.start()
     } catch (error: Exception) {
         seated.close()

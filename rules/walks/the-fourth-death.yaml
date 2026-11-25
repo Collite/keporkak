@@ -1,0 +1,258 @@
+name: the-fourth-death
+stage: S9.9
+initial: building
+final: recut
+seats:
+  coder-1: coder
+facts:
+  seat.process_gone: false
+  seat.protocol_closed: false
+  seat.tool_call_open_for: 0
+  seat.inbox_replayed: true
+  bora.present: true
+  budget.slots_over: 1
+steps:
+- who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: coder-1
+  facts:
+    seat.process_gone: true
+  expect:
+    rules:
+    - POOL-1
+    sends:
+    - seat-gone
+- id: gone-1
+  who: pool
+  by: robot:POOL-1
+  kind: seat-gone
+  args:
+    seat: coder-1
+  expect:
+    state: paused
+    transitions:
+    - T-59
+    - SEAT-06
+- operation: seat.reseat
+  request: gone-1
+  result: ok
+  expect:
+    sends:
+    - re-seated
+- who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: coder-1
+  expect:
+    state: building
+    transitions:
+    - T-60
+    - SEAT-07
+- who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: coder-1
+  facts:
+    seat.process_gone: true
+  expect:
+    rules:
+    - POOL-1
+    sends:
+    - seat-gone
+- id: gone-2
+  who: pool
+  by: robot:POOL-1
+  kind: seat-gone
+  args:
+    seat: coder-1
+  expect:
+    state: paused
+    transitions:
+    - T-59
+    - SEAT-06
+- operation: seat.reseat
+  request: gone-2
+  result: ok
+  expect:
+    sends:
+    - re-seated
+- who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: coder-1
+  expect:
+    state: building
+    transitions:
+    - T-60
+    - SEAT-07
+- who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: coder-1
+  facts:
+    seat.process_gone: true
+  expect:
+    rules:
+    - POOL-1
+    sends:
+    - seat-gone
+- id: gone-3
+  who: pool
+  by: robot:POOL-1
+  kind: seat-gone
+  args:
+    seat: coder-1
+  expect:
+    state: paused
+    transitions:
+    - T-59
+    - SEAT-06
+- operation: seat.reseat
+  request: gone-3
+  result: ok
+  expect:
+    sends:
+    - re-seated
+- who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: coder-1
+  expect:
+    state: building
+    transitions:
+    - T-60
+    - SEAT-07
+- who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: coder-1
+  facts:
+    seat.process_gone: true
+  expect:
+    rules:
+    - POOL-11
+    sends:
+    - seat-gone
+    - ruling-request
+- id: gone-4
+  who: pool
+  by: robot:POOL-11
+  kind: seat-gone
+  args:
+    seat: coder-1
+  expect:
+    state: paused
+    transitions:
+    - T-81
+    - SEAT-06
+    seats:
+      coder-1: gone
+- id: ask-4
+  who: pool
+  by: robot:POOL-11
+  kind: ruling-request
+  args:
+    seat: coder-1
+    default: reseat
+    citation: T-81
+  expect:
+    state: paused
+- id: rule-4
+  who: bora
+  kind: ruling
+  signed: bora
+  re: ask-4
+  args:
+    outcome: reseat
+    seat: coder-1
+  expect:
+    state: paused
+    transitions:
+    - FLAG_THREAD-01
+    - SEAT-43
+- operation: seat.reseat
+  request: rule-4
+  result: ok
+  expect:
+    sends:
+    - re-seated
+- who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: coder-1
+  expect:
+    state: building
+    transitions:
+    - T-60
+    - SEAT-07
+- who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: coder-1
+  facts:
+    seat.process_gone: true
+  expect:
+    rules:
+    - POOL-11
+    sends:
+    - seat-gone
+    - ruling-request
+- id: gone-5
+  who: pool
+  by: robot:POOL-11
+  kind: seat-gone
+  args:
+    seat: coder-1
+  expect:
+    state: paused
+    transitions:
+    - T-81
+    - SEAT-06
+- id: ask-5
+  who: pool
+  by: robot:POOL-11
+  kind: ruling-request
+  args:
+    seat: coder-1
+    default: reseat
+    citation: T-81
+  expect:
+    state: paused
+- who: bora
+  kind: ruling
+  signed: bora
+  re: ask-5
+  args:
+    outcome: recut
+  expect:
+    state: recut
+    transitions:
+    - T-84
+    - FLAG_THREAD-01
+- id: retire-5
+  who: pool
+  kind: retire
+  args:
+    seat: coder-1
+  expect:
+    state: recut
+    transitions:
+    - SEAT-46
+    seats:
+      coder-1: retired
+- operation: seat.retire
+  request: retire-5
+  result: ok
+  expect:
+    seats:
+      coder-1: retired

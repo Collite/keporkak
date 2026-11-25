@@ -47,7 +47,8 @@ class Hero(
      */
     val project: Path = prepared ?: Files.createTempDirectory(checkout.resolve("build").createDirectories(), "hero-")
     private val sockets: Path = Files.createTempDirectory("kp-")
-    private val socket: Path = sockets.resolve("kp.sock")
+    /** The daemon's control socket: what `kp` and `kp-notify`'s fake ssh reach it on (S3.4). */
+    val socket: Path = sockets.resolve("kp.sock")
     private val peers = SimulatedPeers()
     val clock = SetClock(Instant.parse(startsAt))
     val script = Script(amend(Walk.read(walkFile(walk))))

@@ -313,7 +313,7 @@ private class Sweeper(private val root: Path) {
      */
     private fun control(kind: Kind, transition: Transition?): World? {
         transition?.let { controls[it.id] }?.let { return it }
-        var world = satisfied(kind.require + transition?.require.orEmpty(), start(kind, transition))
+        var world = satisfied(kind.require + transition?.require.orEmpty(), start(kind, transition), transition)
         repeat(SEARCH) {
             val decision = world.judge(rules)
             when (decision.outcome) {
@@ -399,8 +399,28 @@ private class Sweeper(private val root: Path) {
     }
 
     /** [requirements] made to hold in turn, each the first way that does; one that cannot is left as it is. */
-    private fun satisfied(requirements: List<Requirement>, world: World): World =
-        requirements.fold(world) { at, requirement -> make(requirement, holds = true, at).firstOrNull() ?: at }
+    /**
+     * [world] with each of [requirements] made to hold — by the first way that keeps [transition]'s subject where it starts
+     * from, when one does: `retire`'s requirement holds for an idle seat or for one whose stage is neither active nor paused
+     * (D-118), and the first way, an idle seat, fires SEAT-11 where SEAT-44 starts from a ready one (S3.4 T4).
+     */
+    private fun satisfied(requirements: List<Requirement>, world: World, transition: Transition? = null): World =
+        requirements.fold(world) { at, requirement -> make(requirement, holds = true, at).let { ways -> ways.firstOrNull { inPlace(it, transition) } ?: ways.firstOrNull() } ?: at }
+
+    /** Whether [world] keeps [transition]'s subject — its stage, or the seat it moves — in the state the transition starts from. */
+    private fun inPlace(world: World, transition: Transition?): Boolean {
+        if (transition == null) return true
+        val machine = rules.lifecycle.machines.values.first { transition in it.transitions }
+        val from = concrete(machine, transition.from)
+        return when (machine.name) {
+            "stage" -> world.stageState == from
+            "seat" -> {
+                val seat = (world.args["seat"] as? Datum.Text)?.value ?: "coder-1"
+                (world.seeds.filterIsInstance<Seed.Move>().lastOrNull { it.machine == "seat" && it.subject == seat }?.to ?: machine.states.keys.first()) == from
+            }
+            else -> true
+        }
+    }
 
     /** [world] with every machine but [transition]'s that moves on its message parked, so that its refusal names [transition]'s failure. */
     private fun parkedFor(transition: Transition, world: World): World? {
@@ -418,7 +438,7 @@ private class Sweeper(private val root: Path) {
             val own = (kind.require.zip(forms(kind.name)) + transition?.let { it.require.zip(forms(it.id)) }.orEmpty()).firstOrNull { it.second == failed }?.first
             if (own == null && transition != null && decision.rule != transition.id) return satisfied(transition.require, world).takeIf { it != world }
             val requirement = own ?: known(kind, transition, failed) ?: return null
-            return make(requirement, holds = true, world).firstOrNull { candidate -> candidate.judge(rules).failed != failed }
+            return make(requirement, holds = true, world).filter { candidate -> candidate.judge(rules).failed != failed }.let { ways -> ways.firstOrNull { inPlace(it, transition) } ?: ways.firstOrNull() }
         }
         val why = decision.requirement.orEmpty()
         return when {
@@ -530,10 +550,17 @@ private class Sweeper(private val root: Path) {
             "bora.present" -> listOf(if (truth()) world.copy(seeds = world.seeds.filterNot { it is Seed.Move && it.machine == "presence" })
                 else world.seeded(Seed.Move("presence", "bora", "present", "absent")))
             "stage.state" -> {
-                val target = (comparison!!.value as Value.Constant).literal.let { (it as Literal.Text).value }
                 val states = rules.lifecycle.stage.states.keys
+                // One state (`eq`), or one of a list (`in`: what `retire` may not reach, S3.4): it holds in a state named, fails in
+                // any other.
+                val named = when (val value = comparison!!.value) {
+                    is Value.Constant -> listOf((value.literal as Literal.Text).value)
+                    is Value.Items -> value.items.map { ((it as Value.Constant).literal as Literal.Text).value }
+                    else -> return emptyList()
+                }
                 when (comparison.operator) {
-                    Operator.EQ -> if (holds) listOf(world.copy(stageState = target)) else states.filter { it != target }.map { world.copy(stageState = it) }.take(WAYS)
+                    Operator.EQ, Operator.IN -> if (holds) named.take(WAYS).map { world.copy(stageState = it) }
+                        else (listOf(world.stageState) + states).filter { it !in named }.distinct().map { world.copy(stageState = it) }.take(WAYS)
                     else -> emptyList()
                 }
             }
@@ -568,8 +595,11 @@ private class Sweeper(private val root: Path) {
                 val machine = rules.lifecycle.companions.getValue("seat")
                 val first = machine.states.keys.first()
                 val clean = world.copy(seeds = world.seeds.filterNot { it is Seed.Move && it.machine == "seat" && it.subject == seat })
-                val wanted = if (holds) listOf(state) else machine.states.keys.filter { it != state }.take(WAYS)
-                wanted.map { if (it == first) clean else clean.seeded(Seed.Move("seat", seat, first, it)) }
+                // The seat's state in [world] first, when it already makes the requirement fail: a world changed only where it must
+                // (S3.4: `retire`'s requirement is broken for a ready or a gone seat as it stands).
+                val current = world.seeds.filterIsInstance<Seed.Move>().lastOrNull { it.machine == "seat" && it.subject == seat }?.to ?: first
+                val wanted = if (holds) listOf(state) else (listOf(current) + machine.states.keys).filter { it != state }.distinct().take(WAYS)
+                wanted.map { if (it == current) world else if (it == first) clean else clean.seeded(Seed.Move("seat", seat, first, it)) }
             }
             "seat.inbox_replayed" -> {
                 val seat = params["seat"]?.let { value(it, world) as? Datum.Text }?.value ?: return emptyList()

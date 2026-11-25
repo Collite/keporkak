@@ -132,6 +132,12 @@ class Mailroom private constructor(
     private val journal: (String) -> Unit,
     /** Told each time a result has been judged, on the thread that gave it: what the daemon signals its watchers with. */
     private val resulted: () -> Unit,
+    /**
+     * Told after a judgement that moved a seat or a stage is on disk, in its turn among what the judgements handed to the
+     * world (S3.4 T5): when the daemon looks at `budget.slots_over` (contracts.md §4.4, Amendment 45) — heard from the
+     * judgement's own moves, with no second reading of the log.
+     */
+    private val moved: () -> Unit = {},
 ) : AutoCloseable {
     /** The rule set every judgement reads: one per message, replaced only between two (architecture.md §3). */
     private val rules: RuleSet get() = inForce.ruleSet
@@ -143,6 +149,8 @@ class Mailroom private constructor(
     /** The judgement being written (contracts.md §3): its lines reach the disk together, closed by a `judged` line. */
     private var judgement: LogWriter.Judgement? = null
     private var judging = false
+    /** Whether the judgement being written moved a seat or a stage: [moved] is told once it is on disk. */
+    private var movedSeatOrStage = false
     /** What the judgement being written still carries: the messages the rules and the robots send in answer, the held messages let go. */
     private val carrying = ArrayDeque<() -> Unit>()
     /** What waits for a judgement's `judged` line to be on disk: the operations it requested, performed, and the seats it wakes. */
@@ -852,6 +860,7 @@ class Mailroom private constructor(
     private fun <T> judged(arrival: () -> T): T {
         check(!judging) { "a judgement is being written" }
         judging = true
+        movedSeatOrStage = false
         val before = folded
         val worldBefore = world.size
         added.clear()
@@ -866,6 +875,7 @@ class Mailroom private constructor(
                 val judged = judgement!!.close(now())
                 judgement = null
                 take(listOf(judged))
+                if (movedSeatOrStage) world += moved
             }
             return result
         } catch (error: Throwable) {
@@ -966,6 +976,7 @@ class Mailroom private constructor(
         write(line(now, EVENT to text("transition"), MACHINE to text(move.machine), SUBJECT to text(move.subject), FROM to text(move.from),
             TO to text(move.to), RULE to text(move.rule), CAUSE to text(cause), COUNTED to counted(move.counted)))
         if (move.machine == PRESENCE) hear(Trigger.Presence(move.to), cause, now, null, before)
+        if (move.machine == STAGE || move.machine == SEAT) movedSeatOrStage = true
     }
 
     // ---- the log
@@ -1027,12 +1038,13 @@ class Mailroom private constructor(
          * The writer reaches the disk through [disk]. [whenFolded] is told the mailroom once the log is folded and the rules
          * are in force, before the start carries anything again: what reads the fold reads it from then on (contracts.md
          * §4.4, Amendment 34). [resulted] is told each time an operation's result has been judged: it arrives from the
-         * operation's own thread (Amendment 36), not through a way in whose caller signals.
+         * operation's own thread (Amendment 36), not through a way in whose caller signals. [moved] is told after each
+         * judgement that moved a seat or a stage (Amendment 45).
          */
         fun start(
             project: Path, office: OfficeId, rules: RuleTexts, facts: FactSource, operations: Operations, deliveries: Deliveries, clock: Clock,
             robots: Boolean = false, disk: Channels = Channels.files, journal: (String) -> Unit = { System.err.println(it) },
-            resulted: () -> Unit = {}, whenFolded: (Mailroom) -> Unit = {},
+            resulted: () -> Unit = {}, moved: () -> Unit = {}, whenFolded: (Mailroom) -> Unit = {},
         ): Mailroom {
             val writer = LogWriter.open(project, office, disk)
             try {
@@ -1042,7 +1054,7 @@ class Mailroom private constructor(
                 if (inForce == null) throw MailroomRefusal("the rules are not valid:\n" + loaded.problems.joinToString("\n"))
                 // Under the mailroom's lock, as every other step: a performer that answers from its own thread while the
                 // start is carrying its queue waits for it (issue #21).
-                return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce, robots, journal, resulted).apply {
+                return Mailroom(office, facts, operations, deliveries, clock, writer, rules, inForce, robots, journal, resulted, moved).apply {
                     synchronized(this) {
                         val entries = read.lines.map { it.entry }
                         // The judgement the log ends in begins after the last `judged` line — at the `voided` record after it, when

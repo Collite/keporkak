@@ -10,6 +10,7 @@ import kp.daemon.InForceRules
 import kp.daemon.Judgements
 import kp.daemon.NoSeats
 import kp.daemon.Office
+import kp.daemon.Reports
 import kp.daemon.ProjectWorld
 import kp.daemon.RuleFiles
 import kp.daemon.TestOffice
@@ -110,11 +111,14 @@ data class SeatAt(val seat: String, val role: String, val stage: String?, val le
 /**
  * A fixture log, in judgements: each [SeatAt] as SEAT-01 starts one — the Pool Manager's report, its delivery, the seat
  * machine's move, `seat.start` requested and ok — then moved to its state; each stage of [stages] moved from `planned` to
- * its state; each turn's end of [turns] as the daemon records it. Every line at [at], unless the turn's end says when.
+ * its state, and each of [then] on from that state to its own in a judgement after (S3.4: a stage paused, which comes back
+ * to the state it was in); each turn's end of [turns] as the daemon records it. Every line at [at], unless the turn's end
+ * says when.
  */
 class FixtureLog(
     seats: List<SeatAt> = emptyList(), stages: Map<String, String> = emptyMap(), turns: List<TurnEnd> = emptyList(), private val at: String = "2026-11-20T08:00:00Z",
     reports: List<Reported> = emptyList(),
+    then: Map<String, String> = emptyMap(),
 ) {
     /** A turn's end as its record leaves it: a `fact` of `seat.usage`, window `turn`, its count and its evidence. */
     data class TurnEnd(val seat: String, val at: String, val count: Long, val evidence: String)
@@ -130,6 +134,7 @@ class FixtureLog(
     val judgements: List<List<JsonObject>> = seats.mapIndexed { n, seat -> started(seat, "m-panda-9${"%05d".format(n + 1)}") } +
         requests.map { (report, request) -> requested(report, request) } +
         listOfNotNull(stages.takeIf { it.isNotEmpty() }?.map { (stage, state) -> record("transition", "machine" to "stage", "subject" to stage, "from" to "planned", "to" to state, "cause" to "fixture") }) +
+        listOfNotNull(then.takeIf { it.isNotEmpty() }?.map { (stage, state) -> record("transition", "machine" to "stage", "subject" to stage, "from" to stages.getValue(stage), "to" to state, "cause" to "fixture") }) +
         turns.map { turn ->
             listOf(record("fact", "fact" to "seat.usage", "subject" to "${turn.seat}, turn", "value" to turn.count, "evidence" to turn.evidence,
                 "params" to mapOf("seat" to turn.seat, "window" to "turn"), when_ = turn.at))
@@ -259,8 +264,13 @@ fun plain(datum: Datum?): Any? = when (datum) {
  * plan, overview, STATUS and the list of `KP/P3/S3.1`, whose log [log] starts; its world is the service's — the project's
  * facts ([ProjectWorld]) and the pool's ([PoolFacts]) — and `roster.model_allowed`, which the seats answer in the
  * service, is true. Operations end `ok`. The pool can be changed while it runs ([budgets]).
+ *
+ * S3.4: with [reporting], the daemon's [Reports] (Amendment 45) are the office's, as the service makes them — told of a
+ * judgement that moved a seat or a stage and of a reload by the office; of the watch, a turn's end and the vendor's
+ * reports by the spec, as the seats tell them; the start is the spec's to call. [repos] are the office's main checkouts
+ * in place of the pool's; [vendor] what the vendor last reported through the seats.
  */
-class PoolOffice(log: FixtureLog = FixtureLog(), budgets: String = BUDGETS) : AutoCloseable {
+class PoolOffice(log: FixtureLog = FixtureLog(), budgets: String = BUDGETS, repos: Map<String, Path> = emptyMap(), reporting: Boolean = false) : AutoCloseable {
     private val folder: Path = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "pool-")
     val project: Path = repository(folder.resolve("project")).also { project ->
         write(project, "plan.md", "## 2 · Stages\n\n| stage | after | goal |\n|---|---|---|\n| **S3.1 Facts** | — | the facts |\n\n## 3 · Chart\n```mermaid\nflowchart LR\n  S3.1[S3.1 Facts]\n```\n")
@@ -274,6 +284,8 @@ class PoolOffice(log: FixtureLog = FixtureLog(), budgets: String = BUDGETS) : Au
     val root: Path = fixtureRules(budgets = budgets).also { root ->
         val offices = root.resolve("pool/offices.yaml")
         offices.writeText(offices.readText().replace(Regex("(?m)^    project: \\{checkout: [^,]+,"), "    project: {checkout: \"$project\","))
+        if (repos.isNotEmpty()) offices.writeText(offices.readText().replaceFirst(Regex("(?m)^    repos: \\{.*}$"),
+            Regex.escapeReplacement("    repos: {" + repos.entries.joinToString(", ") { (repo, dir) -> "$repo: \"$dir\"" } + "}")))
     }
     val journal = java.util.concurrent.CopyOnWriteArrayList<String>()
     val world: ProjectWorld = ProjectWorld.of(inForce(root), "panda", project) { journal += it }
@@ -286,8 +298,14 @@ class PoolOffice(log: FixtureLog = FixtureLog(), budgets: String = BUDGETS) : Au
             else -> null
         }
     }
+    /** What the vendor last reported through the seats — what the seats hand the pool's facts. */
+    @Volatile var vendor: List<VendorReport> = emptyList()
     val office: Office = Office.start("panda", project, root, facts, Operations { _, done -> done(OperationResult.Ok()) }, NoSeats,
-        Clock { Instant.parse("2026-11-20T09:00:00Z") }, folded = { office -> world.reading(office); pool.reading(office) })
+        Clock { Instant.parse("2026-11-20T09:00:00Z") }, folded = { office ->
+            world.reading(office)
+            pool.reading(PoolFacts.Reading({ office.rules }, { office.state }, { office.counted() }, { office.clock.now() }, reports = { vendor }, arriving = office::arriving))
+        })
+    val reports: Reports? = if (reporting) Reports(office, world, pool).also { office.reports = it } else null
 
     /** A message from [from] — a role's seat, or a robot's role — of [kind] about `KP/P3/S3.1`, with [args] (JSON). */
     fun send(from: String, kind: String, args: String, to: String? = null, re: String? = null): Answer = office.submit(Sender.Seat(from), json(

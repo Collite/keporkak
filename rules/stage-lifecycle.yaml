@@ -1312,6 +1312,78 @@ transitions:
     with:
       seat:
         arg: seat
+- from: '*active'
+  to: paused
+  kind: seat-gone
+  guard: a death past the cap (observed) · the stage is paused and nothing is re-seated · Bora rules — one more re-seat, or recut
+  id: T-81
+  'on': message
+  require:
+  - any:
+    - fact: seat.process_gone
+      seat:
+        arg: seat
+    - fact: seat.protocol_closed
+      seat:
+        arg: seat
+  - fact: seat.tool_call_open_for
+    seat:
+      arg: seat
+    eq: 0
+  - counter: seat_gone_events
+    gte:
+      cap: seat_gone_events_per_stage
+  effects: []
+- from: paused
+  to: paused
+  kind: seat-gone
+  guard: the same, for a stage already paused
+  id: T-82
+  'on': message
+  require:
+  - any:
+    - fact: seat.process_gone
+      seat:
+        arg: seat
+    - fact: seat.protocol_closed
+      seat:
+        arg: seat
+  - fact: seat.tool_call_open_for
+    seat:
+      arg: seat
+    eq: 0
+  - counter: seat_gone_events
+    gte:
+      cap: seat_gone_events_per_stage
+  effects: []
+- from: paused
+  to: recut
+  kind: ruling
+  guard: 'Bora: recut a stage whose seats died past the cap'
+  id: T-84
+  'on': message
+  require:
+  - signed: bora
+  - arg: outcome
+    eq: recut
+  - counter: seat_gone_events
+    gte:
+      cap: seat_gone_events_per_stage
+  effects: []
+- from: '*active'
+  to: recut
+  kind: ruling
+  guard: 'Bora: recut a stage whose seats died past the cap, when it is not paused'
+  id: T-85
+  'on': message
+  require:
+  - signed: bora
+  - arg: outcome
+    eq: recut
+  - counter: seat_gone_events
+    gte:
+      cap: seat_gone_events_per_stage
+  effects: []
 active_states:
 - assigned
 - building
@@ -1846,6 +1918,60 @@ seat:
         seat:
           arg: seat
     id: SEAT-40
+  - from: gone
+    to: gone
+    kind: ruling
+    'on': message
+    guard: 'Bora: one more re-seat, past the cap'
+    require:
+    - signed: bora
+    - arg: outcome
+      eq: reseat
+    - counter: seat_gone_events
+      gte:
+        cap: seat_gone_events_per_stage
+    effects:
+    - do: seat.reseat
+      with:
+        seat:
+          arg: seat
+    id: SEAT-43
+  - from: ready
+    to: retired
+    kind: retire
+    'on': message
+    guard: a seat that holds a slot and will not work — its stage is neither active nor paused (C)
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+    id: SEAT-44
+  - from: provisioned
+    to: retired
+    kind: retire
+    'on': message
+    guard: a seat that holds a slot and will not work — its stage is neither active nor paused (C)
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+    id: SEAT-45
+  - from: gone
+    to: retired
+    kind: retire
+    'on': message
+    guard: a seat that holds a slot and will not work — its stage is neither active nor paused (C)
+    require: []
+    effects:
+    - do: seat.retire
+      with:
+        seat:
+          arg: seat
+    id: SEAT-46
 phase:
   states:
   - open

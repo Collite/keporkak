@@ -1,5 +1,6 @@
 # Retro robot — wakes its own fresh session only, after exit cleanup completed.
 role: retro
+order: 4
 active_when:
   always: true
 intercepts: []

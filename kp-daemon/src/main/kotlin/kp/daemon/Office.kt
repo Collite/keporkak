@@ -41,6 +41,12 @@ class Office private constructor(
     val changes = Changes()
     @Volatile var rules: InForceRules = rules
         private set
+    /**
+     * The four facts the daemon reports when they change (contracts.md §4.4, Amendment 45): the service's, told of a
+     * judgement that moved a seat or a stage and of a reload here, and by its seats of the rest. None in a rehearsal,
+     * whose world is its walk's table.
+     */
+    @Volatile var reports: Reports? = null
     /** The last reload the mailroom refused, while no later one was accepted (contracts.md §2.2, Amendment 15). */
     @Volatile var refusedReload: RefusedReload? = null
         private set
@@ -132,6 +138,7 @@ class Office private constructor(
             is Reload.Accepted -> reload.also {
                 rules = InForceRules.of(files.lastRead).first ?: error("the mailroom accepted rules kp-rules refuses")
                 refusedReload = null
+                reports?.reloaded()
             }
             is Reload.Rejected -> reload.also { refusedReload = RefusedReload(clock.now(), it.problems, files.lastRead) }
         }.also {
@@ -174,7 +181,7 @@ class Office private constructor(
             var office: Office? = null
             // A result is judged on its operation's thread (contracts.md §7, Amendment 36): its change is signalled there.
             Mailroom.start(project, OfficeId(name), files, facts, operations, deliveries, clock, robots = true, journal = Journal::say,
-                resulted = { office?.changes?.signal() }) { mailroom ->
+                resulted = { office?.changes?.signal() }, moved = { office?.reports?.moved() }) { mailroom ->
                 val rules = InForceRules.of(files.lastRead).first ?: error("the mailroom started on rules kp-rules refuses")
                 presence.seed(mailroom.state)
                 presence.state = { mailroom.state }

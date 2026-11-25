@@ -99,7 +99,8 @@ internal class Reacting(private val rules: RuleSet, private val state: State, pr
     }
 
     /**
-     * Whether an active robot takes the arriving message (contracts.md §8), asked in the order of their files' names.
+     * Whether an active robot takes the arriving message (contracts.md §8), asked in their order: the lowest `order:` first
+     * (Amendment 45; D-118), as the rule set keeps them.
      * Its queue takes every request of a kind the queue orders that is addressed to the robot's role, held `by` the
      * queue's own id: it is handed over by [freed]. Its `intercepts` — a
      * kind, or a class and an addressee — route the message to the robot, which holds it when its rules answer the

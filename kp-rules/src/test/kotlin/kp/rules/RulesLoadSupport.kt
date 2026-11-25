@@ -94,7 +94,15 @@ fun fixtureFiles(given: YamlMap): Map<String, String> {
         "rules/engagement.yaml" to """{"version": 1, "roles": {"coder": {}, "teamlead": {}, "principal": {}}, "graduation": {"never": []},
             "mailroom_declared_effects": $declared, "caps": ${part("caps")}, "profile": $profile, "autonomy_profiles": $profiles$secondKey$stopGate}""",
         "rules/vocabulary.yaml" to vocabulary,
-    ) + robots.mapIndexed { index, robot -> "robots/fixture-$index.yaml" to jsonOf(robot) }
+    ) + robots.mapIndexed { index, robot -> "robots/fixture-$index.yaml" to ordered(robot, index) }
+}
+
+/**
+ * A fixture's robot as the walker reads it (S3.4, Amendment 45): asked in the order its scenario lists it — the `order:` it
+ * states, else its place, from 1. The self-test's fixtures are no robot files, which state theirs.
+ */
+private fun ordered(robot: YamlNode, index: Int): String = jsonOf(robot).let { text ->
+    if (robot !is YamlMap || robot.entries.keys.any { it.content == "order" }) text else "{\"order\": ${index + 1}" + text.removePrefix("{").let { if (it == "}") it else ", $it" }
 }
 
 /** JSON is YAML: a fixture's sub-document handed on as text. Scalars keep their content. */

@@ -91,20 +91,24 @@ class RepairsSpec : StringSpec({
         office.readBack().records<Held>().map { it.by } shouldBe listOf("robot:QA-6")
     }
 
-    "T5 — active robots are asked in the order of their files' names: QA's file renamed before the Deputy's, QA's queue takes a deploy while Bora is away, and it is refused at once" {
-        // Renamed, a file goes to the end of the texts the rules are loaded from; `a-qa.yaml` is still first by name. Only the
-        // order of the names puts QA's queue before the Deputy: a load that kept the texts' order would ask the Deputy first
-        // (S2.7 T6, issue #34 — a spec that stands on the order it names, not on its control).
-        fun deployWhileAway(qa: String?): List<String> {
+    "T5 — active robots are asked in their order: (S3.4, D-118): QA's put before the Deputy's, QA's queue takes a deploy while Bora is away, and it is refused at once; a file renamed keeps its place" {
+        // S2.7 T6 (issue #34) pinned the order by the files' names: `a-qa.yaml` came first. Since Amendment 45 each robot file
+        // states its `order:`, and only that number puts QA's queue before the Deputy — a name changes nothing.
+        fun deployWhileAway(change: (Texts) -> Unit): List<String> {
             val office = Office(walk = "H-3", others = mapOf("KP/P3/S3.3" to "released"), robots = true, at = "2026-11-13T22:00:00Z")
-            qa?.let { office.texts.rename("robots/qa.yaml", it) }
+            change(office.texts)
             office.restart()
             office.bora("""{"kind": "away"}""")
             office.send("teamlead", """{"kind": "deploy-request", "stage": "KP/P3/S3.3", "args": {"pin": "image-head-1", "smoke": "the stage smoke"}}""")
             return office.readBack().story().drop(2)
         }
+        val keptForBora = listOf("deploy-request held by robot:DEP-15", "hold by robot:DEP-15 delivered")
 
-        deployWhileAway(null) shouldBe listOf("deploy-request held by robot:DEP-15", "hold by robot:DEP-15 delivered")
-        deployWhileAway("robots/a-qa.yaml") shouldBe listOf("deploy-request refused") // a deploy needs Bora present: the Deputy no longer keeps it for him
+        deployWhileAway { } shouldBe keptForBora
+        deployWhileAway { it.rename("robots/qa.yaml", "robots/a-qa.yaml") } shouldBe keptForBora
+        deployWhileAway {
+            it.edit("robots/qa.yaml", "\norder: 3\n", "\norder: 1\n")
+            it.edit("robots/deputy.yaml", "\norder: 1\n", "\norder: 3\n")
+        } shouldBe listOf("deploy-request refused") // a deploy needs Bora present: the Deputy no longer keeps it for him
     }
 })

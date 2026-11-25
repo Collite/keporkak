@@ -1,0 +1,263 @@
+# D-118, T-82: a second seat dies in a stage already paused past the cap. The coder's fourth death pauses the stage and
+# asks Bora (T-81, POOL-11); the reviewer's death while it is paused asks him again: its seat-gone fires T-82 and SEAT-06,
+# a step of its own, as D-81's walk pins T-80 — one ruling-request per death. The coder's death is reported twice — the
+# process gone and the protocol closed — in an order the world does not fix (contracts.md §4.4, Amendment 30): whichever
+# report comes first sends seat-gone and the ruling-request, and the second finds the seat gone and sends nothing. Bora's
+# two rulings re-seat both seats (SEAT-43), each on a thread of its own (FLAG_THREAD-01; D-124); the first re-seat returns
+# the stage (T-60), the second moves its seat only (SEAT-07). Walked in S3.4, which the folder of D-118 left open; the
+# reviewer's death ordered in its fix round (review-038 B1).
+# Supplied observations and fake operation results; this walk never runs external actions.
+name: a-second-seat-dies-past-the-cap
+stage: S9.10
+initial: building
+final: building
+seats:
+  coder-1: coder
+  reviewer-1: reviewer
+facts:
+  seat.process_gone: false
+  seat.protocol_closed: false
+  seat.tool_call_open_for: 0
+  seat.inbox_replayed: true
+  bora.present: true
+  budget.slots_over: 1
+steps:
+- who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: coder-1
+  facts:
+    seat.process_gone: true
+  expect:
+    rules:
+    - POOL-1
+    sends:
+    - seat-gone
+- id: gone-1
+  who: pool
+  by: robot:POOL-1
+  kind: seat-gone
+  args:
+    seat: coder-1
+  expect:
+    state: paused
+    transitions:
+    - T-59
+    - SEAT-06
+- operation: seat.reseat
+  request: gone-1
+  result: ok
+  expect:
+    sends:
+    - re-seated
+- who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: coder-1
+  expect:
+    state: building
+    transitions:
+    - T-60
+    - SEAT-07
+- who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: coder-1
+  facts:
+    seat.process_gone: true
+  expect:
+    rules:
+    - POOL-1
+    sends:
+    - seat-gone
+- id: gone-2
+  who: pool
+  by: robot:POOL-1
+  kind: seat-gone
+  args:
+    seat: coder-1
+  expect:
+    state: paused
+    transitions:
+    - T-59
+    - SEAT-06
+- operation: seat.reseat
+  request: gone-2
+  result: ok
+  expect:
+    sends:
+    - re-seated
+- who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: coder-1
+  expect:
+    state: building
+    transitions:
+    - T-60
+    - SEAT-07
+- who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: coder-1
+  facts:
+    seat.process_gone: true
+  expect:
+    rules:
+    - POOL-1
+    sends:
+    - seat-gone
+- id: gone-3
+  who: pool
+  by: robot:POOL-1
+  kind: seat-gone
+  args:
+    seat: coder-1
+  expect:
+    state: paused
+    transitions:
+    - T-59
+    - SEAT-06
+- operation: seat.reseat
+  request: gone-3
+  result: ok
+  expect:
+    sends:
+    - re-seated
+- who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: coder-1
+  expect:
+    state: building
+    transitions:
+    - T-60
+    - SEAT-07
+- id: coder-ends
+  unordered:
+  - id: coder-process-gone
+    who: daemon
+    event:
+      fact: seat.process_gone
+    trigger:
+      seat: coder-1
+    facts:
+      seat.process_gone: true
+  - id: coder-protocol-closed
+    who: daemon
+    event:
+      fact: seat.protocol_closed
+    trigger:
+      seat: coder-1
+    facts:
+      seat.protocol_closed: true
+- id: reviewer-process-gone
+  who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: reviewer-1
+  facts:
+    seat.process_gone: true
+  expect:
+    rules:
+    - POOL-11
+    sends:
+    - seat-gone
+    - ruling-request
+- id: reviewer-gone
+  who: pool
+  by: robot:POOL-11
+  kind: seat-gone
+  args:
+    seat: reviewer-1
+  expect:
+    state: paused
+    transitions:
+    - T-82
+    - SEAT-06
+    seats:
+      coder-1: gone
+      reviewer-1: gone
+- id: ask-reviewer
+  who: pool
+  by: robot:POOL-11
+  kind: ruling-request
+  args:
+    seat: reviewer-1
+    default: reseat
+    citation: T-81
+  expect:
+    state: paused
+- id: rule-coder
+  who: bora
+  kind: ruling
+  signed: bora
+  re: coder-ends/ruling-request
+  args:
+    outcome: reseat
+    seat: coder-1
+  expect:
+    state: paused
+    transitions:
+    - FLAG_THREAD-01
+    - SEAT-43
+    seats:
+      coder-1: gone
+      reviewer-1: gone
+- operation: seat.reseat
+  request: rule-coder
+  result: ok
+  expect:
+    sends:
+    - re-seated
+- who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: coder-1
+  expect:
+    state: building
+    transitions:
+    - T-60
+    - SEAT-07
+    seats:
+      coder-1: ready
+      reviewer-1: gone
+- id: rule-reviewer
+  who: bora
+  kind: ruling
+  signed: bora
+  re: ask-reviewer
+  args:
+    outcome: reseat
+    seat: reviewer-1
+  expect:
+    state: building
+    transitions:
+    - FLAG_THREAD-01
+    - SEAT-43
+- operation: seat.reseat
+  request: rule-reviewer
+  result: ok
+  expect:
+    sends:
+    - re-seated
+- who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: reviewer-1
+  expect:
+    state: building
+    transitions:
+    - SEAT-07
+    seats:
+      coder-1: ready
+      reviewer-1: ready

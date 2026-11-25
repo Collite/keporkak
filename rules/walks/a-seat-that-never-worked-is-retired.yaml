@@ -1,0 +1,26 @@
+name: a-seat-that-never-worked-is-retired
+stage: S9.8
+initial: planned
+final: planned
+seats:
+  coder-1: coder
+facts:
+  budget.slots_over: 1
+steps:
+- id: retire-1
+  who: pool
+  kind: retire
+  args:
+    seat: coder-1
+  expect:
+    state: planned
+    transitions:
+    - SEAT-44
+    seats:
+      coder-1: retired
+- operation: seat.retire
+  request: retire-1
+  result: ok
+  expect:
+    seats:
+      coder-1: retired

@@ -33,9 +33,15 @@ object Rules {
         val kinds = parsed(KINDS)?.let { readKinds(Doc(KINDS, report), it) }
         val engagement = parsed(ENGAGEMENT)?.let { readEngagement(Doc(ENGAGEMENT, report), it) }
         val vocabulary = parsed(VOCABULARY)?.let { readVocabulary(Doc(VOCABULARY, report), it) }
-        val robots = files.keys.filter { robotFile.matches(it) }.sorted().mapNotNull { path ->
+        val read = files.keys.filter { robotFile.matches(it) }.sorted().mapNotNull { path ->
             parsed(path)?.let { readRobot(Doc(path, report), it) }?.let { path to it }
-        }.toMap()
+        }
+        // Two files with one number: each is refused, naming the other (contracts.md §8, Amendment 45).
+        read.filter { it.second.order != Robot.UNORDERED }.groupBy { it.second.order }.values.filter { it.size > 1 }.forEach { same ->
+            same.forEach { (path, robot) -> report.add(path, null, "order ${robot.order} is also ${same.filter { it.first != path }.joinToString { it.first }}'s: each robot's order is its own") }
+        }
+        // The active robots are asked the lowest first: the rule set keeps them in that order.
+        val robots = read.sortedBy { it.second.order }.toMap()
         val personaModes = files.filterKeys { personaFile.matches(it) }.toSortedMap().mapNotNull { (path, text) ->
             YamlText.frontmatter(path, text, report)?.let { readPersona(Doc(path, report), it) }
         }.toMap()

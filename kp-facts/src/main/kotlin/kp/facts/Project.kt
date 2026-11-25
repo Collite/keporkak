@@ -71,16 +71,19 @@ internal fun Reading.proofFiles(): Observation {
 }
 
 /** The changed paths of the checkout [dir] — tracked or not, not ignored — as `n changed path(s)` would say; the number. */
-internal fun Git.changedPaths(dir: java.nio.file.Path): Int {
+internal fun Git.changedPaths(dir: java.nio.file.Path): Int = changed(dir).size
+
+/** The changed paths of the checkout [dir] — tracked or not, not ignored — as `git status` lists them: a rename by its new path. */
+internal fun Git.changed(dir: java.nio.file.Path): List<String> {
     val fields = run(dir, "status", "--porcelain=v1", "-z", "--untracked-files=all").output.split("\u0000").filter { it.isNotEmpty() }
-    var entries = 0
+    val paths = ArrayList<String>()
     var index = 0
     while (index < fields.size) {
         val status = fields[index].take(2)
-        entries++
+        paths += fields[index].drop(3)
         index += if ('R' in status || 'C' in status) 2 else 1
     }
-    return entries
+    return paths
 }
 
 private const val REGISTER = "REGISTER.md"

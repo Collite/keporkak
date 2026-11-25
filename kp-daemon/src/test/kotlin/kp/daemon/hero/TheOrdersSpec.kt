@@ -27,8 +27,10 @@ class TheOrdersSpec : FreeSpec({
         "every walk on master that marks unordered events or binds two seats to a stage" {
             val walks = Orders.ofTheWalksOnMaster().onEach(HeroReport::orders)
 
-            walks.map { it.walk } shouldBe listOf("seat-deaths-paused-D-81", "seat-ends-by-operation-D-85")
-            walks.map { it.played.size } shouldBe listOf(1, 6)
+            // S3.4: two seats of a stage dying past the cap — the first's two reports in either order, the second's death a
+            // step of its own that fires T-82 (D-118; review-038 B1).
+            walks.map { it.walk } shouldBe listOf("a-second-seat-dies-past-the-cap", "seat-deaths-paused-D-81", "seat-ends-by-operation-D-85")
+            walks.map { it.played.size } shouldBe listOf(2, 1, 6)
             walks.flatMap { it.played }.filter { it.end != it.walkers } shouldBe emptyList()
         }
     }

@@ -1,0 +1,19 @@
+name: a-re-seated-seat-in-its-stage-is-not-retired
+stage: S9.7
+initial: building
+final: building
+seats:
+  coder-1: coder
+facts:
+  budget.slots_over: 1
+steps:
+- who: pool
+  kind: retire
+  args:
+    seat: coder-1
+  expect:
+    refused: true
+    state: building
+    seats:
+      coder-1: ready
+    refused_by: retire

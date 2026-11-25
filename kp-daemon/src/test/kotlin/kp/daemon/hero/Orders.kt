@@ -33,13 +33,15 @@ import kotlin.io.path.name
 class Orders(val walk: String, val played: List<Played>) {
     /**
      * An end, as the walker's `END` holds it (S3.10 T5; Collite/keporkak#56): each stage's state, by its name in the walk,
-     * and each of the walk's seats'; the counters that are not zero, by stage name — an effort's under `effort`; the
+     * and each of the walk's seats'; the states of the flag threads moved in each stage, sorted — a flag thread is a
+     * message thread's (contracts.md §2.2, D-124), and its name is an unordered step's numbering, which the orders vary;
+     * the counters that are not zero, by stage name — an effort's under `effort`; the
      * messages delivered and refused, counted by kind; every operation the mailroom requested, `<op> (<kind> <seat>)` by
      * the message that asked it, whatever kind that is (S3.11 T8, Collite/keporkak#67, 2) — but the mailroom's own, which
      * no walk's step asks: `notify.bora`, a robot's wake of its own seat in a mode, and a seat's wake for a delivery or a
      * turn's end, a `seat.wake` no transition of its cause's kind names — and those of them still waiting for their result.
      *
-     * What the walker's end holds beside, and this leaves out: a stage's flag thread, the state it returns to, its Found
+     * What the walker's end holds beside, and this leaves out: the state a stage returns to, its Found
      * lines and its facts; the seats' bindings; Bora's presence and the phase; how often a kind fired in its window; each
      * record whole (its args, its class, its tick) and an operation's result; what a robot sent that no step delivered.
      * The walker keeps them to judge the walk's own steps by; the mailroom keeps them in its own words, or not at all
@@ -49,6 +51,7 @@ class Orders(val walk: String, val played: List<Played>) {
     data class End(
         val stages: Map<String, String>,
         val seats: Map<String, String>,
+        val threads: Map<String, List<String>> = emptyMap(),
         val counters: Map<String, Map<String, Int>> = emptyMap(),
         val delivered: Map<String, Int> = emptyMap(),
         val refused: Map<String, Int> = emptyMap(),
@@ -59,7 +62,7 @@ class Orders(val walk: String, val played: List<Played>) {
         fun against(other: End?): List<String> {
             if (other == null) return listOf("the walker has no end of this order")
             return listOf(
-                "stages" to (stages to other.stages), "seats" to (seats to other.seats), "counters" to (counters to other.counters),
+                "stages" to (stages to other.stages), "seats" to (seats to other.seats), "threads" to (threads to other.threads), "counters" to (counters to other.counters),
                 "delivered" to (delivered to other.delivered), "refused" to (refused to other.refused),
                 "operations" to (operations to other.operations), "waiting" to (waiting to other.waiting),
             ).filter { (_, both) -> both.first != both.second }.map { (part, both) -> "$part ${both.first}, the walker's ${both.second}" }
@@ -81,6 +84,7 @@ class Orders(val walk: String, val played: List<Played>) {
     companion object {
         private const val NOTIFY_BORA = "notify.bora"
         private const val SEAT_WAKE = "seat.wake"
+        private const val FLAG = "flag"
 
         /** [name] — a walk of `rules/walks/`, or of the specs' own walks — in each of its orders. */
         fun of(name: String): Orders = of(Hero.walkFile(name))
@@ -123,11 +127,16 @@ class Orders(val walk: String, val played: List<Played>) {
             fun named(op: Op) = described(op.op, messages[op.cause]?.let { it.kind to (it.args?.get("seat") as? JsonPrimitive)?.contentOrNull }, op.cause)
             val stageCounters = rules.lifecycle.counters.values.filter { it.scope == Scope.STAGE }.map { it.name }
             val effortCounters = rules.lifecycle.counters.values.filter { it.scope == Scope.EFFORT }.map { it.name }
+            val stageNames = walk.stageNames.associateBy { hero.stage(it) }
+            val threads = state.machines[FLAG].orEmpty().mapNotNull { (thread, moved) ->
+                messages[thread]?.stage?.value?.let(stageNames::get)?.let { it to moved.state }
+            }.groupBy({ it.first }, { it.second }).mapValues { (_, states) -> states.sorted() }
             val counters = walk.stageNames.associateWith { name -> stageCounters.associateWith { state.counter(hero.stage(name), it).toInt() }.filterValues { it != 0 } } +
                 ("effort" to effortCounters.associateWith { state.counter(hero.stage().substringBefore('/'), it).toInt() }.filterValues { it != 0 })
             return End(
                 stages = walk.stageNames.associateWith { name -> state.stage(hero.stage(name)) ?: Walk.PLANNED },
                 seats = walk.seats.keys.associateWith { seat -> state.machine("seat", seat)?.state ?: "provisioned" },
+                threads = threads,
                 counters = counters.filterValues { it.isNotEmpty() },
                 delivered = lines.filterIsInstance<Delivered>().mapNotNull { messages[it.id]?.kind }.groupingBy { it }.eachCount(),
                 refused = lines.filterIsInstance<Refused>().filter { it.id !in expectedRefused }.mapNotNull { messages[it.id]?.kind }.groupingBy { it }.eachCount(),
@@ -183,6 +192,7 @@ class Orders(val walk: String, val played: List<Played>) {
             return End(
                 stages = at.texts("stages"),
                 seats = at.texts("seats"),
+                threads = at.getValue("threads").jsonObject.mapValues { (_, states) -> states.jsonArray.map { it.jsonPrimitive.content } },
                 counters = at.getValue("counters").jsonObject.mapValues { (_, values) -> values.jsonObject.mapValues { it.value.jsonPrimitive.int } },
                 delivered = kinds(records("log"), "delivered").groupingBy { it }.eachCount(),
                 refused = refused.groupingBy { it }.eachCount(),

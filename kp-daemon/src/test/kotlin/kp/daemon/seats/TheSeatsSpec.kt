@@ -4,6 +4,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainInOrder
 import io.kotest.matchers.collections.shouldNotContain
+import io.kotest.matchers.collections.shouldBeIn
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import kp.daemon.checkout
@@ -129,16 +130,20 @@ class TheSeatsSpec : StringSpec({
                     office.prompted("coder-1", "the replay after death $death") { prompt -> unread.all { it in prompt } }
                     office.prompts("coder-1").last().also { prompt -> unread.forEach { prompt shouldContain it } }
                 } else {
-                    office.until("the pause at the cap") { office.lines().any { it.seq.toLong() > before && it is Message && it.kind == "pause" } }
+                    office.until("Bora asked at the cap") { office.lines().any { it.seq.toLong() > before && it is Message && it.kind == "ruling-request" } }
                     null
                 }
             }
 
-            // Three re-seats — the rules' cap — then the fourth death pauses the seat, and nothing re-seats it.
+            // Three re-seats — the rules' cap — then the fourth death pauses the stage, and nothing re-seats it until Bora rules.
             office.ops("seat.reseat").map { it.phase } shouldBe listOf("requested", "ok", "requested", "ok", "requested", "ok")
             office.office.state.counter(office.stage(), "seat_gone_events") shouldBe 3
-            // Past the cap a dead seat is paused, not marked gone: either of its two reports pauses it (D-81's worked edit).
-            office.lines().filterIsInstance<Message>().filter { it.kind == "pause" }.map { it.by }.filterNot { it in setOf("robot:POOL-11", "robot:POOL-13") } shouldBe emptyList()
+            // Past the cap (D-118): the seat is gone and the stage paused (T-81), and the Pool Manager asks Bora once — either of the
+            // death's two reports sends seat-gone and the ruling-request, the other nothing; no pause is sent to a dead seat.
+            office.office.state.stage(office.stage()) shouldBe "paused"
+            office.office.state.machine("seat", "coder-1")?.state shouldBe "gone"
+            office.lines().filterIsInstance<Message>().filter { it.kind == "ruling-request" }.map { it.by }.single() shouldBeIn listOf("robot:POOL-11", "robot:POOL-13")
+            office.lines().filterIsInstance<Message>().filter { it.kind == "pause" } shouldBe emptyList()
             replays.filterNotNull().forEach { prompt ->
                 prompt shouldContain "project:tasks-p2-s2.4-seats.md"
                 prompt shouldContain "project:STATUS.md"

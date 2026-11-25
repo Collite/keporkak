@@ -1,0 +1,50 @@
+# D-118, SEAT-45: a seat whose start failed holds a slot and will never work. Its stage is planned, so no re-seat can be in
+# flight: the TeamLead asks the Pool Manager to remove it, POOL-8 sends `retire` for a seat that is not busy or retired,
+# and the kind lets it through (SEAT-45). Walked in S3.4, which the folder of D-118 left open.
+# Supplied observations and fake operation results; this walk never runs external actions.
+name: a-provisioned-seat-is-retired
+stage: S9.12
+initial: planned
+final: planned
+seats:
+  coder-1: coder
+stages:
+  S9.12:
+    machines:
+      seat: provisioned
+facts:
+  seat.name:
+    coder: coder-1
+  budget.slot_open: false
+  budget.slots_over: 0
+steps:
+- id: remove
+  who: teamlead
+  kind: session-request
+  args:
+    action: remove
+    seat: coder-1
+  expect:
+    rules:
+    - POOL-8
+    sends:
+    - retire
+- id: retire
+  who: pool
+  by: robot:POOL-8
+  kind: retire
+  re: remove
+  args:
+    seat: coder-1
+  expect:
+    state: planned
+    transitions:
+    - SEAT-45
+    seats:
+      coder-1: retired
+- operation: seat.retire
+  request: retire
+  result: ok
+  expect:
+    seats:
+      coder-1: retired

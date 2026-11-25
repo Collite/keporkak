@@ -18,7 +18,10 @@
 - **SE-6 The daemon reports, the Pool Manager decides.** The driver reports a closed protocol or a dead process at
   once; the Pool Manager's robot half (`robots/pool.yaml`) turns the fact into `seat-gone` and a re-seat; a long silent
   command with an open tool call is *busy*. Re-seat replays the list, STATUS and the unread inbox; at most three
-  seat-gone events per stage. Pause, resume, compact, kill and retire are rows of the matrix. `D-20, D-27 k`
+  seat-gone events per stage. A death past them pauses the stage and leaves the seat gone, and the Pool Manager asks
+  Bora with a `ruling-request` (default `reseat`): his `reseat` grants one more re-seat and the stage goes on, his
+  `recut` ends the stage; each later death asks him again. Pause, resume, compact, kill and retire are rows of the
+  matrix. `D-20, D-27 k, D-118`
 - **SE-7 Watching.** A seat's tmux pane tails the daemon's transcript of that seat; the Pool Manager owns the windows. `D-18`
 - **SE-8 Ranks.** `pool/roster.yaml` explicitly orders (model, effort) pairs, model before effort, and maps skill level
   × thinking size to a pair. V1 uses Claude only; a reviewer is a different seat in a fresh session, ranks at or above
@@ -67,8 +70,10 @@
   Office bootstrap files are S0.3’s; a coder never installs them or runs sudo. `D-43`
 - **SE-25 The office files and thresholds have owners.** `pool/` holds roster, office and budget configuration;
   `robots/pool.yaml` holds the ratified watchdog, open-call watch and compaction thresholds. A running seat is never
-  stopped for a slot cap; only idle seats may be retired when the cap is exceeded. The office user’s readable App key
-  files are an accepted v1 risk; user separation is v1.1 work. `D-46, D-47, D-50`
+  stopped for a slot cap. The Pool Manager retires an idle seat; a seat that holds a slot and will not work — ready and
+  never assigned, provisioned with a failed start, gone in a recut stage — only when its stage is neither active nor
+  paused, so that no re-seat is in flight. The office user’s readable App key files are an accepted v1 risk; user
+  separation is v1.1 work. `D-46, D-47, D-50, D-118`
 
 ## Implementation boundaries
 S0.3 supplied the office's configuration — Panda's, then — and bootstrap templates. The roster uses actual CLI model strings. S2.2

@@ -1,5 +1,6 @@
 # QA robot — queue discipline and persona-only browser decisions (contracts §8).
 role: qa
+order: 3
 active_when:
   always: true
 intercepts: []

@@ -54,8 +54,8 @@ Anything else is refused.
 |---|---|---|---|---|---|
 | `ruling-request` | bora | carries a stated default and a deadline · cites D-n / contract / border | B | 3 / stage | ruling |
 | `session-report` | teamlead | - | A | — | - |
-| `seat-gone` | teamlead | pid/pty gone or protocol closed (observed) · an open in_progress tool call is busy, not gone | A | 3 / stage | - |
-| `re-seated` | teamlead | inbox replayed · ≤ 3 events per stage | A; C if seat_gone_events > cap.reseats_before_cc | 3 / stage | - |
+| `seat-gone` | teamlead | pid/pty gone or protocol closed (observed) · an open in_progress tool call is busy, not gone | A | 6 / stage | - |
+| `re-seated` | teamlead | inbox replayed · ≤ 3 events per stage | A; C if seat_gone_events > cap.reseats_before_cc | 6 / stage | - |
 | `pause` | a seat | anomaly-stop, 3rd refusal, or frozen stage | C | — | - |
 | `resume` | a seat | a ruling cleared the cause | C | — | - |
 | `compact` | a seat | context above the health threshold | A | — | - |
@@ -75,9 +75,9 @@ Executable rules run under your name. Rules marked persona are your instructions
 Named thresholds: watchdog_silence = 5m · open_tool_call_watch = 60m · context_health = 0.7
 
 - **POOL-1** on seat.process_gone changes: when the driver reports a seat's process or protocol gone, and no tool call is in progress; if not ((seat.state (seat=trigger.seat) = gone or seat.state (seat=trigger.seat) = retired)) and seat.tool_call_open_for (seat=trigger.seat) = 0 and seat_gone_events < cap.seat_gone_events_per_stage → send seat-gone to teamlead
-- **POOL-11** on seat.process_gone changes: when the driver reports a seat's process or protocol gone, and no tool call is in progress; if not ((seat.state (seat=trigger.seat) = gone or seat.state (seat=trigger.seat) = retired)) and seat.tool_call_open_for (seat=trigger.seat) = 0 and seat_gone_events ≥ cap.seat_gone_events_per_stage → send pause to trigger.seat
+- **POOL-11** on seat.process_gone changes: when the driver reports a seat's process or protocol gone, and no tool call is in progress; if not ((seat.state (seat=trigger.seat) = gone or seat.state (seat=trigger.seat) = retired)) and seat.tool_call_open_for (seat=trigger.seat) = 0 and seat_gone_events ≥ cap.seat_gone_events_per_stage → send seat-gone to teamlead; send ruling-request to bora
 - **POOL-12** on seat.protocol_closed changes: when the driver reports a seat's process or protocol gone, and no tool call is in progress; if not ((seat.state (seat=trigger.seat) = gone or seat.state (seat=trigger.seat) = retired)) and seat.tool_call_open_for (seat=trigger.seat) = 0 and seat_gone_events < cap.seat_gone_events_per_stage → send seat-gone to teamlead
-- **POOL-13** on seat.protocol_closed changes: when the driver reports a seat's process or protocol gone, and no tool call is in progress; if not ((seat.state (seat=trigger.seat) = gone or seat.state (seat=trigger.seat) = retired)) and seat.tool_call_open_for (seat=trigger.seat) = 0 and seat_gone_events ≥ cap.seat_gone_events_per_stage → send pause to trigger.seat
+- **POOL-13** on seat.protocol_closed changes: when the driver reports a seat's process or protocol gone, and no tool call is in progress; if not ((seat.state (seat=trigger.seat) = gone or seat.state (seat=trigger.seat) = retired)) and seat.tool_call_open_for (seat=trigger.seat) = 0 and seat_gone_events ≥ cap.seat_gone_events_per_stage → send seat-gone to teamlead; send ruling-request to bora
 - **POOL-14** on seat.reseat is ok: when the driver reports a seat's process or protocol gone, and no tool call is in progress → send re-seated to teamlead
 - **POOL-2** on seat.silent_for changes: when a seat is silent past the watchdog and has no tool call in progress; if seat.silent_for (seat=trigger.seat) > robot.watchdog_silence and seat.tool_call_open_for (seat=trigger.seat) = 0 → send kill to trigger.seat
 - **POOL-3** on seat.context_used changes: when a seat's context passes the health threshold; if seat.context_used (seat=trigger.seat) > robot.context_health → send compact to trigger.seat
@@ -86,7 +86,7 @@ Named thresholds: watchdog_silence = 5m · open_tool_call_watch = 60m · context
 - **POOL-15** on anomaly-stop is delivered: when an anomaly-stop names a seat or provisioning; if arg.target = provisioning → send pause to pool
 - **POOL-6** on ruling is delivered: when a ruling clears the cause of a pause; if arg.outcome = cleared and arg.seat and arg.cause → send resume to trigger.args.seat
 - **POOL-7** on budget.consumption changes: when a budget threshold in pool/budgets.yaml is crossed; if (budget.consumption (subscription=trigger.subscription, window=subscription) ≥ budget.warn.0 or budget.consumption (subscription=trigger.subscription, window=subscription) ≥ budget.warn.1) → wake your report mode
-- **POOL-8** on session-request is delivered: when a session-request asks to remove a seat, or a slot cap is exceeded; if arg.action = remove and seat.state (seat=trigger.args.seat) = idle → send retire to trigger.args.seat
+- **POOL-8** on session-request is delivered: when a session-request asks to remove a seat, or a slot cap is exceeded; if arg.action = remove and not ((seat.state (seat=trigger.args.seat) = busy or seat.state (seat=trigger.args.seat) = retired)) → send retire to trigger.args.seat
 - **POOL-16** on budget.slots_over changes: when a session-request asks to remove a seat, or a slot cap is exceeded; if budget.slots_over (dimension=trigger.dimension) > 0 → wake your provision mode
 - **POOL-9** on seat.tool_call_open_for changes: when an open tool call is older than the ratified watch limit (plan.md §4.1); if seat.tool_call_open_for (seat=trigger.seat) > robot.open_tool_call_watch → wake your report mode
 - **POOL-10** on assign expires: when an assign deadline expires: check whether the assigned seat is gone; if (seat.process_gone (seat=trigger.args.seat) or seat.protocol_closed (seat=trigger.args.seat)) and seat.tool_call_open_for (seat=trigger.args.seat) = 0 → send seat-gone to teamlead

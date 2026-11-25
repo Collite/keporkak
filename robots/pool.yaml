@@ -1,6 +1,7 @@
 # The Pool Manager's robot half (D-20, D-27 k, D-35). Its LLM half provisions, reports and explains.
 # Pool robot — observations send declared kinds; own modes do the words and provisioning choices.
 role: pool
+order: 2
 active_when:
   always: true
 intercepts: []
@@ -8,7 +9,7 @@ rules:
 - id: POOL-1
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
-    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+    inbox, send re-seated · otherwise send a ruling-request to Bora (default reseat, citation T-81, the seat)'
   'on':
     fact: seat.process_gone
   if:
@@ -38,7 +39,7 @@ rules:
 - id: POOL-11
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
-    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+    inbox, send re-seated · otherwise send a ruling-request to Bora (default reseat, citation T-81, the seat)'
   'on':
     fact: seat.process_gone
   if:
@@ -60,17 +61,22 @@ rules:
     gte:
       cap: seat_gone_events_per_stage
   then:
-  - send: pause
-    to:
-      trigger: seat
+  - send: seat-gone
+    to: teamlead
     args:
       seat:
         trigger: seat
-      cause: reseat cap
+  - send: ruling-request
+    to: bora
+    args:
+      seat:
+        trigger: seat
+      default: reseat
+      citation: T-81
 - id: POOL-12
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
-    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+    inbox, send re-seated · otherwise send a ruling-request to Bora (default reseat, citation T-81, the seat)'
   'on':
     fact: seat.protocol_closed
   if:
@@ -100,7 +106,7 @@ rules:
 - id: POOL-13
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
-    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+    inbox, send re-seated · otherwise send a ruling-request to Bora (default reseat, citation T-81, the seat)'
   'on':
     fact: seat.protocol_closed
   if:
@@ -122,17 +128,22 @@ rules:
     gte:
       cap: seat_gone_events_per_stage
   then:
-  - send: pause
-    to:
-      trigger: seat
+  - send: seat-gone
+    to: teamlead
     args:
       seat:
         trigger: seat
-      cause: reseat cap
+  - send: ruling-request
+    to: bora
+    args:
+      seat:
+        trigger: seat
+      default: reseat
+      citation: T-81
 - id: POOL-14
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
-    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+    inbox, send re-seated · otherwise send a ruling-request to Bora (default reseat, citation T-81, the seat)'
   'on':
     op: seat.reseat
     eq: ok
@@ -281,10 +292,16 @@ rules:
   if:
   - arg: action
     eq: remove
-  - fact: seat.state
-    seat:
-      trigger: args.seat
-    eq: idle
+  - not:
+      any:
+      - fact: seat.state
+        seat:
+          trigger: args.seat
+        eq: busy
+      - fact: seat.state
+        seat:
+          trigger: args.seat
+        eq: retired
   then:
   - send: retire
     to:

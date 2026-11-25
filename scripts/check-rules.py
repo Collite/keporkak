@@ -98,8 +98,16 @@ if FIXTURE:
         E["stop_gate"] = given["stop_gate"]
     V = given.get("vocabulary", V)
     W = given.get("walks", [])
+def robot_order(robot):
+    """A robot file's `order:` when it is a whole number, as the daemon's loader reads it; else None."""
+    order=robot.get("order") if isinstance(robot,dict) else None
+    if isinstance(order,bool) or not isinstance(order,(int,float)) or order<0 or not float(order).is_integer():return None
+    return int(order)
+# The active robots are asked the lowest `order:` first (contracts.md §8, Amendment 45; D-118); a fixture's robots in the
+# order its scenario lists them. A file whose order is not whole goes last, by name: its FAIL is the walk's verdict.
 ROBOTS = ([(f"fixture-{index}.yaml", robot) for index, robot in enumerate(given.get("robots", []))]
-          if FIXTURE else [(path.name, load_yaml(path.read_text())) for path in sorted((ROOT / "robots").glob("*.yaml"))])
+          if FIXTURE else sorted(((path.name, load_yaml(path.read_text())) for path in sorted((ROOT / "robots").glob("*.yaml"))),
+                                 key=lambda item:(robot_order(item[1]) is None, robot_order(item[1]) or 0, item[0])))
 ROBOT_THRESHOLDS = {name:value for _,robot in ROBOTS for name,value in robot.get("thresholds",{}).items()}
 fails = []
 def fail(m): fails.append(m); print("FAIL", m)
@@ -596,6 +604,13 @@ for d in declared:
 executed = persona = 0
 robot_ids = set()
 for filename, robot in ROBOTS:
+    # A robot file states its order, whole and its own (Amendment 45): a fixture's robots are ordered by their place.
+    if not FIXTURE:
+        if "order" not in robot:fail(f"{filename}: a robot file states its order: a whole number")
+        elif robot_order(robot) is None:fail(f"{filename}: order must be a whole number")
+        else:
+            same=[other for other,others in ROBOTS if other!=filename and robot_order(others)==robot_order(robot)]
+            if same:fail(f"{filename}: order {robot_order(robot)} is also {', '.join(same)}'s: each robot's order is its own")
     role = robot["role"]
     if role not in roles:
         fail(f"{filename}: unknown role '{role}'")
@@ -664,6 +679,7 @@ for filename, robot in ROBOTS:
 if not fails:
     ok(f"mailroom sends only its {len(declared)} declared effects; {len(ROBOTS)} robots checked against the matrix")
     ok(f"{executed} robot rules with on/if/then; {persona} persona rules; queue and named thresholds checked")
+    if not FIXTURE:ok("the robots are asked in their order: "+", ".join(f"{filename} {robot_order(robot)}" for filename,robot in ROBOTS))
 
 # A rule that needs a block's requirements refers to it with `{holds: …}`; it never repeats them (contracts.md §4.1).
 def requirement_parts(requirement):
@@ -748,6 +764,9 @@ class Walk:
         self.used_operations={}
         self.kind_fires={}
         self.thread_hops={}
+        # A flag thread per message thread, as the engine keeps one (contracts.md §2.2, D-124): by the thread's first message,
+        # the stage it was moved in and its state. A thread no step has moved is `asked`.
+        self.flag_threads={}
         self.shared_counters={}
         self.ctx={}
         self.robot=None
@@ -773,7 +792,7 @@ class Walk:
         if stage not in self.contexts:
             setting=self.definition.get("stages",{}).get(stage,{})
             initial=setting.get("initial",self.definition.get("initial","planned"))
-            self.contexts[stage]={"states":{"stage":initial,"seat":"ready","found_item":"found","flag_thread":"asked",**setting.get("machines",{})},"previous":None,"found_items":{},"counters":{},"facts":{**self.definition.get("facts",{}),**setting.get("facts",{})}}
+            self.contexts[stage]={"states":{"stage":initial,"seat":"ready","found_item":"found",**setting.get("machines",{})},"previous":None,"found_items":{},"counters":{},"facts":{**self.definition.get("facts",{}),**setting.get("facts",{})}}
         self.current=self.contexts[stage]
     def seat_default(self,seat):
         """The state a seat no step has moved is in (S3.6 T2): a stage's `machines: seat:` is that stage's coder's — the seat
@@ -802,8 +821,21 @@ class Walk:
     def state(self,machine):
         if machine=="found_item":return self.current["found_items"].get(self.ctx.get("args",{}).get("found","default"),"found")
         if machine=="seat":return self.seat_state(self.subject) if self.subject is not None else None
+        if machine=="flag_thread":return self.flag_threads.get(self.thread_key(),{}).get("state","asked")
         return self.shared[machine] if machine in self.shared else self.current["states"].get(machine)
+    def thread_key(self):
+        """The thread of the message being read: the first message of its chain of replies, as the mailroom gives a reply its
+        reply's thread (contracts.md §2.1, §2.2) — a message that answers none is its own."""
+        key=self.ctx.get("reply_id");seen=set()
+        while isinstance(key,str) and key not in seen:
+            seen.add(key);parent=self.messages.get(key,{}).get("reply_id")
+            if not isinstance(parent,str):return key
+            key=parent
+        return self.ctx.get("id")
     def set_state(self,machine,state):
+        if machine=="flag_thread":
+            self.flag_threads[self.thread_key()]={"stage":self.ctx.get("stage",self.stage),"state":state}
+            return
         if machine=="found_item":
             self.current["found_items"][self.ctx.get("args",{}).get("found","default")]=state
             return
@@ -1266,12 +1298,13 @@ class Walk:
              "no rule reads it, though a requirement `msg: by` could",
         "rule":"which robot rule woke a seat, as `by` — the robot is the wake's `role`, which is held",
     }
-    HELD={"contexts","shared","shared_counters","seats","bound","history","messages","pending","requested","kind_fires","emissions"}
+    HELD={"contexts","shared","shared_counters","seats","bound","history","messages","pending","requested","kind_fires","emissions","flag_threads"}
     def ended(self,order,error):
         """An order's end, printed as `END` with the order, and the walk's verdict on it: (passed, the line to print). The
         end holds everything the walk keeps but what LEFT_OUT and the two lists after it name, each with its reason
-        (review-027 B1, B2): of each stage, its state (`stages`), the state it returns to from a pause (`returns`), its
-        flag thread (`threads`), Found lines (`found`), other machines (`machines`), facts (`facts`) and counters
+        (review-027 B1, B2): of each stage, its state (`stages`), the state it returns to from a pause (`returns`), the
+        states of the flag threads moved in it, sorted — a thread's name is an unordered step's numbering, which the
+        orders vary (`threads`; D-124), Found lines (`found`), other machines (`machines`), facts (`facts`) and counters
         (`counters`, with the effort's); each seat's state (`seats`) and the stage it is bound to (`bound`); Bora's
         presence and the phase; how often each kind fired in its window (`fires`); every message, refusal, operation's
         result and robot's wake (an op `seat.wake`, contracts.md §4.4) the walk keeps (`log`), and each message's present
@@ -1291,12 +1324,13 @@ class Walk:
             # An event's request has no message: its id is its tick, the same in every order.
             message=self.messages.get(request_id)
             return json.dumps({"operation":operation,"asked by":described(message) if message is not None else request_id},sort_keys=True)
-        others={stage:{machine:state for machine,state in sorted(context["states"].items()) if machine not in ("stage","flag_thread",*self.LEFT_OUT_OF_A_STAGE)}
+        others={stage:{machine:state for machine,state in sorted(context["states"].items()) if machine not in ("stage",*self.LEFT_OUT_OF_A_STAGE)}
                 for stage,context in self.contexts.items()}
         end={"stages":{stage:context["states"]["stage"] for stage,context in self.contexts.items()},
              "returns":{stage:context["previous"] for stage,context in self.contexts.items()},
              "seats":self.seat_states(),"bound":dict(sorted(self.bound.items())),
-             "threads":{stage:context["states"]["flag_thread"] for stage,context in self.contexts.items()},
+             "threads":{stage:sorted(thread["state"] for thread in self.flag_threads.values() if thread["stage"]==stage)
+                        for stage in self.contexts if any(thread["stage"]==stage for thread in self.flag_threads.values())},
              "found":{stage:dict(sorted(context["found_items"].items())) for stage,context in self.contexts.items() if context["found_items"]},
              **({"machines":{stage:states for stage,states in others.items() if states}} if any(others.values()) else {}),
              "facts":{stage:context["facts"] for stage,context in self.contexts.items()},
