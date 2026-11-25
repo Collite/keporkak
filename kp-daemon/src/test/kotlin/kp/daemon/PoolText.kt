@@ -1,6 +1,9 @@
 package kp.daemon
 
 import java.nio.file.Path
+import kotlin.io.path.copyTo
+import kotlin.io.path.createParentDirectories
+import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
@@ -97,3 +100,17 @@ fun checkRules(rules: Path): List<String> {
 
 /** The daemon's load of [rules]: the problems that keep its rules out of force. */
 fun daemonLoad(rules: Path): List<String> = InForceRules.of(RuleFiles(rules).read()).second.problems.map { it.toString() }
+
+/**
+ * `check-rules.py` run on [rules] whole — a copy of the checkout's rules, robots, pool and personas: the walker of the copy,
+ * which reads the files beside its own `scripts/` (S3.4). Its `FAIL` lines.
+ */
+fun walkerOn(rules: Path): List<String> {
+    val script = rules.resolve("scripts/check-rules.py")
+    if (!script.exists()) checkout.resolve("scripts/check-rules.py").copyTo(script.createParentDirectories())
+    val process = ProcessBuilder(checkout.resolve("build/python/bin/python").toString(), script.toString())
+        .directory(rules.toFile()).redirectErrorStream(true).start()
+    val lines = process.inputStream.bufferedReader().readLines()
+    process.waitFor()
+    return lines.filter { it.startsWith("FAIL ") }.map { it.removePrefix("FAIL ") }
+}

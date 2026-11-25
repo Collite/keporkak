@@ -41,6 +41,12 @@ class Office private constructor(
     val changes = Changes()
     @Volatile var rules: InForceRules = rules
         private set
+    /**
+     * The four facts the daemon reports when they change (contracts.md §4.4, Amendment 45): the service's, told of a
+     * judgement that moved a seat or a stage and of a reload here, and by its seats of the rest. None in a rehearsal,
+     * whose world is its walk's table.
+     */
+    @Volatile var reports: Reports? = null
     /** The last reload the mailroom refused, while no later one was accepted (contracts.md §2.2, Amendment 15). */
     @Volatile var refusedReload: RefusedReload? = null
         private set
