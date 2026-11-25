@@ -98,8 +98,16 @@ if FIXTURE:
         E["stop_gate"] = given["stop_gate"]
     V = given.get("vocabulary", V)
     W = given.get("walks", [])
+def robot_order(robot):
+    """A robot file's `order:` when it is a whole number, as the daemon's loader reads it; else None."""
+    order=robot.get("order") if isinstance(robot,dict) else None
+    if isinstance(order,bool) or not isinstance(order,(int,float)) or order<0 or not float(order).is_integer():return None
+    return int(order)
+# The active robots are asked the lowest `order:` first (contracts.md §8, Amendment 45; D-118); a fixture's robots in the
+# order its scenario lists them. A file whose order is not whole goes last, by name: its FAIL is the walk's verdict.
 ROBOTS = ([(f"fixture-{index}.yaml", robot) for index, robot in enumerate(given.get("robots", []))]
-          if FIXTURE else [(path.name, load_yaml(path.read_text())) for path in sorted((ROOT / "robots").glob("*.yaml"))])
+          if FIXTURE else sorted(((path.name, load_yaml(path.read_text())) for path in sorted((ROOT / "robots").glob("*.yaml"))),
+                                 key=lambda item:(robot_order(item[1]) is None, robot_order(item[1]) or 0, item[0])))
 ROBOT_THRESHOLDS = {name:value for _,robot in ROBOTS for name,value in robot.get("thresholds",{}).items()}
 fails = []
 def fail(m): fails.append(m); print("FAIL", m)
@@ -596,6 +604,13 @@ for d in declared:
 executed = persona = 0
 robot_ids = set()
 for filename, robot in ROBOTS:
+    # A robot file states its order, whole and its own (Amendment 45): a fixture's robots are ordered by their place.
+    if not FIXTURE:
+        if "order" not in robot:fail(f"{filename}: a robot file states its order: a whole number")
+        elif robot_order(robot) is None:fail(f"{filename}: order must be a whole number")
+        else:
+            same=[other for other,others in ROBOTS if other!=filename and robot_order(others)==robot_order(robot)]
+            if same:fail(f"{filename}: order {robot_order(robot)} is also {', '.join(same)}'s: each robot's order is its own")
     role = robot["role"]
     if role not in roles:
         fail(f"{filename}: unknown role '{role}'")
@@ -664,6 +679,7 @@ for filename, robot in ROBOTS:
 if not fails:
     ok(f"mailroom sends only its {len(declared)} declared effects; {len(ROBOTS)} robots checked against the matrix")
     ok(f"{executed} robot rules with on/if/then; {persona} persona rules; queue and named thresholds checked")
+    if not FIXTURE:ok("the robots are asked in their order: "+", ".join(f"{filename} {robot_order(robot)}" for filename,robot in ROBOTS))
 
 # A rule that needs a block's requirements refers to it with `{holds: …}`; it never repeats them (contracts.md §4.1).
 def requirement_parts(requirement):

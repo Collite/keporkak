@@ -31,7 +31,7 @@ internal fun readRobot(doc: Doc, node: Node): Robot? {
     }?.toMap() ?: emptyMap()
     val limits = fields["limits"]?.let { doc.texts(it, file, "limits") } ?: emptyList()
     fields.close()
-    return order?.let { Robot(file, role, it, activeWhen, intercepts, rules, queue, thresholds, limits) }
+    return Robot(file, role, order ?: Robot.UNORDERED, activeWhen, intercepts, rules, queue, thresholds, limits)
 }
 
 private fun robotRule(doc: Doc, node: Node): RobotRule? {

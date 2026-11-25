@@ -208,7 +208,11 @@ data class Queue(val id: String, val order: List<String>, val nextWhen: Requirem
 data class Robot(
     val file: String,
     val role: String,
-    /** Where it is asked among the active robots: the lowest first (`order:`, contracts.md §8, Amendment 45). */
+    /**
+     * Where it is asked among the active robots: the lowest first (`order:`, contracts.md §8, Amendment 45). A file whose
+     * order is missing or not whole is refused for it, and read on as [UNORDERED] — last, as the walker asks it — so that
+     * what else it says is checked; a rule set with such a file is never in force.
+     */
     val order: Int,
     val activeWhen: Requirement,
     val intercepts: List<Intercept>,
@@ -217,7 +221,12 @@ data class Robot(
     val thresholds: Map<String, Literal>,
     /** Prose the persona reads; never executed. */
     val limits: List<String>,
-)
+) {
+    companion object {
+        /** The order of a robot file refused for its `order:`: asked last. */
+        const val UNORDERED = Int.MAX_VALUE
+    }
+}
 
 // pool/*.yaml (contracts.md §9)
 
