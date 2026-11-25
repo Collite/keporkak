@@ -9,7 +9,7 @@ rules:
 - id: POOL-1
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
-    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+    inbox, send re-seated · otherwise send a ruling-request to Bora (default reseat, citation T-81, the seat)'
   'on':
     fact: seat.process_gone
   if:
@@ -39,7 +39,7 @@ rules:
 - id: POOL-11
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
-    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+    inbox, send re-seated · otherwise send a ruling-request to Bora (default reseat, citation T-81, the seat)'
   'on':
     fact: seat.process_gone
   if:
@@ -76,7 +76,7 @@ rules:
 - id: POOL-12
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
-    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+    inbox, send re-seated · otherwise send a ruling-request to Bora (default reseat, citation T-81, the seat)'
   'on':
     fact: seat.protocol_closed
   if:
@@ -106,7 +106,7 @@ rules:
 - id: POOL-13
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
-    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+    inbox, send re-seated · otherwise send a ruling-request to Bora (default reseat, citation T-81, the seat)'
   'on':
     fact: seat.protocol_closed
   if:
@@ -143,7 +143,7 @@ rules:
 - id: POOL-14
   when: the driver reports a seat's process or protocol gone, and no tool call is in progress
   note: 'send seat-gone · if this is the stage''s 1st–3rd event: start a fresh seat, replay list, STATUS and unread
-    inbox, send re-seated · otherwise send pause for the stage (Bora cc''d)'
+    inbox, send re-seated · otherwise send a ruling-request to Bora (default reseat, citation T-81, the seat)'
   'on':
     op: seat.reseat
     eq: ok

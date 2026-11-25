@@ -9,6 +9,8 @@ import io.kotest.matchers.shouldBe
  */
 class WalksCoveredSpec : StringSpec({
     "the walks the engine is compared on are every walk that needs no robot" {
-        walksThatNeedNoRobot().toSet() shouldBe setOf("approval-create-failure", "body-lines-cap", "H-3", "H-3-rollback", "no-roll-live-D-42", "reserved-model")
+        // S3.4: the two walks of D-118 that retire a seat by a message of the pool's, with no robot's rule fired.
+        walksThatNeedNoRobot().toSet() shouldBe setOf("a-re-seated-seat-in-its-stage-is-not-retired", "a-seat-that-never-worked-is-retired",
+            "approval-create-failure", "body-lines-cap", "H-3", "H-3-rollback", "no-roll-live-D-42", "reserved-model")
     }
 })
