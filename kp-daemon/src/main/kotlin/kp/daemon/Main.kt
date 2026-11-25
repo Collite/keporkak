@@ -1,6 +1,7 @@
 package kp.daemon
 
 import kp.daemon.seats.ClaudeAgent
+import kp.daemon.seats.PoolFacts
 import kp.daemon.seats.Panes
 import kp.daemon.seats.Roots
 import kp.daemon.seats.Seated
@@ -147,7 +148,7 @@ internal fun projectOf(root: Path, office: String): Path {
  * checkouts, with the fold (S3.1, [ProjectWorld]), and GitHub read as `kp-merger` (S3.2, [GitHubWorld]) — both handed
  * the fold before the start carries any judgement again, and a view's ask writing no journal line (S3.8, Amendment 34);
  * beside it, Bora's presence. The seats perform `token.mint` and answer a seat's ask for a GitHub token as its role's
- * App (S3.7, Amendment 35). It acts on GitHub as `kp-merger` — `git.merge`, `pr.close`, `issue.file` (S3.9,
+ * App (S3.7, Amendment 35); and the pool's facts and the budgets' are the seats' and the pool's (S3.13, [PoolFacts]). It acts on GitHub as `kp-merger` — `git.merge`, `pr.close`, `issue.file` (S3.9,
  * [GitHubOperations]), handed the fold as the world is. Its other performers (S3.3, [OfficeOperations]) make and remove
  * a stage's worktree, rebuild the register and commit and push the project, outside the mailroom's lock (Amendment 36);
  * they end `notify.bora` at once — the inbox is the notification, and `kp inbox --follow` raises it — and every other
@@ -163,11 +164,14 @@ private fun service(root: Path, office: String, project: Path, socket: Path, lis
     val roots = Roots.of(entry.roots)
     val listen = listening ?: entry.listen["mcp"] ?: fail("pool/offices.yaml gives office '$office' no listen.mcp")
     val clock = serviceClock
-    val world = ServiceWorld(ProjectWorld.of(checkNotNull(rules), office, project), GitHubWorld.of(office, project))
-    val seated = Seated.start(office, project, root, world, operations, clock, listen, folded = { folded -> world.reading(folded); github.reading(folded); performers.reading(folded) }) { starting ->
+    val pool = PoolFacts(office)
+    val world = ServiceWorld(ProjectWorld.of(checkNotNull(rules), office, project), GitHubWorld.of(office, project), pool)
+    var driving: Seats? = null
+    val seated = Seated.start(office, project, root, world, operations, clock, listen,
+        folded = { folded -> world.reading(folded); pool.reading(folded, driving); github.reading(folded); performers.reading(folded) }) { starting ->
         Seats(root, office, project, roots, ClaudeAgent(root.resolve("office/adapter")), clock, Panes(say = Journal::say), Journal::say, starting, github = GitHubApps.GITHUB) { listener, time ->
             ClaudeAdapter.driver(roots.secrets.resolve("claude-token"), roots.seats, time, CompiledAnswerer(roots.seats), listener)
-        }
+        }.also { driving = it }
     }
     Journal.say(world.project.reads)
     try {

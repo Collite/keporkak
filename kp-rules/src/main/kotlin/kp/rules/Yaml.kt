@@ -88,6 +88,16 @@ internal class Report {
     }
 }
 
+/**
+ * The line each value of a document stands on, by dotted path as [flatten] names it — a mapping's and a sequence's too:
+ * what a fact read from a pool file gives as its evidence (S3.13).
+ */
+internal fun lines(node: Node, prefix: String = ""): Map<String, Int> = (if (prefix.isEmpty()) emptyMap() else mapOf(prefix to node.line)) + when (node) {
+    is Node.Scalar -> emptyMap()
+    is Node.Mapping -> node.entries.flatMap { (key, value) -> lines(value, if (prefix.isEmpty()) key else "$prefix.$key").toList() }.toMap()
+    is Node.Sequence -> node.items.withIndex().flatMap { (index, value) -> lines(value, if (prefix.isEmpty()) "$index" else "$prefix.$index").toList() }.toMap()
+}
+
 /** Flattens a document's scalars by dotted path (`presence.idle_hours_to_absent`, `warn.0`). */
 internal fun flatten(node: Node, prefix: String = ""): Map<String, Literal> = when (node) {
     is Node.Scalar -> if (prefix.isEmpty()) emptyMap() else mapOf(prefix to node.literal)

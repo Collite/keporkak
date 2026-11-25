@@ -6,3 +6,7 @@ slots: {total: 4, per_subscription: {claude: 4}, per_office: {panda: 4, dsk: 4},
 warn: [0.7, 0.9]
 # provisioning pauses; a running seat is never stopped
 on_cap: pause_provisioning
+# how a turn's tokens are counted — each part against an input token (D-92, D-116) — and DEP-6's baseline (contracts.md §9)
+usage:
+  weights: {input: 1, output: 5, cache_write: 1.25, cache_read: 0.1}
+  median: {days: 14, least: 3}

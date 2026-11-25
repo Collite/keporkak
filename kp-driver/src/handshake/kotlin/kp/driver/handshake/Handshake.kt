@@ -29,7 +29,9 @@ import kp.driver.PermissionRequest
 import kp.driver.SeatFacts
 import kp.driver.SessionSpec
 import kp.driver.SessionToken
+import kp.driver.SubscriptionReport
 import kp.driver.Usage
+import kp.driver.UsageWeights
 import kp.driver.UsageWindow
 import kp.driver.claude.ClaudeAdapter
 import kp.model.SeatId
@@ -101,6 +103,12 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
     private val scratch = Path.of(offices.get<YamlMap>("offices")!!.get<YamlMap>(office)!!.get<YamlMap>("roots")!!.getScalar("scratch")!!.content.replaceFirst("~", System.getProperty("user.home")))
     /** Every persona's two empty turns (S3.6 T6): the persona, the turn, the usage its end reported. */
     private val personaTurns: MutableList<Triple<String, Int, Usage?>> = Collections.synchronizedList(mutableListOf())
+    /** How a turn's tokens are counted: `usage.weights` of pool/budgets.yaml (S3.13, Amendment 44); null where the pool has no block. */
+    private val weights: UsageWeights? = runCatching {
+        val parts = Yaml.default.parseToYamlNode(root.resolve("pool/budgets.yaml").readText()).yamlMap.get<YamlMap>("usage")!!.get<YamlMap>("weights")!!
+        fun part(name: String) = java.math.BigDecimal(parts.getScalar(name)!!.content)
+        UsageWeights(part("input"), part("output"), part("cache_write"), part("cache_read"))
+    }.getOrNull()
     private val cheapest = roster.get<YamlList>("order")!!.items.first().yamlMap
     private val model = cheapest.getScalar("model")!!.content
     private val effort = cheapest.getScalar("effort")!!.content
@@ -128,9 +136,13 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
         if ("kp-allowed" in input || LONG in input) Answer.ALLOW else Answer.DENY
     }
 
+    /** What the vendor said of the subscription beside a `usage_update`, through any seat of the run (S3.13 T6): the seat and its report. */
+    private val subscription: MutableList<Pair<SeatId, SubscriptionReport>> = Collections.synchronizedList(mutableListOf())
+
     private val listener = object : Listener {
         override fun observed(fact: ObservedFact) { facts += fact }
         override fun tokenDead(seat: SeatId, token: SessionToken) {}
+        override fun reported(seat: SeatId, report: SubscriptionReport) { subscription += seat to report }
     }
 
     suspend fun run(): Boolean {
@@ -177,6 +189,7 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
         effort = effort,
         servers = servers,
         environment = mapOf("PATH" to "${node.parent}:/usr/local/bin:/usr/bin:/bin", "HOME" to home.toString(), "LANG" to "C.UTF-8"),
+        weights = UsageWeights.Source { weights },
     )
 
     /**
@@ -226,12 +239,13 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
                 val seat = SeatId("$PERSONA_SEAT-$role")
                 val built = ConfigHomes(root, seats).build(seat, role, PROFILE, places, defaults).ok()
                 val spec = SessionSpec(seat, listOf(node.toString(), adapter.resolve("node_modules/$ADAPTER/dist/index.js").toString()), places.worktree, built.path, model, effort,
-                    built.servers, mapOf("PATH" to "${node.parent}:/usr/local/bin:/usr/bin:/bin", "HOME" to home.toString(), "LANG" to "C.UTF-8"), hookUrl = standIn.base)
+                    built.servers, mapOf("PATH" to "${node.parent}:/usr/local/bin:/usr/bin:/bin", "HOME" to home.toString(), "LANG" to "C.UTF-8"), hookUrl = standIn.base,
+                    weights = UsageWeights.Source { weights })
                 tokens += driver.start(spec).ok().token
                 try {
                     for (turn in 1..2) personaTurns += Triple(role, turn, driver.prompt(seat, NOTHING_ASKED).ok().usage)
                 } finally {
-                    spent += personaTurns.filter { it.first == role }.sumOf { it.third?.total ?: 0L }
+                    spent += personaTurns.filter { it.first == role }.sumOf { (_, _, usage) -> weights?.count(usage) ?: usage?.total ?: 0L }
                     driver.kill(seat, Duration.ofSeconds(5))
                 }
             }
@@ -394,7 +408,8 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             built to "${names(built.path)}; skills ${names(built.path.resolve("skills"))}; servers handed back: ${built.servers.joinToString { "${it.name} ${it.url}" }}"
         } ?: return@use
         val spec = SessionSpec(coder, listOf(node.toString(), adapter.resolve("node_modules/$ADAPTER/dist/index.js").toString()), work, built.path, model, effort,
-            built.servers, mapOf("PATH" to "${node.parent}:/usr/local/bin:/usr/bin:/bin", "HOME" to home.toString(), "LANG" to "C.UTF-8"), hookUrl = standIn.base)
+            built.servers, mapOf("PATH" to "${node.parent}:/usr/local/bin:/usr/bin:/bin", "HOME" to home.toString(), "LANG" to "C.UTF-8"), hookUrl = standIn.base,
+            weights = UsageWeights.Source { weights })
         val started = step("a session in the built home, the messaging stand-in reached with the session token") {
             val started = driver.start(spec).ok()
             tokens += started.token
@@ -544,7 +559,8 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             appendLine("# Handshake${when (walk) { Walk.MODELS -> " (models)"; Walk.HOOKS -> " (hooks)"; Walk.ALL -> "" }} — ${if (passed) "PASS" else "FAIL"} — $at")
             appendLine()
             appendLine(header)
-            appendLine("model $model, effort $effort (the roster's cheapest pair); roster models ${rosterModels.joinToString(", ") { it.first }}; tokens spent: $spent")
+            appendLine("model $model, effort $effort (the roster's cheapest pair); roster models ${rosterModels.joinToString(", ") { it.first }}; tokens spent: $spent " +
+                (weights?.let { "(each turn's parts weighted: $it)" } ?: "(at par: pool/budgets.yaml has no usage.weights)"))
             appendLine()
             appendLine("| step | result | detail |")
             appendLine("|---|---|---|")
@@ -555,13 +571,29 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
                 appendLine("## Two empty turns of each persona named, by their parts (S3.6)")
                 appendLine()
                 appendLine("Model $model, effort $effort; each seat's home built for its persona. \"not reported\": the agent left that part out; " +
-                    "the pinned adapter reports no count of a turn's model calls.")
+                    "the pinned adapter reports no count of a turn's model calls. Weighted: the turn's count — its four parts by `usage.weights` of " +
+                    "pool/budgets.yaml (${weights ?: "none: the pool has no block usage:"}), a part not reported as zero (S3.13).")
                 appendLine()
-                appendLine("| persona | turn | input | output | cache read | cache write | thought | total |")
-                appendLine("|---|---|---|---|---|---|---|---|")
-                personaTurns.forEach { (role, turn, usage) -> appendLine("| $role | $turn | ${parts(usage).joinToString(" | ")} |") }
+                appendLine("| persona | turn | input | output | cache read | cache write | thought | total | weighted |")
+                appendLine("|---|---|---|---|---|---|---|---|---|")
+                personaTurns.forEach { (role, turn, usage) -> appendLine("| $role | $turn | ${parts(usage).joinToString(" | ")} | ${weights?.count(usage) ?: "-"} |") }
                 appendLine()
             }
+            appendLine("## What the vendor reported of the subscription (S3.13)")
+            appendLine()
+            if (subscription.isEmpty()) {
+                appendLine("No window with a fraction was heard. Every time the vendor's words came beside a `usage_update` (the pinned adapter's " +
+                    "`_meta[\"_claude/rateLimit\"]`), a transcript below shows them as they came: `the vendor on the subscription: …`.")
+            } else {
+                appendLine("Each report as the driver heard it beside a `usage_update`, in order; `budget.consumption` is the last of each window, the fullest for `subscription`.")
+                appendLine()
+                appendLine("| seat | heard | window | fraction used | resets | status |")
+                appendLine("|---|---|---|---|---|---|")
+                subscription.forEach { (seat, report) ->
+                    appendLine("| ${seat.value} | ${report.heard} | ${report.window} | ${report.fraction.toPlainString()} | ${report.resets ?: "not said"} | ${report.status ?: "not said"} |")
+                }
+            }
+            appendLine()
             val personaSeats = personaTurns.map { "$PERSONA_SEAT-${it.first}" }.distinct()
             for (name in listOf(MODELS_SEAT, seat.value, HOOKS_SEAT) + personaSeats) {
                 val lines = transcript(name)

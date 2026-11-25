@@ -2,6 +2,8 @@
 
 One line per change: date · rule ids · what · the decision. Newest first.
 
+- 2026-11-24 · BU-2 · How a turn is counted: its four parts — input, output, cache write, cache read — weighted by `usage.weights` of `pool/budgets.yaml` against an input token and summed, rounded; a part not reported counts zero; that count is `seat.usage`, a walk's `tokens` and the daily median's. A subscription's fullness is what the vendor itself says through the agent: no endpoint of the vendor's is asked. · KP D-116 (D-92)
+- 2026-11-24 · — · `pool/budgets.yaml` gains the block `usage:` — the weights of a turn's four parts (input 1, output 5, cache write 1.25, cache read 0.1) and DEP-6's baseline, the daily median over 14 days with at least 3; `check-rules.py` and the daemon's load refuse a file without it. · KP D-117 (D-116)
 - 2026-11-24 · SE-9, SE-10, SE-19 · The office is dsk: `80-seats-and-offices.md` and `70-rules-of-engagement.md` name it where they say what the office is, and keep Panda where they tell what happened there. · KP D-112 (D-46)
 - 2026-11-24 · — · `pool/offices.yaml` gains the office `dsk`, Panda's values unchanged, and `pool/budgets.yaml` its slot limit (`total` stays 4): the office moves from Panda to dsk; `panda` stays while the specs name it. · KP D-112 (D-46)
 - 2026-11-24 · POOL-14, T-60, SEAT-07 · A re-seat's `ok` is the word that the inbox was replayed: `POOL-14`'s `if`, the kind `re-seated`'s `require`, `T-60` and `SEAT-07` no longer ask `seat.inbox_replayed`. A message that reaches a seat while its re-seat runs stays unread and wakes the seat when the replay's turn ends; the fact stays the stop gate's. · KP D-107 (Amendment 39)

@@ -198,6 +198,18 @@ class Mailroom private constructor(
     }
 
     /**
+     * The world reports [fact] and the log keeps it though it triggers nothing — a turn's end, `seat.usage` of the window
+     * `turn` (contracts.md §4.4, Amendment 44): its `fact` record is written, then judged as any reported fact is.
+     */
+    @Synchronized
+    fun recorded(fact: FactRef, value: Datum, stage: String? = null, evidence: String? = null) {
+        unanswered("the fact ${fact.name} ${fact.params.values.joinToString(" ") { (it as? Datum.Text)?.value ?: it.json() }}".trimEnd()) {
+            judged { fact(fact, value, stage, evidence, always = true) }
+        }
+        drain()
+    }
+
+    /**
      * A seat's inbox (contracts.md §5): its unread messages — or, with [unread] false, every message delivered to it —
      * oldest first, at most [limit]. Returning a message marks it read for the seat: a `read` record names those it had
      * not read.
@@ -508,7 +520,7 @@ class Mailroom private constructor(
      * A fact that changed: the guard judges its `on: fact` transitions and the robots hear it. When it triggers
      * nothing, nothing is written; otherwise its `fact` record first — about whom its parameters name, else its stage,
      * else the party its name is about, else the office — then the transitions, effects, sends and wakes it caused.
-     * [always]: the record is written though it triggers nothing — `turn.blocked` at the stop gate's cap (§2.2).
+     * [always]: the record is written though it triggers nothing — `turn.blocked` at the stop gate's cap (§2.2), a turn's end (§4.4).
      */
     private fun fact(fact: FactRef, value: Datum, stage: String?, evidence: String?, always: Boolean = false, first: ((JsonObject) -> Unit)? = null) {
         val now = now()

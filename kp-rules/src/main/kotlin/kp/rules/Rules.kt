@@ -65,7 +65,8 @@ object Rules {
 
         val problems = report.problems
         return if (problems.isNotEmpty()) Loaded.Invalid(problems)
-        else Loaded.Valid(RuleSet(lifecycle, kinds, engagement, vocabulary, robots, Pool(roster, offices, budgets, values, github), personaModes))
+        else Loaded.Valid(RuleSet(lifecycle, kinds, engagement, vocabulary, robots, Pool(roster, offices, budgets, values, github,
+            mapOf(ROSTER to lines(rosterNode), OFFICES to lines(officesNode), BUDGETS to lines(budgetsNode))), personaModes))
     }
 
     /** A role the roster reserves a model for, or puts on a model outright, is a role of the engagement. */

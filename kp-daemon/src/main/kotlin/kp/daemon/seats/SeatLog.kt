@@ -15,8 +15,11 @@ import kp.model.Transition
  * start or a re-seat named. Read from the lines as they count (a voided judgement's left out).
  */
 internal class SeatLog(lines: List<Envelope>) {
-    /** A seat as the log names it: its role and stage from the request that started it, and its last session. */
-    data class Known(val role: String?, val stage: String?, val session: String?)
+    /**
+     * A seat as the log names it: its role and stage from the request that started it, and its last session; [cause] is
+     * the message whose judgement requested that start.
+     */
+    data class Known(val role: String?, val stage: String?, val session: String?, val cause: String? = null)
 
     val live: Set<String>
     val known: Map<String, Known>
@@ -24,7 +27,7 @@ internal class SeatLog(lines: List<Envelope>) {
     init {
         val stages = HashMap<String, String?>()
         val alive = LinkedHashSet<String>()
-        val seats = HashMap<String, Known>()
+        val seats = LinkedHashMap<String, Known>()
         for (line in lines) {
             when (line) {
                 is Message -> stages[line.id.value] = line.stage?.value
@@ -37,7 +40,7 @@ internal class SeatLog(lines: List<Envelope>) {
                     val result = line.result?.text(SEAT) ?: with
                     when {
                         line.op == START && line.phase == REQUESTED && with != null ->
-                            seats[with] = Known(line.with?.text(ROLE), stages[line.cause], seats[with]?.session)
+                            seats[with] = Known(line.with?.text(ROLE), stages[line.cause], seats[with]?.session, line.cause)
                         line.op in SEATING && line.phase == OK && result != null -> {
                             alive += result
                             seats[result] = (seats[result] ?: Known(null, null, null)).copy(session = line.result?.text(SESSION) ?: seats[result]?.session)

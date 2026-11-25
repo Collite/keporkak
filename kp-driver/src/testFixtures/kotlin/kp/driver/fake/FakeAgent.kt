@@ -243,9 +243,11 @@ private class FakeAgent(private val script: JsonObject) {
                 step.string("text")?.let { said -> put("content", JsonArray(listOf(buildJsonObject { put("type", "content"); put("content", text(VARIABLE.replace(said) { System.getenv(it.groupValues[1]).orEmpty() })) }))) }
                 step["raw"]?.let { put("rawOutput", it) }
             })
+            // `rate_limit`: the vendor's words on the subscription, where the pinned adapter puts them (S3.13): `_meta["_claude/rateLimit"]`.
             "usage" -> emit(buildJsonObject {
                 used = step.long("used"); size = step.long("size")
                 put("sessionUpdate", "usage_update"); put("used", step.long("used")); put("size", step.long("size"))
+                step["rate_limit"]?.let { said -> put("_meta", buildJsonObject { put("_claude/rateLimit", said) }) }
             })
             // Holds the turn in flight until the file `until` exists, or the turn is cancelled (S2.4: a busy seat).
             "hold" -> {

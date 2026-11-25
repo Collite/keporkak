@@ -257,7 +257,19 @@ data class Project(val checkout: String, val efforts: Map<String, String>)
 
 data class Slots(val total: Int, val perSubscription: Map<String, Int>, val perOffice: Map<String, Int>, val stagesInFlightPerEffort: Int)
 
-data class Budgets(val slots: Slots, val warn: List<BigDecimal>, val onCap: String)
+data class Budgets(val slots: Slots, val warn: List<BigDecimal>, val onCap: String, val usage: Usage)
+
+/**
+ * How a turn's tokens are counted and DEP-6's baseline (contracts.md §9, Amendment 44; D-92, D-116): the block `usage:`
+ * of `pool/budgets.yaml`.
+ */
+data class Usage(val weights: Weights, val median: Median)
+
+/** Each part of a turn's tokens against an input token (`usage.weights`): a turn counts their weighted sum, rounded. */
+data class Weights(val input: BigDecimal, val output: BigDecimal, val cacheWrite: BigDecimal, val cacheRead: BigDecimal)
+
+/** The daily median (`usage.median`): over the last [span] days — `median.days` — on which a turn ended; with fewer than [least], none. */
+data class Median(val span: Int, val least: Int)
 
 data class Pool(
     val roster: Roster,
@@ -267,6 +279,8 @@ data class Pool(
     val values: Map<PoolFile, List<Map<String, Literal>>>,
     /** `pool/offices.yaml`'s block `github:` (Amendment 33); null when the file has none. */
     val github: GitHub? = null,
+    /** The line each value of a pool file stands on: the file's path → dotted path → line (S3.13: a pool fact's evidence). */
+    val lines: Map<String, Map<String, Int>> = emptyMap(),
 )
 
 /**
