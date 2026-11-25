@@ -9,6 +9,8 @@ internal fun readRobot(doc: Doc, node: Node): Robot? {
     val fields = doc.fields(mapping, null)
     val role = doc.text(fields["role"], null, "role") ?: return null.also { doc.problem(null, "a robot names its role") }
     val file = doc.file.substringAfterLast('/')
+    // Where it is asked among the active robots, the lowest first (contracts.md §8, Amendment 45; D-118): whole, and stated.
+    val order = if (fields.has("order")) doc.whole(fields["order"], file, "order") else null.also { doc.problem(file, "a robot file states its order: a whole number") }
     val forms = Forms(doc, file)
     val activeWhen = fields["active_when"]?.let(forms::single) ?: Requirement.Always(false).also { doc.problem(file, "unknown requirement form") }
     val intercepts = (fields["intercepts"]?.let { doc.sequence(it, file, "intercepts") } ?: emptyList()).mapNotNull { intercept ->
@@ -29,7 +31,7 @@ internal fun readRobot(doc: Doc, node: Node): Robot? {
     }?.toMap() ?: emptyMap()
     val limits = fields["limits"]?.let { doc.texts(it, file, "limits") } ?: emptyList()
     fields.close()
-    return Robot(file, role, activeWhen, intercepts, rules, queue, thresholds, limits)
+    return order?.let { Robot(file, role, it, activeWhen, intercepts, rules, queue, thresholds, limits) }
 }
 
 private fun robotRule(doc: Doc, node: Node): RobotRule? {

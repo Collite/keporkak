@@ -1,6 +1,7 @@
 # The Deputy's robot half (D-28, D-33, D-35). Its LLM half only writes shadow rulings (agents/deputy/AGENT.md).
 # Deputy robot — absent-mode interception and declared sends only.
 role: deputy
+order: 1
 active_when:
   fact: bora.present
   eq: false

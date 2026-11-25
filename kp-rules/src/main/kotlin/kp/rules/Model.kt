@@ -9,7 +9,7 @@ class RuleSet internal constructor(
     val kinds: Map<String, Kind>,
     val engagement: Engagement,
     val vocabulary: Vocabulary,
-    /** By file name (`deputy.yaml`). */
+    /** By file name (`deputy.yaml`), in the order the files state — the lowest `order:` first (contracts.md §8, Amendment 45). */
     val robots: Map<String, Robot>,
     val pool: Pool,
     /** The modes a role's persona declares (`agents/<role>/AGENT.md`); a robot's `wake:` names one of its own. */
@@ -208,6 +208,8 @@ data class Queue(val id: String, val order: List<String>, val nextWhen: Requirem
 data class Robot(
     val file: String,
     val role: String,
+    /** Where it is asked among the active robots: the lowest first (`order:`, contracts.md §8, Amendment 45). */
+    val order: Int,
     val activeWhen: Requirement,
     val intercepts: List<Intercept>,
     val rules: List<RobotRule>,

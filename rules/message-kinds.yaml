@@ -1454,6 +1454,8 @@ kinds:
       citation:
         type: string
         required: true
+      seat:
+        type: string
     window: stage
     require:
     - arg: default
@@ -1795,7 +1797,7 @@ kinds:
     class:
       default: A
       cases: []
-    max_fires: 3
+    max_fires: 6
     deadline: null
     on_expiry: '-'
     reply: '-'
@@ -1839,7 +1841,7 @@ kinds:
           gt:
             cap: reseats_before_cc
         class: C
-    max_fires: 3
+    max_fires: 6
     deadline: null
     on_expiry: '-'
     reply: '-'
@@ -2040,10 +2042,39 @@ kinds:
         required: true
     window: stage
     require:
-    - fact: seat.state
-      seat:
-        arg: seat
-      eq: idle
+    - any:
+      - fact: seat.state
+        seat:
+          arg: seat
+        eq: idle
+      - not:
+          any:
+          - fact: seat.state
+            seat:
+              arg: seat
+            eq: busy
+          - fact: seat.state
+            seat:
+              arg: seat
+            eq: retired
+          - fact: stage.state
+            in:
+            - assigned
+            - building
+            - stopped
+            - candidate_deployed
+            - ready_for_review
+            - in_review
+            - fix_round
+            - re_review
+            - grant_pending
+            - fix_round_3
+            - ruling_pending
+            - fix_round_4
+            - passed
+            - merged
+            - released
+            - paused
     - any:
       - re: kind
         eq: session-request

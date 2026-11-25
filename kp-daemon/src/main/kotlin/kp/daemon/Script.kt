@@ -600,7 +600,7 @@ class Player internal constructor(private val script: Script, val office: Office
                 SEATS_KEY -> Datum.Fields((value as Datum.Fields).fields.keys.associateWith { seat -> Datum.Text(ownState(played).machine(SEAT, seat)?.state ?: PROVISIONED) })
                 SENDS -> Datum.Items(sends(played).map { Datum.Text(it.kind) })
                 WAKES -> Datum.Items(wakes(played).map { Datum.Text(it.second) })
-                RULES -> Datum.Items((sends(played).map { it.by.removePrefix(ROBOT) } + wakes(played).map { it.first }).map(Datum::Text)).let { fired ->
+                RULES -> Datum.Items((sends(played).map { it.by.removePrefix(ROBOT) } + wakes(played).map { it.first }).distinct().map(Datum::Text)).let { fired ->
                     if (liveEnd(played)) heardAsTheWalkSays(fired, value) else fired
                 }
                 HELD -> Datum.Bool(played.outcome == HELD)
