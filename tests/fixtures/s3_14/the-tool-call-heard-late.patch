@@ -1,0 +1,22 @@
+diff --git a/kp-driver/src/testFixtures/kotlin/kp/driver/fake/FakeAgent.kt b/kp-driver/src/testFixtures/kotlin/kp/driver/fake/FakeAgent.kt
+index d7d4c28..2f8ce6d 100644
+--- a/kp-driver/src/testFixtures/kotlin/kp/driver/fake/FakeAgent.kt
++++ b/kp-driver/src/testFixtures/kotlin/kp/driver/fake/FakeAgent.kt
+@@ -230,12 +230,15 @@ private class FakeAgent(private val script: JsonObject) {
+         step.string("once")?.let { marker -> if (!File(marker).createNewFile()) return null }
+         when (step.string("do")) {
+             "say" -> emit(buildJsonObject { put("sessionUpdate", "agent_message_chunk"); put("content", text(step.string("text")!!)) })
+-            "tool" -> emit(buildJsonObject {
++            "tool" -> buildJsonObject {
+                 put("sessionUpdate", "tool_call"); put("toolCallId", step.string("id")); put("title", step.string("title"))
+                 put("kind", step.string("kind") ?: "execute"); put("status", "pending"); put("rawInput", step["input"] ?: JsonNull)
+                 // The tool's name, where the adapter puts it beside the protocol's fields (S2.2 probe).
+                 step.string("name")?.let { name -> put("name", name); put("_meta", buildJsonObject { put("claudeCode", buildJsonObject { put("toolName", name) }) }) }
+-            })
++            }.let { update ->
++                // S3.14's agent whose tool call is heard late: the update reaches the driver 1.5 s after the steps that follow it.
++                Thread { Thread.sleep(1500); emit(update) }.start()
++            }
+             // A tool's result, when the step gives one (S2.5): `text` as its content — each `${'$'}{NAME}` in it that variable of the
+             // process's environment (S3.6) — `raw` as its raw output.
+             "tool_update" -> emit(buildJsonObject {

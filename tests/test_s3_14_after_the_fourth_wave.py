@@ -3,15 +3,30 @@
 Seam: `scripts/office-check.py` (behind `just office-check`) on the S0.3 specs' fake machine, whose home is a fixture:
 a `~/.netrc` written there is the one the check reads (contracts.md §12, §4.4 Amendment 47). Every entry names a login
 and a password the output must not hold. The daemon's sentences are AfterTheFourthWaveSpec's.
+
+T4 — the fifth case that failed by chance, `AfterTheReviewsSpec`'s "a wake that fails leaves its message unread": through
+`just many`, on demand, as S3.11 ran the four — `KP_MANY=<n> build/python/bin/python -m unittest test_s3_14_after_the_fourth_wave`
+in tests/. It passes every run with S3.10's agent slowed, alone and in its module's whole run; with its wait taken out and
+its tool call heard late it fails; a mutant of the daemon that reads the message of a failed wake turns it red.
 """
 import importlib.util
+import os
 from pathlib import Path
+import sys
 import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from retro_checks_support import ROOT, just  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("office_specs", Path(__file__).with_name("test_s0_3_the_office.py"))
 _specs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_specs)
 FakeMachine = _specs.FakeMachine
+
+COUNT = int(os.environ.get("KP_MANY", "0"))
+FIFTH = "kp-daemon:AfterTheReviewsSpec/a wake that fails*"
+SLOWED = "tests/fixtures/s3_10/the-agent-slowed.patch"
+FIXTURES = "tests/fixtures/s3_14"
 
 LOGIN, PASSWORD = "planted-login-7", "planted-password-7"
 GITHUB_ALONE = f"machine github.com login {LOGIN} password {PASSWORD}\n"
@@ -41,6 +56,20 @@ class AfterTheFourthWave(unittest.TestCase):
             output = run(machine, text)
             self.assertNotIn(LOGIN, output)
             self.assertNotIn(PASSWORD, output)
+
+
+class TheFifthCase(unittest.TestCase):
+    @unittest.skipUnless(COUNT, "on demand: KP_MANY=<n> runs the fifth case n times alone and n times in its module's whole run, with the agent slowed")
+    def test_the_fifth_case_waits_for_the_record_it_reads_passes_every_run_with_the_agent_slowed_fails_with_its_wait_taken_out_and_its_tool_call_heard_late_and_fails_by_a_mutant_of_the_daemon(self):
+        many = just(ROOT, "many", FIFTH, str(COUNT), SLOWED, timeout=7200)
+        unwaited = just(ROOT, "many", FIFTH, "1", f"{FIXTURES}/the-tool-call-not-waited-for.patch", f"{FIXTURES}/the-tool-call-heard-late.patch", timeout=3600)
+        red = just(ROOT, "mutant", f"{FIXTURES}/a-failed-wake-reads-its-message.patch", "kp-daemon:AfterTheReviewsSpec", timeout=3600)
+
+        self.assertEqual(many.returncode, 0, many.stdout[-6000:])
+        self.assertIn(f"— alone {COUNT} of {COUNT} passed · in its module's whole run {COUNT} of {COUNT} passed", many.stdout)
+        self.assertEqual(unwaited.returncode, 1, unwaited.stdout[-6000:])
+        self.assertEqual(red.returncode, 0, red.stdout[-6000:])
+        self.assertIn("a wake that fails leaves its message unread", red.stdout.split("red — the specs that failed:")[-1])
 
 
 def run(machine, netrc):
