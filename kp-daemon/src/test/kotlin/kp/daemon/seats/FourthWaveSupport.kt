@@ -162,10 +162,11 @@ class ServiceOffice(
         }
     }
 
+    /** The daemon stops — its seats die with it — and its folder goes; what a seat's process still writes as it ends may stay, under build/. */
     override fun close() {
         seated.close()
         office.close()
-        folder.deleteRecursively()
+        runCatching { folder.deleteRecursively() }
     }
 
     companion object {
