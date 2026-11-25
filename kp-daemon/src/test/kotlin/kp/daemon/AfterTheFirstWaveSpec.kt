@@ -132,9 +132,12 @@ private class Project(log: Map<String, String>, ticked: List<String>, rolls: Boo
      */
     fun carry(vararg messages: Pair<String, String>): List<String> {
         val journal = CopyOnWriteArrayList<String>()
-        val world = ProjectWorld.of(InForceRules.of(RuleFiles(root).read()).first!!, "panda", dir) { journal += it }
+        val project = ProjectWorld.of(InForceRules.of(RuleFiles(root).read()).first!!, "panda", dir) { journal += it }
+        // The pool's facts beside the project's, as the service answers them (S3.13): the daemon started later has both.
+        val pool = kp.daemon.seats.PoolFacts("panda") { journal += it }
+        val world = kp.mailroom.FactSource { fact, stage -> if (fact.name in kp.daemon.seats.PoolFacts.ANSWERED) pool.observe(fact, stage) else project.observe(fact, stage) }
         Office.start("panda", dir, root, world, Operations { _, done -> done(OperationResult.Ok()) }, NoSeats, serviceClock)
-            .also(world::reading)
+            .also { office -> project.reading(office); pool.reading(office) }
             .use { office -> messages.forEach { (seat, input) -> office.submit(if (seat == BORA) Sender.Bora(signed = true) else Sender.Seat(seat), json(input)).answered() } }
         return journal
     }

@@ -50,6 +50,23 @@ class StageFactsSpec : FreeSpec({
         }
     }
 
+    "`just facts` prints the pool's facts and the budgets' (S3.13 T7): the three slots open and over, the floor's rank, the office's computer use, and each subscription's consumption and its day against the daily median — each with its evidence, or unknown and why" {
+        FactsOffice(states = mapOf("KP/P3/S3.1" to "building")).use { office ->
+            val printed = StageFacts.lines(office.rules, "panda", office.project, "KP/P3/S3.1")
+            val budgets = checkout.resolve("pool/budgets.yaml")
+
+            printed shouldContain "budget.slot_open(dimension=office) = true — office panda: in use 0 — none — of pool/budgets.yaml line ${lineOf(budgets, "slots:")} (slots.per_office.panda: 4)"
+            printed shouldContain "budget.slots_over(dimension=effort) = 0 — effort KP: in flight 1 — KP/P3/S3.1 building — of pool/budgets.yaml line ${lineOf(budgets, "slots:")} (slots.stages_in_flight_per_effort: 2)"
+            listOf("budget.slot_open(dimension=subscription) = ", "budget.slot_open(dimension=effort) = ", "budget.slots_over(dimension=office) = 0 — ",
+                "budget.slots_over(dimension=subscription) = 0 — ", "roster.floor_rank = ", "office.computer_use(office=panda) = \"off\" — ").forEach { start ->
+                printed.filter { it.startsWith(start) }.size shouldBe 1
+            }
+            printed shouldContain "budget.consumption(subscription=claude, window=subscription) unknown — the vendor has reported no window of claude"
+            printed.single { it.startsWith("budget.vs_daily_median(subscription=claude) unknown — ") } shouldStartWith
+                "budget.vs_daily_median(subscription=claude) unknown — claude has turns on 0 days before "
+        }
+    }
+
     "`just facts` on a stage the log does not know reads what the project says: the overview's tick" {
         FactsOffice().use { office ->
             val printed = StageFacts.lines(office.rules, "panda", office.project, "KP/P3/S3.1", api = NOWHERE)

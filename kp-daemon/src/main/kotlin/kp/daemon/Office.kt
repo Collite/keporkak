@@ -76,6 +76,12 @@ class Office private constructor(
         changes.signal()
     }
 
+    /** The world reports [fact], to be kept though it triggers nothing: a turn's end (contracts.md §4.4, Amendment 44). */
+    fun recorded(fact: FactRef, value: Datum, stage: String? = null, evidence: String? = null) {
+        mailroom.recorded(fact, value, stage, evidence)
+        changes.signal()
+    }
+
     /** [seat]'s turn ended, or it came up: idle with unread mail, it is woken with the oldest (contracts.md §4.4, Amendment 22). */
     fun idle(seat: String) {
         mailroom.idle(seat)

@@ -90,7 +90,8 @@ class TheThinThreadSpec : StringSpec({
             thread(isDaemon = true) { failure = runCatching { thread.hero.rest() }.exceptionOrNull() }.join(60_000)
 
             failure.shouldBeInstanceOf<WalkFailure>().message shouldContain Regex("""^walk thin-thread step [0-9]+ \(""")
-            failure?.message shouldContain "the seats have used 1500001 tokens, more than the walk's 1500000 (coder-1 1500001); the last turn was coder-1's — its transcript: " +
+            // Counted by the pool's weights (S3.13): 1 500 000 input and 1 output, 1 500 000 + 5.
+            failure?.message shouldContain "the seats have used 1500005 tokens, more than the walk's 1500000 (coder-1 1500005); the last turn was coder-1's — its transcript: " +
                 thread.record().resolve("transcripts/coder-1.log")
         }
         // The walk's last turn — the reviewer's, woken by `review-bind` — is held to the walk's tokens too (review-024, B1).
@@ -133,10 +134,11 @@ class TheThinThreadSpec : StringSpec({
             // The log and the transcripts as the play's record keeps them, beside the evidence (S3.6 T5).
             val record = file.resolveSibling(file.fileName.toString().removeSuffix(".md"))
             evidence shouldContain "the log: ${record.resolve("mail")}"
+            // Each of the walk's turns — 1 000 input, 100 output — counts 1 500 by the pool's weights (S3.13).
             evidence shouldContain "| coder-1 | coder | claude-opus-5-5 | low | ${thread.sessions("coder-1").joinToString(" · ")} | " +
-                "${record.resolve("transcripts/coder-1.log")} | 4400 in 4 turns |"
+                "${record.resolve("transcripts/coder-1.log")} | 6000 in 4 turns |"
             evidence shouldContain "| reviewer-1 | reviewer | claude-opus-5-5 | low | ${thread.sessions("reviewer-1").single()} | " +
-                "${record.resolve("transcripts/reviewer-1.log")} | 1100 in 1 turn |"
+                "${record.resolve("transcripts/reviewer-1.log")} | 1500 in 1 turn |"
             evidence shouldNotContain FAKE_CLAUDE_TOKEN
             evidence.split(Regex("""[^A-Za-z0-9_-]+""")).map(::sha256) shouldNotContainAny thread.sessionTokenDigests("coder-1")
         }

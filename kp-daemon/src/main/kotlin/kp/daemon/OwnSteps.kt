@@ -168,7 +168,7 @@ class SeatsAtPlay(
             if (failure != null) appendLine("**Failed:** $failure\n")
             appendLine("- the walk: ${at.walkFile} · the stage ${player.stageId} · office ${office.name} · from ${at.began} to ${at.clock.now()}")
             appendLine("- the log: ${office.project.resolve("mail")} — " + log.map { it.file }.distinct().joinToString(", ") { it.relativeTo(office.project).toString() })
-            appendLine("- tokens: the seats used ${used.values.sum()} of the walk's ${at.claude.tokens} (`seat.usage` of each turn, as it ended)")
+            appendLine("- tokens: the seats used ${used.values.sum()} of the walk's ${at.claude.tokens} (`seat.usage` of each turn as it ended: its parts weighted by `usage.weights` of pool/budgets.yaml)")
             appendLine()
             appendLine("## The seats")
             appendLine()
@@ -177,25 +177,29 @@ class SeatsAtPlay(
             at.seats.sorted().forEach { seat ->
                 val bound = at.driven.binding(seat)
                 val turns = synchronized(at.turns) { at.turns[seat].orEmpty().toList() }
-                val silent = turns.count { it.first == null }
+                val silent = turns.count { it.second == null }
                 appendLine("| $seat | ${bound?.role ?: "-"} | ${bound?.model ?: "-"} | ${bound?.effort ?: "-"} | ${at.sessions[seat].orEmpty().joinToString(" · ").ifEmpty { "-" }} | " +
                     "${at.transcript(seat)} | ${used[seat] ?: 0} in ${turns.size} turn${if (turns.size == 1) "" else "s"}${if (silent > 0) ", $silent with no usage reported" else ""} |")
             }
             appendLine()
             appendLine("## What each turn used, by its parts")
             appendLine()
-            appendLine("Each turn as its end in the seat's transcript shows it, and each seat's sums; `seat.usage` counts a turn's total. " +
+            appendLine("Each turn as its end in the seat's transcript shows it, and each seat's sums; `seat.usage` counts a turn's four parts — input, " +
+                "output, cache write, cache read — weighted by `usage.weights` of pool/budgets.yaml, a part not reported as zero: the column weighted. " +
                 "\"not reported\": the agent left that part out. The pinned adapter reports no count of a turn's model calls.")
             appendLine()
-            appendLine("| seat | turn | input | output | cache read | cache write | thought | total |")
-            appendLine("|---|---|---|---|---|---|---|---|")
+            appendLine("| seat | turn | input | output | cache read | cache write | thought | total | weighted |")
+            appendLine("|---|---|---|---|---|---|---|---|---|")
             at.seats.sorted().forEach { seat ->
-                val turns = synchronized(at.turns) { at.turns[seat].orEmpty().map { it.second } }
-                turns.forEachIndexed { at, usage -> appendLine("| $seat | ${at + 1} | ${PARTS.joinToString(" | ") { part -> usage?.let(part)?.toString() ?: NOT_REPORTED }} |") }
+                val counted = synchronized(at.turns) { at.turns[seat].orEmpty().toList() }
+                val turns = counted.map { it.second }
+                counted.forEachIndexed { at, (weighted, usage) ->
+                    appendLine("| $seat | ${at + 1} | ${PARTS.joinToString(" | ") { part -> usage?.let(part)?.toString() ?: NOT_REPORTED }} | ${weighted ?: NOT_REPORTED} |")
+                }
                 if (turns.isNotEmpty()) appendLine("| $seat | ${turns.size} turn${if (turns.size == 1) "" else "s"} | " + PARTS.joinToString(" | ") { part ->
                     val reported = turns.mapNotNull { usage -> usage?.let(part) }
                     "${reported.sum()}" + if (reported.size < turns.size) " ($NOT_REPORTED in ${turns.size - reported.size})" else ""
-                } + " |")
+                } + " | ${counted.sumOf { it.first ?: 0L }} |")
             }
             appendLine()
             appendLine("## The steps")

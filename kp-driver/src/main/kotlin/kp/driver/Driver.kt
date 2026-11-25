@@ -4,6 +4,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kp.model.SeatId
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Duration
@@ -73,6 +75,8 @@ data class SessionSpec(
     val servers: List<McpServer>,
     val environment: Map<String, String> = emptyMap(),
     val hookUrl: String? = null,
+    /** How each turn's tokens are counted, read when the turn ends: the pool's `usage.weights` (contracts.md §4.4, Amendment 44). */
+    val weights: UsageWeights.Source = UsageWeights.Source { null },
 ) {
     companion object {
         /** The variables a seat's hooks read (contracts.md §11); neither value reaches a transcript. */
@@ -127,6 +131,36 @@ data class Usage(
     val cachedRead: Long? = null,
     val cachedWrite: Long? = null,
 )
+
+/**
+ * How a turn's tokens are counted (contracts.md §4.4, Amendment 44; D-92, D-116): each of the four parts the agent
+ * reports — input, output, cache write, cache read — weighted against an input token and summed, rounded to a whole
+ * number. A part the agent did not report counts zero. The weights are the pool's `usage.weights`; the driver reads no
+ * file, and is handed them.
+ */
+data class UsageWeights(val input: BigDecimal, val output: BigDecimal, val cacheWrite: BigDecimal, val cacheRead: BigDecimal) {
+    /** [usage]'s count: the weighted sum of its parts, rounded half up; with none reported, zero. */
+    fun count(usage: Usage?): Long =
+        (input * BigDecimal.valueOf(usage?.input ?: 0L) + output * BigDecimal.valueOf(usage?.output ?: 0L) +
+            cacheWrite * BigDecimal.valueOf(usage?.cachedWrite ?: 0L) + cacheRead * BigDecimal.valueOf(usage?.cachedRead ?: 0L))
+            .setScale(0, RoundingMode.HALF_UP).longValueExact()
+
+    /** The weights as a turn's evidence names them. */
+    override fun toString(): String =
+        "input ${input.toPlainString()}, output ${output.toPlainString()}, cache write ${cacheWrite.toPlainString()}, cache read ${cacheRead.toPlainString()}"
+
+    /** Where the weights in force are read from, when a turn ends: null, none are. */
+    fun interface Source {
+        fun weights(): UsageWeights?
+    }
+
+    companion object {
+        /** [usage]'s four parts as a turn's evidence names them: a part the agent did not report says so, and counts zero. */
+        fun parts(usage: Usage?): String = if (usage == null) "no usage reported (0)" else
+            listOf("input" to usage.input, "output" to usage.output, "cache write" to usage.cachedWrite, "cache read" to usage.cachedRead)
+                .joinToString(", ") { (part, tokens) -> tokens?.let { "$part $it" } ?: "$part not reported (0)" }
+    }
+}
 
 /** What the agent offers for a session: its modes, models and efforts, by the values it accepts. */
 data class Offers(val modes: List<String>, val models: List<String>, val efforts: List<String>)
@@ -196,4 +230,14 @@ interface Listener {
     fun tokenMinted(seat: SeatId, token: SessionToken) {}
     fun observed(fact: ObservedFact) {}
     fun tokenDead(seat: SeatId, token: SessionToken) {}
+
+    /** What the vendor said of the seat's subscription, beside the protocol's fields, as the agent passed it (contracts.md §4.4, Amendment 44). */
+    fun reported(seat: SeatId, report: SubscriptionReport) {}
 }
+
+/**
+ * The vendor's own words on a subscription, as a seat's agent passes them beside the protocol's fields (contracts.md §4.4,
+ * Amendment 44): a window as the vendor names it, the fraction of it used, when it resets — when the vendor says — and
+ * its status, as given; and when it was heard. The driver derives nothing from them.
+ */
+data class SubscriptionReport(val window: String, val fraction: BigDecimal, val resets: java.time.Instant?, val status: String?, val heard: java.time.Instant)

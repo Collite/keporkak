@@ -54,14 +54,14 @@ class LooseEndsSpec : StringSpec({
             val driver = office.driver()
             val started = driver.start(office.session("coder-1", office.agent("""{"turns": [[{"do": "end", "usage": {"input": 100, "output": 20, "total": 120}}]]}"""))).ok()
             driver.prompt(seat, "one").ok()
-            driver.observe(seat, "seat.usage", UsageWindow.SESSION).ok().value shouldBe JsonPrimitive(120)
+            driver.observe(seat, "seat.usage", UsageWindow.SESSION).ok().value shouldBe JsonPrimitive(200)
             driver.kill(seat, Duration.ofSeconds(5)).ok()
 
             driver.load(office.session("coder-1", office.agent("{}")), started.sessionId).ok()
 
             val session = driver.observe(seat, "seat.usage", UsageWindow.SESSION).ok()
             session.value shouldBe JsonPrimitive(0)
-            session.evidence shouldBe "0 turns ended in this session, 0 with usage reported"
+            session.evidence shouldBe "0 turns ended in this session, 0 with usage reported, each counted by its parts weighted"
         }
     }
 

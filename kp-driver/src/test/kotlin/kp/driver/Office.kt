@@ -38,6 +38,8 @@ class Office : AutoCloseable {
     val clock = MutableClock(Instant.parse("2026-11-15T10:00:00Z"))
     val facts: MutableList<ObservedFact> = Collections.synchronizedList(mutableListOf())
     val deadTokens: MutableList<SessionToken> = Collections.synchronizedList(mutableListOf())
+    /** What the vendor said of a subscription, as the driver reported it (S3.13). */
+    val reports: MutableList<SubscriptionReport> = Collections.synchronizedList(mutableListOf())
     /** Every token the driver announced when it minted it (S2.4), in order. */
     val mintedTokens: MutableList<SessionToken> = Collections.synchronizedList(mutableListOf())
     /** The records of this office's fake agents; they live in FakeAgents' folder, not under [root]. */
@@ -55,6 +57,7 @@ class Office : AutoCloseable {
         override fun tokenMinted(seat: SeatId, token: SessionToken) { mintedTokens += token }
         override fun observed(fact: ObservedFact) { facts += fact }
         override fun tokenDead(seat: SeatId, token: SessionToken) { deadTokens += token }
+        override fun reported(seat: SeatId, report: SubscriptionReport) { reports += report }
     }
 
     fun driver(answerer: Answerer = Answerer { Answer.DENY }): Driver =
@@ -75,6 +78,7 @@ class Office : AutoCloseable {
         model: String = "claude-haiku-5-5",
         effort: String = "low",
         servers: List<McpServer> = listOf(McpServer("kp-mail", "http://127.0.0.1:7711/mcp", carriesToken = true)),
+        weights: UsageWeights? = WEIGHTS,
     ) = SessionSpec(
         seat = SeatId(seat),
         command = agent.command,
@@ -84,6 +88,7 @@ class Office : AutoCloseable {
         effort = effort,
         servers = servers,
         environment = mapOf("LANG" to "C.UTF-8"),
+        weights = UsageWeights.Source { weights },
     )
 
     fun transcript(seat: String): List<String> = seats.resolve("_transcripts/$seat.log").let { if (it.exists()) it.readLines() else emptyList() }
@@ -137,3 +142,6 @@ class MutableClock(@Volatile private var now: Instant) : Clock() {
     override fun getZone(): ZoneId = ZoneOffset.UTC
     override fun withZone(zone: ZoneId): Clock = this
 }
+
+/** The pool's weights of a turn's parts, as `pool/budgets.yaml` has them (S3.13): input 1, output 5, cache write 1.25, cache read 0.1. */
+val WEIGHTS = UsageWeights(java.math.BigDecimal("1"), java.math.BigDecimal("5"), java.math.BigDecimal("1.25"), java.math.BigDecimal("0.1"))

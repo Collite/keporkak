@@ -1598,6 +1598,29 @@ def check_budgets(budgets, vendors, entries):
         fail(f"{label}: warn must be ascending fractions between 0 and 1")
     if budgets.get("on_cap") != "pause_provisioning": fail(f"{label}: on_cap must be pause_provisioning (a running seat is never stopped)")
     ok(f"{label}: slot limits name known subscriptions and offices; warnings at {warn}")
+    check_usage(budgets.get("usage"), label)
+
+USAGE_PARTS = ("input", "output", "cache_write", "cache_read")
+
+def check_usage(usage, label):
+    """The block `usage:` (contracts.md §9, Amendment 44): each part of a turn's tokens weighted against an input token — all
+    four, none negative — and DEP-6's baseline, the daily median over `median.days` days, with at least `median.least`."""
+    if not isinstance(usage, dict):
+        fail(f"{label}: usage must say how a turn's tokens are counted: its weights and its median")
+        return
+    for key in sorted(set(usage) - {"weights", "median"}): fail(f"{label}: unknown field 'usage.{key}'")
+    weights = usage.get("weights") if isinstance(usage.get("weights"), dict) else {}
+    for key in sorted(set(weights) - set(USAGE_PARTS)): fail(f"{label}: unknown field 'usage.weights.{key}'")
+    for part in USAGE_PARTS:
+        value = weights.get(part)
+        if not (isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0): fail(f"{label}: usage.weights.{part} must be a number, not negative")
+    median = usage.get("median") if isinstance(usage.get("median"), dict) else {}
+    for key in sorted(set(median) - {"days", "least"}): fail(f"{label}: unknown field 'usage.median.{key}'")
+    days, least = median.get("days"), median.get("least")
+    if not positive(days): fail(f"{label}: usage.median.days must be a positive integer")
+    if not positive(least) or (positive(days) and least > days): fail(f"{label}: usage.median.least must be a positive integer at most usage.median.days")
+    if all(isinstance(weights.get(part), (int, float)) for part in USAGE_PARTS) and positive(days) and positive(least):
+        ok(f"{label}: a turn counts its parts weighted {', '.join(f'{part} {weights[part]}' for part in USAGE_PARTS)}; the daily median over {days} days, at least {least}")
 
 def pool_values(value, found):
     if isinstance(value, dict):

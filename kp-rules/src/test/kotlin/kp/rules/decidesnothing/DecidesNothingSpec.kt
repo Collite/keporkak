@@ -148,6 +148,22 @@ class DecidesNothingSpec : StringSpec({
         }
     }
 
+    "the pool's facts compare a count with a limit of the pool in two places — `budget.slot_open`'s and `budget.slots_over`'s — each listed with Amendment 44's reason; a third comparison with a pool limit planted in the daemon fails the check (S3.13)" {
+        val pool = "kp-daemon/src/main/kotlin/kp/daemon/seats/PoolFacts.kt"
+        names.exceptions.filter { it.path == pool }.map { "${it.shape} in ${it.inside}" } shouldBe
+            listOf("comparison in PoolFacts.Asked.slotOpen", "comparison in PoolFacts.Asked.slotsOver")
+        names.exceptions.filter { it.path == pool }.forEach { it.reason shouldContain "by its definition (contracts.md §4.4, Amendment 44; D-116)" }
+        val baseline = scan.problems().toSet()
+        val planted = File(root, pool).readText().replace(
+            "        /** A limit of `pool/budgets.yaml`: its line, its path and its value. */",
+            "        private fun full(limit: Int): Boolean = inUse.size >= limit\n\n        /** A limit of `pool/budgets.yaml`: its line, its path and its value. */",
+        )
+        val found = (Scan(root, names, mapOf(pool to planted)).problems() - baseline).map { it.lines().first() }
+        found.size shouldBe 1
+        found.single() shouldContain "not on the allow-list: $pool:"
+        found.single() shouldContain ": comparison in PoolFacts.Asked.full: inUse.size >= limit"
+    }
+
     "the check finds a comparison in every form review-008 listed, and takes no type argument, arrow, comment or string for one" {
         // review-008, B1 and its re-review: forms the regex scans missed, then the ones a line-based scan read wrongly.
         val compares = listOf(

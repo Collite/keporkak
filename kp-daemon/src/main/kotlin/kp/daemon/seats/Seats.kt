@@ -14,6 +14,7 @@ import kp.driver.Outcome
 import kp.driver.SeatFacts
 import kp.driver.SessionSpec
 import kp.driver.SessionToken
+import kp.driver.UsageWeights
 import kp.driver.UsageWindow
 import kp.driver.home.ConfigHomes
 import kp.driver.home.PermissionDefaults
@@ -132,7 +133,11 @@ class Seats(
         override fun tokenDead(seat: SeatId, token: SessionToken) = tokens.revoke(token.value)
 
         override fun observed(fact: ObservedFact) = this@Seats.observed(fact)
+
+        override fun reported(seat: SeatId, report: kp.driver.SubscriptionReport) = this@Seats.reported(seat.value, report)
     }
+    /** The vendor's last report of each window of each subscription, through any seat: the last stands for all (Amendment 44). */
+    private val subscriptions = ConcurrentHashMap<Pair<String, String>, kp.facts.VendorReport>()
     private val driver: Driver = driver(listener, time)
 
     /**
@@ -205,6 +210,7 @@ class Seats(
             reporter.execute {
                 if (!unsent) {
                     then.turn(outcome)
+                    recorded(seat, session, outcome)
                     turns?.ended(seat, cause, (outcome as? Outcome.Ok<*>)?.let { used(seat) }, ((outcome as? Outcome.Ok<*>)?.value as? kp.driver.TurnEnd)?.usage)
                 }
                 ended(seat, session, turned = !unsent)
@@ -232,6 +238,37 @@ class Seats(
         session.busy = false
         if (turned && !closing) office?.idle(seat)
     }
+
+    /**
+     * The one record a turn's end leaves (contracts.md §4.4, Amendment 44): `seat.usage` of the window `turn` — the turn's
+     * count by the pool's `usage.weights`, with its four parts, how it ended and its seat's subscription in the evidence. A
+     * turn that ended without the agent's answer — a cancel, a kill, its process gone — is marked partial, with what was
+     * observed of it: a cancelled turn's parts as the agent gave them, and of one with no answer nothing, so zero. The
+     * watch's reports of a turn in flight are no turn's end. None is written once the daemon is stopping.
+     */
+    private fun recorded(seat: String, session: Held, outcome: Outcome<*>) {
+        val office = office?.takeUnless { closing } ?: return
+        val end = (outcome as? Outcome.Ok<*>)?.value as? kp.driver.TurnEnd
+        val weights = weights()
+        val count = weights?.count(end?.usage)
+        val how = when {
+            end == null -> "no answer, partial — ${(outcome as? Outcome.Failed)?.reason}"
+            end.stopReason == CANCELLED -> "$CANCELLED, partial"
+            else -> end.stopReason
+        }
+        val parts = if (end == null) "nothing of its parts was observed" else UsageWeights.parts(end.usage)
+        val counted = weights?.let { "weighted $count by $it" } ?: "not counted: no weights are in force"
+        val evidence = "$TURN_ENDED$how · $parts · $counted · subscription ${subscription(session.binding)}"
+        office.recorded(FactRef(SeatFacts.USAGE, mapOf(SEAT to Datum.Text(seat), WINDOW to Datum.Text(UsageWindow.TURN.word))),
+            count?.let { Datum.of(it) } ?: Datum.Null, session.binding.stage, evidence)
+    }
+
+    /** The weights in force (contracts.md §9, `usage.weights`): how a turn's tokens are counted when it ends. */
+    private fun weights(): UsageWeights? = rules()?.pool?.budgets?.usage?.weights?.let { UsageWeights(it.input, it.output, it.cacheWrite, it.cacheRead) }
+
+    /** A seat's subscription: the vendor of its line (Amendment 44) — the order line of the model and effort it was started with. */
+    private fun subscription(binding: Binding): String =
+        rules()?.pool?.roster?.order?.firstOrNull { it.model == binding.model && it.effort == binding.effort }?.vendor ?: "unknown"
 
     /** The `seat.usage` of [seat]'s last turn, as the driver observes it (contracts.md §4.4): null when it reported none. */
     private fun used(seat: String): Long? =
@@ -353,7 +390,8 @@ class Seats(
             is Outcome.Failed -> return OperationResult.Failed("the home of $seat cannot be built: ${built.reason}")
         }
         val spec = SessionSpec(SeatId(seat), agent.command(seat, binding.role), workingDirectory, home.path, binding.model, binding.effort, home.servers,
-            SeatEnvironment.of(agent.environment(seat), home.path, rules.pool.github?.seats?.get(binding.role)?.app ?: binding.role), hookUrl)
+            SeatEnvironment.of(agent.environment(seat), home.path, rules.pool.github?.seats?.get(binding.role)?.app ?: binding.role), hookUrl,
+            weights = UsageWeights.Source(::weights))
         minting[seat] = binding
         val started = try {
             val loaded = session?.let { blocking { driver.load(spec, it) } }
@@ -472,15 +510,7 @@ class Seats(
      */
     private fun asked(role: String, stage: String?, cause: String?): String? {
         val delivered = office?.state?.delivered ?: return null
-        var at = cause
-        while (at != null) {
-            val delivery = delivered[at] ?: break
-            (delivery.args.fields[LEVEL] as? Datum.Text)?.value?.let { return it }
-            at = delivery.re
-        }
-        return delivered.values.lastOrNull { it.stage == stage && (it.args.fields[ROLE] as? Datum.Text)?.value == role && it.args.fields[LEVEL] is Datum.Text }
-            ?.let { (it.args.fields[LEVEL] as Datum.Text).value }
-            ?: seeds.values.firstOrNull { it.role == role && it.stage == stage }?.level
+        return Levels.asked(role, stage, cause, delivered) ?: seeds.values.firstOrNull { it.role == role && it.stage == stage }?.level
     }
 
     // ---- the places (contracts.md §9, §10)
@@ -651,6 +681,16 @@ class Seats(
     /** What [seat]'s session is bound with — role, stage, model and effort — while it has one. */
     fun binding(seat: String): Binding? = held[seat]?.binding
 
+    /** What the vendor last reported of each subscription's windows through any seat (contracts.md §4.4, Amendment 44). */
+    fun reports(): List<kp.facts.VendorReport> = subscriptions.values.toList()
+
+    /** The vendor said, through [seat]'s agent, how much of a window of the seat's subscription is used: it stands for every seat of it. */
+    private fun reported(seat: String, report: kp.driver.SubscriptionReport) {
+        val binding = held[seat]?.binding ?: return
+        val subscription = subscription(binding)
+        subscriptions[subscription to report.window] = kp.facts.VendorReport(subscription, report.window, report.fraction, report.resets, report.heard, seat)
+    }
+
     /** The session [seat] has now, or had last. */
     fun session(seat: String): String? = held[seat]?.session
 
@@ -671,12 +711,14 @@ class Seats(
     companion object {
         const val SEAT = "seat"
         private const val ROLE = "role"
-        private const val LEVEL = "level"
         private const val SESSION = "session"
         private const val WINDOW = "window"
         private const val CANCEL_RESULT = "cancel"
         private const val ZERO = "0s"
         private const val END_TURN = "end_turn"
+        private const val CANCELLED = "cancelled"
+        /** How a turn's end begins its record's evidence: what tells it from the watch's reports of a turn in flight. */
+        const val TURN_ENDED = "turn ended: "
         /** The adapter's way to compact a session (S2.4's probe): its `compact` command, sent as a prompt. */
         const val COMPACT = "/compact"
         private const val START = "seat.start"
