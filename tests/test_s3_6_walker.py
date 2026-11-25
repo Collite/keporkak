@@ -226,7 +226,8 @@ class TheWalker(unittest.TestCase):
         (first, first_end), (other, other_end) = named(failure[0])
         self.assertEqual((first, other), (["process-gone", "protocol-closed", "retired"], ["protocol-closed", "retired", "process-gone"]))
         self.assertEqual(without(first_end, "threads"), without(other_end, "threads"))
-        self.assertEqual((first_end["threads"], other_end["threads"]), ({"S3.6": "asked"}, {"S3.6": "held"}))
+        # The states of the flag threads moved in each stage, a thread per message thread (D-124): none in the first order.
+        self.assertEqual((first_end["threads"], other_end["threads"]), ({}, {"S3.6": ["held"]}))
 
     def test_a_walk_fails_naming_two_orders_and_their_ends_when_one_order_ends_paused_to_return_to_another_state(self):
         rules = copy_of_the_rules(self, edit="a-fact-moves-the-stage")
