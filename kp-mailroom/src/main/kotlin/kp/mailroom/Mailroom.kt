@@ -168,6 +168,14 @@ class Mailroom private constructor(
     val state: State @Synchronized get() = folded
 
     /**
+     * The message whose arrival is being judged, while the world is asked its facts — before its line is written, so the
+     * fold does not hold it yet; null between judgements. What a fact of a seat a `session-report` asks to start reads:
+     * what the report names (contracts.md §4.4, Amendment 47).
+     */
+    @Volatile var arriving: Message? = null
+        private set
+
+    /**
      * The mailroom's one way in (contracts.md §3, §5): carries one message submitted in [sender]'s name — a seat's tool,
      * Bora's command line, a rehearsal — where [input] holds what a sender supplies (§2.1). Input that is no message at
      * all — no kind, a kind, stage, subject, body, pointers, `args` or `re` outside its form — is answered
@@ -385,7 +393,12 @@ class Mailroom private constructor(
         val engine = Engine(rules)
         val trigger = Trigger.Arrival(message)
         val stage = message.stage?.value
-        val facts = table(engine.needs(folded, trigger) + hears(engine, trigger), stage, now)
+        arriving = message
+        val facts = try {
+            table(engine.needs(folded, trigger) + hears(engine, trigger), stage, now)
+        } finally {
+            arriving = null
+        }
         val reaction = if (robots) engine.react(folded, trigger, facts) else null
         val decision = engine.judge(folded, trigger, facts)
         // A message QA's queue keeps waits for QA: it is judged now, and refused now when it would be. One the Deputy

@@ -13,7 +13,8 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # `just check` took 919 to 1187 s here at S3.11, at the edge of 20 minutes (S3.14 T6; D-123).
+    timeout-minutes: 30
     steps:
       # Release commits verified through GitHub on 2026-11-13.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

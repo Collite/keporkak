@@ -86,6 +86,10 @@ class AfterTheReviewsSpec : StringSpec({
         SeatsOffice(scripts = mapOf("coder-1" to script.format(SeatsOffice.holdPath("before-hangup")))).use { office ->
             office.send("principal", "triage", """{"outcome": "issue", "found": "1", "since": "m-panda-000001"}""")
             office.until("coder-1 in its turn, a tool call open") { office.received("coder-1").any { it.text("event") == "hold" } }
+            // The driver has heard the tool call open — its transcript, written after the observation, says so — before the clock
+            // moves: heard after, it would be open since the moved clock, for no time at all, and the seat re-seated by POOL-12
+            // (S3.14 T4: the case that failed by chance).
+            awaitWritten(office.transcript("coder-1"), "coder-1's transcript with its open tool call") { office.transcript("coder-1").readText().contains("tool t1 pending: a long build") }
             office.clock.now = office.clock.now.plus(Duration.ofMinutes(1))
             office.release("before-hangup")
             office.until("coder-1's turn ended with its protocol") { office.seats.idle("coder-1") }
@@ -180,6 +184,9 @@ private fun witnessedRoot(): Path {
     pool.writeText(pool.readText().replace("\nthresholds:\n", "\n$witnesses" + "thresholds:\n").also { check(it.contains("POOL-92")) { "pool.yaml has no thresholds to put the witnesses before" } })
     return root
 }
+
+/** [seat]'s transcript, where the driver writes what it heard of the seat, in the order it heard it. */
+private fun SeatsOffice.transcript(seat: String): Path = project.resolve("office/seats/_transcripts/$seat.log")
 
 /** The child [seat]'s last process left behind. */
 private fun SeatsOffice.childOf(seat: String): ProcessHandle =

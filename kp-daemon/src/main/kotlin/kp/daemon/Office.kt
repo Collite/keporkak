@@ -56,6 +56,9 @@ class Office private constructor(
     /** The fold of the log, as the mailroom works from it. */
     val state: State get() = mailroom.state
 
+    /** The message whose arrival is being judged while its facts are asked, not yet on the log; null between judgements (Amendment 47). */
+    fun arriving(): kp.model.Message? = mailroom.arriving
+
     /**
      * Bora ran a signed command — any `kp` command under `sudo`, a read too (contracts.md §6): it is the time his
      * presence is read from, and it reaches the mailroom as Bora acting, which brings him back when he was away. A

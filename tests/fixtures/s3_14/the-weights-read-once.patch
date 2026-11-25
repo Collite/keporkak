@@ -1,0 +1,14 @@
+diff --git a/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt b/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
+index 4aee9c6..be7ae13 100644
+--- a/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
++++ b/kp-daemon/src/main/kotlin/kp/daemon/seats/Seats.kt
+@@ -264,7 +264,8 @@ class Seats(
+     }
+ 
+     /** The weights in force (contracts.md §9, `usage.weights`): how a turn's tokens are counted when it ends. */
+-    private fun weights(): UsageWeights? = rules()?.pool?.budgets?.usage?.weights?.let { UsageWeights(it.input, it.output, it.cacheWrite, it.cacheRead) }
++    private fun weights(): UsageWeights? = firstWeights
++    private val firstWeights: UsageWeights? by lazy { rules()?.pool?.budgets?.usage?.weights?.let { UsageWeights(it.input, it.output, it.cacheWrite, it.cacheRead) } }
+ 
+     /** A seat's subscription: the vendor of its line (Amendment 44) — the order line of the model and effort it was started with. */
+     private fun subscription(binding: Binding): String =

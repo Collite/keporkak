@@ -53,7 +53,7 @@ import kotlin.io.path.writeText
 const val RECORDED_AT = "2026-11-24T08:00:00Z"
 
 /** The `worktree.create` an office of S3.11's specs starts with, as the office's performer writes it (contracts.md §4.4, §7; Amendments 40, 42, 43). */
-enum class WorktreeMade { OK, FAILED, NONE }
+enum class WorktreeMade { OK, FAILED, NONE, TWICE }
 
 /**
  * KP/P3/S3.11's office (T1): S3.2's office reading GitHub ([GitHubOffice]) made whole for a stage's places, and every
@@ -62,7 +62,8 @@ enum class WorktreeMade { OK, FAILED, NONE }
  * which holds that branch, and `keporkak`, which does not — and the stage's worktree, made from `kp-toy`'s on that branch
  * under the office's own worktrees root. With [made] OK the log holds the stage's `worktree.create` as the office's
  * performer writes it: `requested` with the stage, then `ok` naming `kp-toy`, the branch and the worktree's path; FAILED,
- * the same request `failed`; NONE, no such record. Beside it the log holds what GitHub's facts that read the log ask for:
+ * the same request `failed`; NONE, no such record; TWICE (S3.14), an earlier `ok` naming `keporkak` and another branch
+ * before that `ok`, and a later request that `failed` after it. Beside it the log holds what GitHub's facts that read the log ask for:
  * a `review-request` and a `merge` whose judgements observed the toy's head, and a `verdict` delivered.
  *
  * The readers are the service's: its world ([ServiceWorld]) — GitHub's nine facts and `git.branch_exists` — its operations
@@ -212,6 +213,9 @@ class RecordedOffice(made: WorktreeMade = WorktreeMade.OK) : AutoCloseable {
         const val REVIEW_REQUEST = "m-panda-900002"
         const val MERGE = "m-panda-900003"
         const val VERDICT = "m-panda-900004"
+        /** S3.14: an approval that made the stage's worktree before [APPROVAL]'s, and one after it whose worktree.create failed. */
+        const val EARLIER = "m-panda-900005"
+        const val LATER = "m-panda-900006"
 
         /** The toy's list's first line, with its title naming [repo] and its `(PR: …)` naming [branch]. */
         fun heading(repo: String = "kp-toy", branch: String = TOY_BRANCH) = "# TOY-$repo-P0 · S0.1 — The skeleton            (PR: $branch)"
@@ -229,12 +233,16 @@ class RecordedOffice(made: WorktreeMade = WorktreeMade.OK) : AutoCloseable {
             val head = ""","observed":{"pr.head":"$TOY_HEAD"}"""
             val lines = listOfNotNull(
                 """{"v":1,"at":"$RECORDED_AT","event":"transition","machine":"stage","subject":"$TOY_STAGE","from":"planned","to":"building","cause":"fixture"}""",
+                """{"v":1,"at":"$RECORDED_AT","event":"op","op":"worktree.create","phase":"requested","cause":"$EARLIER","with":{"stage":"$TOY_STAGE"}}""".takeIf { made == WorktreeMade.TWICE },
+                """{"v":1,"at":"$RECORDED_AT","event":"op","op":"worktree.create","phase":"ok","cause":"$EARLIER","result":{"repository":"keporkak","branch":"feat/kp-keporkak-p0-s0.1-earlier","worktree":"${worktree.resolveSibling("earlier")}"}}""".takeIf { made == WorktreeMade.TWICE },
                 """{"v":1,"at":"$RECORDED_AT","event":"op","op":"worktree.create","phase":"requested","cause":"$APPROVAL","with":{"stage":"$TOY_STAGE"}}""".takeIf { made != WorktreeMade.NONE },
                 when (made) {
-                    WorktreeMade.OK -> """{"v":1,"at":"$RECORDED_AT","event":"op","op":"worktree.create","phase":"ok","cause":"$APPROVAL","result":{"repository":"kp-toy","branch":"$TOY_BRANCH","worktree":"$worktree"}}"""
+                    WorktreeMade.OK, WorktreeMade.TWICE -> """{"v":1,"at":"$RECORDED_AT","event":"op","op":"worktree.create","phase":"ok","cause":"$APPROVAL","result":{"repository":"kp-toy","branch":"$TOY_BRANCH","worktree":"$worktree"}}"""
                     WorktreeMade.FAILED -> """{"v":1,"at":"$RECORDED_AT","event":"op","op":"worktree.create","phase":"failed","cause":"$APPROVAL","reason":"a branch $TOY_BRANCH is there already: it is not taken"}"""
                     WorktreeMade.NONE -> null
                 },
+                """{"v":1,"at":"$RECORDED_AT","event":"op","op":"worktree.create","phase":"requested","cause":"$LATER","with":{"stage":"$TOY_STAGE"}}""".takeIf { made == WorktreeMade.TWICE },
+                """{"v":1,"at":"$RECORDED_AT","event":"op","op":"worktree.create","phase":"failed","cause":"$LATER","reason":"a branch $TOY_BRANCH is there already: it is not taken"}""".takeIf { made == WorktreeMade.TWICE },
                 message(REVIEW_REQUEST, "coder-1", "teamlead", "review-request"), delivered(REVIEW_REQUEST, "teamlead", head),
                 message(MERGE, "teamlead", "daemon", "merge"), delivered(MERGE, "daemon", head),
                 message(VERDICT, "reviewer-1", "coder-1", "verdict"), delivered(VERDICT, "coder-1"),

@@ -145,6 +145,20 @@ class OperationsOnGitHubSpec : FreeSpec({
         }
     }
 
+    "the recorded GitHub merges as GitHub does: a merge that names the head it holds, or names no head at all, is merged on that head; one that names another head is answered 409 (S3.14, issue #64)" {
+        Toy(tempdir().toPath()).use { toy ->
+            toy.github.mergesOnItsHead("/repos/Collite/kp-toy/pulls/3/merge") { MOVED_HEAD }
+            fun merge(body: String): Int = java.net.http.HttpClient.newHttpClient().send(
+                java.net.http.HttpRequest.newBuilder(toy.api.resolve("/repos/Collite/kp-toy/pulls/3/merge")).PUT(java.net.http.HttpRequest.BodyPublishers.ofString(body)).build(),
+                java.net.http.HttpResponse.BodyHandlers.discarding(),
+            ).statusCode()
+
+            merge("""{"sha": "$MOVED_HEAD", "merge_method": "merge"}""") shouldBe 200
+            merge("""{"merge_method": "merge"}""") shouldBe 200
+            merge("""{"sha": "$MERGED_HEAD", "merge_method": "merge"}""") shouldBe 409
+        }
+    }
+
     "a close: an open pull request is closed; one already closed and none at all are `ok` and say so; a merged one is `failed`" {
         Toy(tempdir().toPath()).use { toy ->
             toy.github.onRequests("PATCH", "/repos/Collite/kp-toy/pulls/4", Answer(200, recorded("pull-closed.json")))

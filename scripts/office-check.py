@@ -428,6 +428,48 @@ def check_vendor_configuration(report, office):
         report.ok(item, f"a seat reads its config home under {written}, not ~/.claude (S2.2's probe); no home names an MCP server")
 
 
+def netrc_names(text):
+    """The machines a netrc file names, lower case, and whether it has a `default` entry — read by the names only: the value
+    of a `login`, a `password` or an `account`, and a macro's body, are passed over and kept nowhere. A name may be quoted,
+    as curl reads it."""
+    tokens = list(re.finditer(r'"(?:[^"\\\n]|\\.)*"|\S+', text))
+    names, default, at = [], False, 0
+    while at < len(tokens):
+        word = tokens[at].group()
+        if word == "machine" and at + 1 < len(tokens):
+            names.append(tokens[at + 1].group().strip('"').lower())
+            at += 2
+        elif word == "default":
+            default, at = True, at + 1
+        elif word in ("login", "password", "account"):
+            at += 2
+        elif word == "macdef":
+            # A macro's body runs to the first empty line after its name's line.
+            end = text.find("\n\n", tokens[min(at + 1, len(tokens) - 1)].end())
+            at = len(tokens) if end < 0 else next((n for n in range(at + 1, len(tokens)) if tokens[n].start() > end), len(tokens))
+        else:
+            at += 1
+    return names, default
+
+
+def check_netrc(report):
+    """Amendment 47 (contracts.md §4.4, §12): a seat runs as the office user, with that user's HOME (D-115), and git reads
+    $HOME/.netrc for every https request before it asks the seat's credential helper — nothing in a seat's environment turns
+    that off. So the office user's ~/.netrc names no github.com machine, and has no default entry, which git takes for any
+    machine. Read by the machines' names only; no login or password is printed. Of a ~/.netrc that names neither — or of
+    none — nothing is said."""
+    try:
+        text = home("~/.netrc").read_text(errors="replace")
+    except OSError:
+        return
+    names, default = netrc_names(text)
+    why = "remove that entry: a seat's git would read it before the seat's helper, and act as you (office/README.md §6)"
+    if "github.com" in names:
+        report.todo("no github.com in ~/.netrc", f"~/.netrc names the machine github.com — {why}")
+    elif default:
+        report.todo("no github.com in ~/.netrc", f"~/.netrc has a default entry, which git takes for github.com — {why}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--pool", type=Path, default=ROOT / "pool")
@@ -455,6 +497,7 @@ def main():
     check_live_targets(report, office)
     check_service(report, office)
     check_vendor_configuration(report, office)
+    check_netrc(report)
     print("\n".join(report.lines))
     counts = report.counts
     print(f"RESULT: {'NOT READY' if counts['to do'] else 'READY'} — {counts['to do']} to do, {counts['later']} later, {counts['ok']} ok")

@@ -582,7 +582,12 @@ class Seats(
         return (driver.observe(SeatId(seat), fact.name, window) as? Outcome.Ok)?.value?.value?.let(::datum)
     }
 
-    /** `roster.model_allowed` (contracts.md §4.4): the seat's model is not reserved, or is reserved for its role. */
+    /**
+     * `roster.model_allowed` (contracts.md §4.4): the seat's model is not reserved, or is reserved for its role — the role
+     * and the model of the seat's binding while it is held; else as the world names them: in the service, from the log, and
+     * for a seat a `session-report` being judged asks to start, from what the report names (Amendment 47, [PoolFacts]); in
+     * a rehearsal, as its walk names them. Else its role from its name, bound on the stage asked.
+     */
     private fun allowed(seat: String, stage: String?, other: FactSource): Datum? {
         val roster = rules()?.pool?.roster ?: return null
         val bound = held[seat]?.takeIf { !it.gone }?.binding
