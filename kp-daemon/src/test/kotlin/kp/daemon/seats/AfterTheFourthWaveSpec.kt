@@ -13,7 +13,7 @@ import kp.mailroom.Status
  * KP/P3/S3.14 T1 — after the fourth wave's reviews (contracts.md §4.4, Amendment 47; §2.2). Bora reads these. The seam: a
  * daemon composed as the service composes it — the project's, GitHub's and the pool's fact sources, no walk's table — with
  * S2.1's fake agent as every seat's process, its seats started as the rules start them, asked as the mailroom asks
- * ([ServiceOffice]). Its stages: S3.1 ready for review, S3.2 and S3.3 assigned. The office check's sentence is in
+ * ([ServiceOffice]). Its stages: S3.1 ready for review, S3.2 assigned, S3.3 waiting for a grant. The office check's sentence is in
  * `tests/test_s3_14_after_the_fourth_wave.py`.
  */
 class AfterTheFourthWaveSpec : StringSpec({
@@ -37,19 +37,19 @@ class AfterTheFourthWaveSpec : StringSpec({
             office.until("coder-2 prompted with the assign") { office.prompts("coder-2").any { assign.id in it.second } }
             office.prompts("coder-1").map { it.second }.none { assign.id in it } shouldBe true
 
-            // No coder in S3.3: the role stays as written, and nothing is woken.
-            val none = office.send("teamlead", "assign", """{"seat": "coder-9"}""", S33)
-            office.delivered(none.id).to shouldBe listOf("coder")
+            // No seat in S3.3: a grant to its reviewer, copied to its coder, keeps each role as written, and wakes nothing.
+            val none = office.send("principal", "grant", """{"outcome": "grant"}""", S33)
+            office.delivered(none.id).to shouldBe listOf("reviewer", "coder", "teamlead")
             office.delivered(none.id).woke shouldBe null
 
-            // coder-2's process dies and the rules re-seat it: the next message to S3.2's coder wakes its new process.
+            // coder-2's process dies and the rules re-seat it; the Pool Manager's `re-seated`, copied to S3.2's coder, wakes its new process.
             val first = office.agents.pid("coder-2")
             office.seats.end("coder-2")
-            office.until("coder-2 re-seated") { office.ops("seat.reseat").any { it.phase == "ok" } }
-            val reseated = office.send("pool", "re-seated", """{"seat": "coder-2"}""", S32)
-            office.delivered(reseated.id).to shouldBe listOf("teamlead", "coder-2")
-            office.until("coder-2's new process prompted with re-seated") { office.prompts("coder-2").any { reseated.id in it.second } }
-            office.prompts("coder-2").single { reseated.id in it.second }.first shouldNotBe first
+            office.until("coder-2 re-seated, and re-seated sent") { office.messages("re-seated").isNotEmpty() }
+            val reseated = office.messages("re-seated").single()
+            office.delivered(reseated).to shouldBe listOf("teamlead", "coder-2")
+            office.until("coder-2's new process prompted with re-seated") { office.prompts("coder-2").any { reseated in it.second } }
+            office.prompts("coder-2").single { reseated in it.second }.first shouldNotBe first
         }
     }
 
@@ -113,8 +113,8 @@ private const val S31 = "KP/P3/S3.1"
 private const val S32 = "KP/P3/S3.2"
 private const val S33 = "KP/P3/S3.3"
 
-/** The three stages: S3.1 ready for review, S3.2 and S3.3 assigned. */
-private val STAGES = mapOf(S31 to "ready_for_review", S32 to "assigned", S33 to "assigned")
+/** The three stages: S3.1 ready for review, S3.2 assigned, S3.3 waiting for the Principal's grant. */
+private val STAGES = mapOf(S31 to "ready_for_review", S32 to "assigned", S33 to "grant_pending")
 
 /** Master's budgets with four stages of an effort in flight, not two: a seat can be asked for while the three are. */
 private val FOUR_IN_FLIGHT = { budgets: String -> budgets.replace("stages_in_flight_per_effort: 2", "stages_in_flight_per_effort: 4") }

@@ -126,6 +126,9 @@ class ServiceOffice(
     /** The operations of [op] on the log. */
     fun ops(op: String): List<Op> = lines().filterIsInstance<Op>().filter { it.op == op }
 
+    /** The ids of the messages of [kind] on the log, in order. */
+    fun messages(kind: String): List<String> = lines().filterIsInstance<kp.model.Message>().filter { it.kind == kind }.map { it.id.value }
+
     /** The `delivered` record of message [id]. */
     fun delivered(id: String): Delivered = lines().filterIsInstance<Delivered>().single { it.id == id }
 

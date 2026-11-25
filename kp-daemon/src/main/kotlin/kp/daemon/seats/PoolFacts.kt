@@ -22,8 +22,9 @@ import java.time.Instant
 /**
  * The pool's facts and the budgets' (contracts.md §4.4, Amendment 44; S3.13): the nine facts the rules ask that nothing
  * else answers, each answered when a judgement or a view asks, from the pool as in force at that ask and the folded
- * state, with a value and its evidence. A fact that is unknown is answered null; what was missing goes to the journal
- * when a judgement asked, and a view writes none (Amendment 34).
+ * state, with a value and its evidence; and a seat's four — `seat.name`, `seat.role`, `seat.model`, `seat.effort` — of a
+ * role in a stage or of a seat, from the log (Amendment 47; S3.14). A fact that is unknown is answered null; what was
+ * missing goes to the journal when a judgement asked, and a view writes none (Amendment 34).
  */
 class PoolFacts(private val office: String, private val say: (String) -> Unit = Journal::say) : FactSource {
     /**
@@ -103,6 +104,17 @@ class PoolFacts(private val office: String, private val say: (String) -> Unit = 
             CONSUMPTION -> subscription { subscription ->
                 val window = param(WINDOW) ?: return@subscription Observation.Unknown("no parameter window")
                 BudgetFacts.consumption(read.reports(), subscription, window, read.now())
+            }
+            SEAT_NAME -> named { seat, how -> Observation.Value(seat, how) }
+            SEAT_ROLE -> named { seat, how ->
+                log.known[seat]?.role?.let { Observation.Value(it, "$how; started as $it") } ?: Observation.Unknown("the log names no role $seat was started for")
+            }
+            SEAT_MODEL, SEAT_EFFORT -> named { seat, how ->
+                when (val line = lineOf(seat)) {
+                    is Lined.Of -> Observation.Value(if (fact.name == SEAT_MODEL) line.line.value.model else line.line.value.effort,
+                        "$how; it runs ${line.line.value.model} at ${line.line.value.effort}: ${where(ROSTER, "$ORDER.${line.line.index}")}")
+                    is Lined.Not -> Observation.Unknown(line.why)
+                }
             }
             VS_DAILY_MEDIAN -> subscription { subscription ->
                 val (span, least) = pool.budgets.usage.median
@@ -221,6 +233,22 @@ class PoolFacts(private val office: String, private val say: (String) -> Unit = 
             }
         }
 
+        /**
+         * The seat a seat's fact names (Amendment 47) — by `of` or `seat`: a role in the asked stage, whose seat is the last
+         * the log started for it there and not retired; else a seat the log started or the seats hold, itself — with how it
+         * was found. Unknown with the role and the stage when the role has no such seat.
+         */
+        private fun named(answer: (String, String) -> Observation): Observation {
+            val named = param(OF) ?: param(SEAT) ?: return Observation.Unknown("no parameter of or seat names a seat")
+            if (isRole(named)) {
+                val at = stage ?: return Observation.Unknown("no stage to find the role $named in")
+                val seat = boundTo(named, at) ?: return Observation.Unknown("no seat is bound to the role $named in $at")
+                return answer(seat, "$seat: the last seat started for $named in $at and not retired")
+            }
+            if (named !in log.known && read.bound(named) == null) return Observation.Unknown("no seat $named is known to the log or to the seats")
+            return answer(named, "$named: a seat ${if (named in log.known) "the log started" else "the seats hold"}")
+        }
+
         /** Whether [name] is a role: a persona declares it (`agents/<role>/AGENT.md`). */
         private fun isRole(name: String): Boolean = "agents/$name/AGENT.md" in rules.texts
 
@@ -323,9 +351,14 @@ class PoolFacts(private val office: String, private val say: (String) -> Unit = 
         private const val SLOTS_OVER = "budget.slots_over"
         private const val CONSUMPTION = "budget.consumption"
         private const val VS_DAILY_MEDIAN = "budget.vs_daily_median"
+        private const val SEAT_NAME = "seat.name"
+        private const val SEAT_ROLE = "seat.role"
+        private const val SEAT_MODEL = "seat.model"
+        private const val SEAT_EFFORT = "seat.effort"
 
-        /** The nine (Amendment 44). */
-        val ANSWERED: Set<String> = setOf(RANK, MODEL_RANK, FLOOR_RANK, SEAT_AVAILABLE, COMPUTER_USE, SLOT_OPEN, SLOTS_OVER, CONSUMPTION, VS_DAILY_MEDIAN)
+        /** The nine (Amendment 44), and a seat's four the service answers from the log (Amendment 47). */
+        val ANSWERED: Set<String> = setOf(RANK, MODEL_RANK, FLOOR_RANK, SEAT_AVAILABLE, COMPUTER_USE, SLOT_OPEN, SLOTS_OVER, CONSUMPTION, VS_DAILY_MEDIAN,
+            SEAT_NAME, SEAT_ROLE, SEAT_MODEL, SEAT_EFFORT)
 
         private const val ROSTER = "pool/roster.yaml"
         private const val OFFICES = "pool/offices.yaml"
