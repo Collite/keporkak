@@ -72,3 +72,18 @@ internal class SeatLog(lines: List<Envelope>) {
         val DOWN = setOf("gone", "retired")
     }
 }
+
+/**
+ * A seat a `session-report` being judged asks to start (contracts.md §4.4, Amendment 47): what the report names — the
+ * role — its stage, and the request it answers, whose level a start reads. Before any seat is held, this is the seat.
+ */
+internal data class Reported(val role: String?, val stage: String?, val request: String?)
+
+/** What [arriving] — the message being judged — names of [seat], when it is a `session-report` that asks to start it; else null. */
+internal fun reported(arriving: Message?, seat: String): Reported? = arriving
+    ?.takeIf { it.kind == SESSION_REPORT && (it.args?.get(REPORTED_SEAT) as? JsonPrimitive)?.contentOrNull == seat }
+    ?.let { Reported((it.args?.get(REPORTED_ROLE) as? JsonPrimitive)?.contentOrNull, it.stage?.value, it.re?.value) }
+
+private const val SESSION_REPORT = "session-report"
+private const val REPORTED_SEAT = "seat"
+private const val REPORTED_ROLE = "role"

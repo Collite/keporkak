@@ -581,13 +581,20 @@ class Seats(
         return (driver.observe(SeatId(seat), fact.name, window) as? Outcome.Ok)?.value?.value?.let(::datum)
     }
 
-    /** `roster.model_allowed` (contracts.md §4.4): the seat's model is not reserved, or is reserved for its role. */
+    /**
+     * `roster.model_allowed` (contracts.md §4.4): the seat's model is not reserved, or is reserved for its role — the role
+     * and the model of the seat's binding while it is held; else as the world names them (the service's, from the log and
+     * the report being judged; a rehearsal's walk); else, for a seat a `session-report` being judged asks to start, what
+     * the report names (Amendment 47): its role, bound as its start will bind it — the level of the request it answers,
+     * on the report's stage. A seat named by nothing: its role from its name, bound on the stage asked.
+     */
     private fun allowed(seat: String, stage: String?, other: FactSource): Datum? {
         val roster = rules()?.pool?.roster ?: return null
         val bound = held[seat]?.takeIf { !it.gone }?.binding
-        val role = bound?.role ?: (other.observe(FactRef(SEAT_ROLE, mapOf(SEAT to Datum.Text(seat))), stage) as? Datum.Text)?.value ?: roleOf(seat)
+        val report = reported(office?.arriving(), seat)
+        val role = bound?.role ?: (other.observe(FactRef(SEAT_ROLE, mapOf(SEAT to Datum.Text(seat))), stage) as? Datum.Text)?.value ?: report?.role ?: roleOf(seat)
         val model = bound?.model ?: (other.observe(FactRef(SEAT_MODEL, mapOf(SEAT to Datum.Text(seat))), stage) as? Datum.Text)?.value
-            ?: ((bind(seat, role, stage, null) as? Bound.Ok)?.binding?.model) ?: return null
+            ?: ((bind(seat, role, report?.stage ?: stage, report?.request) as? Bound.Ok)?.binding?.model) ?: return null
         return Datum.Bool(roster.reserved[model]?.contains(role) ?: true)
     }
 
