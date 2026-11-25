@@ -195,6 +195,15 @@ the office's checkout once it has merged. The daemon reads the rules of the chec
 `kp` without `sudo` reads (`kp inbox`, `kp status`, `kp check`); with `sudo` it answers (`approve`, `decline`,
 `rule`, `reverse`, `queue`, `away`) — and any command run with `sudo` counts as you acting. `kp help` lists them.
 
+**A seat that died a fourth time in its stage** (D-118). A stage's seats may die three times; each death pauses the
+stage and the Pool Manager re-seats the seat. A fourth leaves the stage `paused` and the seat `gone`, and the Pool
+Manager asks you: `kp inbox` shows a `ruling-request` from `pool`, `default: reseat`. Answer it one of two ways:
+
+    sudo kp rule <ticket> reseat seat=<seat>   # one more re-seat: the seat comes back, and so does the stage
+    sudo kp rule <ticket> recut                # the stage is recut; its seats are then retired
+
+Each later death asks you again. While you are away the request is held like every class-B item.
+
 **`tools/kp-notify` — your inbox on the Mac** (contracts.md §12, Amendment 45). On your Mac, in a terminal you leave
 open, from a checkout of this repository there:
 
