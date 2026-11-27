@@ -148,7 +148,8 @@ logs:
 # office's scratch root (`rehearsals/`). It spends tokens: run it on demand (office/README.md); CI never runs it.
 # `--world office` (contracts.md §12, Amendment 46; S3.5) plays the walk where the service would run — the office's project
 # checkout and its log, its main checkouts, GitHub — every fact read and every operation performed as the service does;
-# it starts only on a stopped service, clean checkouts, a stage with a list and Bora present (office/README.md, §7).
+# it starts only on a stopped service, clean checkouts, a stage with a list and Bora present. `--world office --check`
+# reads those and the walk's way against the office as it is, and changes nothing (office/README.md, "Carrying a stage").
 rehearse walk *args:
     #!/usr/bin/env sh
     set -eu

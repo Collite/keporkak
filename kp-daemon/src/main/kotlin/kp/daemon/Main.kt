@@ -23,7 +23,7 @@ import kotlin.io.path.createDirectories
 import kotlin.system.exitProcess
 
 private const val USAGE = """kp-daemon run [--root DIR] [--office NAME] [--project DIR] [--socket PATH] [--listen HOST:PORT]
-kp-daemon rehearse <walk.yaml> [--root DIR] [--office NAME] [--socket PATH] [--seats scripted|fake --fake-classpath CP|real] [--world office [--project DIR]]
+kp-daemon rehearse <walk.yaml> [--root DIR] [--office NAME] [--socket PATH] [--seats scripted|fake --fake-classpath CP|real] [--world office [--project DIR] [--check]]
 kp-daemon facts <stage> [--root DIR] [--office NAME] [--project DIR]
 kp-daemon apps [merge | prove] [--root DIR] [--office NAME]
   apps: what GitHub says of each App of pool/offices.yaml's block github: (`just apps`); it prints no token
@@ -33,7 +33,7 @@ kp-daemon apps [merge | prove] [--root DIR] [--office NAME]
   --seats: the walk's seats scripted (default), S2.1's fake agent run from --fake-classpath (`just rehearse <walk> --seats fake`),
            or Claude seats on the pinned adapter and the office's token (`just rehearse <walk> --seats real`: it spends tokens)
   --world office: the walk played on the office's own project checkout, log, main checkouts and GitHub, every fact read and every
-           operation performed as the service does (contracts.md §12, Amendment 46)
+           operation performed as the service does (contracts.md §12, Amendment 46); --check reads whether it may start, and changes nothing
   facts: every fact of the project and of git for <stage>, its phase and its effort (`just facts <stage>`): it writes nothing
   --office: the office (default: the short host name) · --project: its project checkout (default: pool/offices.yaml's)
   --listen: where the seat API listens (default: the office's listen.mcp in pool/offices.yaml)
@@ -56,6 +56,7 @@ fun main(args: Array<String>) {
     val fakeClasspath = option("--fake-classpath")
     val listen = option("--listen")
     val world = option("--world")
+    val check = words.remove("--check")
     if (command == "facts") {
         val stage = words.singleOrNull() ?: fail("facts names one stage")
         val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
@@ -86,8 +87,10 @@ fun main(args: Array<String>) {
             "rehearse" -> {
                 val walk = words.singleOrNull()?.let(Path::of) ?: fail("rehearse names one walk")
                 if (world != null && world != "office") fail("--world is office")
+                if (check && world == null) fail("--check reads a rehearsal on the office: --world office --check")
                 if (world == "office") {
                     val checkout = project ?: projectOf(root, office)
+                    if (check) exitProcess(OnTheOffice.check(root, walk, office, checkout, socket) { println(it) })
                     val seating = when (seats) {
                         "fake" -> FakeSeating(fakeClasspath ?: fail("--seats fake needs --fake-classpath"))
                         "real" -> RealSeating()

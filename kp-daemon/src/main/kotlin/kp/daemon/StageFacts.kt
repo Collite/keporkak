@@ -69,6 +69,17 @@ object StageFacts {
         }
     }
 
+    /**
+     * [stage]'s project and git facts named [names], each with its value and evidence or why it is unknown, as [lines] reads
+     * them — the daemon's own world on the office's checkouts, with the log's word, read without the writer's lock (S3.5 T7).
+     */
+    fun observed(rules: InForceRules, office: String, project: Path, stage: String, names: Collection<String>): Map<String, Observation> {
+        val world = ProjectWorld.of(rules, office, project) { }
+        val read = LogReader(project, OfficeId(office)).read()
+        world.reading(logOf(rules, fold(read.lines.map { it.entry }), read.lines.counted().map { it.entry }))
+        return names.associateWith { name -> world.observation(FactRef(name, emptyMap()), stage)?.second ?: Observation.Unknown("the project's facts do not answer $name") }
+    }
+
     /** What the office's log knows, from its fold [state] and its lines as they count, [counted]. */
     private fun logOf(rules: InForceRules, state: kp.engine.State, counted: List<kp.model.Envelope>) = object : WhatTheLogKnows {
         override fun state(stage: String): StageState? = state.machine(STAGE, stage)?.let { StageState(it.state, it.since) }

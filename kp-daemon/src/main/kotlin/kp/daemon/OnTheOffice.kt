@@ -18,7 +18,9 @@ import java.net.UnixDomainSocketAddress
 import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException
 import java.nio.channels.SocketChannel
+import java.nio.file.Files
 import java.nio.file.Path
+import kp.daemon.seats.Roots
 import java.nio.file.StandardOpenOption
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
@@ -201,6 +203,132 @@ object OnTheOffice {
         return Course.Kept(kept)
     }
 
+    /**
+     * `just rehearse <walk> --world office --check` (S3.5 T7): whether the walk may be played on the office as it is now, read
+     * and not changed — the walk's own shape, the five conditions of a start, how far the office's log already went with it,
+     * the stage's facts the way's first step reads (its list, the plan's row, the slots) against the caps, the Apps as
+     * GitHub at [api] answers for them, and the rules GitHub holds the stage's repository's default branch to. Each is
+     * printed through [print], then what is missing; 0 when nothing is.
+     */
+    fun check(root: Path, walkFile: Path, office: String, project: Path, socket: Path, api: java.net.URI = kp.ops.GitHubApps.GITHUB, print: (String) -> Unit): Int {
+        val missing = ArrayList<String>()
+        val walk = Walk.read(walkFile)
+        print("rehearse ${walk.name} --world office --check: office $office, the project checkout $project — read, nothing changed")
+        supplied(walk).forEach { missing += "the walk: $it" }
+        if (walk.claudeSeats == null) missing += "the walk names no claude_seats"
+        if (!Script.STAGE_ID.matches(walk.stage)) missing += "the walk names its stage ${walk.stage}, not by its whole id"
+        val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
+        if (rules == null) {
+            print("the rules are not valid: ${loaded.problems.joinToString("; ")}")
+            return 1
+        }
+        val stage = walk.stage
+        val script = Script(walk, stage.substringBefore('/'), onTheOffice = true)
+        val lines = lines(project, office)
+        val again = lines.any { it is Message && it.stage?.value == stage }
+        print("")
+        print("the five conditions of a start:")
+        val conditions = missing(rules, office, project, socket, stage, again = again, walk = walk)
+        if (conditions.isEmpty()) print("  the service is stopped; $stage has a list; the project checkout and every main checkout are clean; Bora is present")
+        conditions.forEach { print("  missing: $it"); missing += it }
+        print("")
+        print("the office's log:")
+        when (val course = course(script, lines)) {
+            is Course.Kept -> print(if (course.steps.isEmpty()) "  it holds none of the walk's steps: a start plays the walk from its first" else "  it holds the walk's first ${course.steps.size} steps: a start checks them and plays on from step ${course.steps.size + 1}")
+            is Course.Otherwise -> "it went another way than the walk at ${course.why}".let { print("  missing: $it"); missing += it }
+        }
+        print("")
+        print("the stage's facts, as the service reads them now (`just facts $stage`):")
+        StageFacts.lines(rules, office, project, stage).filter { line -> WAY.any { line.startsWith(it) } }.forEach { print("  $it") }
+        val read = StageFacts.observed(rules, office, project, stage, listOf("list.tasks_total", "list.lines", "plan.predecessors_exited", "list.fence_complete", "stage.rolls", "stage.live"))
+        fun value(name: String): Any? = (read[name] as? kp.facts.Observation.Value)?.value
+        val caps = rules.ruleSet.engagement.caps.mapValues { (it.value as? kp.rules.Literal.Number)?.value?.toLong() }
+        val total = (value("list.tasks_total") as? Number)?.toLong()
+        val min = caps["stage_tasks_min"]
+        val max = caps["stage_tasks_max"]
+        if (total == null || (min != null && total < min) || (max != null && total > max)) missing += "list.tasks_total is ${total ?: "unknown"}: a stage has $min to $max tasks (assignment-proposal, engagement.yaml)"
+        val listLines = (value("list.lines") as? Number)?.toLong()
+        val linesCap = caps["stage_list_lines"]
+        if (listLines == null || (linesCap != null && listLines > linesCap)) missing += "list.lines is ${listLines ?: "unknown"}: the cap is $linesCap (assignment-proposal, engagement.yaml)"
+        listOf("plan.predecessors_exited", "list.fence_complete").forEach { name -> if (value(name) != true) missing += "$name is ${value(name) ?: "unknown"}, not true (T-01)" }
+        listOf("stage.rolls", "stage.live").forEach { name -> if (value(name) != "none") missing += "$name is ${value(name) ?: "unknown"}: the walk is the way of a stage that rolls nothing and is live nowhere" }
+        print("")
+        print("the Apps (`just apps`):")
+        if (Apps.run(rules, office, api) { print("  $it") } != 0) missing += "the Apps: not every answer is yes (above)"
+        print("")
+        print("the rules of the stage's repository, as GitHub tells them:")
+        rulesOf(rules, office, project, stage, api, { print("  $it") }).forEach { missing += it }
+        print("")
+        if (missing.isEmpty()) {
+            print("ready: nothing is missing — `just rehearse ${walk.name} --seats real --world office` may start")
+            return 0
+        }
+        print("missing (${missing.size}):")
+        missing.forEach { print("  - $it") }
+        return 1
+    }
+
+    /** The facts of `just facts` the way's first step and its exit read: the list, the plan's row, the slots. */
+    private val WAY = listOf("plan.stage_has_list", "plan.predecessors_exited", "list.fence_complete", "list.tasks_total", "list.tasks_open", "list.lines",
+        "list.found_untriaged", "stage.rolls", "stage.live", "status.entries", "project.proof_files", "git.stray_changes", "budget.slot_open", "roster.floor_rank")
+
+    /**
+     * The rules GitHub holds the default branch of [stage]'s repository to — its list's title names it — as `kp-merger` and
+     * the coder's App read them (`just apps merge` reads them so too): each ruleset and who may bypass it, printed. What is
+     * missing: no rule holds the coder's App to `update` — it could push to the default branch — or none holds `kp-merger`
+     * to green checks, the toy's second ruleset (D-123).
+     */
+    private fun rulesOf(rules: InForceRules, office: String, project: Path, stage: String, api: java.net.URI, print: (String) -> Unit): List<String> {
+        val pool = rules.ruleSet.pool
+        val block = pool.github ?: return listOf("pool/offices.yaml has no block github:")
+        val entry = pool.offices[office] ?: return listOf("pool/offices.yaml names no office '$office'")
+        val (effort, phase, number) = Regex("^([A-Z][A-Z0-9-]*)/P([0-9]+)/S([0-9]+\\.[0-9]+)$").matchEntire(stage)?.destructured ?: return listOf("$stage is no stage id")
+        val folder = entry.project.efforts[effort]?.let(project::resolve) ?: return listOf("pool/offices.yaml gives the effort $effort no folder")
+        val list = folder.takeIf { it.isDirectory() }?.let { dir -> Files.list(dir).use { all -> all.filter { it.fileName.toString().startsWith("tasks-p$phase-s$number-") && it.fileName.toString().endsWith(".md") }.toList() } }?.singleOrNull()
+            ?: return listOf("$stage has no one list in $folder")
+        val repo = Regex("^# ${Regex.escape(effort)}-(\\S+)-P$phase(?=\\s|$)").find(Files.readAllLines(list).firstOrNull().orEmpty())?.groupValues?.get(1)
+            ?: return listOf("${list.fileName}:1 names no repository")
+        val repository = "${block.organization}/$repo"
+        val apps = kp.ops.GitHubApps(Roots.of(entry.roots).secrets.resolve("apps"), api)
+        val rest = kp.ops.GitHubRest(api)
+        val merger = block.apps[GitHubOperations.MERGER]?.let { kp.ops.App(GitHubOperations.MERGER, it.app, it.installation) } ?: return listOf("github.apps holds no App ${GitHubOperations.MERGER}")
+        val coderSeat = block.seats[CODER] ?: return listOf("github.seats gives the coder no App")
+        val coder = block.apps[coderSeat.app]?.let { kp.ops.App(coderSeat.app, it.app, it.installation) } ?: return listOf("github.apps holds no App ${coderSeat.app}")
+        fun token(app: kp.ops.App, permissions: Map<String, String>): kp.ops.Token? = when (val minted = apps.mint(app, listOf(repo), permissions)) {
+            is kp.ops.Minted.Ok -> minted.token
+            is kp.ops.Minted.Failed -> null.also { print("${app.identity}: no token for $repository — ${minted.reason}") }
+        }
+        val reading = token(merger, kp.ops.GitHubApps.METADATA) ?: return listOf("no token of ${merger.identity} reads $repository")
+        // Read only: whether an App may bypass a ruleset is GitHub's answer for the App, whatever its token may do.
+        val pushing = token(coder, kp.ops.GitHubApps.METADATA) ?: return listOf("no token of ${coder.identity} reads $repository")
+        fun ask(path: String, token: kp.ops.Token): kotlinx.serialization.json.JsonElement? = when (val sent = rest.send("GET", path, token)) {
+            is kp.ops.GitHubRest.Sent.Answered -> sent.reply.let { reply -> if (reply.status == kp.ops.GitHubRest.OK) reply.json else null.also { print(rest.refused("GET", path, reply)) } }
+            is kp.ops.GitHubRest.Sent.NotReached -> null.also { print("GET $path: ${sent.reason}") }
+        }
+        val default = ((ask("/repos/$repository", reading) as? kotlinx.serialization.json.JsonObject)?.get("default_branch") as? kotlinx.serialization.json.JsonPrimitive)?.content
+            ?: return listOf("GitHub names no default branch of $repository")
+        val held = ask("/repos/$repository/rules/branches/$default", reading) as? kotlinx.serialization.json.JsonArray ?: return listOf("GitHub's rules of $repository's $default are not readable")
+        val byRuleset = held.mapNotNull { it as? kotlinx.serialization.json.JsonObject }
+            .groupBy({ (it["ruleset_id"] as? kotlinx.serialization.json.JsonPrimitive)?.content }, { (it["type"] as? kotlinx.serialization.json.JsonPrimitive)?.content })
+        var coderHeld = false
+        var mergerHeld = false
+        print("$repository's default branch $default, as its rulesets hold it:")
+        for ((id, types) in byRuleset) {
+            fun bypass(token: kp.ops.Token) = ((ask("/repos/$repository/rulesets/$id", token) as? kotlinx.serialization.json.JsonObject)?.get(BYPASS) as? kotlinx.serialization.json.JsonPrimitive)?.content
+            val asMerger = ask("/repos/$repository/rulesets/$id", reading) as? kotlinx.serialization.json.JsonObject
+            val name = (asMerger?.get("name") as? kotlinx.serialization.json.JsonPrimitive)?.content
+            val mergerBypass = (asMerger?.get(BYPASS) as? kotlinx.serialization.json.JsonPrimitive)?.content
+            val coderBypass = bypass(pushing)
+            print("ruleset $id '$name' holds $default to ${types.filterNotNull().joinToString(", ")} — ${merger.identity} may bypass it: $mergerBypass; ${coder.identity}: $coderBypass")
+            if ("update" in types && coderBypass == NEVER) coderHeld = true
+            if ("required_status_checks" in types && mergerBypass == NEVER) mergerHeld = true
+        }
+        return listOfNotNull(
+            "no rule of $repository's $default holds ${coder.identity} to update: its push to $default would not be refused".takeUnless { coderHeld },
+            "no rule of $repository's $default holds ${merger.identity} to green checks: its merge would not wait for them (the toy's second ruleset, D-123)".takeUnless { mergerHeld },
+        )
+    }
+
     /** Whether [message] carries the args [step] sends — a stage the walk names read as the stage id it is played as. */
     private fun sameArgs(message: Message, step: Walk.Step, script: Script): Boolean {
         fun played(value: Datum): Datum = when (value) {
@@ -254,6 +382,9 @@ object OnTheOffice {
     private const val REFUSED_OUTCOME = "refused"
     private const val SHOWN = 5
     private const val REGISTER = "REGISTER.md"
+    private const val CODER = "coder"
+    private const val BYPASS = "current_user_can_bypass"
+    private const val NEVER = "never"
     private const val WRITES = "writes"
     private const val FILE = "file"
     /** The two letters and the space before a path in `git status --porcelain=v1`. */

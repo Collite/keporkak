@@ -341,6 +341,27 @@ exceptions:
     code: 'sortedBy { it.name }'
     line: 'return profiles.listDirectoryEntries("*.md").sortedBy { it.name }.firstNotNullOfOrNull { file -> … }'
     reason: 'the profiles in the order of their names: the first that names the effort gives its default_branch, as Seats.profile picks a profile (contracts.md §10)'
+  kp-daemon/src/main/kotlin/kp/daemon/OnTheOffice.kt:
+  - shape: comparison
+    in: OnTheOffice.check
+    code: 'total < min'
+    line: 'if (total == null || (min != null && total < min) || (max != null && total > max)) missing += "list.tasks_total is ${total ?: "unknown"}: a stage has $min to $max tasks (assignment-proposal, engagement.yaml)"'
+    reason: '`just rehearse <walk> --world office --check` (S3.5 T7), which Bora runs by hand and the daemon never: it says the list''s task count is outside the caps `assignment-proposal` reads (engagement.yaml `stage_tasks_min`, `stage_tasks_max`) — a line it prints, which decides nothing; the proposal''s judgement is the mailroom''s'
+  - shape: comparison
+    in: OnTheOffice.check
+    code: 'total > max'
+    line: 'if (total == null || (min != null && total < min) || (max != null && total > max)) missing += "list.tasks_total is ${total ?: "unknown"}: a stage has $min to $max tasks (assignment-proposal, engagement.yaml)"'
+    reason: '`--check` (S3.5 T7), by hand: the list''s task count against `stage_tasks_max`, as `assignment-proposal` reads it — printed as missing, never judged here'
+  - shape: comparison
+    in: OnTheOffice.check
+    code: 'linesCap != null'
+    line: 'if (listLines == null || (linesCap != null && listLines > linesCap)) missing += "list.lines is ${listLines ?: "unknown"}: the cap is $linesCap (assignment-proposal, engagement.yaml)"'
+    reason: '`--check` (S3.5 T7), by hand: whether the rules give the list''s line cap at all, before it is printed against'
+  - shape: comparison
+    in: OnTheOffice.check
+    code: 'listLines > linesCap'
+    line: 'if (listLines == null || (linesCap != null && listLines > linesCap)) missing += "list.lines is ${listLines ?: "unknown"}: the cap is $linesCap (assignment-proposal, engagement.yaml)"'
+    reason: '`--check` (S3.5 T7), by hand: the list''s lines against `stage_list_lines`, as `assignment-proposal` reads it — printed as missing, never judged here'
   kp-daemon/src/main/kotlin/kp/daemon/OwnSteps.kt:
   - shape: comparison
     in: SeatsAtPlay.Evidence.text

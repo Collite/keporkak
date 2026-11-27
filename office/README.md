@@ -346,11 +346,15 @@ stops is not started a second time without the Principal's word.
 ```sh
 just install && just office-check                         # READY
 just stop                                                 # while it runs, the rehearsal is the office's daemon
+just rehearse first-carried-stage --world office --check
 ```
 
-It starts only when the service is stopped, the stage has its list in the project, the project checkout and both main
-checkouts are clean, and you are present in the office's log; otherwise it starts nothing and says what it found.
-Absent in the log? `just run`, any `sudo kp status`, `just stop`.
+`--check` reads and changes nothing. It prints the five conditions of a start — the service stopped, the stage's list
+in the project, the project checkout and both main checkouts clean, you present in the office's log — how far the log
+already went with the walk, the stage's facts its first step reads (six tasks, the fence, the plan's row, the slots),
+the Apps as GitHub answers for them, and the rules GitHub holds `kp-toy`'s `master` to: the coder's App to `update`,
+`kp-merger` to green checks (D-123). It ends `ready`, or lists what is missing and exits 1. Absent in the log? `just
+run`, any `sudo kp status`, `just stop`.
 
 **The run.** In one ssh session:
 
