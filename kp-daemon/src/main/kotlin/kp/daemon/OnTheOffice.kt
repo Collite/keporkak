@@ -308,8 +308,8 @@ object OnTheOffice {
         val default = ((ask("/repos/$repository", reading) as? kotlinx.serialization.json.JsonObject)?.get("default_branch") as? kotlinx.serialization.json.JsonPrimitive)?.content
             ?: return listOf("GitHub names no default branch of $repository")
         val held = ask("/repos/$repository/rules/branches/$default", reading) as? kotlinx.serialization.json.JsonArray ?: return listOf("GitHub's rules of $repository's $default are not readable")
-        val byRuleset = held.mapNotNull { it as? kotlinx.serialization.json.JsonObject }
-            .groupBy({ (it["ruleset_id"] as? kotlinx.serialization.json.JsonPrimitive)?.content }, { (it["type"] as? kotlinx.serialization.json.JsonPrimitive)?.content })
+        val rules = held.mapNotNull { it as? kotlinx.serialization.json.JsonObject }
+        val byRuleset = rules.groupBy({ (it["ruleset_id"] as? kotlinx.serialization.json.JsonPrimitive)?.content }, { (it["type"] as? kotlinx.serialization.json.JsonPrimitive)?.content })
         var coderHeld = false
         var mergerHeld = false
         print("$repository's default branch $default, as its rulesets hold it:")
@@ -320,6 +320,10 @@ object OnTheOffice {
             val mergerBypass = (asMerger?.get(BYPASS) as? kotlinx.serialization.json.JsonPrimitive)?.content
             val coderBypass = bypass(pushing)
             print("ruleset $id '$name' holds $default to ${types.filterNotNull().joinToString(", ")} — ${merger.identity} may bypass it: $mergerBypass; ${coder.identity}: $coderBypass")
+            // A rule's parameters as GitHub gives them — a pull request's required reviews, the checks it waits for — printed, not judged.
+            rules.filter { (it["ruleset_id"] as? kotlinx.serialization.json.JsonPrimitive)?.content == id && it["parameters"] != null }.forEach { rule ->
+                print("  ${(rule["type"] as? kotlinx.serialization.json.JsonPrimitive)?.content}: ${rule["parameters"]}")
+            }
             if ("update" in types && coderBypass == NEVER) coderHeld = true
             if ("required_status_checks" in types && mergerBypass == NEVER) mergerHeld = true
         }
