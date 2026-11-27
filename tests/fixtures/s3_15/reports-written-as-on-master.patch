@@ -1,0 +1,22 @@
+--- a/kp-daemon/src/main/kotlin/kp/daemon/Reports.kt
++++ b/kp-daemon/src/main/kotlin/kp/daemon/Reports.kt
+@@ -90,16 +90,9 @@
+      * caller is writing them: that one writes these too.
+      */
+     private fun say() {
+-        synchronized(last) { if (writing) return else writing = true }
+-        try {
+-            while (true) {
+-                val reading = next() ?: return
+-                write(reading.fact, Datum.of(reading.value.value), reading.stage, reading.value.evidence)
+-            }
+-        } catch (error: Throwable) {
+-            // What is left stays queued, for the next caller to write.
+-            synchronized(last) { writing = false }
+-            throw error
++        while (true) {
++            val reading = synchronized(last) { unwritten.removeFirstOrNull() } ?: return
++            write(reading.fact, Datum.of(reading.value.value), reading.stage, reading.value.evidence)
+         }
+     }
+ 

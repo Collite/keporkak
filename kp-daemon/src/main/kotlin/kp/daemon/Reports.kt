@@ -18,52 +18,93 @@ import kp.facts.Observation
  * part of the day against the median ([BudgetFacts.whole]) — and with no threshold; what a value means is the robots'.
  * What reads the facts is S3.13's and S3.1's: [project] and [pool] as the service reads them. Each is read outside
  * the lock that guards what was last reported, and written outside it too: a judgement that moved a seat tells this
- * from inside the mailroom's turn, while the watch tells it from its own thread.
+ * from inside the mailroom's turn, while the watch tells it from its own thread — no lock of this may be held while
+ * the mailroom judges a report (contracts.md §7, Amendment 36).
+ *
+ * What is decided first is written first (S3.15 T4): a report decided is queued under that lock, in the order decided,
+ * and one caller at a time writes the queue, outside it. A caller that finds another writing leaves its reports to that
+ * one and returns, and waits for nothing — the writer may itself be waiting for the mailroom whose turn told this. [write]
+ * is where a report goes: [Office.recorded].
  */
-class Reports(private val office: Office, private val project: ProjectWorld?, private val pool: PoolFacts) {
+class Reports(
+    private val office: Office,
+    private val project: ProjectWorld?,
+    private val pool: PoolFacts,
+    private val write: (FactRef, Datum, String?, String?) -> Unit = office::recorded,
+) {
     /** What was last reported, by the fact as read and the stage it was reported for. */
     private val last = HashMap<Pair<FactRef, String?>, Any>()
+    /** Under [last]'s lock: the reports decided and not yet written, in the order decided; whether a caller is writing them. */
+    private val unwritten = ArrayDeque<Reading>()
+    private var writing = false
 
     /** A start (Amendment 45): each of the four once, as it reads now; one that is unknown is left out. */
-    fun started() = say(decided(strays() + slots() + consumptions() + medians(), always = true))
+    fun started() = report(strays() + slots() + consumptions() + medians(), always = true)
 
     /** The watch, every `watch.every` (§9): `git.stray_changes` for each stage in an active state, when it changed for it. */
     fun watched() {
         val active = activeStages()
         synchronized(last) { last.keys.removeAll { (fact, stage) -> fact.name == STRAY && stage !in active } }
-        say(decided(strays(active)))
+        report(strays(active))
     }
 
     /** A judgement moved a seat or a stage: `budget.slots_over` for each dimension, when it changed. */
-    fun moved() = say(decided(slots()))
+    fun moved() = report(slots())
 
     /** The pool was reloaded: `budget.slots_over` for each dimension, when it changed. */
-    fun reloaded() = say(decided(slots()))
+    fun reloaded() = report(slots())
 
     /** The vendor reported a window through a seat: `budget.consumption` of each subscription, when its fraction is in another tenth. */
-    fun vendorReported() = say(decided(consumptions()))
+    fun vendorReported() = report(consumptions())
 
     /** A turn's end was recorded: `budget.vs_daily_median` of each subscription, when its whole part changed. */
-    fun turnEnded() = say(decided(medians()))
+    fun turnEnded() = report(medians())
 
     /** One reading: the fact as read, the stage it is for, its value and evidence, and what tells a change of it. */
     private class Reading(val fact: FactRef, val stage: String?, val value: Observation.Value, val unread: Any?, val same: (Any?, Any?) -> Boolean)
 
+    /** [readings] decided ([decided]), then what is decided and not yet written, written ([say]). */
+    private fun report(readings: List<Reading>, always: Boolean = false) {
+        decided(readings, always)
+        say()
+    }
+
     /**
      * Of [readings], those to report — with [always] each, at a start; else each whose value is not the same as the one last
-     * reported of it (for a stage's stray paths, none reported reads as no path) — and what was last reported, updated.
+     * reported of it (for a stage's stray paths, none reported reads as no path) — queued to be written, and what was last
+     * reported, updated.
      */
-    private fun decided(readings: List<Reading>, always: Boolean = false): List<Reading> = synchronized(last) {
-        readings.filter { reading ->
+    private fun decided(readings: List<Reading>, always: Boolean = false) = synchronized(last) {
+        readings.forEach { reading ->
             val key = reading.fact to reading.stage
             val before = last[key] ?: reading.unread
-            (always || !reading.same(reading.value.value, before)).also { told -> if (told) last[key] = reading.value.value }
+            if (always || !reading.same(reading.value.value, before)) {
+                last[key] = reading.value.value
+                unwritten.addLast(reading)
+            }
         }
     }
 
-    private fun say(readings: List<Reading>) = readings.forEach { reading ->
-        office.recorded(reading.fact, Datum.of(reading.value.value), reading.stage, reading.value.evidence)
+    /**
+     * Writes the reports decided and not yet written, oldest first, holding no lock while each is written — unless another
+     * caller is writing them: that one writes these too.
+     */
+    private fun say() {
+        synchronized(last) { if (writing) return else writing = true }
+        try {
+            while (true) {
+                val reading = next() ?: return
+                write(reading.fact, Datum.of(reading.value.value), reading.stage, reading.value.evidence)
+            }
+        } catch (error: Throwable) {
+            // What is left stays queued, for the next caller to write.
+            synchronized(last) { writing = false }
+            throw error
+        }
     }
+
+    /** The oldest report decided and not yet written; none — and the caller writing them is done, under the same lock. */
+    private fun next(): Reading? = synchronized(last) { unwritten.removeFirstOrNull().also { if (it == null) writing = false } }
 
     /** `git.stray_changes`, read once, for each stage of [stages]: none with no stage in an active state. */
     private fun strays(stages: List<String> = activeStages()): List<Reading> {
