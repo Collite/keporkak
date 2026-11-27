@@ -1024,6 +1024,12 @@ exceptions:
     line: const val ALLOW_ONCE = "allow_once"
     reason: 'how an answer becomes the option the driver selects (D-18 (4)): ACP''s one-time option, as engagement.yaml''s
       `lifetime: once` says every answer is'
+  kp-driver/src/main/kotlin/kp/driver/acp/VendorSample.kt:
+  - shape: comparison
+    in: VendorSample.differences
+    code: sorted()
+    line: 'return ((sample - heard) + lacking).sorted().map { "no $it" } + (heard - sample).sorted().map { "a new $it" }'
+    reason: 'the handshake''s evidence (contracts.md §12, Amendment 38; S3.15 T6): what the vendor''s words lack against the contract''s sample, and what they add, each path in the order of its name — a sentence Bora reads; nothing waits on it, and no value of the rules is compared'
   kp-driver/src/main/kotlin/kp/driver/claude/ClaudeAdapter.kt:
   - shape: comparison
     in: ClaudeAdapter.environment
