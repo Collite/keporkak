@@ -1,0 +1,10 @@
+--- a/kp-driver/src/main/kotlin/kp/driver/acp/VendorSample.kt
++++ b/kp-driver/src/main/kotlin/kp/driver/acp/VendorSample.kt
+@@ -48,6 +48,7 @@
+      * the sample's shape.
+      */
+     fun differences(said: JsonElement): List<String> {
++        if (said is JsonElement) return emptyList()
+         val heard = shape(said)
+         val sample = shape(Json.parseToJsonElement(SAMPLE))
+         val window = sample.filter { it.startsWith("$WINDOWS.*.") }.map { it.removePrefix("$WINDOWS.*.") }.toSet()
