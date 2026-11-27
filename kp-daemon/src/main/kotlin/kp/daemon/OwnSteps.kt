@@ -39,6 +39,9 @@ interface OwnSteps {
     /** [seat] has a live session and no turn in flight. */
     fun idle(seat: String): Boolean
 
+    /** [seat] has a live session and a turn in flight. */
+    fun busy(seat: String): Boolean
+
     /** A turn of [seat] that the message [cause] woke it for has ended. */
     fun turnEnded(seat: String, cause: String): Boolean
 
@@ -73,6 +76,12 @@ class SeatsAtPlay(
     private val tokenFile: Path,
     private val walkFile: Path,
     private val clock: kp.mailroom.Clock,
+    /**
+     * A rehearsal on the office (contracts.md §12, Amendment 46; S3.5 T5): the log is the office's and is not copied — the
+     * stage's records are named by their `seq` — and the record names each operation with its result, the pull request
+     * and the merge commit.
+     */
+    private val onTheOffice: Boolean = false,
 ) : OwnSteps, Seats.Turns {
     /** The daemon's seats; set once they are made, before any of them starts. */
     @Volatile lateinit var driven: Seats
@@ -96,6 +105,8 @@ class SeatsAtPlay(
     override fun transcript(seat: String): Path = transcripts.resolve("$seat.log")
 
     override fun idle(seat: String): Boolean = driven.idle(seat)
+
+    override fun busy(seat: String): Boolean = driven.busy(seat)
 
     override fun turnEnded(seat: String, cause: String): Boolean = (seat to cause) in woken
 
@@ -125,10 +136,13 @@ class SeatsAtPlay(
         seats.forEach(::sessionOf)
         val name = "${player.walkName}-${STAMP.format(clock.now())}"
         val record = folder.createDirectories().resolve(name)
-        // The play's record (S3.6 T5): the log and the transcripts, copied beside the evidence, which names the copies.
+        // The play's record (S3.6 T5): the log and the transcripts, copied beside the evidence, which names the copies. On the
+        // office the log is the office's: it is named, by `seq`, and not copied (Amendment 46).
         val log = player.office.project.resolve(MAIL)
-        val kept = listOf(log to record.resolve(MAIL)) + seats.map { seat -> transcript(seat) to record.resolve(TRANSCRIPTS).resolve("$seat.log") }
+        val kept = (if (onTheOffice) emptyList() else listOf(log to record.resolve(MAIL))) + seats.map { seat -> transcript(seat) to record.resolve(TRANSCRIPTS).resolve("$seat.log") }
         kept.forEach { (from, to) -> copied(from, to) }
+        // No token of any kind is in the record (S3.5 T5): a transcript's copy is hidden as the evidence is.
+        seats.map { seat -> record.resolve(TRANSCRIPTS).resolve("$seat.log") }.filter { it.exists() }.forEach { copy -> copy.writeText(hidden(Files.readString(copy))) }
         val file = folder.resolve("$name.md")
         val written = Written(file, kept)
         file.writeText(hidden(written.pointed(Evidence(player, this, failure).text())))
@@ -146,11 +160,14 @@ class SeatsAtPlay(
         }
     }
 
-    /** [text] with the seats' Claude token and every session token minted for them replaced: neither is ever written. */
+    /**
+     * [text] with the seats' Claude token, every session token minted for them, every GitHub token by its prefix and every
+     * private key replaced: none is ever written.
+     */
     private fun hidden(text: String): String {
         val token = runCatching { Files.readString(tokenFile).trim() }.getOrNull()?.takeIf { it.length >= MIN_SECRET }
         val minted = driven.mintedDigests()
-        val plain = if (token == null) text else text.replace(token, HIDDEN)
+        val plain = KEY.replace(GITHUB_TOKEN.replace(if (token == null) text else text.replace(token, HIDDEN), HIDDEN), HIDDEN)
         return WORD.replace(plain) { word -> if (Seats.sha256(word.value) in minted) HIDDEN else word.value }
     }
 
@@ -225,6 +242,58 @@ class SeatsAtPlay(
             val stepped = player.played.mapNotNull { it.message }.toSet()
             val beyond = entries.filterIsInstance<Message>().filter { it.from.value in at.seats && it.by == "seat:${it.from.value}" && it.id.value !in stepped }
             if (beyond.isEmpty()) appendLine("none") else block(beyond.flatMap { message -> listOf(message) + entries.filter { record -> outcomeOf(record, message.id.value) } })
+            if (at.onTheOffice) office()
+        }
+
+        /**
+         * On the office (S3.5 T5): each operation the play's stage asked for, with its result; the pull request and the merge
+         * commit; and every record the play's window of the office's log holds, named by its `seq` — the log is not copied.
+         */
+        private fun StringBuilder.office() {
+            val stage = player.stageId
+            val causes = entries.filterIsInstance<Message>().filter { it.stage?.value == stage }.map { it.id.value }.toSet()
+            // The stage's records: its messages and what became of them, what they set going, and the facts reported about it.
+            val window = entries.filter { record ->
+                (record is Message && record.id.value in causes) || record.json["id"]?.let { (it as? JsonPrimitive)?.contentOrNull } in causes ||
+                    record.json["cause"]?.let { (it as? JsonPrimitive)?.contentOrNull } in causes || (record is Fact && record.stage == stage)
+            }
+            val operations = entries.filterIsInstance<Op>().filter { it.cause in causes }
+            appendLine()
+            appendLine("## Each operation, with its result")
+            appendLine()
+            operations.filter { it.phase == REQUESTED }.forEach { asked ->
+                val ended = operations.lastOrNull { it.op == asked.op && it.cause == asked.cause && it.phase != REQUESTED }
+                appendLine("- ${asked.op} for ${asked.cause} (seq ${asked.seq}): " + (ended?.let { "${it.phase} (seq ${it.seq})" + listOfNotNull(it.reason, it.result?.toString()).joinToString(" — ", prefix = if (it.reason != null || it.result != null) " — " else "") } ?: "no result on the log"))
+            }
+            appendLine()
+            appendLine("## The pull request and the merge commit")
+            appendLine()
+            val made = operations.lastOrNull { it.op == WORKTREE_CREATE && it.phase == OK }?.result
+            // The merge: the git.merge that ended ok, and the message that asked for it — whose judgement observed the head.
+            val merging = operations.lastOrNull { it.op == GIT_MERGE && it.phase == OK }
+            val head = merging?.let { op -> entries.filterIsInstance<Delivered>().lastOrNull { it.id == op.cause }?.observed?.get(PR_HEAD) }
+            val merged = merging?.result?.text(SHA)
+            appendLine("- the pull request: the stage's, in ${made?.text(REPOSITORY) ?: "-"} from ${made?.text(BRANCH) ?: "-"}" + (head?.let { " — its head at the merge's judgement: $it" } ?: ""))
+            appendLine("- the merge commit: ${merged ?: "none on the log"}")
+            appendLine()
+            appendLine("## The stage's records on the office's log, by seq")
+            appendLine()
+            appendLine("The log is the office's, ${office.project.resolve(MAIL)}: the stage's lines are named here, not copied (Amendment 46).")
+            appendLine()
+            window.forEach { appendLine("- ${named(it)}") }
+        }
+
+        /** A record of the log named by its `seq`, and what it is. */
+        private fun named(entry: kp.model.Envelope): String = "seq ${entry.seq} · " + when (entry) {
+            is Message -> "${entry.kind} ${entry.id.value} from ${entry.from.value} (${entry.by}) to ${entry.to.value}"
+            is Delivered -> "delivered ${entry.id}"
+            is Refused -> "refused ${entry.id} by ${entry.rule}: ${entry.requirement}"
+            is kp.model.Held -> "held ${entry.id}"
+            is Op -> "${entry.op} ${entry.phase} for ${entry.cause}" + (entry.reason?.let { " — $it" } ?: "")
+            is kp.model.Transition -> "transition ${entry.machine} ${entry.subject} ${entry.from} → ${entry.to}" + (entry.rule?.let { " ($it)" } ?: "")
+            is Fact -> "fact ${entry.fact} ${entry.subject}"
+            is Read -> "read by ${entry.seat}"
+            else -> entry.json["event"]?.let { (it as? JsonPrimitive)?.contentOrNull } ?: "record"
         }
 
         /**
@@ -268,8 +337,9 @@ class SeatsAtPlay(
 
         private fun StringBuilder.block(lines: List<kp.model.Envelope>) = append("```\n" + lines.distinctBy { it.seq }.sortedBy { it.seq }.joinToString("\n", transform = ::shown) + "\n```\n")
 
-        /** A log line as the file holds it, with where it is. */
+        /** A log line as the file holds it, with where it is — on the office, named by its `seq` and not copied (Amendment 46). */
         private fun shown(entry: kp.model.Envelope): String {
+            if (at.onTheOffice) return named(entry)
             val line = log.first { it.entry.seq == entry.seq }
             val text = raw.getOrPut(line.file) { line.file.readLines() }.getOrNull(line.number - 1) ?: entry.json.toString()
             return "${line.file.fileName}:${line.number} $text"
@@ -287,12 +357,23 @@ class SeatsAtPlay(
 
     private companion object {
         const val HIDDEN = "‹hidden›"
+        /** A GitHub token by its prefix — an installation token `ghs_`, and every other kind GitHub mints. */
+        val GITHUB_TOKEN = Regex("\\bgh[pousr]_[A-Za-z0-9_.-]{20,}")
+        /** A private key, PEM. */
+        val KEY = Regex("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----")
         const val MIN_SECRET = 8
         const val WAKE = "seat.wake"
         const val REQUESTED = "requested"
         const val RESEAT = "seat.reseat"
         const val SEAT_KEY = "seat"
         const val MAIL = "mail"
+        const val WORKTREE_CREATE = "worktree.create"
+        const val GIT_MERGE = "git.merge"
+        const val OK = "ok"
+        const val PR_HEAD = "pr.head"
+        const val SHA = "sha"
+        const val REPOSITORY = "repository"
+        const val BRANCH = "branch"
         const val NOT_REPORTED = "not reported"
         /** A turn's usage by its parts, in the order its end shows them (S3.6 T6). */
         val PARTS: List<(kp.driver.Usage) -> Long?> = listOf({ it.input }, { it.output }, { it.cachedRead }, { it.cachedWrite }, { it.thought }, { it.total })

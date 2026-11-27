@@ -38,14 +38,7 @@ object StageFacts {
         val read = LogReader(project, OfficeId(office)).read()
         val state = fold(read.lines.map { it.entry })
         val counted = read.lines.counted().map { it.entry }
-        val log = object : WhatTheLogKnows {
-            override fun state(stage: String): StageState? = state.machine(STAGE, stage)?.let { StageState(it.state, it.since) }
-            override fun stages(): Map<String, StageState> = state.machines[STAGE].orEmpty().mapValues { (_, machine) -> StageState(machine.state, machine.since) }
-            override fun activeStates(): Set<String> = rules.ruleSet.lifecycle.activeStates.toSet()
-            override fun observedHead(message: String): String? = observedHead(counted, message)
-            override fun lastDelivered(stage: String, kinds: Set<String>): String? = state.lastDelivered(stage, kinds)
-            override fun worktree(stage: String): MadeWorktree? = worktreeOf(counted, stage)
-        }
+        val log = logOf(rules, state, counted)
         world.reading(log)
         github.reading({ rules }, log)
         val known = state.machine(STAGE, stage)
@@ -74,6 +67,16 @@ object StageFacts {
                 })
             }
         }
+    }
+
+    /** What the office's log knows, from its fold [state] and its lines as they count, [counted]. */
+    private fun logOf(rules: InForceRules, state: kp.engine.State, counted: List<kp.model.Envelope>) = object : WhatTheLogKnows {
+        override fun state(stage: String): StageState? = state.machine(STAGE, stage)?.let { StageState(it.state, it.since) }
+        override fun stages(): Map<String, StageState> = state.machines[STAGE].orEmpty().mapValues { (_, machine) -> StageState(machine.state, machine.since) }
+        override fun activeStates(): Set<String> = rules.ruleSet.lifecycle.activeStates.toSet()
+        override fun observedHead(message: String): String? = observedHead(counted, message)
+        override fun lastDelivered(stage: String, kinds: Set<String>): String? = state.lastDelivered(stage, kinds)
+        override fun worktree(stage: String): MadeWorktree? = worktreeOf(counted, stage)
     }
 
     /** A value as `just facts` prints it: a text quoted, a set in brackets. */
