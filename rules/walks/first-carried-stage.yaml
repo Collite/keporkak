@@ -1,0 +1,213 @@
+# The first carried stage (S3.5, P3's certification; D-48, D-87, D-121, D-122, D-128): the shortest way of a stage that
+# rolls nothing from planned to exited — H-1′ without its stop and its fix round — with one death of the coder's seat in
+# its turn. `just rehearse first-carried-stage --seats real --world office` plays it on the office (contracts.md §12,
+# Amendment 46): the toy's TOY/P0/S0.2 on the office's own log, its facts read and its operations performed as the service
+# does; the TeamLead's and the Pool Manager's steps are sent by the rehearsal (`by: script:first-carried-stage`), Bora's
+# and the two Claude seats' are waited for. So it gives no fact and no operation's result: `scripts/check-rules.py`
+# walks it with the table beside it, first-carried-stage/table.yaml, which the rehearsal never reads.
+name: first-carried-stage
+stage: TOY/P0/S0.2
+initial: planned
+final: exited
+note: The seats are asked for and started on the way (SEAT-01, SEAT-15, SEAT-02), not seeded. The coder's seat ends while
+  the turn its `assign` woke it for is in flight, and is re-seated by POOL-1; the play ends when the turns the stage-exit
+  woke its two copies for have ended.
+seats:
+  coder-1: coder
+  reviewer-1: reviewer
+# The walker: the seats start not yet started — provisioned — as on the office, where the walk asks for them.
+seats_start: provisioned
+# The seats a rehearsal with live seats leaves to the seats themselves: a step whose `who` is one of them is that seat's
+# own, waited for at most `wait`; the seats together may use `tokens` (seat.usage, weighted). The run: D-122.
+claude_seats:
+  seats: [coder-1, reviewer-1]
+  wait: 60m
+  tokens: 2000000
+steps:
+- id: proposal
+  who: teamlead
+  kind: assignment-proposal
+  args:
+    role: coder
+    level: senior S
+    seat: coder-1
+  expect:
+    state: proposed
+- id: approval
+  who: bora
+  kind: approval
+  signed: bora
+  re: proposal
+  args: {}
+  expect:
+    state: assigned
+- id: worktree
+  operation: worktree.create
+  request: approval
+  expect:
+    state: assigned
+- id: coder-asked
+  who: teamlead
+  kind: session-request
+  args:
+    action: add
+    role: coder
+    level: senior S
+    seat: coder-1
+- id: coder-reported
+  who: pool
+  kind: session-report
+  re: coder-asked
+  args:
+    seat: coder-1
+    role: coder
+  expect:
+    seats:
+      coder-1: provisioned
+- id: coder-started
+  operation: seat.start
+  request: coder-reported
+- id: coder-token
+  operation: token.mint
+  request: coder-reported
+  expect:
+    seats:
+      coder-1: ready
+- id: reviewer-asked
+  who: teamlead
+  kind: session-request
+  args:
+    action: add
+    role: reviewer
+    level: senior S
+    seat: reviewer-1
+- id: reviewer-reported
+  who: pool
+  kind: session-report
+  re: reviewer-asked
+  args:
+    seat: reviewer-1
+    role: reviewer
+  expect:
+    seats:
+      reviewer-1: provisioned
+- id: reviewer-started
+  operation: seat.start
+  request: reviewer-reported
+- id: reviewer-token
+  operation: token.mint
+  request: reviewer-reported
+  expect:
+    seats:
+      reviewer-1: ready
+- id: assign
+  who: teamlead
+  kind: assign
+  args:
+    seat: coder-1
+  body: "Your stage is TOY/P0/S0.2. Its list: {project}/toy/tasks-p0-s0.2-smoke.md. STATUS: {project}/toy/STATUS.md. Your working directory is the stage's worktree."
+  expect:
+    states:
+      seat: busy
+- id: started
+  who: coder-1
+  kind: started
+  re: assign
+  args: {}
+  expect:
+    state: building
+- id: death
+  who: daemon
+  event:
+    fact: seat.process_gone
+  trigger:
+    seat: coder-1
+  in_its_turn: true
+  expect:
+    rules:
+    - POOL-1
+    sends:
+    - seat-gone
+    wakes: []
+- id: seat-died
+  who: pool
+  by: robot:POOL-1
+  kind: seat-gone
+  args:
+    seat: coder-1
+  expect:
+    state: paused
+    states:
+      seat: gone
+- id: reseat
+  operation: seat.reseat
+  request: seat-died
+- id: re-seated
+  who: pool
+  by: robot:POOL-14
+  kind: re-seated
+  args:
+    seat: coder-1
+  expect:
+    state: building
+    states:
+      seat: ready
+- id: review-request
+  who: coder-1
+  kind: review-request
+  args:
+    attest:
+    - done_lines_hold
+  expect:
+    state: ready_for_review
+- id: bind
+  who: teamlead
+  kind: review-bind
+  re: review-request
+  args:
+    reviewer: reviewer-1
+  body: "Review TOY/P0/S0.2's pull request. Its list: {project}/toy/tasks-p0-s0.2-smoke.md. STATUS: {project}/toy/STATUS.md."
+  expect:
+    state: in_review
+- id: verdict
+  who: reviewer-1
+  kind: verdict
+  re: bind
+  args:
+    verdict: PASS
+    sha: the head reviewed
+    blockers: []
+    follow_ups: []
+  expect:
+    state: passed
+- id: merge
+  who: teamlead
+  kind: merge
+  args: {}
+  expect:
+    state: passed
+- id: merged
+  operation: git.merge
+  request: merge
+  expect:
+    state: merged
+- id: exit
+  who: teamlead
+  kind: stage-exit
+  args: {}
+  writes:
+    file: toy/STATUS.md
+    line: "- **{date} — S0.2 exited.** Carried by the daemon on the office (KP S3.5): its log holds every line of it, none recorded by hand."
+  expect:
+    state: merged
+- id: removed
+  operation: worktree.remove
+  request: exit
+- id: registered
+  operation: register.rebuild
+  request: exit
+- id: pushed
+  operation: project.commit_push
+  request: exit
+  expect:
+    state: exited

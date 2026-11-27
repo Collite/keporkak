@@ -797,7 +797,7 @@ class Walk:
     def seat_default(self,seat):
         """The state a seat no step has moved is in (S3.6 T2): a stage's `machines: seat:` is that stage's coder's — the seat
         its table names for `coder`, as the harness seeds it — or, when the table names none, any seat first met there;
-        every other seat is `ready`, as the harness seeds a walk's seats."""
+        every other seat is `ready`, as the harness seeds a walk's seats — or as the walk's `seats_start` says (S3.5)."""
         settings=self.definition.get("stages",{})
         for stage,setting in settings.items():
             names={**self.definition.get("facts",{}),**setting.get("facts",{})}.get("seat.name")
@@ -805,7 +805,8 @@ class Walk:
         here=settings.get(self.stage,{})
         names=self.current["facts"].get("seat.name")
         if "seat" in here.get("machines",{}) and not (isinstance(names,dict) and "coder" in names):return here["machines"]["seat"]
-        return "ready"
+        # A walk whose seats are asked for on the way (`seats_start`, S3.5) starts them there: provisioned, not seeded.
+        return self.definition.get("seats_start","ready")
     def seat_state(self,seat):
         if not isinstance(seat,str):return MISSING
         if seat not in self.seats:self.seats[seat]=self.seat_default(seat)
@@ -1403,11 +1404,29 @@ if not FIXTURE:
 if not fails:
     ok("every counter is read; no anchor or alias; no quoted number, boolean or null; the legends and the caps' sources are comments")
 
+def tabled(path):
+    """A walk as the walker plays it (S3.5): a walk that gives no fact — one played on the office, where every fact is read
+    and every operation performed as the service does (contracts.md §12, Amendment 46) — is walked with the table kept
+    beside it, `<walk>/table.yaml`: its `facts`, the walk's; under `steps`, by a step's id, the `facts` that step changes."""
+    walk=load_yaml(path.read_text())
+    table=path.with_suffix("") / "table.yaml"
+    if not table.is_file():return walk
+    given=load_yaml(table.read_text()) or {}
+    if walk.get("facts"):fail(f"{path.name}: it gives facts and has a table beside it, {table.relative_to(ROOT) if table.is_relative_to(ROOT) else table}: one of the two")
+    walk["facts"]=given.get("facts",{})
+    ids={step.get("id") for step in walk.get("steps",[])}
+    for step_id,changes in (given.get("steps") or {}).items():
+        if step_id not in ids:fail(f"{table.name}: names the step '{step_id}', which {path.name} does not hold")
+    for step in walk.get("steps",[]):
+        changes=(given.get("steps") or {}).get(step.get("id"))
+        if changes:step["facts"]={**step.get("facts",{}),**changes.get("facts",{})}
+    return walk
+
 if not FIXTURE:
-    W=[load_yaml(path.read_text()) for path in sorted((ROOT / "rules/walks").glob("*.yaml"))]
+    W=[tabled(path) for path in sorted((ROOT / "rules/walks").glob("*.yaml"))]
     # A walk file named by its path — a spec's fixture (S2.8) — is the one walk run.
     if TRACE is not None and TRACE.endswith(".yaml") and pathlib.Path(TRACE).is_file():
-        W=[load_yaml(pathlib.Path(TRACE).read_text())]
+        W=[tabled(pathlib.Path(TRACE))]
         TRACE=W[0]["name"]
 for walk in W:
     if TRACE is None or walk["name"]==TRACE:Walk(walk).run()

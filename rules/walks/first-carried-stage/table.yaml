@@ -1,0 +1,61 @@
+# The table `scripts/check-rules.py` walks first-carried-stage with (S3.5 T3). The rehearsal never reads it: on the office
+# every fact is read as the service reads it (contracts.md §12, Amendment 46). Its values are what the office gives the
+# stage TOY/P0/S0.2 — `just facts TOY/P0/S0.2` on dsk, 2026-11-27, for the list and the plan; the rest as the way finds it.
+facts:
+  plan.predecessors_exited: true
+  pool.seat_available: true
+  budget.slot_open: true
+  list.fence_complete: true
+  # the toy's list as recut at six tasks (D-128): 6 tasks, 59 lines
+  list.tasks_total: 6
+  list.lines: 59
+  list.tasks_open: 6
+  list.found_untriaged: 0
+  stage.rolls: none
+  stage.live: none
+  git.branch_exists: true
+  roster.model_allowed: true
+  seat.name:
+    coder: coder-1
+    reviewer: reviewer-1
+    reviewer-1: reviewer-1
+    pool: pool-1
+  # both seats at senior S, claude-opus-5-5 low: the reviewer at the coder's line and at the review floor
+  roster.rank:
+    coder: 10
+    reviewer: 10
+    reviewer-1: 10
+  roster.model_rank:
+    coder: 10
+    reviewer: 10
+    reviewer-1: 10
+  roster.floor_rank: 10
+  seat.process_gone: false
+  seat.protocol_closed: false
+  seat.tool_call_open_for: 0
+  seat.inbox_replayed: false
+  project.proof_files: 0
+  git.stray_changes: 0
+  pr.evidence_present: true
+  plan.last_stage_exited: false
+# What changes on the way, by the step's id.
+steps:
+  death:
+    facts:
+      seat.process_gone: true
+  reseat:
+    facts:
+      seat.inbox_replayed: true
+  review-request:
+    facts:
+      pr.ready: true
+      ci.state: green
+      pr.head: the head reviewed
+      list.tasks_open: 0
+  verdict:
+    facts:
+      pr.review_on: approved
+  exit:
+    facts:
+      status.entry_present: true
+      status.entries: 3
