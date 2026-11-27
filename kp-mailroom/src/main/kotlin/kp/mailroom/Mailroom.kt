@@ -771,6 +771,9 @@ class Mailroom private constructor(
         hear(trigger, request.cause, now, stage)
         // A seat still idle after it was prompted — one whose turn ends at once — is woken with its next unread message.
         woken?.let(::wakeOldest)
+        // A seat whose start ended `ok` with unread mail — delivered to it, or to its role, before it was started — is woken
+        // with the oldest, as after a turn's end (contracts.md §4.4, Amendment 49): a start sends no prompt of its own.
+        (returned.fields[SEAT] as? Datum.Text)?.value?.takeIf { request.operation == SEAT_START && result is OperationResult.Ok }?.let(::wakeOldest)
     }
 
     /**
@@ -1104,6 +1107,7 @@ private const val REFUSALS_TODAY_FACT = "refusals.today"
 private const val SEAT_BY = "seat:"
 private const val PRESENCE = "presence"
 private const val SEAT_WAKE = "seat.wake"
+private const val SEAT_START = "seat.start"
 private const val ROBOT = "robot:"
 private const val ROLE = "role"
 private const val MODE = "mode"
@@ -1129,7 +1133,7 @@ private const val PARAMS = "params"
 private const val RULES = "rules"
 private const val PROBLEMS = "problems"
 /** The operations whose `ok` names a seat (contracts.md §4.4). */
-private val SEATING = setOf("seat.start", "seat.reseat")
+private val SEATING = setOf(SEAT_START, "seat.reseat")
 private const val BORA_CLI = "bora-cli"
 /** The `by` of an emit a kind's expiry declares, and of one a transition's effects declare (contracts.md §2.1). */
 private const val EXPIRY_OF = "expiry:"

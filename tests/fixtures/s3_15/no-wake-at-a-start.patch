@@ -1,0 +1,10 @@
+--- a/kp-mailroom/src/main/kotlin/kp/mailroom/Mailroom.kt
++++ b/kp-mailroom/src/main/kotlin/kp/mailroom/Mailroom.kt
+@@ -773,7 +773,6 @@
+         woken?.let(::wakeOldest)
+         // A seat whose start ended `ok` with unread mail — delivered to it, or to its role, before it was started — is woken
+         // with the oldest, as after a turn's end (contracts.md §4.4, Amendment 49): a start sends no prompt of its own.
+-        (returned.fields[SEAT] as? Datum.Text)?.value?.takeIf { request.operation == SEAT_START && result is OperationResult.Ok }?.let(::wakeOldest)
+     }
+ 
+     /**
