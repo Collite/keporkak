@@ -1,0 +1,22 @@
+--- a/kp-daemon/src/main/kotlin/kp/daemon/seats/PoolFacts.kt
++++ b/kp-daemon/src/main/kotlin/kp/daemon/seats/PoolFacts.kt
+@@ -58,7 +58,7 @@
+     override fun observe(fact: FactRef, stage: String?): Datum? = answer(fact, stage, journal = true)
+ 
+     /** A view's ask: the same answer, and no journal line (Amendment 34). */
+-    val view: FactSource = FactSource { fact, stage -> answer(fact, stage, journal = false) }
++    val view: FactSource = FactSource { fact, stage -> answer(fact, stage, journal = fact.name == "seat.name") }
+ 
+     /**
+      * [fact]'s answer for an ask about [stage], with its evidence, and the fact as it was read — a parameter left out
+--- a/kp-daemon/src/main/kotlin/kp/daemon/Views.kt
++++ b/kp-daemon/src/main/kotlin/kp/daemon/Views.kt
+@@ -56,7 +56,7 @@
+ 
+     /** A line of the stage list's header (PL-9: `rolls:`, `live:`, `touches:`), as the fact `stage.<line>` gives it. */
+     private fun header(line: String, stage: String): String =
+-        when (val value = world.observe(FactRef("stage.$line", mapOf(STAGE to Datum.Text(stage))), stage)) {
++        when (val value = world.observe(FactRef("seat.name", mapOf("of" to Datum.Text("coder"))), stage).let { world.observe(FactRef("stage.$line", mapOf(STAGE to Datum.Text(stage))), stage) }) {
+             null -> "unknown"
+             is Datum.Text -> value.value
+             else -> value.json()

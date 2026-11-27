@@ -1,0 +1,11 @@
+--- a/kp-daemon/src/main/kotlin/kp/daemon/seats/PoolFacts.kt
++++ c/kp-daemon/src/main/kotlin/kp/daemon/seats/PoolFacts.kt
+@@ -350,7 +350,7 @@
+         null -> null
+         is Observation.Value -> Datum.of(answer.value)
+         is Observation.Unknown -> {
+-            if (journal) say("facts: $fact for ${stage ?: "no stage"} is unknown — ${answer.missing}")
++            if (journal) repeat(if (fact.name == "seat.name") 2 else 1) { say("facts: $fact for ${stage ?: "no stage"} is unknown — ${answer.missing}") }
+             null
+         }
+     }

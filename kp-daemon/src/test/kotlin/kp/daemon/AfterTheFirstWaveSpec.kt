@@ -66,12 +66,16 @@ class AfterTheFirstWaveSpec : FreeSpec({
         restart.outcomeAgain shouldBe restart.outcomeFirst
     }
 
-    "a view's ask of an unknown fact writes no journal line, however often it is asked; a judgement's ask writes one each time" {
-        // A ruling waits for Bora on S3.8, whose list has no `rolls:` line; a QA request on S3.8 — its judgement reads
-        // `stage.live` — is the judgement the log ends in: the daemon started on it carries it again.
-        val project = Project(log = emptyMap(), ticked = listOf("S3.0", "S3.1"), rolls = false)
+    "a view's ask of an unknown fact writes no journal line, however often it is asked; a judgement's ask writes one each time — `seat.name` of a role no seat holds too: of one role a message names, of two, and none from a view" {
+        // A ruling waits for Bora on S3.8, whose list has no `rolls:` line; S3.8 is building. The Principal's `parallelism`
+        // names one role, the Team Lead; the coder's `stop` names two, the Principal and the Team Lead; no seat holds any
+        // (S3.15 T3). A QA request on S3.8 — its judgement reads `stage.live` — is the judgement the log ends in: the
+        // daemon started on it carries it again.
+        val project = Project(log = mapOf("KP/P3/S3.8" to "building"), ticked = listOf("S3.0", "S3.1"), rolls = false)
         val firstTime = project.carry(
             "teamlead" to """{"kind": "ruling-request", "stage": "KP/P3/S3.8", "subject": "a ruling", "args": {"default": "go on", "citation": "D-98"}}""",
+            "principal" to """{"kind": "parallelism", "stage": "KP/P3/S3.8", "subject": "one wave", "args": {"stages": ["KP/P3/S3.8"], "wave": "the sixth"}}""",
+            "coder-1" to """{"kind": "stop", "stage": "KP/P3/S3.8", "subject": "a stop", "args": {"sc": "SC-1"}}""",
             "coder-1" to """{"kind": "qa-request", "stage": "KP/P3/S3.8", "subject": "verify T1", "args": {"task": "T1", "done": "D1", "verify": "the facts"}}""",
         )
         project.cutAfter("qa-request")
@@ -85,19 +89,34 @@ class AfterTheFirstWaveSpec : FreeSpec({
 
         inboxes.forEach { it shouldNotContain "deadline passed" }
         inboxes.map { it.lines().count { line -> line == "   rolls: unknown · live: unknown · touches: unknown" } } shouldBe listOf(1, 1, 1)
-        firstTime.unknown() shouldContainExactly listOf("facts: stage.live for KP/P3/S3.8 is unknown — tasks-p3-s3.8-after-the-first-wave.md has no line that begins 'rolls:'")
+        // Each ask of a judgement writes its line. The robots' rules read `seat.name` of the coder and of the Pool Manager:
+        // a judgement asks those once or twice — before its decision and after it, as the robots hear what became of the
+        // message. A delivery asks it once of each role the message names. `notify.bora`'s result, judged on its own
+        // thread, asks none: where it falls among the messages changes nothing here.
+        val robots = listOf(seatName("coder"), seatName("pool"))
+        firstTime.unknown() shouldContainExactly robots + // the office's start: its `rules` record
+            robots + // the ruling request, to Bora: a party, no role
+            robots + seatName("teamlead") + robots + // `parallelism`, to one role
+            robots + seatName("principal") + seatName("teamlead") + robots + // `stop`, to two roles
+            LIVE + robots + robots // the QA request, refused
         // The started daemon also reports the facts Amendment 45 names (S3.4), and one that takes no stage is judged about none:
-        // what that judgement asks is about no stage. The asks about S3.8 are this case's.
-        journal.unknown().filter { "KP/P3/S3.8" in it } shouldContainExactly listOf("facts: stage.live for KP/P3/S3.8 is unknown — tasks-p3-s3.8-after-the-first-wave.md has no line that begins 'rolls:'")
+        // what that judgement asks is about no stage. The asks about S3.8 are this case's: the QA request carried again, in
+        // the judgement the start's `rules` record opens — and none from the three views.
+        journal.unknown().filter { "KP/P3/S3.8" in it } shouldContainExactly LIVE + robots + robots + robots
     }
 })
 
 /**
- * The lines of a journal that say a fact is unknown — as the daemon wrote them, after its time and its name — but the
- * mailroom's asks of `seat.name` for each role a message names: no seat holds one here, and each judgement says so (S3.14,
- * Amendment 47).
+ * The lines of a journal that say a fact is unknown — as the daemon wrote them, after its time and its name — `seat.name`'s
+ * of a role no seat holds among them (S3.14, Amendment 47; S3.15 T3).
  */
-private fun Iterable<String>.unknown(): List<String> = filter { " is unknown — " in it }.map { it.substringAfter(" kp-daemon: ") }.filterNot { it.startsWith("facts: seat.name(") }
+private fun Iterable<String>.unknown(): List<String> = filter { " is unknown — " in it }.map { it.substringAfter(" kp-daemon: ") }
+
+/** The journal's line for [role] in S3.8, where no seat holds it (Amendment 47). */
+private fun seatName(role: String) = "facts: seat.name(of=$role) for KP/P3/S3.8 is unknown — no seat is bound to the role $role in KP/P3/S3.8"
+
+/** The journal's line for S3.8's `stage.live`: its list has no `rolls:` line. */
+private val LIVE = listOf("facts: stage.live for KP/P3/S3.8 is unknown — tasks-p3-s3.8-after-the-first-wave.md has no line that begins 'rolls:'")
 
 private fun String.unknown(): List<String> = lines().unknown()
 
