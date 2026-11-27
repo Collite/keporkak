@@ -331,3 +331,74 @@ Steps 6 and 7 run whatever happened before. **It leaves nothing on GitHub**: no 
 closed pull request stays in the toy's history, as every closed one does. It prints each step's outcome and never a
 token, removes its throwaway folder, and exits 0 when every step went as above. A step that GitHub lets through
 where it must refuse (2 or 5) is printed as `SC-10`: the ruleset and the Apps' settings are yours.
+
+## 7. Carrying a stage — the first carried stage (S3.5)
+
+The toy's `TOY/P0/S0.2` is carried by the daemon on the office (contracts.md §12, Amendment 46; D-48, D-122): the walk
+`rules/walks/first-carried-stage.yaml` sends what the TeamLead and the Pool Manager would send — they have no seat before
+P4 — and waits for your steps and the two Claude seats'. It runs where the service runs: the office's project checkout
+and its log, its main checkouts, GitHub. Every fact is read and every operation performed as the service does; nothing
+is supplied. It spends tokens: it runs once, on your word (D-122: one coder and one reviewer, real, once), and a run that
+stops is not started a second time without the Principal's word.
+
+**Before.** From `~/Dev/keporkak/keporkak` on master, once S3.5 has merged and CI is green there:
+
+```sh
+just install && just office-check                         # READY
+just stop                                                 # while it runs, the rehearsal is the office's daemon
+```
+
+It starts only when the service is stopped, the stage has its list in the project, the project checkout and both main
+checkouts are clean, and you are present in the office's log; otherwise it starts nothing and says what it found.
+Absent in the log? `just run`, any `sudo kp status`, `just stop`.
+
+**The run.** In one ssh session:
+
+```sh
+just rehearse first-carried-stage --seats real --world office
+```
+
+The TeamLead's `assignment-proposal` comes first, class B: the run prints `waiting for Bora's approval: kp inbox, then
+sudo kp approve <ticket>`. In a second session, `kp inbox`, then `sudo kp approve <ticket>`. Nothing more is yours. The
+daemon makes the stage's worktree in `kp-toy`; the walk asks the Pool Manager for the two seats and the daemon starts
+them, `coder-1` and `reviewer-1`, both `senior S` (Opus 5.5, low); the TeamLead assigns the coder; the coder sends
+`started`, and while that turn is in flight the run ends its process — the stage pauses, POOL-1 re-seats it with its
+session, the stage goes on. The coder pushes its branch, opens the pull request as `collite-kp-coder[bot]` and sends
+`review-request`; the TeamLead binds the reviewer, who reviews on GitHub as `kp-reviewer[bot]` and sends its `verdict`;
+the TeamLead's `merge` is class C — you are copied — and the daemon merges as `kp-merger` on green checks. The
+TeamLead's STATUS entry is appended to `toy/STATUS.md`, then its `stage-exit`: the daemon removes the worktree, rebuilds
+`REGISTER.md`, commits and pushes the project. `tmux attach -t kp` shows the two transcripts. Each step of a seat is
+waited for at most 60 minutes; the two seats may use 2 000 000 tokens, weighted as `pool/budgets.yaml` counts them.
+
+It ends when the turns the `stage-exit` woke both seats for have ended, prints where its evidence is —
+`~/Dev/_scratch/rehearsals/first-carried-stage-<time>.md` — and exits, 0 when the stage is `exited`. Then `just run`
+starts the service again, and `kp check ~/Dev/keporkak/project/mail` re-judges the office's log, the stage's among it,
+under the rules in force: it should print no difference.
+
+**What the evidence holds.** The walk's steps with their log lines; each seat's sessions, model and effort, and its turns
+weighted and by their parts beside the walk's bound; what the seats sent beyond the walk; each operation with its
+result; the pull request and the merge commit; and every record of the run on the office's log, named by its `seq` —
+the log is the office's and is not copied. Beside it, `first-carried-stage-<time>/transcripts/` holds both transcripts.
+No token of any kind is in either. A turn that its seat's death ended reported no usage: the evidence says so.
+
+**When it stops.** A step that does not come as the walk says ends the run and names the step, the seat and its
+transcript: a seat that sends another kind, a seat silent for 60 minutes, the seats past their tokens, a step refused.
+Nothing it wrote is taken back: the log keeps every line, the stage stays where the log has it (`kp status`), and the
+evidence is written however it ended. The seats stop with it. Take the evidence and what it names to the Principal.
+
+**Going on after a stop** — on the Principal's word only. The same command goes on: started again for a stage the log
+already holds, it checks the steps the log holds against the walk — none is sent again — and plays on from the first it
+does not hold. The seats the log held live died with the last run: the start reports them gone, POOL-1 re-seats them,
+and the walk goes on once they are back. Each of those deaths counts against the stage's three
+(`seat_gone_events_per_stage`), the walk's own among them: with both seats live, one start again is all the stage takes;
+a second leaves it `paused` and asks you for a ruling, as a fourth death always does (above). A log that went another way
+than the walk — a message of yours or the TeamLead's that is not the walk's next — is refused, naming the step; the log
+and the stage are then the Principal's. A stop while an operation was in flight leaves that operation `failed:
+interrupted`, as at any start, and the walk may then wait for what never comes: that is a stop to take to the
+Principal too. Going on, the project checkout may hold what the run itself changed before its push — the log under
+`mail/`, the stage's list as the coder ticked it, `toy/STATUS.md`, `REGISTER.md` — and nothing else.
+
+**In CI.** `just check` plays the same walk with S2.1's fake agent as both seats on a fixture office (`kp-daemon`'s specs
+in `kp.daemon.carried`): three bare remotes the spec builds, a local server for GitHub that keeps the toy's pull
+requests, reviews and merges, and the fixture's own copies of the toy's plan, overview, list and STATUS. It reaches no
+network but that server, starts no real agent and spends no token.
