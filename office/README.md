@@ -130,7 +130,8 @@ the office's checkout once it has merged. The daemon reads the rules of the chec
    ```
 
    The walk then plays on to its next wait — `sudo kp rule <ticket> stage` answers it — and to `exited`. `kp status`
-   shows where it is; `kp check build/rehearsal/<its folder>/mail` re-judges what it wrote. Ctrl-C ends it.
+   shows where it is; `kp check build/rehearsal/<its folder>/mail` re-judges what it wrote. Ctrl-C ends it. When it
+   has ended, `just run` starts the service again — a rehearsal never does.
 
    `just rehearse h1-prime --seats fake` plays the same walk with the walk's seats as processes — S2.1's fake agent —
    that the daemon starts, wakes with their mail, re-seats when one dies, and watches, as it will real seats (S2.5).
@@ -200,9 +201,20 @@ stage and the Pool Manager re-seats the seat. A fourth leaves the stage `paused`
 Manager asks you: `kp inbox` shows a `ruling-request` from `pool`, `default: reseat`. Answer it one of two ways:
 
     sudo kp rule <ticket> reseat seat=<seat>   # one more re-seat: the seat comes back, and so does the stage
-    sudo kp rule <ticket> recut                # the stage is recut; its seats are then retired
+    sudo kp rule <ticket> recut                # the stage is recut; its seats are not retired with it
 
 Each later death asks you again. While you are away the request is held like every class-B item.
+
+A stage that came back after a `reseat` is not paused, and no ticket asks you about it; to recut it, answer a message
+of that stage by its id (T-85; contracts.md §6, Amendment 24) — the Pool Manager's `seat-gone` of the last death:
+
+    sudo kp rule <message id> recut            # its id is in the stage's log: mail/<effort>/p<phase>-s<n>.jsonl
+
+After a recut no robot's rule retires the stage's seats. A seat is retired by the Pool Manager's `retire`: its POOL-8
+sends one when the Team Lead asks with a `session-request` of `action: remove` and `seat: <seat>`, unless that seat is
+busy, and the rules let it through for a seat of a recut stage — ready, provisioned or gone (SEAT-44, SEAT-45,
+SEAT-46), or idle (SEAT-11). In D-118's walks the Pool Manager's seat sends it. Until then `kp status` shows each seat
+in the state it was in, not `retired`; each holds its slot (Amendment 44), and a live one keeps its window in `kp`.
 
 **`tools/kp-notify` — your inbox on the Mac** (contracts.md §12, Amendment 45). On your Mac, in a terminal you leave
 open, from a checkout of this repository there:
@@ -216,6 +228,17 @@ has the rest. What waited when it started is raised once, as a count. When the c
 tries again, waiting longer each time up to a minute. It reads no secret, writes no file and needs nothing macOS does
 not ship; Ctrl-C ends it. The first notification may ask you to allow notifications from Script Editor (System
 Settings → Notifications). `notify.bora` on the office stays `ok` at once: the inbox is the notification.
+
+It keeps the tickets it has shown for as long as it runs, across connections — whichever daemon answers on the office.
+A rehearsal's log numbers its tickets from its own start, so an item whose ticket it has already shown would not be
+raised: when the daemon it follows is another — a rehearsal after the service, a second rehearsal after the first, the
+service after a rehearsal — Ctrl-C it and start it again.
+
+A Focus mode on the Mac — Do Not Disturb among them — silences it, and nothing says so. This line, on the Mac, raises a
+notification as `kp-notify` raises its own; if none shows, look at the Focus mode and at System Settings →
+Notifications → Script Editor, not at the office:
+
+    osascript -e 'display notification "a test" with title "kp-notify"'
 
 ## 4. The secrets directory
 
