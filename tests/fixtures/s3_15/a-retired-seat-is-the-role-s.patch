@@ -1,0 +1,11 @@
+--- a/kp-daemon/src/main/kotlin/kp/daemon/seats/PoolFacts.kt
++++ b/kp-daemon/src/main/kotlin/kp/daemon/seats/PoolFacts.kt
+@@ -265,7 +265,7 @@
+ 
+         /** The seat bound to [role] in [stage]: the last the log started for it there that is not retired. */
+         private fun boundTo(role: String, stage: String?): String? =
+-            log.known.entries.lastOrNull { (seat, known) -> known.role == role && known.stage == stage && state.machine(SEAT_MACHINE, seat)?.state != RETIRED }?.key
++            log.known.entries.lastOrNull { (seat, known) -> known.role == role && known.stage == stage }?.key
+ 
+         /**
+          * [seat]'s line: the model and the effort the daemon's seats hold it was started with; else, for a seat a

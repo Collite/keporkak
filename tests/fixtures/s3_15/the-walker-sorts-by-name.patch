@@ -1,0 +1,9 @@
+--- a/scripts/check-rules.py
++++ b/scripts/check-rules.py
+@@ -107,5 +107,5 @@
+ # order its scenario lists them. A file whose order is not whole goes last, by name: its FAIL is the walk's verdict.
+ ROBOTS = ([(f"fixture-{index}.yaml", robot) for index, robot in enumerate(given.get("robots", []))]
+           if FIXTURE else sorted(((path.name, load_yaml(path.read_text())) for path in sorted((ROOT / "robots").glob("*.yaml"))),
+-                                 key=lambda item:(robot_order(item[1]) is None, robot_order(item[1]) or 0, item[0])))
++                                 key=lambda item:item[0]))
+ ROBOT_THRESHOLDS = {name:value for _,robot in ROBOTS for name,value in robot.get("thresholds",{}).items()}

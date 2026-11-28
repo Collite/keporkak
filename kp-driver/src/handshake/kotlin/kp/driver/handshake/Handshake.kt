@@ -33,6 +33,7 @@ import kp.driver.SubscriptionReport
 import kp.driver.Usage
 import kp.driver.UsageWeights
 import kp.driver.UsageWindow
+import kp.driver.acp.VendorSample
 import kp.driver.claude.ClaudeAdapter
 import kp.model.SeatId
 import java.net.InetAddress
@@ -596,18 +597,9 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
             appendLine()
             val personaSeats = personaTurns.map { "$PERSONA_SEAT-${it.first}" }.distinct()
             // The contract's sample (S3.14): what this run heard of the vendor's words, against the words the adapter passed on the office.
-            appendLine("### The vendor's words against the contract's sample")
-            appendLine()
             val heard = (listOf(MODELS_SEAT, seat.value, HOOKS_SEAT) + personaSeats).flatMap(::transcript)
                 .mapNotNull { line -> line.substringAfter(VENDOR_SAID, "").takeIf { it.isNotEmpty() } }.distinct()
-            appendLine(when {
-                heard.isEmpty() -> "Not heard in this run: the sample stands, unchecked."
-                else -> heard.map { said -> runCatching { differences(Json.parseToJsonElement(said)) }.getOrElse { listOf("not JSON: ${it.message}") } }.distinct()
-                    .joinToString("\n") { differ -> if (differ.isEmpty()) "Heard in the sample's shape: each window's fraction, reset and status under `unifiedWindows`." else "Heard in another shape than the sample's — ${differ.joinToString("; ")}: what the driver reads of it may have moved." }
-            })
-            appendLine()
-            appendLine("The sample — the pinned adapter's `_meta[\"_claude/rateLimit\"]` on the office, word for word from the handshake of 2026-11-24: `$SAMPLE`")
-            appendLine()
+            append(VendorSample.section(heard))
             for (name in listOf(MODELS_SEAT, seat.value, HOOKS_SEAT) + personaSeats) {
                 val lines = transcript(name)
                 if (lines.isEmpty()) continue
@@ -635,24 +627,6 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
     private fun hide(text: String) = secretValues().fold(text) { acc, secret -> acc.replace(secret, "‹hidden›") }
 
     private fun packageVersion(json: kotlinx.serialization.json.JsonObject) = json["version"]!!.jsonPrimitive.content
-
-    /**
-     * How [said] — the vendor's words heard beside a `usage_update` — differs from [SAMPLE]'s shape: each path to a value with
-     * its kind, a window's name under `unifiedWindows` taken as any window. Empty when it has the sample's shape.
-     */
-    private fun differences(said: kotlinx.serialization.json.JsonElement): List<String> {
-        val heard = shape(said)
-        val sample = shape(Json.parseToJsonElement(SAMPLE))
-        return (sample - heard).sorted().map { "no $it" } + (heard - sample).sorted().map { "a new $it" }
-    }
-
-    /** Each path to a value of [words], with the value's kind: `unifiedWindows.*.utilization number`. */
-    private fun shape(words: kotlinx.serialization.json.JsonElement, at: String = ""): Set<String> = when (words) {
-        is kotlinx.serialization.json.JsonObject -> words.entries.flatMap { (key, value) -> shape(value, if (at == WINDOWS) "$at.*" else if (at.isEmpty()) key else "$at.$key") }.toSet()
-        is kotlinx.serialization.json.JsonArray -> setOf("$at array")
-        is kotlinx.serialization.json.JsonNull -> setOf("$at null")
-        is kotlinx.serialization.json.JsonPrimitive -> setOf("$at ${if (words.isString) "text" else if (words.content == "true" || words.content == "false") "boolean" else "number"}")
-    }
 
     private fun <T> Outcome<T>.ok(): T = when (this) {
         is Outcome.Ok -> value
@@ -685,16 +659,6 @@ private class Handshake(private val root: Path, private val adapter: Path, offic
         const val LONG = "kp-count.sh"
         /** How a transcript says the vendor's words beside a `usage_update` (the driver's `SeatSession`). */
         const val VENDOR_SAID = "the vendor on the subscription: "
-        const val WINDOWS = "unifiedWindows"
-        /**
-         * The contract's sample (S3.13's triage, S3.14 T5): the pinned adapter's `_meta["_claude/rateLimit"]` as it came on the
-         * office, word for word from the transcript of the granted handshake of 2026-11-24
-         * (`handshakes/handshake-0.106.0-2026-11-24T193913Z.md`). The SDK's declared type put a fraction at the top level; the
-         * words put each window's fraction under `unifiedWindows` — what the driver reads, and what a later adapter is held to.
-         */
-        const val SAMPLE = """{"status":"allowed","resetsAt":1795549800,"rateLimitType":"five_hour","overageStatus":"allowed","overageResetsAt":1796083200,""" +
-            """"isUsingOverage":false,"unifiedWindows":{"five_hour":{"utilization":0.46,"resetsAt":1795549800,"status":"allowed"},""" +
-            """"seven_day":{"utilization":0.23,"resetsAt":1795950000,"status":"allowed"}}}"""
     }
 }
 

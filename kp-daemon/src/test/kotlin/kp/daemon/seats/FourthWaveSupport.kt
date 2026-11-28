@@ -44,12 +44,16 @@ import kotlin.io.path.writeText
  * overview and STATUS, a list and a worktree for each stage of [stages], each moved to its state by a fixture log. A seat
  * is started as the rules start one ([started]): the Team Lead's `session-request`, the Pool Manager's `session-report`,
  * SEAT-01's `seat.start`. Every operation that is not a seat's ends `ok`. The pool is master's, but for what [roster] and
- * [budgets] change; its office is `panda`, the specs' office.
+ * [budgets] change; its office is `panda`, the specs' office. A stage of [then] is moved on from its state to the one
+ * named there, as a second fixture transition — S3.15: a stage paused from where it was; each of [seats] is on the log
+ * as started, and in its state — S3.15: a seat retired.
  */
 class ServiceOffice(
     stages: Map<String, String>,
     roster: (String) -> String = { it },
     budgets: (String) -> String = { it },
+    then: Map<String, String> = emptyMap(),
+    seats: List<SeatAt> = emptyList(),
 ) : AutoCloseable {
     private val folder: Path = Files.createTempDirectory(checkout.resolve("build").createDirectories(), "service-")
     val project: Path = repository(folder.resolve("project")).also { project ->
@@ -59,7 +63,7 @@ class ServiceOffice(
         write(project, "STATUS.md", "# KP — status\n")
         git(project, "add", "-A")
         git(project, "commit", "--quiet", "-m", "the stages, cut")
-        FixtureLog(stages = stages).writeTo(project)
+        FixtureLog(seats = seats, stages = stages, then = then).writeTo(project)
     }
     /** The office's four roots, beside the project: a worktree made for each stage, a Claude token file the fake agents need none of. */
     val roots = Roots(folder.resolve("worktrees"), folder.resolve("scratch"), folder.resolve("seats"), FakeAgents.secrets(folder.resolve("secrets"))).also { roots ->
