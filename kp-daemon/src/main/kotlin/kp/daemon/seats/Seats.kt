@@ -176,6 +176,9 @@ class Seats(
 
     override fun idle(seat: String): Boolean = held[seat]?.let { !it.busy && !it.gone && !it.ending } ?: false
 
+    /** [seat] has a live session and a turn in flight (S3.5: a walk ends a seat in its turn). */
+    fun busy(seat: String): Boolean = held[seat]?.let { it.busy && !it.gone && !it.ending } ?: false
+
     override fun wake(seat: String, message: Message): Boolean = prompt(seat, message) is OperationResult.Ok
 
     override fun live(): Set<String> = held.filterValues { !it.gone }.keys

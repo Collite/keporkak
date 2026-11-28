@@ -341,6 +341,27 @@ exceptions:
     code: 'sortedBy { it.name }'
     line: 'return profiles.listDirectoryEntries("*.md").sortedBy { it.name }.firstNotNullOfOrNull { file -> … }'
     reason: 'the profiles in the order of their names: the first that names the effort gives its default_branch, as Seats.profile picks a profile (contracts.md §10)'
+  kp-daemon/src/main/kotlin/kp/daemon/OnTheOffice.kt:
+  - shape: comparison
+    in: OnTheOffice.check
+    code: 'total < min'
+    line: 'if (total == null || (min != null && total < min) || (max != null && total > max)) missing += "list.tasks_total is ${total ?: "unknown"}: a stage has $min to $max tasks (assignment-proposal, engagement.yaml)"'
+    reason: '`just rehearse <walk> --world office --check` (S3.5 T7), which Bora runs by hand and the daemon never: it says the list''s task count is outside the caps `assignment-proposal` reads (engagement.yaml `stage_tasks_min`, `stage_tasks_max`) — a line it prints, which decides nothing; the proposal''s judgement is the mailroom''s'
+  - shape: comparison
+    in: OnTheOffice.check
+    code: 'total > max'
+    line: 'if (total == null || (min != null && total < min) || (max != null && total > max)) missing += "list.tasks_total is ${total ?: "unknown"}: a stage has $min to $max tasks (assignment-proposal, engagement.yaml)"'
+    reason: '`--check` (S3.5 T7), by hand: the list''s task count against `stage_tasks_max`, as `assignment-proposal` reads it — printed as missing, never judged here'
+  - shape: comparison
+    in: OnTheOffice.check
+    code: 'linesCap != null'
+    line: 'if (listLines == null || (linesCap != null && listLines > linesCap)) missing += "list.lines is ${listLines ?: "unknown"}: the cap is $linesCap (assignment-proposal, engagement.yaml)"'
+    reason: '`--check` (S3.5 T7), by hand: whether the rules give the list''s line cap at all, before it is printed against'
+  - shape: comparison
+    in: OnTheOffice.check
+    code: 'listLines > linesCap'
+    line: 'if (listLines == null || (linesCap != null && listLines > linesCap)) missing += "list.lines is ${listLines ?: "unknown"}: the cap is $linesCap (assignment-proposal, engagement.yaml)"'
+    reason: '`--check` (S3.5 T7), by hand: the list''s lines against `stage_list_lines`, as `assignment-proposal` reads it — printed as missing, never judged here'
   kp-daemon/src/main/kotlin/kp/daemon/OwnSteps.kt:
   - shape: comparison
     in: SeatsAtPlay.Evidence.text
@@ -512,6 +533,36 @@ exceptions:
     line: 'if (seeding) seeds.keys.sorted().forEach { seat -> seated.seats.seed(seat)?.let { out("seat $seat did not start: $it")
       } }'
     reason: a rehearsal's fake seats (S2.4), started in the order of their names
+  - shape: timer
+    in: Rehearsal.until
+    code: 'nanoTime()'
+    line: 'val end = System.nanoTime() + CUT_MILLIS * 1_000_000'
+    reason: 'a rehearsal on the office (S3.5 T4) waiting for what its own start or cut set going to end — the seats that died with the last play reported gone and re-seated, no operation in flight — bounded so that it never waits forever; no deadline of the rules, and the daemon never runs it'
+  - shape: timer
+    in: Rehearsal.until
+    code: 'CUT_MILLIS'
+    line: 'val end = System.nanoTime() + CUT_MILLIS * 1_000_000'
+    reason: 'a rehearsal on the office (S3.5 T4) waiting for what its own start or cut set going to end — the seats that died with the last play reported gone and re-seated, no operation in flight — bounded so that it never waits forever; no deadline of the rules, and the daemon never runs it'
+  - shape: comparison
+    in: Rehearsal.until
+    code: 'System.nanoTime() < end'
+    line: 'while (!done() && System.nanoTime() < end) version = office.changes.await(version, WAIT_POLL)'
+    reason: 'a rehearsal on the office (S3.5 T4) waiting for what its own start or cut set going to end — the seats that died with the last play reported gone and re-seated, no operation in flight — bounded so that it never waits forever; no deadline of the rules, and the daemon never runs it'
+  - shape: timer
+    in: Rehearsal.until
+    code: 'nanoTime()'
+    line: 'while (!done() && System.nanoTime() < end) version = office.changes.await(version, WAIT_POLL)'
+    reason: 'a rehearsal on the office (S3.5 T4) waiting for what its own start or cut set going to end — the seats that died with the last play reported gone and re-seated, no operation in flight — bounded so that it never waits forever; no deadline of the rules, and the daemon never runs it'
+  - shape: timer
+    in: Rehearsal.until
+    code: 'await(version, WAIT_POLL)'
+    line: 'while (!done() && System.nanoTime() < end) version = office.changes.await(version, WAIT_POLL)'
+    reason: 'a rehearsal on the office (S3.5 T4) waiting for what its own start or cut set going to end — the seats that died with the last play reported gone and re-seated, no operation in flight — bounded so that it never waits forever; no deadline of the rules, and the daemon never runs it'
+  - shape: timer
+    in: Rehearsal.Companion.CUT_MILLIS
+    code: private const val CUT_MILLIS = 60_000L
+    line: private const val CUT_MILLIS = 60_000L
+    reason: 'a rehearsal on the office (S3.5 T4): the bound on its own wait for what its start or cut set going — a minute; no deadline of the rules'
   kp-daemon/src/main/kotlin/kp/daemon/RuleFiles.kt:
   - shape: comparison
     in: RuleFiles.children

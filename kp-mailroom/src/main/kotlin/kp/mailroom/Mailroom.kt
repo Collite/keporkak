@@ -58,6 +58,11 @@ sealed interface Sender {
     data class Seat(val name: String) : Sender
     /** Bora's command line; [signed] when it came over a root peer (contracts.md §6) — handed in by the caller. */
     data class Bora(val signed: Boolean) : Sender
+    /**
+     * A rehearsal on the office playing the walk [walk] for [role], a role with no seat (contracts.md §12, Amendment 46):
+     * the message is from that role, `by: script:<walk>`, and judged like any sender's.
+     */
+    data class Script(val role: String, val walk: String) : Sender
 }
 
 /** The status of a submitted message (contracts.md §5). */
@@ -101,6 +106,7 @@ private class Author(val from: String, val by: String, val signed: Boolean)
 private fun Sender.author(): Author = when (this) {
     is Sender.Seat -> Author(name, "seat:$name", false)
     is Sender.Bora -> Author(BORA, BORA_CLI, signed)
+    is Sender.Script -> Author(role, "script:$walk", false)
 }
 
 /**

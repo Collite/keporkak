@@ -160,10 +160,12 @@ class Orders(val walk: String, val played: List<Played>) {
 
         /**
          * Every walk of `rules/walks/` that marks unordered events, or whose steps name two seats or more in one stage
-         * (`args.seat`, `trigger.seat`), by its file's name.
+         * (`args.seat`, `trigger.seat`), by its file's name — but a walk played on the office, which names a stage of the
+         * plan by its whole id and gives no fact (S3.5; contracts.md §12, Amendment 46): the hero's harness takes the world
+         * from the walk, and that walk's world is the office's (kp.daemon.carried plays it on a fixture office).
          */
         fun ofTheWalksOnMaster(): List<Orders> = checkout.resolve("rules/walks").listDirectoryEntries("*.yaml").sorted()
-            .filter { file -> Walk.read(file).let { walk -> walk.orders().size > 1 || walk.seatsOfAStage() > 1 } }
+            .filter { file -> Walk.read(file).let { walk -> !kp.daemon.Script.STAGE_ID.matches(walk.stage) && (walk.orders().size > 1 || walk.seatsOfAStage() > 1) } }
             .map(::of)
 
         /** The walker's end of each order of [file], by the labels of its events, as [End] holds it. */

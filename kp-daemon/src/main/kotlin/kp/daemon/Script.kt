@@ -38,7 +38,16 @@ import java.time.temporal.ChronoUnit
  * the state; a step that does not meet it ends the play with a [WalkFailure] naming the step, what was expected, what
  * was found, and the refusal if there was one.
  */
-class Script(val walk: Walk, val effort: String = EFFORT) {
+class Script(
+    val walk: Walk,
+    val effort: String = EFFORT,
+    /**
+     * A rehearsal on the office (contracts.md §12, Amendment 46): the walk is played on the office's own log, its facts read
+     * and its operations performed as the service does. A step of a role with no seat is sent `by: script:<walk>`, and an
+     * operation is never given a result: its step waits for the one the service's performer gives.
+     */
+    val onTheOffice: Boolean = false,
+) {
     /** Each stage the walk names, by the stage id it is played as. */
     val stages: Map<String, String> = ids(walk, effort)
     val facts = WalkFacts(walk, stages)
@@ -146,6 +155,8 @@ class Script(val walk: Walk, val effort: String = EFFORT) {
         private const val PROVISIONED = "provisioned"
         private const val READY = "ready"
         private val NUMBERED = Regex("S([0-9]+)\\.([0-9]+)")
+        /** A stage's whole id (contracts.md §1): `<effort>/P<n>/S<n.m>`. */
+        val STAGE_ID = Regex("^[A-Z][A-Z0-9-]*/P[0-9]+/S[0-9]+\\.[0-9]+$")
         /** A seat's two ends, as a walk reports one and the driver observes it (contracts.md §4.4). */
         val DEATHS_OF_A_SEAT = setOf("seat.process_gone", "seat.protocol_closed")
 
@@ -154,6 +165,8 @@ class Script(val walk: Walk, val effort: String = EFFORT) {
          * `S3.2-rollback`) takes the stage its number names when no other stage has it, else the next free one of its phase.
          */
         fun ids(walk: Walk, effort: String): Map<String, String> {
+            // A stage the walk names by its whole id — a stage of the plan, as a walk on the office names it — is played as itself.
+            if (walk.stageNames.all { STAGE_ID.matches(it) }) return walk.stageNames.associateWith { it }
             val taken = LinkedHashMap<String, String>()
             fun free(phase: Int, minor: Int): String = generateSequence(minor) { it + 1 }.map { "$effort/P$phase/S$phase.$it" }.first { it !in taken.values }
             walk.stageNames.sortedBy { if (NUMBERED.matches(it)) 0 else 1 }.forEach { name ->
@@ -273,6 +286,11 @@ class Player internal constructor(private val script: Script, val office: Office
             else -> null to null
         }
         step.id?.let { id -> message?.let { ids[id] = it } }
+        if (index in kept && message != null && step.operation == null) {
+            // A step the log held, taken up again (S3.5 T4): a robot's message it found is found once, and a seat's own is taken.
+            found += message
+            if (own?.seats?.contains(step.who) == true) lines().firstOrNull { it is Message && it.id.value == message }?.let { taken[step.who!!] = it.seq.toLong() }
+        }
         // What the step asked for that ends at once has ended, its result judged, before the step is checked and the next
         // one played: the walk names an operation that ends later (contracts.md §7, Amendment 36).
         office.settle()
@@ -388,7 +406,9 @@ class Player internal constructor(private val script: Script, val office: Office
      * message is answered as the mailroom answers it, nothing is written, and the walk stops at the step (contracts.md §3).
      */
     private fun send(number: Int, step: Walk.Step, who: String): Pair<String?, String?> {
-        val answer = when (val offer = office.submit(Sender.Seat(who), input(number, step))) {
+        writes(number, step)
+        val sender = if (script.onTheOffice) Sender.Script(who, walk.name) else Sender.Seat(who)
+        val answer = when (val offer = office.submit(sender, input(number, step))) {
             is Offer.Answered -> offer.answer
             is Offer.Malformed -> throw WalkFailure(at(number, step) + ": its input is no message — $offer; nothing was written")
         }
@@ -425,9 +445,13 @@ class Player internal constructor(private val script: Script, val office: Office
         val last = played.lastOrNull { it.message != null } ?: return
         val id = last.message!!
         val woke = lines().filterIsInstance<Delivered>().lastOrNull { it.id == id }?.woke.orEmpty().filter { it in own.seats }
+        // A message a play before this one delivered (S3.5 T4): the turn it woke a seat for ended then, or died with that play —
+        // the seat is done once no turn of it is in flight.
+        val before = (last.number - 1) in kept
+        fun ended(seat: String) = own.turnEnded(seat, id) || (before && !own.busy(seat))
         withinTheWalksWait(own, { throw WalkFailure(at(last.number, last.step) + ", at the walk's end: " + it) }, {
-            woke.filterNot { own.turnEnded(it, id) }.joinToString("; ") { "the turn $it was woken for did not end in ${shown(own.wait)} — its transcript: ${own.transcript(it)}" }
-        }) { if (woke.all { own.turnEnded(it, id) }) Unit else null }
+            woke.filterNot(::ended).joinToString("; ") { "the turn $it was woken for did not end in ${shown(own.wait)} — its transcript: ${own.transcript(it)}" }
+        }) { if (woke.all(::ended)) Unit else null }
     }
 
     /**
@@ -449,6 +473,24 @@ class Player internal constructor(private val script: Script, val office: Office
     }
 
     private fun shown(duration: java.time.Duration): String = if (duration.seconds % 60 == 0L) "${duration.toMinutes()}m" else "${duration.seconds}s"
+
+    /**
+     * A step's `writes:` (contracts.md §12, Amendment 46): its `line` appended to its `file` of the project checkout before
+     * the step's message is sent — the TeamLead's STATUS entry; `{date}` in it is the office's day, UTC. A line that already
+     * ends the file is not appended again: a play stopped between the line and its message writes it once.
+     */
+    private fun writes(number: Int, step: Walk.Step) {
+        val writes = step.fields(WRITES).takeIf { it.isNotEmpty() } ?: return
+        val file = (writes[FILE] as? Datum.Text)?.value ?: throw WalkFailure(at(number, step) + ": its writes: names no file")
+        val line = (writes[LINE] as? Datum.Text)?.value?.replace(DATE, office.clock.now().atOffset(java.time.ZoneOffset.UTC).toLocalDate().toString())
+            ?: throw WalkFailure(at(number, step) + ": its writes: gives no line")
+        val target = office.project.resolve(file).normalize()
+        if (!target.startsWith(office.project) || !java.nio.file.Files.isRegularFile(target)) throw WalkFailure(at(number, step) + ": its writes: names $file, which is no file of the project checkout")
+        if ('\n' in line) throw WalkFailure(at(number, step) + ": its writes: gives more than one line")
+        val text = java.nio.file.Files.readString(target)
+        if (text.trimEnd('\n').substringAfterLast('\n') == line) return
+        java.nio.file.Files.writeString(target, text + (if (text.isEmpty() || text.endsWith("\n")) "" else "\n") + line + "\n")
+    }
 
     private fun input(number: Int, step: Walk.Step): JsonObject = JsonObject(listOfNotNull(
         KIND to JsonPrimitive(step.kind),
@@ -497,9 +539,17 @@ class Player internal constructor(private val script: Script, val office: Office
         val by = step.text(BY)
         val re = step.text(RE)?.let { ids[it] ?: it }
         val lines = lines()
-        val message = lines.filterIsInstance<Message>().firstOrNull { message ->
+        val named = if (script.onTheOffice) Json.parseToJsonElement(args(step).json()).jsonObject else null
+        // On the office, a message written since the last step that did something — a robot answers what came before it, not
+        // what a play before this one left (S3.5).
+        val since = if (!script.onTheOffice) null
+            else played.lastOrNull { it.step.operation == null && !(it.step.who == MAILROOM || it.step.text(BY)?.startsWith(ROBOT) == true) }?.first
+        val start = since?.let { seq -> lines.withIndex().firstOrNull { it.value.seq.toLong() == seq }?.index } ?: 0
+        val message = lines.subList(start, lines.size).filterIsInstance<Message>().firstOrNull { message ->
             message.id.value !in found && message.kind == step.kind && (if (by != null) message.by == by || twins(by, message.by) else message.from.value == MAILROOM) &&
-                (re == null || message.re?.value == re) && (step.text(TO)?.let { to -> message.to.value == to } ?: true)
+                (re == null || message.re?.value == re) && (step.text(TO)?.let { to -> message.to.value == to } ?: true) &&
+                // On the office the robots' messages are many — a seat that died with a play is re-seated as any — and the step names its own by its args (S3.5).
+                (named == null || named.all { (key, value) -> (message.json[ARGS] as? JsonObject)?.get(key) == value })
         } ?: throw WalkFailure(at(number, step) + ": ${by ?: MAILROOM} sent no ${step.kind}" + (re?.let { " in reply to $it" } ?: "") + " — " +
             lines.filterIsInstance<Message>().filter { if (by != null) it.by.startsWith(ROBOT) else it.from.value == MAILROOM }.map { "${it.kind} ${it.by}" }
                 .let { sent -> if (sent.isEmpty()) "${if (by != null) "the robots have" else "the mailroom has"} sent nothing yet" else "sent so far: ${sent.joinToString()}" })
@@ -517,7 +567,8 @@ class Player internal constructor(private val script: Script, val office: Office
         val cause = ids[asked] ?: throw WalkFailure(at(number, step) + ": its request $asked has not been played")
         // A seat woken with a message is woken by the seats, scripted or live (S2.4): the walk waits for that result too.
         val seatsWake = operation == SEAT_WAKE && lines().filterIsInstance<Op>().any { it.op == SEAT_WAKE && it.cause == cause && it.with?.containsKey(SEAT) == true }
-        if (script.live?.performs(operation) == true || seatsWake) {
+        // On the office every operation is the service's performer's (Amendment 46): the step waits for its result, never gives one.
+        if (script.onTheOffice || script.live?.performs(operation) == true || seatsWake) {
             val result = waitFor(number, step, "$operation's result for $cause") {
                 lines().filterIsInstance<Op>().lastOrNull { it.op == operation && it.cause == cause && it.phase != REQUESTED }
             }
@@ -542,8 +593,9 @@ class Player internal constructor(private val script: Script, val office: Office
         val seat = (ref.params[SEAT] as? Datum.Text)?.value
         val live = script.live
         if (live != null && name in DEATHS && seat != null) {
-            // A Claude seat's process ends between its turns (S2.5): the one in flight has ended first, its transcript whole.
-            own?.takeIf { seat in it.seats }?.let { own -> idle(number, step, seat, own) }
+            // A Claude seat's process ends between its turns (S2.5): the one in flight has ended first, its transcript whole —
+            // or, where the step says `in_its_turn` (S3.5), while a turn is in flight: that turn never ends and reports no usage.
+            own?.takeIf { seat in it.seats }?.let { own -> if (step.fields[IN_ITS_TURN] == Datum.Bool(true)) busy(number, step, seat, own) else idle(number, step, seat, own) }
             // The seat's process ends; the driver reports it, and the walk waits until the mailroom has judged it.
             val before = last()
             if (!live.die(seat)) throw WalkFailure(at(number, step) + ": $seat has no process to end")
@@ -555,6 +607,13 @@ class Player internal constructor(private val script: Script, val office: Office
         val value = TableFacts.lookup(script.facts.table(stage)[name], ref) ?: throw WalkFailure(at(number, step) + ": its table has no value for $ref")
         office.changed(ref, value, script.stageId(stage))
         return null to null
+    }
+
+    /** Waits until a Claude seat has a turn in flight — [seat] is busy — at most the walk's `wait`, by the office's clock. */
+    private fun busy(number: Int, step: Walk.Step, seat: String, own: OwnSteps) {
+        withinTheWalksWait(own, { throw WalkFailure(at(number, step) + ": " + it) }, { "$seat had no turn in flight in ${shown(own.wait)} — its transcript: ${own.transcript(seat)}" }) {
+            if (own.busy(seat)) Unit else null
+        }
     }
 
     /** Waits until a Claude seat's turn in flight has ended — [seat] is idle — at most the walk's `wait`, by the office's clock. */
@@ -807,6 +866,13 @@ class Player internal constructor(private val script: Script, val office: Office
         /** In a step's body, the throwaway project's path: where a seat finds its list and STATUS (S2.5). */
         const val PROJECT = "{project}"
         const val REFUSED_BY = "refused_by"
+        const val WRITES = "writes"
+        /** On a step that reports a Claude seat's death: its process ends while a turn of it is in flight (S3.5). */
+        const val IN_ITS_TURN = "in_its_turn"
+        const val FILE = "file"
+        const val LINE = "line"
+        /** In a step's `writes:` line, the office's day (UTC). */
+        const val DATE = "{date}"
         /** A seat's death, as a walk reports it. */
         val DEATHS = Script.DEATHS_OF_A_SEAT
         const val WAIT_MILLIS = 120_000L

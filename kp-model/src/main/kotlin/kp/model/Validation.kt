@@ -47,7 +47,7 @@ private val messageFields = common + mapOf(
     "pointers" to array(pointer),
     "args" to objectValue, "deadline" to nullable(timestamp), "created" to timestamp,
     "signed" to { it is JsonPrimitive && !it.isString && it.booleanOrNull != null },
-    "by" to pattern("^(seat:[a-z][a-z0-9-]*|robot:[A-Z]+-[0-9]+|bora-cli|effect:T-[0-9]+|expiry:[a-z][a-z-]*|mailroom|hand:[a-z][a-z0-9-]*)$")
+    "by" to pattern("^(seat:[a-z][a-z0-9-]*|robot:[A-Z]+-[0-9]+|bora-cli|effect:T-[0-9]+|expiry:[a-z][a-z-]*|mailroom|hand:[a-z][a-z0-9-]*|script:[a-z][a-z0-9-]*)$")
 )
 internal fun validateMessage(value: JsonObject) = validateObject(
     value, setOf("v", "seq", "at", "id", "thread", "from", "to", "kind", "subject", "created", "by"), messageFields, false

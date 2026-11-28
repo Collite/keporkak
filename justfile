@@ -146,16 +146,20 @@ logs:
 # Claude seats on the adapter `just adapter` installed and the office's token: a walk that names `claude_seats` has their
 # steps waited for, ends once the seats the last message woke have ended that turn, and leaves its evidence under the
 # office's scratch root (`rehearsals/`). It spends tokens: run it on demand (office/README.md); CI never runs it.
+# `--world office` (contracts.md §12, Amendment 46; S3.5) plays the walk where the service would run — the office's project
+# checkout and its log, its main checkouts, GitHub — every fact read and every operation performed as the service does;
+# it starts only on a stopped service, clean checkouts, a stage with a list and Bora present. `--world office --check`
+# reads those and the walk's way against the office as it is, and changes nothing (office/README.md, "Carrying a stage").
 rehearse walk *args:
     #!/usr/bin/env sh
     set -eu
     walk="$1"
     shift
     ./gradlew --console=plain -q :kp-daemon:installDist
-    if [ "${1:-}" = "--seats" ] && [ "${2:-}" = "fake" ]; then
+    case " $* " in *" --seats fake "*)
         ./gradlew --console=plain -q :kp-driver:fakeClasspath
-        set -- "$@" --fake-classpath "$(cat kp-driver/build/fake.classpath)"
-    fi
+        set -- "$@" --fake-classpath "$(cat kp-driver/build/fake.classpath)";;
+    esac
     exec kp-daemon/build/install/kp-daemon/bin/kp-daemon rehearse "rules/walks/$walk.yaml" --root "$PWD" "$@"
 
 # Every fact of the project and of git for <stage>, its phase and its effort (contracts.md §12, Amendment 34; S3.8 T5): each

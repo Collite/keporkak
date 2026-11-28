@@ -36,7 +36,8 @@ import kotlin.system.exitProcess
  * is read back as, before the adapter's own rule — see [resolveModel]), `probe` (S2.4: before anything else, call the
  * daemon's stop hook with the session token the process was given, and record the answer's status). Steps: `say`,
  * `tool`, `tool_update`, `ask` (each tool step with an optional `name`, sent as the adapter sends the tool's name),
- * `usage`, `run`, `shell`, `hold`, `hangup`, `leave`, `leak`, `recall`, `mcp`, `end` — see [perform]; any of them `once`. Steps after `end` are sent after the
+ * `usage`, `run`, `shell`, `hold`, `hangup`, `leave`, `leak`, `recall`, `mcp`, `end` — see [perform]; any of them `once`,
+ * `if_prompt` or `if_file`. Steps after `end` are sent after the
  * turn's answer. The prompt `/compact` is answered as the pinned adapter answers it (S2.4's probe): the context it
  * reports drops to a fifth.
  */
@@ -58,6 +59,8 @@ private class FakeAgent(private val script: JsonObject) {
     @Volatile private var used: Long? = null
     @Volatile private var size: Long? = null
     @Volatile private var cancelled = false
+    /** The text of the prompt whose turn is played: what a step's `if_prompt` reads. */
+    @Volatile private var prompted = ""
     @Volatile private var child: Process? = null
     @Volatile private var headers: List<String> = emptyList()
     @Volatile private var servers: JsonArray = JsonArray(emptyList())
@@ -197,6 +200,7 @@ private class FakeAgent(private val script: JsonObject) {
     private fun prompt(id: JsonElement, params: JsonObject) {
         val text = params.getValue("prompt").jsonArray.joinToString("") { it.jsonObject.string("text") ?: "" }
         note("session/prompt", "text" to JsonPrimitive(text))
+        prompted = text
         remember(buildJsonObject { put("sessionUpdate", "user_message_chunk"); put("content", text(text)) })
         if (text == "/compact") return compact(id)
         val played = (if (loaded) script["loaded_turns"] else null) ?: script["turns"]
@@ -224,9 +228,12 @@ private class FakeAgent(private val script: JsonObject) {
     /**
      * One step of a turn; returns the prompt's result when the step ends the turn. A step with `once` (a file's path) is
      * performed by the first of the seat's processes to reach it, and passed by every later one — a re-seated process
-     * among them (S2.9).
+     * among them (S2.9). A step with `if_prompt` is performed only in a turn whose prompt holds that text, and one with
+     * `if_file` only while that file exists (S3.5): what a seat does depends on what it was told, not on its turn's number.
      */
     private fun perform(step: JsonObject): JsonObject? {
+        step.string("if_prompt")?.let { text -> if (text !in prompted) return null }
+        step.string("if_file")?.let { path -> if (!File(path).exists()) return null }
         step.string("once")?.let { marker -> if (!File(marker).createNewFile()) return null }
         when (step.string("do")) {
             "say" -> emit(buildJsonObject { put("sessionUpdate", "agent_message_chunk"); put("content", text(step.string("text")!!)) })

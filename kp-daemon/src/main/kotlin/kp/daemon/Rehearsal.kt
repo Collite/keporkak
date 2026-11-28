@@ -39,8 +39,18 @@ import java.time.temporal.ChronoUnit
  */
 class Rehearsal private constructor(
     private val script: Script, private val daemon: Daemon, private val out: (String) -> Unit, val seated: Seated? = null, val fake: FakeAgents? = null,
+    /** On the office, the steps its log already held when the rehearsal started (S3.5 T4): taken up, not sent again. */
+    private val held: Map<Int, Pair<String?, String?>> = emptyMap(),
+    /** On the office, the walk's seats the log held live when the rehearsal started, and how many lines the log counted then (S3.5 T4). */
+    private val liveAtStart: Set<String> = emptySet(),
+    private val linesAtStart: Int = 0,
+    /** The step after which the play stops, as a stop there would — a spec's cut (S3.5 T1); null: it plays to the walk's end. */
+    private val cutAfter: Int? = null,
 ) : AutoCloseable {
     private val over = CountDownLatch(1)
+    /** The player of the walk, once it plays: whose step it waits for ([Player.awaiting]). */
+    @Volatile var playing: Player? = null
+        private set
     /** Whether the walk was played to its end; null while it is played. */
     @Volatile var passed: Boolean? = null
         private set
@@ -77,8 +87,26 @@ class Rehearsal private constructor(
 
     private fun play() {
         try {
-            out("rehearsing ${script.walk.name}: stage ${script.stageId(script.walk.stage)} on ${office.project}")
-            val player = script.player(office, AtTheCommandLine(), out)
+            out("rehearsing ${script.walk.name}: stage ${script.stageId(script.walk.stage)} on ${office.project}" + if (script.onTheOffice) " — the office's own log, facts and operations" else "")
+            val player = script.player(office, AtTheCommandLine(), out).also { playing = it }
+            if (held.isNotEmpty() || liveAtStart.isNotEmpty()) {
+                startedAgain()
+                // What the start itself wrote — the deaths of the seats that died with the last play — may hold a step too.
+                when (val course = OnTheOffice.course(script, office.counted())) {
+                    is OnTheOffice.Course.Otherwise -> throw WalkFailure("the office's log went another way than walk ${script.walk.name} at ${course.why}")
+                    is OnTheOffice.Course.Kept -> if (course.steps.isNotEmpty()) {
+                        out("the log holds the walk's first ${course.steps.size} steps: they are checked, not sent; the walk plays on from step ${course.steps.size + 1}")
+                        player.resume(course.steps)
+                    }
+                }
+            }
+            if (cutAfter != null) {
+                player.throughStep(cutAfter)
+                // A stop after the step and what it set going: no operation is in flight when it comes.
+                until { inFlight().isEmpty() }
+                out("the play stops after step $cutAfter, as a stop there would" + inFlight().let { if (it.isEmpty()) "" else " — in flight: ${it.joinToString()}" })
+                return
+            }
             try {
                 player.rest()
                 passed = true
@@ -157,8 +185,45 @@ class Rehearsal private constructor(
         }
     }
 
+    /**
+     * A start on a log that holds the walk (S3.5 T4) reports each seat the log holds live gone — its process died with the
+     * rehearsal — and the rules pause the stage until it is re-seated, as after any death. The walk goes on as the TeamLead
+     * would, once that is done: each of [liveAtStart] reported gone, no operation in flight and the stage not paused — at
+     * most [CUT_MILLIS]; then it goes on as it is, and its next step says what it finds.
+     */
+    private fun startedAgain() {
+        val stage = script.stageId(script.walk.stage)
+        fun reported(): Boolean = office.counted().drop(linesAtStart).filterIsInstance<kp.model.Fact>().filter { it.fact in Script.DEATHS_OF_A_SEAT }.map { it.subject }.containsAll(liveAtStart)
+        office.settle()
+        until { reported() && inFlight().isEmpty() && office.state.stage(stage) != PAUSED }
+        out("started again: the stage is ${office.state.stage(stage)}" + inFlight().let { if (it.isEmpty()) "" else "; in flight: ${it.joinToString()}" })
+    }
+
+    /** The operations requested on the log with no result: `<op> for <cause>`. */
+    private fun inFlight(): List<String> {
+        val ops = office.counted().filterIsInstance<kp.model.Op>()
+        return ops.filter { it.phase == REQUESTED && ops.none { ended -> ended.op == it.op && ended.cause == it.cause && ended.phase != REQUESTED } }
+            .map { "${it.op} for ${it.cause}" }
+    }
+
+    /**
+     * Waits on the office's changes until [done] holds — what the rehearsal's own start or cut set going has ended — at most
+     * [CUT_MILLIS]: a bound on the rehearsal's own waiting, never a deadline of the rules; past it the walk goes on as it is.
+     */
+    private fun until(done: () -> Boolean) {
+        var version = office.changes.version()
+        val end = System.nanoTime() + CUT_MILLIS * 1_000_000
+        while (!done() && System.nanoTime() < end) version = office.changes.await(version, WAIT_POLL)
+    }
+
     companion object {
         private const val JOIN_MILLIS = 10_000L
+        private const val CUT_MILLIS = 60_000L
+        private const val PAUSED = "paused"
+        private const val REQUESTED = "requested"
+        /** A seat's states in which the daemon holds its process (contracts.md §4.1, the seat machine). */
+        private val LIVE = setOf("ready", "busy", "idle")
+        private const val WAIT_POLL = 500L
         private const val WAIT_MILLIS = 30_000L
         private const val BORA = "bora"
         private const val PRESENT = "present"
@@ -187,6 +252,49 @@ class Rehearsal private constructor(
             val (seated, agent) = if (seating is FakeSeating) seating.seat(root, script, project, office, clock, out) else seating.seated(root, script, project, office, clock, out)
             val daemon = Daemon.start(seated.office, script.facts, socket, peers, beside = listOf(seated))
             return Rehearsal(script, daemon, out, seated, agent as? FakeAgents).also { it.player.start() }
+        }
+
+        /**
+         * Rehearses [walk] on the office (contracts.md §12, Amendment 46; S3.5): where the service would run — the office
+         * [office]'s project checkout [project] and its log, its main checkouts, and GitHub at [api] — with the seats of
+         * [seating] as the service starts seats, its world and its performers the service's, the seat API on [listen] (the
+         * office's `listen.mcp` unless the caller says), and the daemon answering `kp` on [socket]. The walk gives only
+         * what a role without a seat would send and write; a walk that gives a fact or an operation's result is refused. It
+         * starts only when the service is stopped, the walk's stage has a list, the project checkout and every main checkout
+         * are clean, and Bora is present; otherwise nothing is started and [OnTheOffice.Refusal] says what was found. On a
+         * log that already holds the walk's first steps it plays on from the first it does not hold; on one that went
+         * another way it is refused, naming the step. With [cutAfter] the play stops after that step, as a stop there would.
+         */
+        fun onTheOffice(
+            root: Path, walk: Path, office: String, project: Path, socket: Path, peers: PeerReader, seating: LiveSeating,
+            api: java.net.URI = kp.ops.GitHubApps.GITHUB, listen: String? = null, clock: Clock = serviceClock, cutAfter: Int? = null, out: (String) -> Unit,
+        ): Rehearsal {
+            val played = Walk.read(walk)
+            OnTheOffice.supplied(played).takeIf { it.isNotEmpty() }?.let { supplied ->
+                throw OnTheOffice.Refusal("walk ${played.name} gives what a rehearsal on the office reads from the office (Amendment 46): ${supplied.joinToString("; ")}")
+            }
+            if (played.claudeSeats == null) throw OnTheOffice.Refusal("walk ${played.name} names no claude_seats: on the office a seat's step is the seat's own, waited for and never sent")
+            if (!Script.STAGE_ID.matches(played.stage)) throw OnTheOffice.Refusal("walk ${played.name} names its stage ${played.stage}: on the office a walk names a stage of the plan by its whole id")
+            val (rules, loaded) = InForceRules.of(RuleFiles(root).read())
+            val inForce = rules ?: throw OnTheOffice.Refusal("the rules are not valid: ${loaded.problems.joinToString("; ")}")
+            val script = Script(played, played.stage.substringBefore('/'), onTheOffice = true)
+            val lines = OnTheOffice.lines(project, office)
+            val course = OnTheOffice.course(script, lines)
+            if (course is OnTheOffice.Course.Otherwise) throw OnTheOffice.Refusal("the office's log went another way than walk ${played.name} at ${course.why}")
+            val held = (course as OnTheOffice.Course.Kept).steps
+            val folded = kp.engine.fold(lines)
+            val live = played.claudeSeats!!.seats.filter { seat -> folded.machine("seat", seat)?.state in LIVE }.toSet()
+            val missing = OnTheOffice.missing(inForce, office, project, socket, played.stage, again = held.isNotEmpty() || lines.any { it is kp.model.Message && it.stage?.value == played.stage }, walk = played)
+            if (missing.isNotEmpty()) throw OnTheOffice.Refusal("nothing is started: " + missing.joinToString("; "))
+            val (seated, agent, world) = seating.onTheOffice(root, script, project, office, api, listen, clock, out)
+            val daemon = try {
+                Daemon.start(seated.office, world.view, socket, peers, beside = listOf(seated))
+            } catch (error: Exception) {
+                seated.close()
+                seated.office.close()
+                throw error
+            }
+            return Rehearsal(script, daemon, out, seated, agent as? FakeAgents, held, live, lines.size, cutAfter).also { it.player.start() }
         }
     }
 }
@@ -260,6 +368,53 @@ sealed class LiveSeating(val tmux: String, val panes: String, val profile: Strin
         return seated to agent
     }
 
+    /**
+     * The walk's seats on the office (contracts.md §12, Amendment 46; S3.5): the service's daemon as `kp-daemon run` makes it
+     * — its world the project's, git's, GitHub's at [api] and the pool's, its performers the office's and those on GitHub,
+     * the seats in front of the driver with the office's roots and secrets, the seat API on [listen] or the office's
+     * `listen.mcp` — but its agent this seating's, no report of the four facts (Amendment 48), and nothing seeded: the walk
+     * asks for its seats and starts them as the rules do. The Claude seats play their own steps ([SeatsAtPlay]); the
+     * record goes to [evidence], else the office's scratch root, `rehearsals/`.
+     */
+    internal fun onTheOffice(root: Path, script: Script, project: Path, office: String, api: java.net.URI, listen: String?, clock: Clock, out: (String) -> Unit): Triple<Seated, Agent, ServiceWorld> {
+        val rules = InForceRules.of(RuleFiles(root).read()).first ?: throw OnTheOffice.Refusal("the rules are not valid")
+        val entry = rules.ruleSet.pool.offices[office] ?: throw OnTheOffice.Refusal("pool/offices.yaml names no office '$office'")
+        val roots = Roots.of(entry.roots)
+        if (this is FakeSeating) given(script.walk)
+        val agent = agent(root, roots.scratch.resolve("rehearsals").resolve("${script.walk.name}-agents"))
+        val performers = OfficeOperations(root, office, project, api = api)
+        val github = GitHubOperations.of(office, performers, api)
+        val pool = kp.daemon.seats.PoolFacts(office)
+        val world = ServiceWorld(ProjectWorld.of(rules, office, project), GitHubWorld.of(office, project, api), pool)
+        val own = script.walk.claudeSeats?.let { claude ->
+            SeatsAtPlay(claude, roots.seats.resolve("_transcripts"), evidence ?: roots.scratch.resolve("rehearsals"), roots.secrets.resolve("claude-token"),
+                script.walk.file?.let { file -> if (file.startsWith(root)) root.relativize(file) else file } ?: Path.of(script.walk.name), clock, onTheOffice = true)
+        }
+        var driving: Seats? = null
+        lateinit var made: Seats
+        val seated = Seated.start(office, project, root, world, github, clock, listen ?: entry.listen["mcp"] ?: throw OnTheOffice.Refusal("pool/offices.yaml gives office '$office' no listen.mcp"),
+            folded = { folded -> world.reading(folded); pool.reading(folded, driving); github.reading(folded); performers.reading(folded) }) { starting ->
+            Seats(root, office, project, roots, agent, clock, Panes(tmux, panes, out), out, starting, turns = own, github = api) { listener, time ->
+                ClaudeAdapter.driver(roots.secrets.resolve("claude-token"), roots.seats, time, CompiledAnswerer(roots.seats), listener)
+            }.also { made = it; driving = it; own?.driven = it }
+        }
+        own?.attach(seated.office)
+        script.live = object : LiveSeats {
+            override fun performs(operation: String) = made.performs(operation)
+            override fun die(seat: String) = die(seat, made, agent)
+            override val own: OwnSteps? get() = own
+        }
+        try {
+            seated.start(watchEvery ?: seated.watchEvery())
+        } catch (error: Exception) {
+            seated.close()
+            seated.office.close()
+            throw error
+        }
+        own?.attach(seated.office)
+        return Triple(seated, agent, world)
+    }
+
     /** The office's scratch root (contracts.md §9): where a rehearsal's evidence goes unless the caller says. */
     private fun scratchOf(root: Path, office: String): Path {
         val rules = InForceRules.of(RuleFiles(root).read()).first ?: error("the rules are not valid")
@@ -287,6 +442,11 @@ class FakeSeating(
     val scripts: Map<String, String> = emptyMap(), evidence: Path? = null, github: java.net.URI? = null,
 ) : LiveSeating(tmux, panes, profile, watchEvery, evidence, github) {
     @Volatile private var walk: Walk? = null
+
+    /** The walk whose folder may give its seats' scripts (`<walk>/fake/<seat>.json`). */
+    internal fun given(walk: Walk) {
+        this.walk = walk
+    }
 
     /** The seats of [script]'s walk on [project], as [LiveSeating.seated] seats them, with their fake agents. */
     internal fun seat(root: Path, script: Script, project: Path, office: String, clock: Clock, out: (String) -> Unit, seeding: Boolean = true): Pair<Seated, FakeAgents> {
