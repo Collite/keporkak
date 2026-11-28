@@ -33,7 +33,8 @@ import kotlin.io.path.writeText
  * S3.5 T1 — when a rehearsal on the office starts (`Rehearsal.onTheOffice`, `OnTheOffice.missing`; contracts.md §12,
  * Amendment 46): only on a stopped service, a clean project checkout, clean main checkouts, a stage with a list and Bora
  * present — each of the five missing alone, nothing is started and the reason is said — and never with a walk that gives
- * the world: a fact of its table, or an operation's result, is refused, named.
+ * the world: a fact of its table, of a stage's or of a step's facts, a fact an event step reports other than a seat's
+ * death, or an operation's result, is refused, named (review-039 B1).
  */
 class ARehearsalOnTheOfficeStartsSpec : StringSpec({
     "a rehearsal on the office supplies nothing: a walk with a facts: table or an operation's result is refused naming it" {
@@ -49,7 +50,37 @@ class ARehearsalOnTheOfficeStartsSpec : StringSpec({
         }
     }
 
-    "it starts only on a stopped service: a daemon on the socket, or a writer holding the log — nothing is started, and that is said" {
+    "a walk whose stage gives a fact (stages: … facts:) is refused naming it, and nothing is started" {
+        Carried().use { carried ->
+            val staged = carried.office.folder.resolve("staged.yaml").apply {
+                writeText(FIRST_CARRIED_STAGE.readText().replace("\nsteps:\n", "\nstages:\n  TOY/P0/S0.2:\n    facts:\n      list.tasks_total: 6\nsteps:\n"))
+            }
+            shouldThrow<OnTheOffice.Refusal> { Carried(carried.office, walk = staged).start() }.message shouldContain "its stage TOY/P0/S0.2 gives list.tasks_total"
+            carried.nothingStarted()
+        }
+    }
+
+    "a walk whose step gives a fact (a step's facts:, as H-1′ gives ten) is refused naming it, and nothing is started" {
+        Carried().use { carried ->
+            val stepped = carried.office.folder.resolve("stepped.yaml").apply {
+                writeText(FIRST_CARRIED_STAGE.readText().replace("- id: proposal\n  who: teamlead\n", "- id: proposal\n  who: teamlead\n  facts:\n    list.tasks_total: 6\n"))
+            }
+            shouldThrow<OnTheOffice.Refusal> { Carried(carried.office, walk = stepped).start() }.message shouldContain "step 1 (proposal) gives list.tasks_total"
+            carried.nothingStarted()
+        }
+    }
+
+    "a walk with an event step that reports a fact other than a seat's death is refused naming it, and nothing is started" {
+        Carried().use { carried ->
+            val reported = carried.office.folder.resolve("reported.yaml").apply {
+                writeText(FIRST_CARRIED_STAGE.readText().replace("- id: worktree\n", "- id: acted\n  who: daemon\n  event:\n    fact: bora.acted\n- id: worktree\n"))
+            }
+            shouldThrow<OnTheOffice.Refusal> { Carried(carried.office, walk = reported).start() }.message shouldContain "step 3 (acted) reports bora.acted"
+            carried.nothingStarted()
+        }
+    }
+
+    "it starts only on a stopped service:a daemon on the socket, or a writer holding the log — nothing is started, and that is said" {
         Carried().use { carried ->
             ServerSocketChannel.open(StandardProtocolFamily.UNIX).use { daemon ->
                 daemon.bind(UnixDomainSocketAddress.of(carried.office.socket))
